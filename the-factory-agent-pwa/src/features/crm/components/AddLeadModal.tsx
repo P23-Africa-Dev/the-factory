@@ -2,10 +2,11 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
-import { useCreateLead, useCrmPipelines, useCrmLabels } from '@/features/crm';
+import { useCreateLead, useCrmPipelines, useCrmLabels, type LeadContact } from '@/features/crm';
 import { PwaProfileUrlInputs, isValidUrl, normalizeWebsite, parseProfileUrls } from './PwaProfileUrlInputs';
 import PhoneNumberInput from '@/components/ui/PhoneNumberInput';
 
@@ -16,10 +17,6 @@ interface AddLeadModalProps {
 }
 
 interface FormState {
-  name: string;
-  email: string;
-  phone: string;
-  location: string;
   companyName: string;
   website: string;
   position: string;
@@ -29,10 +26,6 @@ interface FormState {
 }
 
 const INITIAL_FORM: FormState = {
-  name: '',
-  email: '',
-  phone: '',
-  location: '',
   companyName: '',
   website: '',
   position: '',
@@ -46,34 +39,70 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   const [profileUrls, setProfileUrls] = useState<string[]>(['']);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'profileUrls', string>>>({});
 
+  // Multiple contacts state
+  const [contacts, setContacts] = useState<LeadContact[]>([
+    { name: '', email: '', phone: '', location: '' },
+  ]);
+  const [activeContactIndex, setActiveContactIndex] = useState(0);
+  const [contactErrors, setContactErrors] = useState<Array<Partial<Record<'name' | 'email' | 'phone' | 'location', string>>>>([{}]);
+
   const { data: pipelines = [] } = useCrmPipelines();
   const { data: labels = [] } = useCrmLabels();
   
   const { mutate: createLead, isPending } = useCreateLead({
     onSuccess: () => {
       toast.success('Lead added');
-      setForm(INITIAL_FORM);
-      setProfileUrls(['']);
-      setErrors({});
+      handleReset();
       onSuccess?.();
       onClose();
     },
   });
 
+  const handleReset = () => {
+    setForm(INITIAL_FORM);
+    setProfileUrls(['']);
+    setErrors({});
+    setContacts([{ name: '', email: '', phone: '', location: '' }]);
+    setActiveContactIndex(0);
+    setContactErrors([{}]);
+  };
+
   const validate = (): boolean => {
+    const newContactErrors: Array<Partial<Record<'name' | 'email' | 'phone' | 'location', string>>> = contacts.map(
+      (c) => {
+        const errs: Partial<Record<'name' | 'email' | 'phone' | 'location', string>> = {};
+        if (!c.name.trim()) {
+          errs.name = 'Name is required';
+        }
+        if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) {
+          errs.email = 'Enter a valid email';
+        }
+        return errs;
+      }
+    );
+
     const newErrors: Partial<Record<keyof FormState | 'profileUrls', string>> = {};
-    if (!form.name.trim()) newErrors.name = 'Name is required';
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      newErrors.email = 'Enter a valid email';
-    }
     if (form.website.trim() && !isValidUrl(form.website)) {
       newErrors.website = 'Enter a valid website URL';
     }
     if (parseProfileUrls(profileUrls).some((url) => !isValidUrl(url))) {
       newErrors.profileUrls = 'One or more profile URLs are invalid';
     }
+
+    setContactErrors(newContactErrors);
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+
+    const hasContactErrors = newContactErrors.some((e) => Object.keys(e).length > 0);
+    const hasFieldErrors = Object.keys(newErrors).length > 0;
+
+    if (hasContactErrors) {
+      const errorIndex = newContactErrors.findIndex((e) => Object.keys(e).length > 0);
+      if (errorIndex !== -1) {
+        setActiveContactIndex(errorIndex);
+      }
+    }
+
+    return !hasContactErrors && !hasFieldErrors;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -96,16 +125,25 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       : defaultPipeline.id;
 
     const defaultStatus = labels[0]?.slug ?? 'newly_lead';
-
     const cleanedProfileUrls = parseProfileUrls(profileUrls);
+
+    const normalizedContacts = contacts.map((contact, index) => ({
+      name: contact.name.trim(),
+      email: contact.email?.trim() || null,
+      phone: contact.phone?.trim() || null,
+      location: contact.location?.trim() || null,
+      sort_order: index,
+    }));
+    const primaryContact = normalizedContacts[0];
 
     createLead({
       company_id: companyId,
       pipeline_id: pipelineId,
-      name: form.name.trim(),
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      location: form.location.trim() || null,
+      name: primaryContact.name,
+      email: primaryContact.email,
+      phone: primaryContact.phone,
+      location: primaryContact.location,
+      contacts: normalizedContacts,
       company_name: form.companyName.trim() || null,
       website: form.website.trim() ? normalizeWebsite(form.website) : null,
       position: form.position.trim() || null,
@@ -117,11 +155,38 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
   const handleClose = () => {
     if (isPending) return;
-    setForm(INITIAL_FORM);
-    setProfileUrls(['']);
-    setErrors({});
+    handleReset();
     onClose();
   };
+
+  const updateActiveContact = (key: keyof LeadContact, value: string) => {
+    setContacts((current) =>
+      current.map((item, idx) =>
+        idx === activeContactIndex ? { ...item, [key]: value } : item
+      )
+    );
+  };
+
+  const addContact = () => {
+    setContacts((current) => [
+      ...current,
+      { name: '', email: '', phone: '', location: '' },
+    ]);
+    setContactErrors((current) => [...current, {}]);
+    setActiveContactIndex(contacts.length);
+  };
+
+  const removeContact = (indexToRemove: number) => {
+    if (contacts.length <= 1) return;
+    setContacts((current) => current.filter((_, idx) => idx !== indexToRemove));
+    setContactErrors((current) => current.filter((_, idx) => idx !== indexToRemove));
+    setActiveContactIndex((prev) => Math.max(0, Math.min(prev, contacts.length - 2)));
+  };
+
+  const currentContact = contacts[activeContactIndex] ?? contacts[0];
+  const currentContactErrors = contactErrors[activeContactIndex] ?? {};
+  const canGoBack = activeContactIndex > 0;
+  const canGoForward = activeContactIndex < contacts.length - 1;
 
   return (
     <AnimatePresence>
@@ -146,61 +211,126 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
             </h3>
 
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 overflow-y-auto pb-4">
-              {/* Name */}
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Full Name *</label>
-                <input
-                  type="text"
-                  placeholder="Enter lead name"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
-                    errors.name ? 'border-[#EF4444]' : 'border-white/12'
-                  }`}
-                />
-                {errors.name && (
-                  <span className="text-[#EF4444] text-[11px] mt-1 ml-1">{errors.name}</span>
-                )}
+              
+              {/* Lead Contact Details Header / Separator */}
+              <div className="flex items-center gap-3 my-2">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-center text-xs font-semibold text-white/50 tracking-wider">
+                  Lead Contact Details
+                </span>
+                <button
+                  type="button"
+                  onClick={addContact}
+                  aria-label="Add another contact"
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white transition hover:border-[#75ADAF] hover:bg-white/10 active:scale-95"
+                >
+                  <Plus size={14} />
+                </button>
               </div>
 
-              {/* Email */}
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Email</label>
-                <input
-                  type="email"
-                  placeholder="Enter email address"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
-                    errors.email ? 'border-[#EF4444]' : 'border-white/12'
-                  }`}
-                />
-                {errors.email && (
-                  <span className="text-[#EF4444] text-[11px] mt-1 ml-1">{errors.email}</span>
-                )}
-              </div>
-              {/* Phone */}
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 font-sans">Phone</label>
-                <PhoneNumberInput
-                  value={form.phone}
-                  onChange={(val) => setForm((f) => ({ ...f, phone: val }))}
-                  placeholder="Enter phone number"
-                  defaultCountry="NG"
-                />
-              </div>
-              {/* Location */}
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Location</label>
-                <input
-                  type="text"
-                  placeholder="Enter location"
-                  value={form.location}
-                  onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                  className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
-                />
+              {/* Contact Paginator Slider Box */}
+              <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+                <button
+                  type="button"
+                  aria-label="Previous contact"
+                  disabled={!canGoBack}
+                  onClick={() => setActiveContactIndex(activeContactIndex - 1)}
+                  className="rounded-lg p-1.5 text-white/50 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="text-center">
+                  <p className="text-xs font-bold text-white leading-snug">
+                    Contact {activeContactIndex + 1} of {contacts.length}
+                  </p>
+                  <p className="text-[10px] text-[#75ADAF] leading-none mt-0.5">
+                    {activeContactIndex === 0 ? 'Primary contact' : 'Additional contact'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {contacts.length > 1 && (
+                    <button
+                      type="button"
+                      aria-label={`Remove contact ${activeContactIndex + 1}`}
+                      onClick={() => removeContact(activeContactIndex)}
+                      className="rounded-lg p-1.5 text-red-400/80 transition hover:bg-red-500/10 hover:text-red-400"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label="Next contact"
+                    disabled={!canGoForward}
+                    onClick={() => setActiveContactIndex(activeContactIndex + 1)}
+                    className="rounded-lg p-1.5 text-white/50 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
 
+              {/* Animated Form Fields container for active contact */}
+              <div key={activeContactIndex} className="space-y-4">
+                {/* Contact Name */}
+                <div className="flex flex-col">
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Name *</label>
+                  <input
+                    type="text"
+                    placeholder="E.g John Doe"
+                    value={currentContact.name}
+                    onChange={(e) => updateActiveContact('name', e.target.value)}
+                    className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
+                      currentContactErrors.name ? 'border-[#EF4444]' : 'border-white/12'
+                    }`}
+                  />
+                  {currentContactErrors.name && (
+                    <span className="text-[#EF4444] text-[11px] mt-1 ml-1">{currentContactErrors.name}</span>
+                  )}
+                </div>
+
+                {/* Contact Email */}
+                <div className="flex flex-col">
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Email</label>
+                  <input
+                    type="email"
+                    placeholder="E.g john.doe@example.com"
+                    value={currentContact.email ?? ''}
+                    onChange={(e) => updateActiveContact('email', e.target.value)}
+                    className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
+                      currentContactErrors.email ? 'border-[#EF4444]' : 'border-white/12'
+                    }`}
+                  />
+                  {currentContactErrors.email && (
+                    <span className="text-[#EF4444] text-[11px] mt-1 ml-1">{currentContactErrors.email}</span>
+                  )}
+                </div>
+
+                {/* Contact Phone */}
+                <div className="flex flex-col">
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 font-sans">Phone</label>
+                  <PhoneNumberInput
+                    value={currentContact.phone ?? ''}
+                    onChange={(val) => updateActiveContact('phone', val)}
+                    placeholder="E.g +44 555-0199"
+                    defaultCountry="NG"
+                  />
+                </div>
+
+                {/* Contact Location */}
+                <div className="flex flex-col">
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Location</label>
+                  <input
+                    type="text"
+                    placeholder="E.g New York, USA"
+                    value={currentContact.location ?? ''}
+                    onChange={(e) => updateActiveContact('location', e.target.value)}
+                    className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
+                  />
+                </div>
+              </div>
+
+              <div className="h-px bg-white/10 my-2" />
               <p className="text-[10px] text-white/45 -mt-1">Company & professional fields below are optional.</p>
 
               <div className="flex flex-col">

@@ -4,6 +4,7 @@ import type {
   leadNoteSchema,
   leadActivitySchema,
   leadSchema,
+  leadContactSchema,
   crmLabelSchema,
   crmPipelineSchema,
   agentUploadOverviewSchema,
@@ -15,6 +16,7 @@ import type {
 export type LeadActor = z.infer<typeof leadActorSchema>;
 export type LeadNote = z.infer<typeof leadNoteSchema>;
 export type LeadActivity = z.infer<typeof leadActivitySchema>;
+export type LeadContact = z.infer<typeof leadContactSchema>;
 export type Lead = z.infer<typeof leadSchema>;
 export type CrmLabel = z.infer<typeof crmLabelSchema>;
 export type CrmPipeline = z.infer<typeof crmPipelineSchema>;

@@ -5,7 +5,7 @@ import type {
   LeadsListCacheEntry,
 } from '@/lib/db/schema';
 import { appStore } from '@/lib/storage/stores';
-import type { CrmLabel, CrmPipeline, Lead, LeadsResult } from './types';
+import type { CrmLabel, CrmPipeline, Lead, LeadsResult, LeadContact } from './types';
 import { buildCacheId, stableFilterKey } from '@/lib/offline/cacheKeys';
 
 function listKey(companyId: number, filters?: unknown): string {
@@ -237,6 +237,7 @@ export function buildOptimisticLead(params: {
     next_action?: string | null;
     assigned_to_user_id?: number | null;
     meta?: Record<string, unknown> | null;
+    contacts?: LeadContact[];
   };
 }): Lead {
   const userId = getAuthUserId() ?? 0;
@@ -270,6 +271,7 @@ export function buildOptimisticLead(params: {
     pipeline: null,
     notes: [],
     activities: [],
+    contacts: params.payload.contacts ?? [],
     createdAt: now,
     updatedAt: now,
   };

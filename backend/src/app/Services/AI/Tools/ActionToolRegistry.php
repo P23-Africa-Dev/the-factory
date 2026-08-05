@@ -65,6 +65,7 @@ class ActionToolRegistry
             'crm.create_lead' => $this->createLead($user, $companyId, $args),
             'crm.send_email' => $this->sendLeadEmail($user, $companyId, $args),
             'kpis.create' => $this->createKpi($user, $companyId, $args),
+            'kpis.update' => $this->updateKpi($user, $companyId, $args),
             'org.users.create' => $this->createOrganizationUser($user, $companyId, $args),
             default => [
                 'tool' => $tool,
@@ -88,7 +89,10 @@ class ActionToolRegistry
             'assigned_agent_id' => $isAgent
                 ? ['prohibited']
                 : ['nullable', 'integer', 'exists:users,id'],
-            'assigned_agent_ids' => ['prohibited'],
+            'assigned_agent_ids' => $isAgent
+                ? ['prohibited']
+                : ['nullable', 'array', 'max:20'],
+            'assigned_agent_ids.*' => ['integer', 'exists:users,id'],
             'location' => ['nullable', 'string', 'min:2', 'max:255'],
             'address' => ['nullable', 'string', 'min:5', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -102,11 +106,10 @@ class ActionToolRegistry
         ])->validate();
 
         // Agents cannot assign tasks to others; managers/admins may assign,
-        // and TaskService will enforce tenant membership for assigned_agent_id.
+        // and TaskService will enforce tenant membership for assignees.
         if ($isAgent) {
-            unset($validated['assigned_agent_id']);
+            unset($validated['assigned_agent_id'], $validated['assigned_agent_ids']);
         }
-        unset($validated['assigned_agent_ids']);
 
         $payload = [
             ...$validated,
@@ -408,6 +411,8 @@ class ActionToolRegistry
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'priority' => ['required', 'string', Rule::in(KpiPriority::values())],
             'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assigned_to_user_ids' => ['nullable', 'array', 'max:20'],
+            'assigned_to_user_ids.*' => ['integer', 'exists:users,id'],
         ])->validate();
 
         $kpi = $this->kpiService->create($user, [
@@ -508,6 +513,45 @@ class ActionToolRegistry
                 'invite_expires_at' => $result['invite_expires_at']?->toIso8601String(),
             ],
             'sources' => ['org.users.create'],
+        ];
+    }
+
+    private function updateKpi(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'kpi_id' => ['required', 'integer', 'exists:kpis,id'],
+            'name' => ['nullable', 'string', 'min:3', 'max:255'],
+            'category' => ['nullable', 'string', Rule::in(KpiCategory::values())],
+            'objective' => ['nullable', 'string', 'min:10', 'max:5000'],
+            'target_value' => ['nullable', 'string', 'max:255'],
+            'expected_outcome' => ['nullable', 'string', 'min:10', 'max:5000'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'priority' => ['nullable', 'string', Rule::in(KpiPriority::values())],
+            'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ])->validate();
+
+        $kpi = \App\Models\Kpi::query()
+            ->where('company_id', $companyId)
+            ->findOrFail((int) $validated['kpi_id']);
+
+        $updated = $this->kpiService->update($user, $kpi, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'kpis.update',
+            'summary' => "KPI '{$updated->name}' was updated successfully.",
+            'payload' => [
+                'kpi_id' => (int) $updated->id,
+                'name' => (string) $updated->name,
+                'category' => $updated->category?->value,
+                'priority' => $updated->priority?->value,
+                'assigned_to_user_id' => $updated->assigned_to_user_id,
+                'status' => $updated->status?->value,
+            ],
+            'sources' => ['kpis.update'],
         ];
     }
 }
