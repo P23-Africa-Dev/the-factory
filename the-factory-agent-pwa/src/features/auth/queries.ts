@@ -53,11 +53,14 @@ export function useProfile(enabled: boolean = true) {
   });
 
   useEffect(() => {
-    if (query.data?.organization?.company_id) {
-      const cid = Number(query.data.organization.company_id);
-      if (!isNaN(cid) && cid > 0) {
-        setActiveCompanyId(cid);
-      }
+    const org = query.data?.organization;
+    const cid = org?.company_id 
+      ? Number(org.company_id) 
+      : (org?.company?.id 
+        ? Number(org.company.id) 
+        : (org?.assigned_company?.id ? Number(org.assigned_company.id) : NaN));
+    if (!isNaN(cid) && cid > 0) {
+      setActiveCompanyId(cid);
     }
   }, [query.data]);
 

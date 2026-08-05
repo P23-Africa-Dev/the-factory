@@ -16,7 +16,11 @@ export function useAgentIdentity(enabled = true) {
     const identity = profile.identity;
     const perms = profile.permissions;
     const org = profile.organization;
-    const compId = org?.company_id ? Number(org.company_id) : undefined;
+    const compId = org?.company_id 
+      ? Number(org.company_id) 
+      : (org?.company?.id 
+        ? Number(org.company.id) 
+        : (org?.assigned_company?.id ? Number(org.assigned_company.id) : undefined));
     console.log("profile", profile, compId);
     const syncKey = JSON.stringify({
       name: identity?.name,
