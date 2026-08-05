@@ -8,6 +8,8 @@ import {
   useUpdateLead,
   useCrmNavigation,
   type CrmLabel,
+  LeadContactsStack,
+  type LeadContact,
 } from '@/features/crm';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
@@ -383,22 +385,28 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                       )}
                     </button>
                   </div>
-                ) : (
-                  <div className="flex flex-col">
-                    <InfoRow label="Email" value={lead.email} />
-                    <InfoRow label="Phone" value={lead.phone} />
-                    <InfoRow label="Location" value={lead.location} />
-                    <InfoRow label="Source" value={lead.source} />
-                    <InfoRow label="Priority" value={lead.priority} />
-                    <InfoRow label="Next Action" value={lead.nextAction} />
-                    <InfoRow label="Last Interaction" value={lead.lastInteraction} />
-                    {!lead.email && !lead.phone && !lead.location && !lead.source && (
-                      <p className="text-xs text-white/40 italic">
-                        No additional information available.
-                      </p>
-                    )}
-                  </div>
-                )}
+                ) : (() => {
+                  const displayContacts: LeadContact[] = lead.contacts && lead.contacts.length > 0
+                    ? lead.contacts
+                    : [{ name: lead.name, email: lead.email, phone: lead.phone, location: lead.location }];
+
+                  return (
+                    <div className="flex flex-col gap-4">
+                      <LeadContactsStack contacts={displayContacts} />
+                      <div className="flex flex-col border-t border-white/5 pt-3">
+                        <InfoRow label="Source" value={lead.source} />
+                        <InfoRow label="Priority" value={lead.priority} />
+                        <InfoRow label="Next Action" value={lead.nextAction} />
+                        <InfoRow label="Last Interaction" value={lead.lastInteraction} />
+                        {!lead.email && !lead.phone && !lead.location && !lead.source && (
+                          <p className="text-xs text-white/40 italic">
+                            No additional information available.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Assignment Section */}

@@ -155,3 +155,13 @@ input:-webkit-autofill:active {
     font-size: 16px !important;
   }
 }
+
+/* Hide scrollbars but keep functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

@@ -415,6 +415,22 @@ class CopilotIntentResolver
             return 'drive.files';
         }
 
+        if (preg_match('/\b(location\s+history|where\s+did|track\s+history|history)\b/i', $normalized) === 1) {
+            return 'tracking.agent_history';
+        }
+
+        if (preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned)\b/i', $normalized) === 1) {
+            return 'map.pinned_locations_count';
+        }
+
+        if (preg_match('/\b(calls?\s+count|how\s+many\s+calls|logged\s+calls)\b/i', $normalized) === 1) {
+            return 'crm.calls_count';
+        }
+
+        if (preg_match('/\b(attendance\s+duration|clocked\s+in\s+duration|work\s+duration|duration\s+summary)\b/i', $normalized) === 1) {
+            return 'attendance.duration_summary';
+        }
+
         return null;
     }
 
@@ -491,6 +507,10 @@ class CopilotIntentResolver
         if (preg_match('/\b(send|write|draft)\s+(?:a\s+)?follow[\s-]?up\b/i', $normalized) === 1
             || preg_match('/\bfollow[\s-]?up\s+(?:to|with)\b/i', $normalized) === 1) {
             return 'crm.send_email';
+        }
+
+        if (preg_match('/\bkpi\b/i', $normalized) && preg_match('/\b(update|edit|change|modify|reassign)\b/i', $normalized) === 1) {
+            return 'kpis.update';
         }
 
         if (preg_match('/\bkpi\b/i', $normalized) && preg_match('/\b(create|add|new|set|define)\b/i', $normalized) === 1) {

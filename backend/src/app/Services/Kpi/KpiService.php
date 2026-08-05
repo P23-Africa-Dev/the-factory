@@ -90,27 +90,45 @@ class KpiService
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
         $this->accessService->ensureManager($context);
 
-        $assigneeId = isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null;
-        if ($assigneeId !== null) {
-            $this->ensureAgentBelongsToCompany((int) $context->company->id, $assigneeId);
+        $assigneeIds = [];
+        if (! empty($data['assigned_to_user_ids'])) {
+            $assigneeIds = array_map('intval', $data['assigned_to_user_ids']);
+        } elseif (isset($data['assigned_to_user_id'])) {
+            $assigneeIds = [(int) $data['assigned_to_user_id']];
         }
 
-        $kpi = Kpi::create([
-            'company_id' => $context->company->id,
-            'created_by_user_id' => $user->id,
-            'assigned_to_user_id' => $assigneeId,
-            'name' => $data['name'],
-            'category' => $data['category'],
-            'objective' => $data['objective'],
-            'target_value' => $data['target_value'],
-            'expected_outcome' => $data['expected_outcome'],
-            'priority' => $data['priority'] ?? 'medium',
-            'status' => KpiStatus::PENDING->value,
-            'start_date' => $data['start_date'],
-            'end_date' => $data['end_date'],
-        ]);
+        foreach ($assigneeIds as $assigneeId) {
+            $this->ensureAgentBelongsToCompany((int) $context->company->id, $assigneeId, $user);
+        }
 
-        return $this->loadKpi($kpi);
+        $createdKpis = [];
+
+        DB::transaction(function () use ($context, $user, $data, $assigneeIds, &$createdKpis): void {
+            if ($assigneeIds === []) {
+                $assigneeIds = [null];
+            }
+
+            foreach ($assigneeIds as $assigneeId) {
+                $kpi = Kpi::create([
+                    'company_id' => $context->company->id,
+                    'created_by_user_id' => $user->id,
+                    'assigned_to_user_id' => $assigneeId,
+                    'name' => $data['name'],
+                    'category' => $data['category'],
+                    'objective' => $data['objective'],
+                    'target_value' => $data['target_value'],
+                    'expected_outcome' => $data['expected_outcome'],
+                    'priority' => $data['priority'] ?? 'medium',
+                    'status' => KpiStatus::PENDING->value,
+                    'start_date' => $data['start_date'],
+                    'end_date' => $data['end_date'],
+                ]);
+                $createdKpis[] = $kpi;
+            }
+        });
+
+        $firstKpi = $createdKpis[0];
+        return $this->loadKpi($firstKpi);
     }
 
     public function findForUser(User $user, Kpi $kpi, ?int $companyId = null): Kpi
@@ -149,7 +167,7 @@ class KpiService
         }
 
         if ($assigneeId !== null) {
-            $this->ensureAgentBelongsToCompany((int) $context->company->id, $assigneeId);
+            $this->ensureAgentBelongsToCompany((int) $context->company->id, $assigneeId, $user);
         }
 
         $kpi->update([
@@ -271,7 +289,7 @@ class KpiService
         }
     }
 
-    private function ensureAgentBelongsToCompany(int $companyId, int $userId): void
+    private function ensureAgentBelongsToCompany(int $companyId, int $userId, ?User $creator = null): void
     {
         $membership = DB::table('company_users')
             ->where('company_id', $companyId)
@@ -288,6 +306,22 @@ class KpiService
             throw ValidationException::withMessages([
                 'assigned_to_user_id' => ['Selected user must have agent role.'],
             ]);
+        }
+
+        if ($creator !== null) {
+            $creatorMembership = DB::table('company_users')
+                ->where('company_id', $companyId)
+                ->where('user_id', $creator->id)
+                ->first();
+
+            if ($creatorMembership && (string) $creatorMembership->role === 'supervisor') {
+                $assigneeUser = User::query()->find($userId);
+                if (! $assigneeUser || (int) $assigneeUser->supervisor_user_id !== (int) $creator->id) {
+                    throw ValidationException::withMessages([
+                        'assigned_to_user_id' => ['You can only assign KPIs to agents under your direct supervision.'],
+                    ]);
+                }
+            }
         }
     }
 

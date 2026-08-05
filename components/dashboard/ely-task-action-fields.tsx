@@ -89,6 +89,9 @@ function requiredActionsToString(raw: unknown): string {
  */
 function upgradeNumericAssignee(value: string, assigneeOptions: ElyTaskAssigneeOption[]): string {
   const trimmed = value.trim();
+  if (trimmed.includes(",")) {
+    return trimmed.split(",").map((token) => upgradeNumericAssignee(token, assigneeOptions)).join(", ");
+  }
   if (trimmed === "" || !/^\d+$/.test(trimmed)) {
     return trimmed;
   }
@@ -100,8 +103,20 @@ function resolveAssigneeSeed(
   args: Record<string, unknown>,
   assigneeOptions: ElyTaskAssigneeOption[],
 ): string {
+  if (Array.isArray(args.assigned_agent_ids) && args.assigned_agent_ids.length > 0) {
+    const emails = args.assigned_agent_ids
+      .map((id) => {
+        const matched = assigneeOptions.find((item) => item.id === Number(id));
+        return matched?.email ?? String(id);
+      })
+      .filter(Boolean);
+    return emails.join(", ");
+  }
+
   if (typeof args.assignee === "string" && args.assignee.trim() !== "") {
-    return upgradeNumericAssignee(args.assignee, assigneeOptions);
+    const tokens = args.assignee.split(",").map((t) => t.trim()).filter(Boolean);
+    const upgraded = tokens.map((token) => upgradeNumericAssignee(token, assigneeOptions));
+    return upgraded.join(", ");
   }
 
   const assignedId = asNumberOrNull(args.assigned_agent_id);
@@ -303,26 +318,23 @@ export function ElyTaskActionFields({
 
       {!isAgent && (
         <div className="grid gap-1">
-          <label className="text-[11px] text-[#8CB9B3]">Assignee</label>
+          <label className="text-[11px] text-[#8CB9B3]">Assignees</label>
           <select
-            value={currentDraft.assignee}
-            onChange={(e) => updateDraft({ assignee: e.target.value })}
-            className={INPUT_CLASS}
+            multiple={true}
+            value={currentDraft.assignee.split(",").map((t) => t.trim()).filter(Boolean)}
+            onChange={(e) => {
+              const selectedValues = Array.from(e.target.selectedOptions, (option) => option.value);
+              updateDraft({ assignee: selectedValues.join(", ") });
+            }}
+            className={`${INPUT_CLASS} h-24`}
           >
-            <option value="">
-              {loadingAssignees ? "Loading agents…" : "Select assignee"}
-            </option>
-            {currentDraft.assignee !== ""
-              && !assigneeOptions.some((item) => item.email === currentDraft.assignee)
-              && (
-                <option value={currentDraft.assignee}>{currentDraft.assignee}</option>
-              )}
             {assigneeOptions.map((option) => (
               <option key={option.id} value={option.email}>
                 {option.name}
               </option>
             ))}
           </select>
+          <p className="text-[9px] text-[#8CB9B3]/50">Hold Cmd/Ctrl to select multiple agents.</p>
         </div>
       )}
 
