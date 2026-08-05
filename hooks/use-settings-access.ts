@@ -10,6 +10,7 @@ export type SettingsSectionId =
   | "profile"
   | "notifications"
   | "calendar"
+  | "email-accounts"
   | "security"
   | "organization"
   | "zones"
@@ -70,7 +71,15 @@ export function useSettingsAccess() {
         id: "calendar",
         label: "Google Account",
         scope: "personal",
-        description: "Connect Google for meetings and CRM email",
+        description: "Connect Google for meetings and calendar sync",
+        canView: true,
+        canEdit: true,
+      },
+      {
+        id: "email-accounts",
+        label: "Email Accounts",
+        scope: "personal",
+        description: "Connect email accounts for CRM sending and sync",
         canView: true,
         canEdit: true,
       },

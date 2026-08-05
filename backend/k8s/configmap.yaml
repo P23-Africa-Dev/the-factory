@@ -127,6 +127,16 @@ data:
   # Least privilege: gmail.modify already includes read access, so gmail.readonly is omitted.
   GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
 
+  # ── Email Accounts OAuth (mailbox connect) ──────────────────────────────────
+  GOOGLE_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/google/callback"
+  GOOGLE_MAIL_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+  MICROSOFT_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/microsoft/callback"
+  MICROSOFT_MAIL_TENANT: "common"
+  MICROSOFT_MAIL_SCOPES: "openid,email,profile,offline_access,https://graph.microsoft.com/Mail.ReadWrite,https://graph.microsoft.com/Mail.Send,https://graph.microsoft.com/User.Read"
+  ZOHO_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/zoho/callback"
+  ZOHO_MAIL_DATACENTER: "com"
+  ZOHO_MAIL_SCOPES: "ZohoMail.messages.ALL,ZohoMail.accounts.READ"
+
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"
   MAIL_FROM_ADDRESS: "noreply@thefactory23.com"

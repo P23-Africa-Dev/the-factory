@@ -63,6 +63,7 @@ export type CrmEmailThread = {
 
 export type SendCrmEmailPayload = {
     company_id?: number | string;
+    email_account_id?: number;
     to: EmailRecipient[];
     cc?: EmailRecipient[];
     bcc?: EmailRecipient[];

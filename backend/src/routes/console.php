@@ -55,7 +55,7 @@ Schedule::command('attendance:generate-monthly-payroll')->monthlyOn(1, '00:30');
 Schedule::command('ai:prune-logs --days=30')->dailyAt('03:00');
 Schedule::command('ai:health-check')->everyTenMinutes();
 
-// Incremental Gmail sync for CRM email conversations.
+// Incremental email sync for CRM email conversations (all providers).
 Schedule::command('crm:sync-gmail')->everyTenMinutes();
 
 Schedule::command('billing:process-subscriptions')->dailyAt('01:00');

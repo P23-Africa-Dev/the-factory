@@ -53,6 +53,48 @@ return [
         ))))),
     ],
 
+    // Email Accounts OAuth — reuses Google client credentials by default; dedicated redirect + Gmail scopes.
+    'google_mail' => [
+        'client_id' => env('GOOGLE_MAIL_CLIENT_ID', env('GOOGLE_CALENDAR_CLIENT_ID')),
+        'client_secret' => env('GOOGLE_MAIL_CLIENT_SECRET', env('GOOGLE_CALENDAR_CLIENT_SECRET')),
+        'redirect_uri' => env(
+            'GOOGLE_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/google/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'GOOGLE_MAIL_SCOPES',
+            'openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
+        ))))),
+    ],
+
+    'microsoft_mail' => [
+        'client_id' => env('MICROSOFT_MAIL_CLIENT_ID'),
+        'client_secret' => env('MICROSOFT_MAIL_CLIENT_SECRET'),
+        'tenant' => env('MICROSOFT_MAIL_TENANT', 'common'),
+        'redirect_uri' => env(
+            'MICROSOFT_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/microsoft/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'MICROSOFT_MAIL_SCOPES',
+            'openid,email,profile,offline_access,https://graph.microsoft.com/Mail.ReadWrite,https://graph.microsoft.com/Mail.Send,https://graph.microsoft.com/User.Read',
+        ))))),
+    ],
+
+    'zoho_mail' => [
+        'client_id' => env('ZOHO_MAIL_CLIENT_ID'),
+        'client_secret' => env('ZOHO_MAIL_CLIENT_SECRET'),
+        'datacenter' => env('ZOHO_MAIL_DATACENTER', 'com'),
+        'redirect_uri' => env(
+            'ZOHO_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/zoho/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'ZOHO_MAIL_SCOPES',
+            'ZohoMail.messages.ALL,ZohoMail.accounts.READ',
+        ))))),
+    ],
+
     'mapbox' => [
         // Use a server-side token when available, fallback keeps local/dev parity.
         'access_token' => env('MAPBOX_ACCESS_TOKEN', env('NEXT_PUBLIC_MAPBOX_TOKEN')),

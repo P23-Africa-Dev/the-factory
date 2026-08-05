@@ -13,6 +13,7 @@ import {
 import { ProfileSummaryCard } from "@/components/settings/personal/profile-summary-card";
 import { NotificationsPanel } from "@/components/settings/personal/notifications-panel";
 import { CalendarUserPanel } from "@/components/settings/personal/calendar-user-panel";
+import { EmailAccountsPanel } from "@/components/settings/personal/email-accounts-panel";
 import { SecurityPanel } from "@/components/settings/personal/security-panel";
 import { OrgProfilePanel } from "@/components/settings/organization/org-profile-panel";
 import { ZonesSettingsPanel } from "@/components/settings/organization/zones-settings-panel";
@@ -40,6 +41,8 @@ function SectionContent({ sectionId }: { sectionId: SettingsSectionId }) {
       return <NotificationsPanel />;
     case "calendar":
       return <CalendarUserPanel />;
+    case "email-accounts":
+      return <EmailAccountsPanel />;
     case "security":
       return <SecurityPanel />;
     case "organization":

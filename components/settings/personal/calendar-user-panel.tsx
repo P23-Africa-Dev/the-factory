@@ -82,7 +82,7 @@ export function CalendarUserPanel() {
   return (
     <SettingsSectionCard
       title="Google Account"
-      description="Connect Google to sync meetings and use CRM email from your mailbox"
+      description="Connect Google to sync meetings and calendar events"
       scope="personal"
     >
       {isLoading ? (
@@ -108,7 +108,7 @@ export function CalendarUserPanel() {
               )}
               {!connected && (
                 <p className="text-[12px] text-gray-600 mt-0.5">
-                  Connect to schedule meetings, sync your calendar, and send or sync CRM follow-up emails.
+                  Connect to schedule meetings and sync your Google Calendar.
                 </p>
               )}
               {status?.requires_reauthentication && (

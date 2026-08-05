@@ -38,6 +38,8 @@ use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Drive\DriveController;
+use App\Http\Controllers\Api\V1\EmailAccountController;
+use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
 use App\Http\Controllers\Api\V1\Enterprise\CompleteFirstTimeSetupController;
 use App\Http\Controllers\Api\V1\Enterprise\EnterpriseLoginController;
@@ -107,6 +109,10 @@ Route::post('/support-access/exchange', [SupportAccessController::class, 'exchan
 Route::get('/calendar/integration/callback', [CalendarIntegrationController::class, 'callback'])
     ->middleware('throttle:api')
     ->name('calendar.integration.callback');
+Route::get('/email-accounts/oauth/{provider}/callback', [EmailAccountOAuthController::class, 'callback'])
+    ->whereIn('provider', ['google', 'microsoft', 'zoho'])
+    ->middleware('throttle:api')
+    ->name('email-accounts.oauth.callback');
 
 Route::post('/billing/webhook', [BillingWebhookController::class, 'handleWebhook'])
     ->name('billing.webhook');
@@ -658,6 +664,30 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->name('leads.emails.attachments.upload');
             });
 
+            Route::prefix('email-accounts')->name('email-accounts.')->group(function (): void {
+                Route::get('/', [EmailAccountController::class, 'index'])->name('index');
+                Route::post('/', [EmailAccountController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('store');
+                Route::get('/oauth/{provider}/authorize', [EmailAccountOAuthController::class, 'authorize'])
+                    ->whereIn('provider', ['google', 'microsoft', 'zoho'])
+                    ->middleware('throttle:api')
+                    ->name('oauth.authorize');
+                Route::get('/{account}', [EmailAccountController::class, 'show'])->name('show');
+                Route::patch('/{account}', [EmailAccountController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('update');
+                Route::delete('/{account}', [EmailAccountController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('destroy');
+                Route::post('/{account}/test', [EmailAccountController::class, 'test'])
+                    ->middleware('throttle:api')
+                    ->name('test');
+                Route::post('/{account}/refresh', [EmailAccountController::class, 'refresh'])
+                    ->middleware('throttle:api')
+                    ->name('refresh');
+            });
+
             Route::prefix('locations')->name('locations.')->group(function (): void {
                 Route::get('/', [CompanyLocationController::class, 'index'])->name('index');
                 Route::post('/', [CompanyLocationController::class, 'store'])
@@ -786,6 +816,30 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
                     ->middleware('throttle:api')
                     ->name('leads.emails.attachments.upload');
+            });
+
+            Route::prefix('email-accounts')->name('email-accounts.')->group(function (): void {
+                Route::get('/', [EmailAccountController::class, 'index'])->name('index');
+                Route::post('/', [EmailAccountController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('store');
+                Route::get('/oauth/{provider}/authorize', [EmailAccountOAuthController::class, 'authorize'])
+                    ->whereIn('provider', ['google', 'microsoft', 'zoho'])
+                    ->middleware('throttle:api')
+                    ->name('oauth.authorize');
+                Route::get('/{account}', [EmailAccountController::class, 'show'])->name('show');
+                Route::patch('/{account}', [EmailAccountController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('update');
+                Route::delete('/{account}', [EmailAccountController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('destroy');
+                Route::post('/{account}/test', [EmailAccountController::class, 'test'])
+                    ->middleware('throttle:api')
+                    ->name('test');
+                Route::post('/{account}/refresh', [EmailAccountController::class, 'refresh'])
+                    ->middleware('throttle:api')
+                    ->name('refresh');
             });
 
             Route::prefix('locations')->name('locations.')->group(function (): void {
@@ -1177,6 +1231,30 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
             ->middleware('throttle:api')
             ->name('leads.emails.attachments.upload');
+    });
+
+    Route::prefix('email-accounts')->name('email-accounts.')->group(function (): void {
+        Route::get('/', [EmailAccountController::class, 'index'])->name('index');
+        Route::post('/', [EmailAccountController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('store');
+        Route::get('/oauth/{provider}/authorize', [EmailAccountOAuthController::class, 'authorize'])
+            ->whereIn('provider', ['google', 'microsoft', 'zoho'])
+            ->middleware('throttle:api')
+            ->name('oauth.authorize');
+        Route::get('/{account}', [EmailAccountController::class, 'show'])->name('show');
+        Route::patch('/{account}', [EmailAccountController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('update');
+        Route::delete('/{account}', [EmailAccountController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('destroy');
+        Route::post('/{account}/test', [EmailAccountController::class, 'test'])
+            ->middleware('throttle:api')
+            ->name('test');
+        Route::post('/{account}/refresh', [EmailAccountController::class, 'refresh'])
+            ->middleware('throttle:api')
+            ->name('refresh');
     });
 
     Route::get('/dashboard/overview', DashboardOverviewController::class)
