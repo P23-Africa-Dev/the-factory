@@ -543,7 +543,8 @@ function ConnectProviderPicker({
 }
 
 export function EmailAccountsPanel() {
-  const { companyId } = useSettingsAccess();
+  const { companyId: rawCompanyId } = useSettingsAccess();
+  const companyId = rawCompanyId ?? undefined;
   const queryClient = useQueryClient();
   const [connectMode, setConnectMode] = useState<"closed" | "picker" | "imap">("closed");
 
