@@ -529,6 +529,8 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->name('agents.journeys');
                 Route::get('/journeys/{session}', [FieldActivityManagementController::class, 'showJourney'])
                     ->name('journeys.show');
+                Route::get('/live', [FieldActivityManagementController::class, 'live'])
+                    ->name('live');
             });
 
             Route::prefix('internal-users')->name('internal-users.')->group(function (): void {
@@ -1076,6 +1078,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/journeys/{session}', [FieldActivityManagementController::class, 'showJourney'])
             ->middleware('access.role:management')
             ->name('journeys.show');
+        Route::get('/live', [FieldActivityManagementController::class, 'live'])
+            ->middleware('access.role:management')
+            ->name('live');
 
         Route::get('/today', [FieldActivityAgentController::class, 'today'])
             ->middleware('access.role:agent')

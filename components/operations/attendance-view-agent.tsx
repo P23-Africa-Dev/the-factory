@@ -10,6 +10,11 @@ import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 import { useAttendanceStats, useAttendanceToday, useClockIn, useClockOut, useAttendanceHistory } from "@/hooks/use-attendance";
 import { JourneyHistoryPanel } from "@/components/operations/journey-history-panel";
+import {
+  AgentDayReviewModal,
+  AgentPileInboxButton,
+  AgentPileInboxPanel,
+} from "@/components/operations/agent-field-review";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { AgentAttendanceRecord } from "@/lib/api/attendance";
@@ -285,6 +290,8 @@ export function AttendanceViewAgent() {
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [selectedId, setSelectedId] = useState<number | string | null>(null);
   const [page, setPage] = useState(1);
+  const [dayReviewOpen, setDayReviewOpen] = useState(false);
+  const [pileInboxOpen, setPileInboxOpen] = useState(false);
 
   const { user } = useAuthStore();
   const { apiCompanyId } = getActiveCompanyContext(user);
@@ -365,7 +372,10 @@ export function AttendanceViewAgent() {
       });
     } else if (clockOut) {
       clockOutMut.mutate(payload, {
-        onSuccess: () => toast.success("Clocked out successfully!"),
+        onSuccess: () => {
+          toast.success("Clocked out successfully!");
+          setDayReviewOpen(true);
+        },
         onError: (err: Error) => toast.error(err.message ?? "Failed to clock out."),
       });
     } else {
@@ -416,6 +426,7 @@ export function AttendanceViewAgent() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5 shrink-0">
+          <AgentPileInboxButton onClick={() => setPileInboxOpen(true)} />
           {/* Monthly Filter */}
           <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E5E5] rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-all">
             <span>Monthly</span>
@@ -727,6 +738,12 @@ export function AttendanceViewAgent() {
       </div>
 
       {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
+      <AgentDayReviewModal
+        open={dayReviewOpen}
+        onClose={() => setDayReviewOpen(false)}
+        onPile={() => setPileInboxOpen(true)}
+      />
+      <AgentPileInboxPanel open={pileInboxOpen} onClose={() => setPileInboxOpen(false)} />
     </div>
   );
 }

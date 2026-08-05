@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useTrackingStore } from "@/store/tracking";
 import { useAttendanceMapStore } from "@/store/attendance-map";
+import { useFieldActivityLiveStore } from "@/store/field-activity-live";
 import type { AttendanceMapSnapshotItem } from "@/lib/api/attendance";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -314,7 +315,71 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         }
 
         if (msg.type === "attendance.clocked_out" && msg.payload?.user_id) {
-          attendanceStore.removeSnapshot(Number(msg.payload.user_id));
+          const userId = Number(msg.payload.user_id);
+          attendanceStore.removeSnapshot(userId);
+          useFieldActivityLiveStore.getState().removeAgent(userId);
+        }
+        return;
+      }
+
+      if (msg.type === "field_activity.location") {
+        const payload = msg.payload as {
+          user_id?: number;
+          field_activity_session_id?: number;
+          latitude?: number;
+          longitude?: number;
+          movement_state?: string | null;
+          recorded_at?: string | null;
+        } | undefined;
+        if (
+          payload?.user_id != null &&
+          payload.latitude != null &&
+          payload.longitude != null &&
+          Number.isFinite(payload.latitude) &&
+          Number.isFinite(payload.longitude)
+        ) {
+          useFieldActivityLiveStore.getState().appendPoint(
+            Number(payload.user_id),
+            [Number(payload.longitude), Number(payload.latitude)],
+            {
+              sessionId: payload.field_activity_session_id
+                ? Number(payload.field_activity_session_id)
+                : undefined,
+              movementState: payload.movement_state ?? null,
+              recordedAt: payload.recorded_at ?? null,
+            },
+          );
+        }
+        return;
+      }
+
+      if (msg.type === "field_activity.stop_created") {
+        const payload = msg.payload as {
+          user_id?: number;
+          stop?: {
+            id: number;
+            field_activity_session_id: number;
+            latitude: number;
+            longitude: number;
+            address?: string | null;
+            duration_seconds?: number;
+            classification?: string | null;
+            arrived_at?: string | null;
+            departed_at?: string | null;
+          };
+        } | undefined;
+        if (payload?.user_id != null && payload.stop?.id != null) {
+          useFieldActivityLiveStore.getState().upsertStop(Number(payload.user_id), {
+            id: payload.stop.id,
+            field_activity_session_id: payload.stop.field_activity_session_id,
+            latitude: payload.stop.latitude,
+            longitude: payload.stop.longitude,
+            address: payload.stop.address,
+            duration_seconds: payload.stop.duration_seconds,
+            classification: payload.stop.classification,
+            arrived_at: payload.stop.arrived_at,
+            departed_at: payload.stop.departed_at,
+          });
         }
       }
     };

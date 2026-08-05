@@ -99,6 +99,67 @@ class FieldActivityApiTest extends TestCase
         $this->assertSame('stopped', $point->movement_state?->value);
     }
 
+    public function test_management_live_hydrate_returns_active_route_and_stops(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_m' => 10,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('company_id', $company->id)->where('user_id', $agent->id)->firstOrFail();
+
+        FieldLocationPoint::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'latitude' => 6.5300,
+            'longitude' => 3.3800,
+            'movement_state' => 'moving',
+            'recorded_at' => Carbon::parse('2026-07-29 10:15:00', 'Africa/Lagos'),
+        ]);
+
+        FieldStop::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'arrived_at' => Carbon::parse('2026-07-29 11:00:00', 'Africa/Lagos'),
+            'departed_at' => null,
+            'latitude' => 6.53,
+            'longitude' => 3.38,
+            'duration_seconds' => 900,
+            'confidence' => 0.4,
+            'match_type' => 'unknown',
+            'classification' => 'pending',
+        ]);
+
+        $this->actingAs($owner, 'sanctum')
+            ->getJson("/api/v1/field-activity/live?company_id={$company->id}&date=2026-07-29")
+            ->assertOk()
+            ->assertJsonPath('data.date', '2026-07-29')
+            ->assertJsonPath('data.agents.0.user_id', $agent->id)
+            ->assertJsonPath('data.agents.0.session.id', $session->id);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson("/api/v1/field-activity/live?company_id={$company->id}&date=2026-07-29")
+            ->assertOk();
+
+        $agents = $response->json('data.agents');
+        $this->assertIsArray($agents);
+        $this->assertCount(1, $agents);
+        $this->assertGreaterThanOrEqual(1, count($agents[0]['route']['coordinates'] ?? []));
+        $this->assertCount(1, $agents[0]['stops'] ?? []);
+    }
+
     public function test_clock_in_skips_field_session_when_disabled(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();

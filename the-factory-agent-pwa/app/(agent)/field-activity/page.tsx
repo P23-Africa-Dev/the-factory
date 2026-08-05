@@ -2,7 +2,13 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { FieldActivitySummaryCard } from '@/features/field-activity';
+import {
+  FieldActivitySummaryCard,
+  DayReviewSheet,
+  PileInboxBadge,
+  PileInboxSheet,
+  PendingReviewSoftBanner,
+} from '@/features/field-activity';
 
 export default function FieldActivityPage(): React.ReactElement {
   return (
@@ -21,7 +27,11 @@ export default function FieldActivityPage(): React.ReactElement {
           Journey History
         </Link>
       </header>
+      <PendingReviewSoftBanner />
+      <PileInboxBadge />
       <FieldActivitySummaryCard />
+      <DayReviewSheet />
+      <PileInboxSheet />
     </main>
   );
 }

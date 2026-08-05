@@ -265,3 +265,119 @@ export function getJourneyDetail(
     token,
   });
 }
+
+export type FieldActivityLiveStopDto = {
+  id: number;
+  field_activity_session_id: number;
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+  duration_seconds?: number;
+  classification?: string | null;
+  arrived_at?: string | null;
+  departed_at?: string | null;
+};
+
+export type FieldActivityLiveAgentDto = {
+  user_id: number;
+  name: string;
+  avatar_url: string | null;
+  session: {
+    id: number;
+    status: string;
+    started_at: string | null;
+    last_latitude: number | null;
+    last_longitude: number | null;
+    last_movement_state: string | null;
+    last_recorded_at: string | null;
+  };
+  last_latitude: number | null;
+  last_longitude: number | null;
+  last_movement_state: string | null;
+  last_recorded_at: string | null;
+  route: {
+    coordinates: [number, number][];
+    raw_point_count: number;
+    point_count: number;
+  };
+  stops: FieldActivityLiveStopDto[];
+};
+
+export type FieldActivityLiveResponse = {
+  date: string;
+  agents: FieldActivityLiveAgentDto[];
+};
+
+export function getFieldActivityLive(
+  params: { company_id?: number | string; date?: string },
+  token: string,
+) {
+  return apiRequest<FieldActivityLiveResponse>({
+    method: "GET",
+    path: withQuery("/field-activity/live", {
+      company_id: params.company_id,
+      date: params.date,
+    }),
+    token,
+  });
+}
+
+export type AgentPendingFieldStop = {
+  id: number;
+  field_activity_session_id: number;
+  arrived_at: string | null;
+  departed_at: string | null;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  duration_seconds: number;
+  classification: string;
+  lead_id?: number | null;
+};
+
+export type AgentPendingReviewSession = {
+  session_id: number;
+  started_at: string | null;
+  ended_at: string | null;
+  status: string | null;
+  pending_stop_count: number;
+  stops: AgentPendingFieldStop[];
+};
+
+export type AgentPendingReviewPayload = {
+  pending_stop_count: number;
+  pending_session_count: number;
+  oldest_pending_date: string | null;
+  sessions: AgentPendingReviewSession[];
+};
+
+export function getAgentPendingReview(
+  params: { company_id?: number | string },
+  token: string,
+) {
+  return apiRequest<AgentPendingReviewPayload>({
+    method: "GET",
+    path: withQuery("/agent/field-activity/pending-review", {
+      company_id: params.company_id,
+    }),
+    token,
+  });
+}
+
+export function classifyAgentFieldStop(
+  stopId: number,
+  payload: {
+    company_id?: number;
+    classification: string;
+    lead_id?: number;
+    source?: string;
+  },
+  token: string,
+) {
+  return apiRequest<{ stop: AgentPendingFieldStop }>({
+    method: "POST",
+    path: `/agent/field-activity/stops/${stopId}/classify`,
+    body: payload,
+    token,
+  });
+}

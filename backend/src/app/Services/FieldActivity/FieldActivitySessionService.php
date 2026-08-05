@@ -26,7 +26,6 @@ use App\Support\GeoDistance;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -41,6 +40,7 @@ class FieldActivitySessionService
         private readonly FieldCrmBridgeService $crmBridgeService,
         private readonly AgentLocationSnapshotService $snapshotService,
         private readonly NotificationService $notificationService,
+        private readonly FieldActivityRealtimeService $realtimeService,
     ) {}
 
     public function startForAttendance(AttendanceRecord $record, Company $company): ?FieldActivitySession
@@ -450,28 +450,7 @@ class FieldActivitySessionService
 
     private function publishRealtime(FieldActivitySession $session, FieldLocationPoint $point): void
     {
-        try {
-            $prefix = (string) config('field_activity.redis_channel_prefix', 'factory23.tracking');
-            $payload = [
-                'type' => 'field_activity.location',
-                'channel' => "{$prefix}.company.{$session->company_id}",
-                'payload' => [
-                    'field_activity_session_id' => $session->id,
-                    'user_id' => $session->user_id,
-                    'company_id' => $session->company_id,
-                    'latitude' => $point->latitude,
-                    'longitude' => $point->longitude,
-                    'movement_state' => $point->movement_state?->value,
-                    'recorded_at' => $point->recorded_at?->toIso8601String(),
-                ],
-            ];
-            Redis::connection('pubsub')->publish(
-                "{$prefix}.company.{$session->company_id}",
-                json_encode($payload, JSON_THROW_ON_ERROR),
-            );
-        } catch (Throwable $e) {
-            Log::debug('field_activity.realtime_publish_failed', ['message' => $e->getMessage()]);
-        }
+        $this->realtimeService->publishLocation($session, $point);
     }
 
     private function maybeSendStopReminder(FieldActivitySession $session): void
@@ -531,8 +510,8 @@ class FieldActivitySessionService
             ),
             'reference_type' => FieldDailySummary::class,
             'reference_id' => (int) $summary->id,
-            'action_url' => '/agent/field-activity',
-            'action_route' => 'field-activity.today',
+            'action_url' => '/agent/field-activity?inbox=1',
+            'action_route' => 'field-activity.pending-review',
             'priority' => NotificationPriority::NORMAL->value,
             'created_by_user_id' => null,
             'metadata' => [

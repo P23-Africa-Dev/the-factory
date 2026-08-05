@@ -18,6 +18,7 @@ class FieldStopDetectionService
 {
     public function __construct(
         private readonly FieldLocationIntelligenceService $intelligenceService,
+        private readonly FieldActivityRealtimeService $realtimeService,
     ) {}
 
     /**
@@ -179,7 +180,10 @@ class FieldStopDetectionService
 
         $this->refreshSessionStopCounts($session);
 
-        return $stop->fresh() ?? $stop;
+        $fresh = $stop->fresh() ?? $stop;
+        $this->realtimeService->publishStopCreated($session, $fresh);
+
+        return $fresh;
     }
 
     private function closeStop(FieldStop $stop, Carbon $departedAt): void
