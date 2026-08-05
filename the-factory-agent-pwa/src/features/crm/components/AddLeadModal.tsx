@@ -204,7 +204,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
             className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-6 pt-3 pb-8 max-h-[90vh] overflow-y-auto flex flex-col"
           >
             {/* Drag Handle representation */}
-            <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-5 flex-shrink-0" />
+            {/* <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-5 flex-shrink-0" /> */}
 
             <h3 className="text-lg font-bold text-white mb-5">
               Add New Lead
