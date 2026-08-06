@@ -346,8 +346,8 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => false,
                 'code' => 'missing_password',
-                'message' => 'SMTP password is missing.',
-                'fix' => 'Enter the SMTP password (for Gmail use an App Password) and save again.',
+                'message' => 'SMTP password is required.',
+                'fix' => 'Enter your email password and try again. Some providers need an app password instead of your normal password.',
             ];
         }
 
@@ -362,7 +362,7 @@ class ImapSmtpProvider implements EmailProviderInterface
                 'ok' => false,
                 'code' => 'invalid_host',
                 'message' => 'SMTP host or port is invalid.',
-                'fix' => 'Set a valid SMTP host and port (Gmail: smtp.gmail.com, 465 SSL or 587 TLS).',
+                'fix' => 'Check the outgoing mail host and port from your email provider, then try again.',
             ];
         }
 
@@ -384,7 +384,7 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => true,
                 'code' => 'ok',
-                'message' => "SMTP verified ({$host}:{$port}).",
+                'message' => 'Outgoing email connected successfully.',
                 'fix' => null,
             ];
         } catch (\Throwable $e) {
@@ -409,8 +409,8 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => false,
                 'code' => 'extension_missing',
-                'message' => 'Inbox (IMAP) cannot be tested on this server.',
-                'fix' => 'Enable the PHP IMAP extension (php.ini: extension=imap) and restart Apache/PHP, or use Google/Microsoft OAuth for inbox sync. SMTP sending can still work without IMAP.',
+                'message' => 'Inbox sync is temporarily unavailable.',
+                'fix' => 'You can still send email if SMTP is working. Contact support if you need inbox sync enabled.',
             ];
         }
 
@@ -418,8 +418,8 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => false,
                 'code' => 'missing_password',
-                'message' => 'IMAP password is missing.',
-                'fix' => 'Enter the IMAP password (or App Password) and save again.',
+                'message' => 'IMAP password is required.',
+                'fix' => 'Enter your email password and try again. Some providers need an app password instead of your normal password.',
             ];
         }
 
@@ -432,7 +432,7 @@ class ImapSmtpProvider implements EmailProviderInterface
                 'ok' => false,
                 'code' => 'invalid_host',
                 'message' => 'IMAP host or port is invalid.',
-                'fix' => 'Set a valid IMAP host and port (Gmail: imap.gmail.com:993 SSL).',
+                'fix' => 'Check the incoming mail host and port from your email provider, then try again.',
             ];
         }
 
@@ -446,7 +446,7 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => true,
                 'code' => 'ok',
-                'message' => "IMAP verified ({$host}:{$port}).",
+                'message' => 'Inbox connected successfully.',
                 'fix' => null,
             ];
         } catch (ValidationException $e) {
@@ -520,10 +520,8 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => false,
                 'code' => 'auth_failed',
-                'message' => "{$channel} login was rejected for {$endpoint}.",
-                'fix' => $channel === 'SMTP' || $channel === 'IMAP'
-                    ? 'Use the full email as username. For Gmail/Yahoo/Outlook, use an App Password (not your normal login password), and confirm 2FA is enabled where required.'
-                    : 'Check username and password.',
+                'message' => 'Email login failed.',
+                'fix' => 'Check your email and password. If your provider uses two-factor authentication, use an app password instead of your normal password.',
             ];
         }
 
@@ -532,15 +530,11 @@ class ImapSmtpProvider implements EmailProviderInterface
             || str_contains($lower, 'timeout')
             || str_contains($lower, 'unable to connect')
         ) {
-            $alt = $channel === 'SMTP'
-                ? 'If you used port 465/SSL, try smtp.gmail.com port 587 with TLS. Outbound SMTP is often blocked on local/XAMPP or by ISPs — deploy/test on the production server if this keeps timing out.'
-                : 'Confirm host/port/encryption, or test from a server that allows outbound IMAP.';
-
             return [
                 'ok' => false,
                 'code' => 'timeout',
-                'message' => "{$channel} could not reach {$endpoint} (connection timed out).",
-                'fix' => $alt,
+                'message' => 'We could not connect to your mail server in time.',
+                'fix' => 'Please confirm the host, port, and encryption are correct with your email provider, then try again. If everything looks right, contact support.',
             ];
         }
 
@@ -555,29 +549,28 @@ class ImapSmtpProvider implements EmailProviderInterface
             return [
                 'ok' => false,
                 'code' => 'unreachable',
-                'message' => "{$channel} host {$endpoint} is unreachable.",
-                'fix' => 'Double-check the host name and port. Wrong host, DNS failure, or a firewall can cause this.',
+                'message' => 'We could not reach your mail server.',
+                'fix' => 'Please double-check the host name and port, then try again. If everything looks right, contact support.',
             ];
         }
 
         if (
             str_contains($lower, 'certificate')
             || (str_contains($lower, 'ssl') && str_contains($lower, 'error'))
-            || str_contains($lower, 'tls')
         ) {
             return [
                 'ok' => false,
                 'code' => 'tls_error',
-                'message' => "{$channel} TLS/SSL failed for {$endpoint}.",
-                'fix' => 'Match encryption to the port: 465/993 → SSL, 587/143 → TLS (STARTTLS).',
+                'message' => 'Secure connection to your mail server failed.',
+                'fix' => 'Make sure encryption matches the port from your provider (SSL for 465/993, TLS for 587/143).',
             ];
         }
 
         return [
             'ok' => false,
             'code' => 'failed',
-            'message' => "{$channel} check failed for {$endpoint}.",
-            'fix' => $raw !== '' ? "Server detail: {$raw}" : 'Review host, port, encryption, and credentials.',
+            'message' => 'Email connection failed.',
+            'fix' => 'Please review your host, port, encryption, and password, then try again.',
         ];
     }
 
@@ -588,37 +581,51 @@ class ImapSmtpProvider implements EmailProviderInterface
     private function buildDiagnosisSummary(bool $ok, ?array $smtp, ?array $imap): string
     {
         if ($ok) {
-            $parts = [];
-            if ($smtp !== null && $smtp['ok']) {
-                $parts[] = $smtp['message'];
-            }
-            if ($imap !== null && $imap['ok']) {
-                $parts[] = $imap['message'];
-            } elseif ($imap !== null && ($imap['code'] ?? '') === 'extension_missing') {
-                $parts[] = 'SMTP is ready. Inbox sync cannot be verified here (PHP IMAP extension disabled).';
+            if ($smtp !== null && $smtp['ok'] && $imap !== null && ($imap['code'] ?? '') === 'extension_missing') {
+                return 'Outgoing email is connected. Inbox sync is temporarily unavailable.';
             }
 
-            return $parts !== [] ? implode(' ', $parts) : 'Connection test successful.';
+            $parts = [];
+            if ($smtp !== null && $smtp['ok']) {
+                $parts[] = 'Outgoing email (SMTP) connected successfully.';
+            }
+            if ($imap !== null && $imap['ok']) {
+                $parts[] = 'Inbox (IMAP) connected successfully.';
+            }
+
+            return $parts !== [] ? implode(' ', $parts) : 'Email connection successful.';
         }
 
         $lines = [];
-        foreach ([['SMTP', $smtp], ['IMAP', $imap]] as [$label, $part]) {
-            if ($part === null || $part['ok'] === true) {
-                continue;
-            }
-            // Extension missing is informational when SMTP already failed.
-            if (($part['code'] ?? '') === 'extension_missing' && $smtp !== null && ! $smtp['ok']) {
-                $lines[] = "{$label}: skipped — PHP IMAP extension is not enabled on this server (does not affect SMTP sending).";
-                continue;
-            }
-            $line = "{$label}: {$part['message']}";
-            if (! empty($part['fix'])) {
-                $line .= ' → ' . $part['fix'];
+
+        // Prefer the actionable SMTP/IMAP credential or reachability issue.
+        // Skip IMAP "extension_missing" noise when SMTP already failed.
+        if ($smtp !== null && ! $smtp['ok']) {
+            $line = $smtp['message'];
+            if (! empty($smtp['fix'])) {
+                $line .= ' ' . $smtp['fix'];
             }
             $lines[] = $line;
         }
 
-        return $lines !== [] ? implode("\n", $lines) : 'Connection test failed.';
+        if ($imap !== null && ! $imap['ok'] && ($imap['code'] ?? '') !== 'extension_missing') {
+            $line = $imap['message'];
+            if (! empty($imap['fix'])) {
+                $line .= ' ' . $imap['fix'];
+            }
+            $lines[] = $line;
+        }
+
+        // Only surface inbox-unavailable when SMTP is fine and IMAP couldn't run.
+        if (
+            ($smtp === null || $smtp['ok'])
+            && $imap !== null
+            && ($imap['code'] ?? '') === 'extension_missing'
+        ) {
+            $lines[] = 'Outgoing email is connected. Inbox sync is temporarily unavailable.';
+        }
+
+        return $lines !== [] ? implode("\n", $lines) : 'Email connection failed. Please check your settings and try again.';
     }
 
     public function parseMessage(array $rawMessage): ParsedEmailDTO

@@ -30,7 +30,6 @@ import {
 import { useEmailOAuthReturnToast } from "@/hooks/use-email-oauth-return-toast";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import type {
-  EmailAccountConnectionCheck,
   EmailAccountConnectionTest,
   EmailAccountItem,
   EmailAccountProvider,
@@ -101,28 +100,19 @@ function notifyConnectionTest(test?: EmailAccountConnectionTest | null, fallback
     return;
   }
 
-    if (test.ok) {
-    toast.success(test.message || "Connection validated successfully.");
-    if (test.imap && !test.imap.ok && test.imap.code === "extension_missing") {
-      toast.warning(test.imap.message, {
-        description: test.imap.fix || undefined,
-        duration: 10000,
-      });
-    }
+  if (test.ok) {
+    toast.success(test.message || "Email connected successfully.");
     return;
   }
 
-  const description = [test.smtp, test.imap]
-    .filter((part): part is EmailAccountConnectionCheck => !!part && !part.ok)
-    .map((part) => {
-      const label = part === test.smtp ? "SMTP" : "IMAP";
-      return `${label}: ${part.message}${part.fix ? ` — ${part.fix}` : ""}`;
-    })
-    .join("\n");
+  const lines = (test.message || "Email connection failed. Please check your settings and try again.")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  toast.error(test.message?.split("\n")[0] || "Connection validation failed.", {
-    description: description || undefined,
-    duration: 12000,
+  toast.error(lines[0] || "Email connection failed.", {
+    description: lines.length > 1 ? lines.slice(1).join(" ") : undefined,
+    duration: 10000,
   });
 }
 
