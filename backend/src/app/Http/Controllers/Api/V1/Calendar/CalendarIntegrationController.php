@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Calendar;
 
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Services\Calendar\CompanyCalendarConnectionService;
 use App\Services\Calendar\UserCalendarConnectionService;
 use Illuminate\Http\JsonResponse;
@@ -93,6 +94,13 @@ class CalendarIntegrationController extends Controller
         $error = trim((string) $request->query('error', ''));
         $errorDescription = trim((string) $request->query('error_description', ''));
 
+        // Email Accounts Google OAuth reuses this registered redirect URI.
+        // Detect by state.flow === email_account (or legacy provider without connection_type).
+        $stateRaw = trim((string) $request->query('state', ''));
+        if ($stateRaw !== '' && $this->isEmailAccountOAuthState($stateRaw)) {
+            return app(EmailAccountOAuthController::class)->callback($request, 'google');
+        }
+
         if ($error !== '') {
             if ($authenticated) {
                 throw ValidationException::withMessages([
@@ -153,32 +161,40 @@ class CalendarIntegrationController extends Controller
             );
         }
 
-        $gmailEnabled = (bool) ($data['gmail_enabled'] ?? false);
-
         if ($authenticated) {
             return $this->success(
-                message: 'Google Calendar integration connected successfully.',
+                message: 'Google Calendar connected successfully.',
                 data: $data,
             );
         }
 
-        if ($gmailEnabled) {
-            return $this->browserCallbackResponse(
-                success: true,
-                message: 'Google account connected successfully for calendar and email.',
-                status: 200,
-                connectionType: $connectionType,
-                extra: ['gmail_enabled' => true],
-            );
-        }
-
         return $this->browserCallbackResponse(
-            success: false,
-            message: 'Google connected for calendar only. Gmail permissions were not granted. Reconnect and approve all Gmail permissions to enable email.',
+            success: true,
+            message: 'Google Calendar connected successfully.',
             status: 200,
             connectionType: $connectionType,
-            extra: ['gmail_enabled' => false, 'requires_gmail_reconnect' => true],
         );
+    }
+
+    private function isEmailAccountOAuthState(string $state): bool
+    {
+        try {
+            /** @var array<string,mixed> $payload */
+            $payload = decrypt($state);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        $flow = trim((string) ($payload['flow'] ?? ''));
+        if ($flow === 'email_account') {
+            return true;
+        }
+
+        // Legacy email-account states set provider but not connection_type.
+        $provider = trim((string) ($payload['provider'] ?? ''));
+        $connectionType = trim((string) ($payload['connection_type'] ?? ''));
+
+        return $provider === 'google' && $connectionType === '';
     }
 
     private function browserCallbackResponse(
@@ -207,7 +223,7 @@ class CalendarIntegrationController extends Controller
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Google Account Connection</title>
+  <title>Google Calendar Connection</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f9; color: #0b1215; }
     .card { width: min(92vw, 480px); background: #fff; border: 1px solid #e6e8ec; border-radius: 14px; padding: 20px; box-shadow: 0 8px 24px rgba(10, 20, 30, 0.08); }
@@ -294,7 +310,7 @@ HTML;
 
         return match ($normalized) {
             'org_internal' => 'This Google OAuth app is currently restricted to one organization. Switch the app to External in Google Cloud Console and retry.',
-            'access_denied' => 'Google permissions were not granted. Reconnect and approve all requested Gmail permissions.',
+            'access_denied' => 'Google Calendar permissions were not granted. Reconnect and approve calendar access.',
             'admin_policy_enforced' => 'Your Google Workspace admin blocked this app or requested scopes. Contact your admin to allow access.',
             default => $description !== ''
                 ? 'Google OAuth error: ' . $description

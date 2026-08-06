@@ -22,7 +22,7 @@ class MicrosoftMailOAuthService
 
         if ($clientId === '' || $redirectUri === '') {
             throw ValidationException::withMessages([
-                'integration' => ['Microsoft Mail OAuth is not configured. Contact platform support.'],
+                'integration' => ['Microsoft 365 email OAuth is not configured yet. Use Google or IMAP/SMTP, or ask platform support to add Microsoft app credentials.'],
             ]);
         }
 

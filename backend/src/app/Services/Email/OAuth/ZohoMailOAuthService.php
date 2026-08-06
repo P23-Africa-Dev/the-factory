@@ -21,7 +21,7 @@ class ZohoMailOAuthService
 
         if ($clientId === '' || $redirectUri === '') {
             throw ValidationException::withMessages([
-                'integration' => ['Zoho Mail OAuth is not configured. Contact platform support.'],
+                'integration' => ['Zoho Mail OAuth is not configured yet. Use Google or IMAP/SMTP, or ask platform support to add Zoho app credentials.'],
             ]);
         }
 

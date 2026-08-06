@@ -22,7 +22,8 @@ class EmailAccountOAuthTest extends TestCase
     {
         Config::set('services.google_mail.client_id', 'google-client-id');
         Config::set('services.google_mail.client_secret', 'google-client-secret');
-        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/email-accounts/oauth/google/callback');
+        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/calendar/integration/callback');
+        Config::set('services.google_calendar.redirect_uri', 'https://api.test/api/v1/calendar/integration/callback');
 
         [$company, $admin] = $this->seedCompanyWithAdmin();
 
@@ -36,13 +37,18 @@ class EmailAccountOAuthTest extends TestCase
         $this->assertStringContainsString('accounts.google.com', $url);
         $this->assertStringContainsString('client_id=google-client-id', $url);
         $this->assertStringContainsString('gmail.send', urldecode($url));
+        $this->assertStringContainsString(
+            rawurlencode('https://api.test/api/v1/calendar/integration/callback'),
+            $url,
+        );
+        $this->assertStringNotContainsString('calendar.events', urldecode($url));
     }
 
     public function test_google_oauth_callback_creates_email_account(): void
     {
         Config::set('services.google_mail.client_id', 'google-client-id');
         Config::set('services.google_mail.client_secret', 'google-client-secret');
-        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/email-accounts/oauth/google/callback');
+        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/calendar/integration/callback');
 
         [$company, $admin] = $this->seedCompanyWithAdmin();
 
@@ -67,12 +73,14 @@ class EmailAccountOAuthTest extends TestCase
             ], 200),
         ]);
 
-        $response = $this->get('/api/v1/email-accounts/oauth/google/callback?' . http_build_query([
+        // Email Accounts Google OAuth reuses the registered calendar redirect URI.
+        $response = $this->get('/api/v1/calendar/integration/callback?' . http_build_query([
             'code' => 'auth-code',
             'state' => $state,
         ]));
 
         $response->assertOk();
+        $response->assertSee('email-account-oauth', false);
         $this->assertDatabaseHas('email_accounts', [
             'company_id' => $company->id,
             'user_id' => $admin->id,

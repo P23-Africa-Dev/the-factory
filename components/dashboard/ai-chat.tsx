@@ -32,10 +32,9 @@ import { CreateZoneModal } from "@/components/zones/create-zone-modal";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { listLeads } from "@/lib/api/crm";
 import {
-  createUserCalendarConnectUrl,
-  createUserCalendarReconnectUrl,
-  getUserCalendarIntegrationStatus,
-} from "@/lib/api/calendar-integration";
+  authorizeEmailAccountOAuth,
+  listEmailAccounts,
+} from "@/lib/api/email-accounts";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
@@ -2102,17 +2101,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
     });
   }
 
-  function openGoogleAuthorizationPopup(authorizationUrl: string, popupName: string) {
+  function openEmailAuthorizationPopup(authorizationUrl: string, popupName: string) {
     const popup = window.open(authorizationUrl, popupName, "width=560,height=720");
     if (!popup) {
       window.location.href = authorizationUrl;
       return;
     }
 
-    toast.info("Complete Google sign-in in the popup. Your follow-up will send automatically after connection.");
+    toast.info("Complete email sign-in in the popup. Your follow-up will send automatically after connection.");
   }
 
-  async function ensureGmailReadyForEmail(): Promise<boolean> {
+  async function ensureEmailAccountReadyForSend(): Promise<boolean> {
     if (!companyId) {
       toast.error("Select a company before sending CRM email.");
       return false;
@@ -2120,27 +2119,31 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     const token = getAuthTokenFromDocument();
     if (!token) {
-      toast.error("You must be signed in to connect Google.");
+      toast.error("You must be signed in to connect an email account.");
       return false;
     }
 
-    const statusResponse = await getUserCalendarIntegrationStatus({ company_id: companyId }, token);
-    const status = statusResponse.data;
-    const gmailReady =
-      status.connected === true
-      && status.gmail_enabled === true
-      && status.requires_gmail_reconnect !== true
-      && status.requires_reauthentication !== true;
+    const accountsResponse = await listEmailAccounts({ company_id: companyId }, token);
+    const hasActiveAccount = (accountsResponse.data.items ?? []).some(
+      (account) => account.status === "active",
+    );
 
-    if (gmailReady) {
+    if (hasActiveAccount) {
       return true;
     }
 
-    const connectResponse = status.requires_gmail_reconnect === true
-      ? await createUserCalendarReconnectUrl({ company_id: companyId }, token)
-      : await createUserCalendarConnectUrl({ company_id: companyId }, token);
+    try {
+      const connectResponse = await authorizeEmailAccountOAuth(
+        "google",
+        { company_id: companyId, force_account_picker: true },
+        token,
+      );
+      openEmailAuthorizationPopup(connectResponse.data.authorization_url, "email-oauth-google");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start email connection.";
+      toast.error(message || "Connect an email account in Settings → Email Accounts to send CRM email.");
+    }
 
-    openGoogleAuthorizationPopup(connectResponse.data.authorization_url, "google-calendar-connect");
     return false;
   }
 
@@ -2148,31 +2151,25 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const handleOAuthMessage = (event: MessageEvent) => {
       const payload = event.data as {
         type?: string;
+        success?: boolean;
         status?: "success" | "error";
         message?: string;
-        gmail_enabled?: boolean;
-        requires_gmail_reconnect?: boolean;
       };
 
-      if (!payload || payload.type !== "google-calendar-oauth") {
+      if (!payload || payload.type !== "email-account-oauth") {
         return;
       }
 
-      if (payload.status !== "success") {
-        toast.error(payload.message || "Google connection failed.");
+      const ok = payload.success === true || payload.status === "success";
+      if (!ok) {
+        toast.error(payload.message || "Email account connection failed.");
         pendingEmailConfirmRef.current = null;
         return;
       }
 
       const pending = pendingEmailConfirmRef.current;
       pendingEmailConfirmRef.current = null;
-
-      if (payload.gmail_enabled === true || payload.requires_gmail_reconnect !== true) {
-        toast.success(payload.message || "Google connected. Sending your follow-up email now.");
-      } else {
-        toast.warning("Google connected for calendar only. Reconnect with Gmail permissions to send email.");
-        return;
-      }
+      toast.success(payload.message || "Email connected. Sending your follow-up now.");
 
       if (pending) {
         submitConfirmedAction(pending.index, pending.msg);
@@ -2188,7 +2185,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (tool === "crm.send_email") {
       pendingEmailConfirmRef.current = { index, msg };
-      const ready = await ensureGmailReadyForEmail();
+      const ready = await ensureEmailAccountReadyForSend();
       if (!ready) {
         return;
       }

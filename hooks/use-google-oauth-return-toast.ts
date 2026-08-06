@@ -29,13 +29,11 @@ export function useGoogleOAuthReturnToast(onHandled?: () => void) {
     const displayMessage =
       message ||
       (status === "success"
-        ? "Google account connected successfully."
-        : "Google account connection failed. Please try again.");
+        ? "Google Calendar connected successfully."
+        : "Google Calendar connection failed. Please try again.");
 
     if (status === "success") {
       toast.success(displayMessage);
-    } else if (searchParams.get("requires_gmail_reconnect") === "1") {
-      toast.warning(displayMessage);
     } else {
       toast.error(displayMessage);
     }

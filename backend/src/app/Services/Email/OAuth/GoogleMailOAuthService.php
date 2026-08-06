@@ -32,6 +32,7 @@ class GoogleMailOAuthService
             'company_id' => $companyId,
             'user_id' => $userId,
             'provider' => 'google',
+            'flow' => 'email_account',
             'nonce' => $nonce,
             'expires_at' => $expiresAt->toIso8601String(),
         ]);
@@ -40,6 +41,7 @@ class GoogleMailOAuthService
             'company_id' => $companyId,
             'user_id' => $userId,
             'provider' => 'google',
+            'flow' => 'email_account',
         ], $expiresAt);
 
         $query = http_build_query([
@@ -258,7 +260,13 @@ class GoogleMailOAuthService
 
     private function redirectUri(): string
     {
-        return trim((string) config('services.google_mail.redirect_uri'));
+        $dedicated = trim((string) config('services.google_mail.redirect_uri'));
+        if ($dedicated !== '') {
+            return $dedicated;
+        }
+
+        // Fall back to the calendar callback URI (already registered in Google Cloud Console).
+        return trim((string) config('services.google_calendar.redirect_uri'));
     }
 
     private function nonceCacheKey(string $nonce): string
