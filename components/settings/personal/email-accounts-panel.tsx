@@ -25,6 +25,7 @@ import {
   useUpdateEmailAccount,
 } from "@/hooks/use-email-accounts";
 import { useEmailOAuthReturnToast } from "@/hooks/use-email-oauth-return-toast";
+import { getApiErrorMessage } from "@/lib/api/errors";
 import type { EmailAccountItem, EmailAccountProvider } from "@/lib/api/email-accounts";
 
 const PROVIDER_LABELS: Record<EmailAccountProvider, string> = {
@@ -235,6 +236,10 @@ function ImapSmtpForm({
       toast.error("Email, SMTP host, and IMAP host are required.");
       return;
     }
+    if (!smtpPassword.trim() || !imapPassword.trim()) {
+      toast.error("SMTP and IMAP passwords are required.");
+      return;
+    }
 
     connectMutation.mutate(
       {
@@ -247,12 +252,12 @@ function ImapSmtpForm({
         smtp_port: Number(smtpPort) || 587,
         smtp_encryption: smtpEncryption,
         smtp_username: smtpUsername.trim() || email.trim(),
-        smtp_password: smtpPassword || null,
+        smtp_password: smtpPassword,
         imap_host: imapHost.trim(),
         imap_port: Number(imapPort) || 993,
         imap_encryption: imapEncryption,
         imap_username: imapUsername.trim() || email.trim(),
-        imap_password: imapPassword || null,
+        imap_password: imapPassword,
       },
       {
         onSuccess: () => {
@@ -260,7 +265,7 @@ function ImapSmtpForm({
           onClose();
         },
         onError: (err: Error) => {
-          toast.error(err.message || "Failed to connect email account.");
+          toast.error(getApiErrorMessage(err, "Failed to connect email account."));
         },
       },
     );
@@ -614,8 +619,10 @@ export function EmailAccountsPanel() {
     testMutation.mutate(
       { accountId: account.id, companyId },
       {
-        onSuccess: () => toast.success("Connection test passed."),
-        onError: (err: Error) => toast.error(err.message || "Connection test failed."),
+        onSuccess: (result) =>
+          toast.success(result.message || "Connection test passed."),
+        onError: (err: Error) =>
+          toast.error(getApiErrorMessage(err, "Connection test failed.")),
       },
     );
   };

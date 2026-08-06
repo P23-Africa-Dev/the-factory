@@ -333,7 +333,13 @@ class MicrosoftProvider implements EmailProviderInterface
                 'error' => $e->getMessage(),
             ]);
 
-            return false;
+            $message = $e instanceof ValidationException
+                ? (string) (collect($e->errors())->flatten()->first() ?: 'Microsoft connection test failed. Reconnect and try again.')
+                : ('Microsoft connection test failed: ' . (trim($e->getMessage()) ?: 'Please reconnect and try again.'));
+
+            throw ValidationException::withMessages([
+                'connection' => [$message],
+            ]);
         }
     }
 

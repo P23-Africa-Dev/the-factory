@@ -18,12 +18,12 @@ export function formatRateLimitMessage(
 
 export function resolveApiErrorMessage(
   message: string | null | undefined,
-  errors?: Record<string, string[]> | null
+  errors?: Record<string, string[] | string> | null
 ): string {
   const fromErrors = errors
     ? Object.values(errors)
-        .flat()
-        .map((entry) => entry?.trim())
+        .flatMap((entry) => (Array.isArray(entry) ? entry : [entry]))
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
         .filter((entry): entry is string => Boolean(entry))
     : [];
 

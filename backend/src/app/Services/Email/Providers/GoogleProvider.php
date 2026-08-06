@@ -156,8 +156,27 @@ class GoogleProvider implements EmailProviderInterface
                 'error' => $e->getMessage(),
             ]);
 
-            return false;
+            throw ValidationException::withMessages([
+                'connection' => [$this->humanizeProviderTestError($e, 'Google')],
+            ]);
         }
+    }
+
+    private function humanizeProviderTestError(\Throwable $e, string $provider): string
+    {
+        if ($e instanceof ValidationException) {
+            $first = collect($e->errors())->flatten()->first();
+            if (is_string($first) && trim($first) !== '') {
+                return trim($first);
+            }
+        }
+
+        $raw = trim($e->getMessage());
+        if ($raw === '' || $raw === 'The given data was invalid.') {
+            return "{$provider} connection test failed. Reconnect the account and try again.";
+        }
+
+        return "{$provider} connection test failed: {$raw}";
     }
 
     public function parseMessage(array $rawMessage): ParsedEmailDTO

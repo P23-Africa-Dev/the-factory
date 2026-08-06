@@ -398,6 +398,52 @@ class EmailAccountApiTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
+    public function test_imap_smtp_connection_test_returns_detailed_error(): void
+    {
+        [$company, $admin] = $this->seedCompanyWithAdmin();
+
+        $account = EmailAccount::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $admin->id,
+            'provider' => 'imap_smtp',
+            'email' => 'admin@custom-domain.com',
+            'smtp_host' => 'smtp.custom-domain.com',
+            'smtp_port' => 587,
+            'smtp_encryption' => 'tls',
+            'smtp_username' => 'admin@custom-domain.com',
+            'smtp_password_encrypted' => null,
+            'imap_host' => 'imap.custom-domain.com',
+            'imap_port' => 993,
+            'imap_encryption' => 'ssl',
+            'imap_username' => 'admin@custom-domain.com',
+            'imap_password_encrypted' => null,
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/email-accounts/' . $account->id . '/test', [
+                'company_id' => $company->id,
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('success', false);
+
+        $message = strtolower((string) $response->json('message'));
+        $error = strtolower((string) data_get($response->json('errors'), 'connection.0', ''));
+
+        $this->assertStringNotContainsString('unknown error', $message);
+        $this->assertStringNotContainsString('unknown error', $error);
+        $this->assertTrue(
+            str_contains($message, 'password')
+            || str_contains($message, 'imap extension')
+            || str_contains($message, 'authentication')
+            || str_contains($message, 'connection'),
+            'Expected a detailed connection error, got: ' . $response->json('message'),
+        );
+        $this->assertSame($response->json('message'), data_get($response->json('errors'), 'connection.0'));
+    }
+
     private function seedCompanyWithAdmin(): array
     {
         $company = Company::create([

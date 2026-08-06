@@ -58,12 +58,12 @@ class EmailAccountController extends Controller
             'smtp_port' => ['required_if:provider,imap_smtp', 'nullable', 'integer', 'min:1', 'max:65535'],
             'smtp_encryption' => ['nullable', 'string', 'in:tls,ssl'],
             'smtp_username' => ['nullable', 'string', 'max:255'],
-            'smtp_password' => ['nullable', 'string', 'max:1024'],
+            'smtp_password' => ['required_if:provider,imap_smtp', 'nullable', 'string', 'max:1024'],
             'imap_host' => ['required_if:provider,imap_smtp', 'nullable', 'string', 'max:255'],
             'imap_port' => ['required_if:provider,imap_smtp', 'nullable', 'integer', 'min:1', 'max:65535'],
             'imap_encryption' => ['nullable', 'string', 'in:tls,ssl'],
             'imap_username' => ['nullable', 'string', 'max:255'],
-            'imap_password' => ['nullable', 'string', 'max:1024'],
+            'imap_password' => ['required_if:provider,imap_smtp', 'nullable', 'string', 'max:1024'],
             'company_id' => ['sometimes', 'integer', 'exists:companies,id'],
         ]);
 
@@ -200,21 +200,21 @@ class EmailAccountController extends Controller
      */
     public function test(Request $request, EmailAccount $account): JsonResponse
     {
-        $success = $this->emailAccountService->testConnection(
+        $result = $this->emailAccountService->testConnection(
             $request->user(),
             $account,
             $this->resolveCompanyContextId($request->input('company_id')),
         );
 
-        if (! $success) {
+        if (! $result['ok']) {
             return $this->error(
-                message: 'Connection test failed. Please check your credentials and try again.',
-                errors: ['connection' => $account->last_error_message ?? 'Unknown error'],
+                message: $result['message'],
+                errors: ['connection' => [$result['message']]],
                 status: 422,
             );
         }
 
-        return $this->success(message: 'Connection test successful.');
+        return $this->success(message: $result['message']);
     }
 
     /**

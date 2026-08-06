@@ -12,6 +12,7 @@ use Illuminate\Mail\Message;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
 
 /**
  * Generic IMAP/SMTP provider for any business email.
@@ -276,21 +277,156 @@ class ImapSmtpProvider implements EmailProviderInterface
     {
         $this->assertProvider($account, 'imap_smtp');
 
-        try {
-            if ($account->imapHost !== null) {
-                $mailbox = $this->openImapConnection($account, 'INBOX');
-                imap_close($mailbox);
-            }
+        $failures = [];
+        $testedSomething = false;
 
-            return true;
+        if ($account->smtpHost !== null && $account->smtpPort !== null) {
+            $testedSomething = true;
+            try {
+                $this->testSmtpConnection($account);
+            } catch (ValidationException $e) {
+                $failures[] = (string) (collect($e->errors())->flatten()->first() ?: 'SMTP connection failed.');
+            }
+        }
+
+        if ($account->imapHost !== null && $account->imapPort !== null) {
+            $testedSomething = true;
+            try {
+                $this->testImapConnection($account);
+            } catch (ValidationException $e) {
+                $failures[] = (string) (collect($e->errors())->flatten()->first() ?: 'IMAP connection failed.');
+            }
+        }
+
+        if (! $testedSomething) {
+            throw ValidationException::withMessages([
+                'connection' => ['IMAP/SMTP settings are incomplete. Add host and port for both IMAP and SMTP, then try again.'],
+            ]);
+        }
+
+        if ($failures !== []) {
+            throw ValidationException::withMessages([
+                'connection' => [implode(' ', $failures)],
+            ]);
+        }
+
+        return true;
+    }
+
+    private function testImapConnection(EmailAccountDTO $account): void
+    {
+        if (! function_exists('imap_open')) {
+            throw ValidationException::withMessages([
+                'connection' => ['IMAP extension is not enabled on this server, so the inbox connection cannot be verified. Ask platform support to enable the PHP IMAP extension, or use Google/Microsoft OAuth instead.'],
+            ]);
+        }
+
+        if (trim((string) ($account->imapPassword ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'connection' => ['IMAP password is missing. Update the account with the correct password (or app password) and try again.'],
+            ]);
+        }
+
+        try {
+            $mailbox = $this->openImapConnection($account, 'INBOX');
+            imap_close($mailbox);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
-            Log::warning('IMAP/SMTP connection test failed.', [
+            Log::warning('IMAP connection test failed.', [
                 'email' => $account->email,
                 'error' => $e->getMessage(),
             ]);
 
-            return false;
+            throw ValidationException::withMessages([
+                'connection' => [$this->humanizeMailServerError($e->getMessage(), 'IMAP')],
+            ]);
         }
+    }
+
+    private function testSmtpConnection(EmailAccountDTO $account): void
+    {
+        if (trim((string) ($account->smtpPassword ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'connection' => ['SMTP password is missing. Update the account with the correct password (or app password) and try again.'],
+            ]);
+        }
+
+        $host = trim((string) $account->smtpHost);
+        $port = (int) ($account->smtpPort ?? 0);
+        $encryption = strtolower(trim((string) ($account->smtpEncryption ?? '')));
+        $username = trim((string) ($account->smtpUsername ?? $account->email));
+        $password = (string) $account->smtpPassword;
+
+        if ($host === '' || $port < 1) {
+            throw ValidationException::withMessages([
+                'connection' => ['SMTP host or port is invalid. Update your SMTP settings and try again.'],
+            ]);
+        }
+
+        // Symfony: tls=true means implicit SSL (usually port 465). STARTTLS uses tls=false + autoTls.
+        $implicitSsl = $encryption === 'ssl' || $port === 465;
+
+        try {
+            $transport = new EsmtpTransport($host, $port, $implicitSsl);
+            $transport->setUsername($username);
+            $transport->setPassword($password);
+            $transport->start();
+            $transport->stop();
+        } catch (\Throwable $e) {
+            Log::warning('SMTP connection test failed.', [
+                'email' => $account->email,
+                'host' => $host,
+                'port' => $port,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'connection' => [$this->humanizeMailServerError($e->getMessage(), 'SMTP')],
+            ]);
+        }
+    }
+
+    private function humanizeMailServerError(string $raw, string $channel): string
+    {
+        $raw = trim(preg_replace('/\s+/', ' ', $raw) ?? $raw);
+        $lower = strtolower($raw);
+
+        if ($raw === '') {
+            return "{$channel} connection failed. Check host, port, encryption, username, and password. Many providers require an app password instead of your normal login password.";
+        }
+
+        if (
+            str_contains($lower, 'authentication')
+            || str_contains($lower, 'authenticate')
+            || str_contains($lower, 'invalid credentials')
+            || str_contains($lower, 'login failure')
+            || str_contains($lower, 'auth failed')
+            || str_contains($lower, '535')
+            || str_contains($lower, '534')
+        ) {
+            return "{$channel} authentication failed. Check username/password. If this is Gmail, Outlook, Yahoo, or a similar provider, use an app password (not your normal account password). Server said: {$raw}";
+        }
+
+        if (str_contains($lower, 'timed out') || str_contains($lower, 'timeout')) {
+            return "{$channel} connection timed out. Verify host/port and that outbound {$channel} is allowed. Server said: {$raw}";
+        }
+
+        if (
+            str_contains($lower, 'connection refused')
+            || str_contains($lower, 'could not connect')
+            || str_contains($lower, 'failed to connect')
+            || str_contains($lower, 'getaddrinfo')
+            || str_contains($lower, 'name or service not known')
+        ) {
+            return "{$channel} could not reach the server. Verify the host, port, and encryption (TLS/SSL). Server said: {$raw}";
+        }
+
+        if (str_contains($lower, 'certificate') || str_contains($lower, 'ssl') || str_contains($lower, 'tls')) {
+            return "{$channel} TLS/SSL error. Match encryption to the port (usually SSL for 465/993, TLS/STARTTLS for 587/143). Server said: {$raw}";
+        }
+
+        return "{$channel} connection failed: {$raw}";
     }
 
     public function parseMessage(array $rawMessage): ParsedEmailDTO
@@ -539,15 +675,45 @@ class ImapSmtpProvider implements EmailProviderInterface
             $mailboxStr,
             $account->imapUsername ?? $account->email,
             $account->imapPassword ?? '',
+            0,
+            1,
         );
 
         if ($connection === false) {
+            $detail = $this->collectImapErrors();
+
             throw ValidationException::withMessages([
-                'integration' => ['IMAP connection failed. Check your IMAP host, port, and credentials.'],
+                'connection' => [$this->humanizeMailServerError($detail, 'IMAP')],
             ]);
         }
 
         return $connection;
+    }
+
+    private function collectImapErrors(): string
+    {
+        $parts = [];
+
+        if (function_exists('imap_errors')) {
+            $errors = imap_errors();
+            if (is_array($errors)) {
+                foreach ($errors as $error) {
+                    $error = trim((string) $error);
+                    if ($error !== '') {
+                        $parts[] = $error;
+                    }
+                }
+            }
+        }
+
+        if ($parts === [] && function_exists('imap_last_error')) {
+            $last = trim((string) imap_last_error());
+            if ($last !== '') {
+                $parts[] = $last;
+            }
+        }
+
+        return implode(' ', $parts);
     }
 
     private function assertProvider(EmailAccountDTO $account, string $expected): void

@@ -287,8 +287,10 @@ class EmailAccountService
 
     /**
      * Test the connection for an email account.
+     *
+     * @return array{ok:bool,message:string}
      */
-    public function testConnection(User $user, EmailAccount $account, ?int $companyId = null): bool
+    public function testConnection(User $user, EmailAccount $account, ?int $companyId = null): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
@@ -300,6 +302,19 @@ class EmailAccountService
         try {
             $result = $provider->testConnection($account->toDTO());
 
+            if (! $result) {
+                $message = 'Connection test failed. Please check your credentials and try again.';
+                $this->markError($account, $message);
+
+                return ['ok' => false, 'message' => $message];
+            }
+
+            $account->update([
+                'status' => 'active',
+                'last_error_message' => null,
+                'last_error_at' => null,
+            ]);
+
             Log::info('Email account connection test succeeded', [
                 'company_id' => $resolvedCompanyId,
                 'user_id' => $user->id,
@@ -308,21 +323,41 @@ class EmailAccountService
                 'account_id' => $account->id,
             ]);
 
-            return $result;
+            return ['ok' => true, 'message' => 'Connection test successful.'];
         } catch (\Throwable $e) {
+            $message = $this->connectionExceptionMessage($e);
+
             Log::warning('Email account connection test failed', [
                 'company_id' => $resolvedCompanyId,
                 'user_id' => $user->id,
                 'provider' => $account->provider,
                 'email' => $account->email,
                 'account_id' => $account->id,
-                'error' => $e->getMessage(),
+                'error' => $message,
             ]);
 
-            $this->markError($account, $e->getMessage());
+            $this->markError($account, $message);
 
-            return false;
+            return ['ok' => false, 'message' => $message];
         }
+    }
+
+    private function connectionExceptionMessage(\Throwable $e): string
+    {
+        if ($e instanceof ValidationException) {
+            $first = collect($e->errors())->flatten()->first();
+            if (is_string($first) && trim($first) !== '') {
+                return trim($first);
+            }
+        }
+
+        $message = trim($e->getMessage());
+
+        if ($message === '' || $message === 'The given data was invalid.') {
+            return 'Connection test failed. Please check your credentials and try again.';
+        }
+
+        return $message;
     }
 
     /**
