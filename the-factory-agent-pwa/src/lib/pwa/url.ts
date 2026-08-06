@@ -1,4 +1,7 @@
-import { withAgentApkCacheBust } from '@/constants/apk-version';
+import {
+  CANONICAL_AGENT_APK_URL,
+  withAgentApkCacheBust,
+} from '@/constants/apk-version';
 
 const DEFAULT_PRODUCTION_URL = "https://app.thefactory23.com";
 const DEFAULT_APK_PATH = "/downloads/factory23-agent.apk";
@@ -50,13 +53,19 @@ function normalizeApkDownloadUrl(url: string): string {
 /** Absolute URL for Android APK download. */
 export function getAgentApkDownloadUrl(): string | null {
   const configured = process.env.NEXT_PUBLIC_AGENT_APK_URL?.trim();
-  // Google Drive links do not update on git push — prefer clearing that Vercel env
-  // and serving /downloads/factory23-agent.apk from this app instead.
-  if (configured) return withAgentApkCacheBust(normalizeApkDownloadUrl(configured));
-
-  if (typeof window !== "undefined") {
-    return withAgentApkCacheBust(`${window.location.origin}${DEFAULT_APK_PATH}`);
+  if (configured) {
+    const normalized = normalizeApkDownloadUrl(configured);
+    if (!/drive\.google\.com|docs\.google\.com/i.test(normalized)) {
+      return withAgentApkCacheBust(normalized);
+    }
   }
 
-  return withAgentApkCacheBust(`https://thefactory23.com${DEFAULT_APK_PATH}`);
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      return withAgentApkCacheBust(`${window.location.origin}${DEFAULT_APK_PATH}`);
+    }
+  }
+
+  return withAgentApkCacheBust(CANONICAL_AGENT_APK_URL);
 }
