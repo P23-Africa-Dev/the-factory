@@ -101,6 +101,18 @@ return [
         ))))),
     ],
 
+    // Custom IMAP/SMTP is disabled in production (hosting blocks outbound SMTP).
+    // Prefer Google / Microsoft OAuth for CRM mailbox connect.
+    'email_accounts' => [
+        'imap_smtp_enabled' => filter_var(
+            env(
+                'EMAIL_IMAP_SMTP_ENABLED',
+                env('APP_ENV', 'production') === 'local' || env('APP_ENV') === 'testing' ? 'true' : 'false',
+            ),
+            FILTER_VALIDATE_BOOL,
+        ),
+    ],
+
     'mapbox' => [
         // Use a server-side token when available, fallback keeps local/dev parity.
         'access_token' => env('MAPBOX_ACCESS_TOKEN', env('NEXT_PUBLIC_MAPBOX_TOKEN')),

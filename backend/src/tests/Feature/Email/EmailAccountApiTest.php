@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\EmailAccount;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -108,8 +109,44 @@ class EmailAccountApiTest extends TestCase
         ]);
     }
 
+    public function test_imap_smtp_connect_rejected_when_disabled(): void
+    {
+        Config::set('services.email_accounts.imap_smtp_enabled', false);
+
+        [$company, $admin] = $this->seedCompanyWithAdmin();
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->postJson('/api/v1/admin/email-accounts', [
+                'company_id' => $company->id,
+                'provider' => 'imap_smtp',
+                'email' => 'admin@custom-domain.com',
+                'smtp_host' => 'smtp.custom-domain.com',
+                'smtp_port' => 587,
+                'smtp_encryption' => 'tls',
+                'smtp_username' => 'admin@custom-domain.com',
+                'smtp_password' => 'smtp-pass',
+                'imap_host' => 'imap.custom-domain.com',
+                'imap_port' => 993,
+                'imap_encryption' => 'ssl',
+                'imap_username' => 'admin@custom-domain.com',
+                'imap_password' => 'imap-pass',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('success', false);
+
+        $message = strtolower((string) (
+            $response->json('errors.provider.0')
+            ?? $response->json('message')
+            ?? ''
+        ));
+        $this->assertStringContainsString('google', $message);
+        $this->assertStringContainsString('microsoft', $message);
+    }
+
     public function test_admin_can_connect_imap_smtp_email_account(): void
     {
+        Config::set('services.email_accounts.imap_smtp_enabled', true);
         [$company, $admin] = $this->seedCompanyWithAdmin();
 
         $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)

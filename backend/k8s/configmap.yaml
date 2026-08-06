@@ -137,6 +137,8 @@ data:
   ZOHO_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/zoho/callback"
   ZOHO_MAIL_DATACENTER: "com"
   ZOHO_MAIL_SCOPES: "ZohoMail.messages.ALL,ZohoMail.accounts.READ"
+  # Custom IMAP/SMTP disabled until an off-cluster mail relay exists (DOKS blocks outbound SMTP).
+  EMAIL_IMAP_SMTP_ENABLED: "false"
 
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"

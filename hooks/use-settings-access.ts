@@ -79,7 +79,7 @@ export function useSettingsAccess() {
         id: "email-accounts",
         label: "Email Accounts",
         scope: "personal",
-        description: "Connect email accounts for CRM sending and sync",
+        description: "Connect Google or Microsoft for CRM email",
         canView: true,
         canEdit: true,
       },

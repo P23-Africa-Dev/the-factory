@@ -29,6 +29,10 @@ import {
 } from "@/hooks/use-email-accounts";
 import { useEmailOAuthReturnToast } from "@/hooks/use-email-oauth-return-toast";
 import { getApiErrorMessage } from "@/lib/api/errors";
+import {
+  IMAP_SMTP_UNSUPPORTED_MESSAGE,
+  isImapSmtpConnectionAvailable,
+} from "@/lib/email/imap-smtp-availability";
 import type {
   EmailAccountConnectionTest,
   EmailAccountItem,
@@ -185,6 +189,7 @@ function AccountCard({
   onTest,
   onReconnect,
   onEdit,
+  imapSmtpAvailable,
   isSettingDefault,
   isDisconnecting,
   isTesting,
@@ -196,6 +201,7 @@ function AccountCard({
   onTest: () => void;
   onReconnect: () => void;
   onEdit: () => void;
+  imapSmtpAvailable: boolean;
   isSettingDefault: boolean;
   isDisconnecting: boolean;
   isTesting: boolean;
@@ -204,17 +210,19 @@ function AccountCard({
   const isActive = account.status === "active";
   const isError = account.status === "error";
   const isExpired = account.status === "expired";
-  const canOAuthReconnect = account.provider !== "imap_smtp";
-  const canEditImap = account.provider === "imap_smtp";
-  const canTest = account.status !== "disconnected";
+  const isImap = account.provider === "imap_smtp";
+  const canOAuthReconnect = !isImap;
+  const canEditImap = isImap && imapSmtpAvailable;
+  const canTest = account.status !== "disconnected" && (!isImap || imapSmtpAvailable);
+  const showImapUnsupported = isImap && !imapSmtpAvailable;
 
   return (
     <div
       className={`flex flex-col gap-3 p-4 rounded-xl border transition-colors ${
         account.is_default
           ? "border-dash-dark/20 bg-dash-dark/5"
-          : isError || isExpired
-            ? "border-red-100 bg-white"
+          : isError || isExpired || showImapUnsupported
+            ? "border-amber-100 bg-white"
             : "border-gray-100 bg-white"
       }`}
     >
@@ -241,27 +249,34 @@ function AccountCard({
             <p className="text-[12px] text-gray-500 truncate">{account.email}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {PROVIDER_LABELS[account.provider]}
-              {account.provider === "imap_smtp" && account.smtp_host
-                ? ` · ${account.smtp_host}`
-                : ""}
+              {isImap && account.smtp_host ? ` · ${account.smtp_host}` : ""}
             </p>
           </div>
         </div>
         <span
           className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border shrink-0 ${
-            STATUS_COLORS[account.status] || STATUS_COLORS.disconnected
+            showImapUnsupported
+              ? STATUS_COLORS.error
+              : STATUS_COLORS[account.status] || STATUS_COLORS.disconnected
           }`}
         >
-          {account.status}
+          {showImapUnsupported ? "unsupported" : account.status}
         </span>
       </div>
 
-      {(isError || isExpired) && account.last_error_message && (
+      {showImapUnsupported && (
+        <ConnectionIssueBlock
+          title="IMAP/SMTP unavailable"
+          message={`${IMAP_SMTP_UNSUPPORTED_MESSAGE} You can remove this account and connect Google or Microsoft instead.`}
+        />
+      )}
+
+      {!showImapUnsupported && (isError || isExpired) && account.last_error_message && (
         <ConnectionIssueBlock title="Validation failed" message={account.last_error_message} />
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        {!account.is_default && isActive && (
+        {!account.is_default && isActive && !showImapUnsupported && (
           <button
             type="button"
             onClick={onSetDefault}
@@ -272,15 +287,17 @@ function AccountCard({
             Set default
           </button>
         )}
-        <button
-          type="button"
-          onClick={onTest}
-          disabled={isTesting || !canTest}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-gray-600 hover:bg-gray-50 border border-gray-100 transition-colors disabled:opacity-50"
-        >
-          {isTesting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-          Test
-        </button>
+        {canTest && (
+          <button
+            type="button"
+            onClick={onTest}
+            disabled={isTesting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-gray-600 hover:bg-gray-50 border border-gray-100 transition-colors disabled:opacity-50"
+          >
+            {isTesting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+            Test
+          </button>
+        )}
         {canEditImap && (
           <button
             type="button"
@@ -612,10 +629,12 @@ function ConnectProviderPicker({
   companyId,
   onClose,
   onChooseImap,
+  imapSmtpAvailable,
 }: {
   companyId?: number | string;
   onClose: () => void;
   onChooseImap: () => void;
+  imapSmtpAvailable: boolean;
 }) {
   const authorizeMutation = useAuthorizeEmailAccountOAuth();
   const [pendingProvider, setPendingProvider] = useState<Exclude<EmailAccountProvider, "imap_smtp"> | null>(null);
@@ -643,7 +662,8 @@ function ConnectProviderPicker({
     );
   };
 
-  const oauthProviders: Exclude<EmailAccountProvider, "imap_smtp">[] = ["google", "microsoft", "zoho"];
+  const recommendedProviders: Array<"google" | "microsoft"> = ["google", "microsoft"];
+  const otherOAuthProviders: Array<"zoho"> = ["zoho"];
 
   return (
     <div className="space-y-4">
@@ -658,43 +678,101 @@ function ConnectProviderPicker({
         </button>
       </div>
       <p className="text-[12px] text-gray-500">
-        Sign in with your provider to send and sync CRM emails from your own mailbox.
+        Recommended: sign in with Google or Microsoft to send and sync CRM emails from your mailbox.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {oauthProviders.map((provider) => (
-          <button
-            key={provider}
-            type="button"
-            onClick={() => handleOAuth(provider)}
-            disabled={authorizeMutation.isPending}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 bg-white text-left hover:border-dash-dark/30 hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${PROVIDER_COLORS[provider]}`}>
-              {pendingProvider === provider ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <ProviderMark provider={provider} />
-              )}
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Recommended</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {recommendedProviders.map((provider) => (
+            <button
+              key={provider}
+              type="button"
+              onClick={() => handleOAuth(provider)}
+              disabled={authorizeMutation.isPending}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dash-dark/20 bg-dash-dark/[0.03] text-left hover:border-dash-dark/40 hover:bg-dash-dark/[0.06] transition-colors disabled:opacity-50"
+            >
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${PROVIDER_COLORS[provider]}`}>
+                {pendingProvider === provider ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <ProviderMark provider={provider} />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[13px] font-semibold text-dash-dark">{PROVIDER_LABELS[provider]}</p>
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-dash-dark text-white">
+                    Recommended
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  {provider === "google"
+                    ? "Gmail & Google Workspace"
+                    : "Outlook & Microsoft 365"}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Other options</p>
+        <div className="grid grid-cols-1 gap-2">
+          {otherOAuthProviders.map((provider) => (
+            <button
+              key={provider}
+              type="button"
+              onClick={() => handleOAuth(provider)}
+              disabled={authorizeMutation.isPending}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 bg-white text-left hover:border-dash-dark/30 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${PROVIDER_COLORS[provider]}`}>
+                {pendingProvider === provider ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <ProviderMark provider={provider} />
+                )}
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-dash-dark">{PROVIDER_LABELS[provider]}</p>
+                <p className="text-[11px] text-gray-400">Sign in with OAuth</p>
+              </div>
+            </button>
+          ))}
+
+          {imapSmtpAvailable ? (
+            <button
+              type="button"
+              onClick={onChooseImap}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 bg-white text-left hover:border-dash-dark/30 hover:bg-gray-50 transition-colors"
+            >
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${PROVIDER_COLORS.imap_smtp}`}>
+                <ProviderMark provider="imap_smtp" />
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-dash-dark">{PROVIDER_LABELS.imap_smtp}</p>
+                <p className="text-[11px] text-gray-400">Hostinger, cPanel, GoDaddy, custom servers</p>
+              </div>
+            </button>
+          ) : (
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-dashed border-gray-200 bg-gray-50/80 text-left">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center border shrink-0 ${PROVIDER_COLORS.imap_smtp}`}>
+                <ProviderMark provider="imap_smtp" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[13px] font-semibold text-gray-500">{PROVIDER_LABELS.imap_smtp}</p>
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                    Unavailable
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-0.5">{IMAP_SMTP_UNSUPPORTED_MESSAGE}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[13px] font-semibold text-dash-dark">{PROVIDER_LABELS[provider]}</p>
-              <p className="text-[11px] text-gray-400">Sign in with OAuth</p>
-            </div>
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={onChooseImap}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 bg-white text-left hover:border-dash-dark/30 hover:bg-gray-50 transition-colors sm:col-span-2"
-        >
-          <div className={`w-9 h-9 rounded-full flex items-center justify-center border ${PROVIDER_COLORS.imap_smtp}`}>
-            <ProviderMark provider="imap_smtp" />
-          </div>
-          <div>
-            <p className="text-[13px] font-semibold text-dash-dark">{PROVIDER_LABELS.imap_smtp}</p>
-            <p className="text-[11px] text-gray-400">Hostinger, cPanel, GoDaddy, custom servers</p>
-          </div>
-        </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -706,6 +784,7 @@ export function EmailAccountsPanel() {
   const queryClient = useQueryClient();
   const [connectMode, setConnectMode] = useState<"closed" | "picker" | "imap">("closed");
   const [editingAccount, setEditingAccount] = useState<EmailAccountItem | null>(null);
+  const imapSmtpAvailable = isImapSmtpConnectionAvailable();
 
   const { data: accounts, isLoading } = useEmailAccounts(companyId);
   const updateMutation = useUpdateEmailAccount();
@@ -774,6 +853,10 @@ export function EmailAccountsPanel() {
   };
 
   const handleTest = (account: EmailAccountItem) => {
+    if (account.provider === "imap_smtp" && !imapSmtpAvailable) {
+      toast.error(IMAP_SMTP_UNSUPPORTED_MESSAGE);
+      return;
+    }
     toast.info("Validating connection…");
     testMutation.mutate(
       { accountId: account.id, companyId },
@@ -792,6 +875,10 @@ export function EmailAccountsPanel() {
 
   const handleReconnect = (account: EmailAccountItem) => {
     if (account.provider === "imap_smtp") {
+      if (!imapSmtpAvailable) {
+        toast.error(IMAP_SMTP_UNSUPPORTED_MESSAGE);
+        return;
+      }
       setConnectMode("closed");
       setEditingAccount(account);
       return;
@@ -823,10 +910,18 @@ export function EmailAccountsPanel() {
     setEditingAccount(null);
   };
 
+  const openImapForm = () => {
+    if (!imapSmtpAvailable) {
+      toast.error(IMAP_SMTP_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    setConnectMode("imap");
+  };
+
   return (
     <SettingsSectionCard
       title="Email Accounts"
-      description="Connect email accounts to send and sync CRM emails from your own mailbox"
+      description="Connect Google or Microsoft to send and sync CRM emails from your mailbox"
       scope="personal"
     >
       {isLoading ? (
@@ -835,6 +930,13 @@ export function EmailAccountsPanel() {
         </div>
       ) : (
         <div className="space-y-4">
+          {!imapSmtpAvailable && (
+            <div className="flex items-start gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50">
+              <AlertCircle size={16} className="text-gray-500 shrink-0 mt-0.5" />
+              <p className="text-[12px] text-gray-700">{IMAP_SMTP_UNSUPPORTED_MESSAGE}</p>
+            </div>
+          )}
+
           {accounts && accounts.length > 0 && (
             <div
               className={`flex items-start gap-3 p-3 rounded-xl border ${
@@ -860,7 +962,7 @@ export function EmailAccountsPanel() {
                   <>
                     {" · "}
                     <span className="font-semibold">{failedCount} failed</span>
-                    {" → edit or retest to fix"}
+                    {" — reconnect or switch to Google/Microsoft"}
                   </>
                 )}
               </p>
@@ -873,11 +975,16 @@ export function EmailAccountsPanel() {
                 <AccountCard
                   key={account.id}
                   account={account}
+                  imapSmtpAvailable={imapSmtpAvailable}
                   onSetDefault={() => handleSetDefault(account)}
                   onDisconnect={() => handleDisconnect(account)}
                   onTest={() => handleTest(account)}
                   onReconnect={() => handleReconnect(account)}
                   onEdit={() => {
+                    if (!imapSmtpAvailable) {
+                      toast.error(IMAP_SMTP_UNSUPPORTED_MESSAGE);
+                      return;
+                    }
                     setConnectMode("closed");
                     setEditingAccount(account);
                   }}
@@ -906,13 +1013,13 @@ export function EmailAccountsPanel() {
               <p className="text-[13px] font-semibold text-dash-dark mb-1">
                 No email accounts connected
               </p>
-              <p className="text-[12px] text-gray-400 max-w-[280px]">
-                Connect Google, Microsoft, Zoho, or IMAP/SMTP to send and sync CRM emails.
+              <p className="text-[12px] text-gray-400 max-w-[300px]">
+                Connect Google or Microsoft (recommended) to send and sync CRM emails from your mailbox.
               </p>
             </div>
           )}
 
-          {editingAccount ? (
+          {editingAccount && imapSmtpAvailable ? (
             <div className="border-t border-gray-100 pt-4">
               <ImapSmtpForm
                 key={`edit-${editingAccount.id}`}
@@ -926,11 +1033,12 @@ export function EmailAccountsPanel() {
             <div className="border-t border-gray-100 pt-4">
               <ConnectProviderPicker
                 companyId={companyId}
+                imapSmtpAvailable={imapSmtpAvailable}
                 onClose={() => setConnectMode("closed")}
-                onChooseImap={() => setConnectMode("imap")}
+                onChooseImap={openImapForm}
               />
             </div>
-          ) : connectMode === "imap" ? (
+          ) : connectMode === "imap" && imapSmtpAvailable ? (
             <div className="border-t border-gray-100 pt-4">
               <ImapSmtpForm
                 key="create-imap"

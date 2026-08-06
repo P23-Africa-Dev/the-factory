@@ -53,6 +53,8 @@ class EmailAccountService
             ]);
         }
 
+        $this->assertImapSmtpAllowed($provider);
+
         if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw ValidationException::withMessages([
                 'email' => ['A valid email address is required.'],
@@ -208,6 +210,30 @@ class EmailAccountService
         }
 
         if ($account->provider === 'imap_smtp') {
+            $imapCredentialKeys = [
+                'email',
+                'smtp_host',
+                'smtp_port',
+                'smtp_encryption',
+                'smtp_username',
+                'smtp_password',
+                'imap_host',
+                'imap_port',
+                'imap_encryption',
+                'imap_username',
+                'imap_password',
+            ];
+            $touchingCredentials = false;
+            foreach ($imapCredentialKeys as $key) {
+                if (array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '') {
+                    $touchingCredentials = true;
+                    break;
+                }
+            }
+            if ($touchingCredentials) {
+                $this->assertImapSmtpAllowed('imap_smtp');
+            }
+
             if (isset($data['email']) && is_string($data['email']) && trim($data['email']) !== '') {
                 $email = strtolower(trim($data['email']));
                 $duplicate = EmailAccount::query()
@@ -398,6 +424,10 @@ class EmailAccountService
 
         $this->assertAccountBelongsToUser($account, $resolvedCompanyId, (int) $user->id);
 
+        if ($account->provider === 'imap_smtp') {
+            $this->assertImapSmtpAllowed('imap_smtp');
+        }
+
         $provider = $this->resolveProvider($account);
 
         try {
@@ -495,6 +525,23 @@ class EmailAccountService
         }
 
         return $message;
+    }
+
+    private function assertImapSmtpAllowed(string $provider): void
+    {
+        if ($provider !== 'imap_smtp') {
+            return;
+        }
+
+        if (config('services.email_accounts.imap_smtp_enabled', false)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'provider' => [
+                'Custom IMAP/SMTP is not available right now. Connect Google or Microsoft instead to send and sync CRM email from your mailbox.',
+            ],
+        ]);
     }
 
     /**
