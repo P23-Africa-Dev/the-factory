@@ -120,6 +120,7 @@ class EmailAccountOAuthTest extends TestCase
         $this->assertSame('active', $account->status);
         $this->assertSame('Reconnected', $account->display_name);
         $this->assertNull($account->disconnected_at);
+        $this->assertFalse($account->trashed());
         $this->assertSame(1, \App\Models\EmailAccount::query()->count());
     }
 

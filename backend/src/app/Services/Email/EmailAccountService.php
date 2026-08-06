@@ -30,6 +30,7 @@ class EmailAccountService
         return EmailAccount::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('user_id', $user->id)
+            ->where('status', '!=', 'disconnected')
             ->orderByDesc('is_default')
             ->orderBy('email')
             ->get();
@@ -61,24 +62,25 @@ class EmailAccountService
             ]);
         }
 
-        // Check for duplicate
-        $existing = EmailAccount::query()
+        // Check for an active duplicate, or restore a previously removed account.
+        $existing = EmailAccount::withTrashed()
             ->where('company_id', $resolvedCompanyId)
             ->where('user_id', $user->id)
             ->where('email', $email)
             ->first();
 
-        if ($existing !== null) {
+        if ($existing !== null && ! $existing->trashed() && $existing->status !== 'disconnected') {
             throw ValidationException::withMessages([
                 'email' => ['This email account is already connected.'],
             ]);
         }
 
-        $account = DB::transaction(function () use ($resolvedCompanyId, $user, $provider, $email, $data): EmailAccount {
+        $account = DB::transaction(function () use ($existing, $resolvedCompanyId, $user, $provider, $email, $data): EmailAccount {
             // If this is the first account, make it default
             $existingCount = EmailAccount::query()
                 ->where('company_id', $resolvedCompanyId)
                 ->where('user_id', $user->id)
+                ->where('status', '!=', 'disconnected')
                 ->count();
 
             $isDefault = (bool) ($data['is_default'] ?? ($existingCount === 0));
@@ -91,11 +93,8 @@ class EmailAccountService
                     ->update(['is_default' => false]);
             }
 
-            return EmailAccount::query()->create([
-                'company_id' => $resolvedCompanyId,
-                'user_id' => $user->id,
+            $attributes = [
                 'provider' => $provider,
-                'email' => $email,
                 'display_name' => $data['display_name'] ?? null,
                 'access_token_encrypted' => $data['access_token'] ?? null,
                 'refresh_token_encrypted' => $data['refresh_token'] ?? null,
@@ -114,8 +113,27 @@ class EmailAccountService
                 'imap_password_encrypted' => $data['imap_password'] ?? null,
                 'is_default' => $isDefault,
                 'status' => 'active',
+                'last_error_message' => null,
+                'last_error_at' => null,
                 'connected_at' => now(),
-            ]);
+                'disconnected_at' => null,
+            ];
+
+            if ($existing !== null) {
+                if ($existing->trashed()) {
+                    $existing->restore();
+                }
+
+                $existing->update($attributes);
+
+                return $existing->fresh() ?? $existing;
+            }
+
+            return EmailAccount::query()->create(array_merge($attributes, [
+                'company_id' => $resolvedCompanyId,
+                'user_id' => $user->id,
+                'email' => $email,
+            ]));
         });
 
         Log::info('Email account connected', [
@@ -130,7 +148,10 @@ class EmailAccountService
     }
 
     /**
-     * Disconnect an email account.
+     * Remove an email account from the user's connected list.
+     *
+     * Soft-deletes the row so OAuth reconnect can restore the same mailbox later,
+     * while clearing credentials immediately and hiding it from Settings.
      */
     public function disconnect(User $user, EmailAccount $account, ?int $companyId = null): void
     {
@@ -142,11 +163,17 @@ class EmailAccountService
         $account->update([
             'status' => 'disconnected',
             'disconnected_at' => now(),
+            'is_default' => false,
             'access_token_encrypted' => null,
             'refresh_token_encrypted' => null,
             'smtp_password_encrypted' => null,
             'imap_password_encrypted' => null,
+            'last_error_message' => null,
+            'last_error_at' => null,
         ]);
+
+        // Soft-delete so list endpoints (SoftDeletes scope) no longer return this account.
+        $account->delete();
 
         Log::info('Email account disconnected', [
             'company_id' => $resolvedCompanyId,

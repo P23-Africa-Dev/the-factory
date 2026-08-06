@@ -215,7 +215,7 @@ class EmailAccountServiceTest extends TestCase
         ]);
     }
 
-    public function test_disconnect_clears_tokens_and_sets_status(): void
+    public function test_disconnect_clears_tokens_and_soft_deletes(): void
     {
         $account = $this->service->connect($this->user, [
             'company_id' => $this->company->id,
@@ -225,12 +225,44 @@ class EmailAccountServiceTest extends TestCase
             'refresh_token' => 'refresh',
         ]);
 
+        $accountId = $account->id;
         $this->service->disconnect($this->user, $account, $this->company->id);
 
-        $account->refresh();
+        $this->assertSoftDeleted('email_accounts', [
+            'id' => $accountId,
+        ]);
 
-        $this->assertEquals('disconnected', $account->status);
-        $this->assertNotNull($account->disconnected_at);
+        $trashed = EmailAccount::withTrashed()->findOrFail($accountId);
+        $this->assertEquals('disconnected', $trashed->status);
+        $this->assertNotNull($trashed->disconnected_at);
+        $this->assertNull($trashed->access_token_encrypted);
+        $this->assertNull($trashed->refresh_token_encrypted);
+        $this->assertSame(0, EmailAccount::query()->where('user_id', $this->user->id)->count());
+    }
+
+    public function test_list_excludes_disconnected_accounts(): void
+    {
+        $active = $this->service->connect($this->user, [
+            'company_id' => $this->company->id,
+            'provider' => 'google',
+            'email' => 'keep@gmail.com',
+            'access_token' => 'token-keep',
+        ]);
+
+        $removed = $this->service->connect($this->user, [
+            'company_id' => $this->company->id,
+            'provider' => 'google',
+            'email' => 'remove@gmail.com',
+            'access_token' => 'token-remove',
+        ]);
+
+        $this->service->disconnect($this->user, $removed, $this->company->id);
+
+        $listed = $this->service->listForUser($this->user, $this->company->id);
+
+        $this->assertCount(1, $listed);
+        $this->assertTrue($listed->contains('id', $active->id));
+        $this->assertFalse($listed->contains('id', $removed->id));
     }
 
     public function test_set_default_switches_default_flag(): void

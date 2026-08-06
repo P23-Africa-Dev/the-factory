@@ -249,6 +249,10 @@ class EmailAccountApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('success', true);
 
+        $this->assertSoftDeleted('email_accounts', [
+            'id' => $account->id,
+        ]);
+
         $this->assertDatabaseHas('email_accounts', [
             'id' => $account->id,
             'status' => 'disconnected',

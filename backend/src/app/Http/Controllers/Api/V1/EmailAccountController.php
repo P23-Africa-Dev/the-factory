@@ -220,7 +220,7 @@ class EmailAccountController extends Controller
                 $this->resolveCompanyContextId($request->input('company_id')),
             );
 
-            return $this->success(message: 'Email account disconnected successfully.');
+            return $this->success(message: 'Email account removed successfully.');
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -231,7 +231,7 @@ class EmailAccountController extends Controller
             ]);
 
             return $this->error(
-                message: 'Failed to disconnect email account.',
+                message: 'Failed to remove email account.',
                 errors: ['disconnect' => $e->getMessage()],
                 status: 500,
             );

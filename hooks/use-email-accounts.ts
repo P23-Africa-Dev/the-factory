@@ -33,7 +33,8 @@ export function useEmailAccounts(companyId?: number | string) {
     queryKey: EMAIL_ACCOUNTS_KEYS.list(companyId),
     queryFn: async (): Promise<EmailAccountItem[]> => {
       const response = await listEmailAccounts({ company_id: companyId }, token);
-      return response.data.items;
+      // Hide removed accounts even if an older API still returns soft-status rows.
+      return (response.data.items ?? []).filter((item) => item.status !== "disconnected");
     },
     enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 30,
@@ -100,7 +101,14 @@ export function useDisconnectEmailAccount() {
       accountId: number | string;
       companyId?: number | string;
     }) => disconnectEmailAccount(accountId, { company_id: companyId }, token),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      queryClient.setQueriesData<EmailAccountItem[]>(
+        { queryKey: EMAIL_ACCOUNTS_KEYS.all },
+        (current) =>
+          Array.isArray(current)
+            ? current.filter((item) => String(item.id) !== String(variables.accountId))
+            : current,
+      );
       queryClient.invalidateQueries({ queryKey: EMAIL_ACCOUNTS_KEYS.all });
     },
   });
