@@ -33,6 +33,7 @@ import {
   IMAP_SMTP_UNSUPPORTED_MESSAGE,
   isImapSmtpConnectionAvailable,
 } from "@/lib/email/imap-smtp-availability";
+import { toastEmailOAuthResult } from "@/lib/email/oauth-result-toast";
 import type {
   EmailAccountConnectionTest,
   EmailAccountItem,
@@ -831,13 +832,10 @@ export function EmailAccountsPanel() {
       };
       if (!payload || payload.type !== "email-account-oauth") return;
 
+      toastEmailOAuthResult(payload);
       if (payload.success) {
-        toast.success(payload.message || "Email account connected successfully.");
         refreshAccounts();
-        return;
       }
-
-      toast.error(payload.message || "Email account connection failed.");
     };
 
     window.addEventListener("message", handleMessage);

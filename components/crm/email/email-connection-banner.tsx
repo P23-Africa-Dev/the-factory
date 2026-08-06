@@ -3,6 +3,7 @@
 import { useAuthorizeEmailAccountOAuth, useEmailAccounts } from "@/hooks/use-email-accounts";
 import { EMAIL_ACCOUNTS_KEYS } from "@/hooks/use-email-accounts";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { toastEmailOAuthResult } from "@/lib/email/oauth-result-toast";
 import { useAuthStore } from "@/store/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Link2, Mail } from "lucide-react";
@@ -53,16 +54,14 @@ export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps)
                 type?: string;
                 success?: boolean;
                 message?: string;
+                provider?: string;
             };
             if (!payload || payload.type !== "email-account-oauth") return;
 
+            toastEmailOAuthResult(payload);
             if (payload.success) {
-                toast.success(payload.message || "Email account connected successfully.");
                 refreshAccounts();
-                return;
             }
-
-            toast.error(payload.message || "Email account connection failed.");
         };
 
         window.addEventListener("message", handleOAuthMessage);

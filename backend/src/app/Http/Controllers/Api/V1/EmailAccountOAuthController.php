@@ -211,7 +211,11 @@ class EmailAccountOAuthController extends Controller
           setTimeout(function () {
             try { window.close(); } catch (error) { /* noop */ }
             if (!window.closed) {
-              window.location.replace(redirectUrl);
+              // Stay on this page (do not redirect with ?email_oauth=) to avoid a second toast.
+              var title = document.querySelector("h1");
+              var copy = document.querySelector("p");
+              if (title) title.textContent = payload.message || (payload.success ? "Connected" : "Connection failed");
+              if (copy) copy.textContent = "You can close this window and return to Factory 23.";
             }
           }, 300);
           return;

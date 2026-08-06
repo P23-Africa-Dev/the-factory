@@ -167,23 +167,8 @@ class MicrosoftMailOAuthService
                 'body' => $tokenResponse->body(),
             ]);
 
-            $azureError = strtolower((string) ($tokenResponse->json('error') ?? ''));
-            $azureDescription = trim((string) ($tokenResponse->json('error_description') ?? ''));
-
-            if (
-                str_contains($azureError, 'invalid_client')
-                || str_contains(strtolower($azureDescription), 'client secret')
-                || str_contains(strtolower($azureDescription), 'invalid_client')
-            ) {
-                throw ValidationException::withMessages([
-                    'integration' => [
-                        'Microsoft rejected the app credentials. In Azure App registrations, use the Application (client) ID and the client secret Value (not the Secret ID), then update MICROSOFT_MAIL_CLIENT_ID / MICROSOFT_MAIL_CLIENT_SECRET and restart the backend.',
-                    ],
-                ]);
-            }
-
             throw ValidationException::withMessages([
-                'integration' => ['Microsoft token exchange failed. Please retry the connection process.'],
+                'integration' => [$this->humanizeTokenExchangeError($tokenResponse)],
             ]);
         }
 
@@ -283,6 +268,64 @@ class MicrosoftMailOAuthService
         $tenant = trim((string) config('services.microsoft_mail.tenant', 'common'));
 
         return $tenant !== '' ? $tenant : 'common';
+    }
+
+    /**
+     * @param  \Illuminate\Http\Client\Response  $tokenResponse
+     */
+    private function humanizeTokenExchangeError(mixed $tokenResponse): string
+    {
+        $azureError = strtolower(trim((string) $tokenResponse->json('error')));
+        $azureDescription = trim((string) $tokenResponse->json('error_description'));
+        $normalizedDescription = strtolower($azureDescription);
+
+        if (
+            str_contains($azureError, 'invalid_client')
+            || str_contains($normalizedDescription, 'client secret')
+            || str_contains($normalizedDescription, 'invalid_client')
+        ) {
+            return 'Microsoft rejected the app credentials. In Azure App registrations, use the Application (client) ID and the client secret Value (not the Secret ID), then update MICROSOFT_MAIL_CLIENT_ID / MICROSOFT_MAIL_CLIENT_SECRET and restart the backend.';
+        }
+
+        // Personal MSA signed in against an app that only allows work/school tenants.
+        if (
+            str_contains($normalizedDescription, 'aadsts500202')
+            || str_contains($normalizedDescription, 'personal microsoft account')
+            || str_contains($normalizedDescription, 'do not have direct microsoft account support')
+        ) {
+            return 'That looks like a personal Microsoft account (Outlook/Hotmail/Live). This Azure app currently allows only work/school accounts. Either sign in with a Microsoft 365 work account, or in Azure App registrations → Authentication set Supported account types to include personal Microsoft accounts, then retry.';
+        }
+
+        if (
+            str_contains($normalizedDescription, 'aadsts50011')
+            || str_contains($normalizedDescription, 'redirect_uri')
+            || str_contains($normalizedDescription, 'reply url')
+        ) {
+            return 'Microsoft rejected the redirect URI. In Azure App registrations → Authentication, add exactly: '.$this->redirectUri();
+        }
+
+        if (
+            str_contains($normalizedDescription, 'aadsts700016')
+            || str_contains($normalizedDescription, 'application was not found')
+        ) {
+            return 'Microsoft could not find this application. Check MICROSOFT_MAIL_CLIENT_ID matches the Azure Application (client) ID.';
+        }
+
+        if (
+            str_contains($normalizedDescription, 'code has been redeemed')
+            || str_contains($normalizedDescription, 'authorization code was already redeemed')
+        ) {
+            return 'This Microsoft sign-in code was already used. Close extra tabs/popups and start Connect Microsoft again.';
+        }
+
+        if ($azureDescription !== '') {
+            // Keep client-facing text short; strip Trace/Correlation footer Azure appends.
+            $short = preg_split('/\s+Trace ID:/i', $azureDescription)[0] ?? $azureDescription;
+
+            return 'Microsoft sign-in failed: '.trim($short);
+        }
+
+        return 'Microsoft token exchange failed. Please retry the connection process.';
     }
 
     private function assertOAuthConfigured(bool $requireSecret): void

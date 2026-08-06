@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { toast } from "sonner";
+import { toastEmailOAuthResult } from "@/lib/email/oauth-result-toast";
 
 /**
  * Handles Email Accounts OAuth return query params after redirect/popup fallback.
@@ -27,17 +27,15 @@ export function useEmailOAuthReturnToast(onHandled?: () => void) {
     }
     handledKeyRef.current = handledKey;
 
-    const displayMessage =
-      message ||
-      (status === "success"
-        ? "Email account connected successfully."
-        : "Email account connection failed. Please try again.");
-
-    if (status === "success") {
-      toast.success(displayMessage);
-    } else {
-      toast.error(displayMessage);
-    }
+    toastEmailOAuthResult({
+      success: status === "success",
+      message:
+        message ||
+        (status === "success"
+          ? "Email account connected successfully."
+          : "Email account connection failed. Please try again."),
+      provider,
+    });
 
     onHandled?.();
 

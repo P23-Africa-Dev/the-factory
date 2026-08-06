@@ -2154,9 +2154,16 @@ export function AIChat({ open, onClose }: AIChatProps) {
         success?: boolean;
         status?: "success" | "error";
         message?: string;
+        provider?: string;
       };
 
       if (!payload || payload.type !== "email-account-oauth") {
+        return;
+      }
+
+      // Only react when Ely started this OAuth (avoid duplicate toasts with Settings).
+      const pending = pendingEmailConfirmRef.current;
+      if (!pending) {
         return;
       }
 
@@ -2167,13 +2174,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
         return;
       }
 
-      const pending = pendingEmailConfirmRef.current;
       pendingEmailConfirmRef.current = null;
       toast.success(payload.message || "Email connected. Sending your follow-up now.");
-
-      if (pending) {
-        submitConfirmedAction(pending.index, pending.msg);
-      }
+      submitConfirmedAction(pending.index, pending.msg);
     };
 
     window.addEventListener("message", handleOAuthMessage);
