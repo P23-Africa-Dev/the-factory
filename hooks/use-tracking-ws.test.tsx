@@ -135,7 +135,7 @@ describe("useTrackingWebSocket", () => {
 
         expect(MockWebSocket.instances).toHaveLength(1);
         const ws = MockWebSocket.instances[0];
-        expect(ws.url).toContain("token=test-token");
+        expect(ws.url).not.toContain("token=");
         expect(ws.url).toContain("company_id=44");
         expect(ws.url).toContain("task_ids=101%2C202");
 
@@ -145,6 +145,7 @@ describe("useTrackingWebSocket", () => {
 
         const firstMessage = JSON.parse(ws.sent[0]);
         expect(firstMessage.type).toBe("authenticate");
+        expect(firstMessage.token).toBe("test-token");
         expect(firstMessage.task_ids).toEqual([101, 202]);
 
         await act(async () => {

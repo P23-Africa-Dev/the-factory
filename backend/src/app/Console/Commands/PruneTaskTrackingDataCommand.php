@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\AgentLocationSnapshot;
 use App\Models\TaskLocationPoint;
 use App\Models\TaskTrackingSession;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class PruneTaskTrackingDataCommand extends Command
 {
@@ -53,6 +55,14 @@ class PruneTaskTrackingDataCommand extends Command
             $oldNonCheckpointPointsCount,
         ));
 
+        Log::info('[tracking] prune_scan', [
+            'cutoff' => $cutoff->toIso8601String(),
+            'retention_days' => $retentionDays,
+            'old_sessions' => $oldSessionsCount,
+            'old_non_checkpoint_points' => $oldNonCheckpointPointsCount,
+            'dry_run' => $dryRun,
+        ]);
+
         if ($dryRun) {
             $this->line('Dry run mode enabled. No records were deleted.');
 
@@ -62,11 +72,42 @@ class PruneTaskTrackingDataCommand extends Command
         $deletedSessions = $this->deleteInChunks($oldSessionsQuery, $chunkSize, TaskTrackingSession::class);
         $deletedPoints = $this->deleteInChunks($oldNonCheckpointPointsQuery, $chunkSize, TaskLocationPoint::class);
 
+        // Clear stale live snapshots whose last_seen is older than retention so
+        // lat/lng PII does not linger after trails are pruned.
+        $staleSnapshotsQuery = AgentLocationSnapshot::query()
+            ->where(function ($query) use ($cutoff): void {
+                $query
+                    ->where(function ($inner) use ($cutoff): void {
+                        $inner
+                            ->whereNotNull('last_seen_at')
+                            ->where('last_seen_at', '<', $cutoff);
+                    })
+                    ->orWhere(function ($inner) use ($cutoff): void {
+                        $inner
+                            ->whereNull('last_seen_at')
+                            ->where('updated_at', '<', $cutoff);
+                    });
+            });
+        $deletedSnapshots = $this->deleteInChunks(
+            $staleSnapshotsQuery,
+            $chunkSize,
+            AgentLocationSnapshot::class,
+        );
+
         $this->info(sprintf(
-            'Tracking prune completed. deleted_sessions=%d deleted_non_checkpoint_points=%d',
+            'Tracking prune completed. deleted_sessions=%d deleted_non_checkpoint_points=%d deleted_snapshots=%d',
             $deletedSessions,
             $deletedPoints,
+            $deletedSnapshots,
         ));
+
+        Log::info('[tracking] prune_completed', [
+            'cutoff' => $cutoff->toIso8601String(),
+            'retention_days' => $retentionDays,
+            'deleted_sessions' => $deletedSessions,
+            'deleted_non_checkpoint_points' => $deletedPoints,
+            'deleted_snapshots' => $deletedSnapshots,
+        ]);
 
         return self::SUCCESS;
     }

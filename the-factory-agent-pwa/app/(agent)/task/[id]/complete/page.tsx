@@ -17,6 +17,11 @@ import {
   resolveCompletionRequirements,
   validateCompletionRequirements,
 } from '@/features/tracking';
+import { trackingApi } from '@/features/tracking/api';
+import {
+  formatTripSummaryToast,
+  summarizeTaskRoute,
+} from '@/features/tracking/tripSummary';
 import { useTrackingStore } from '@/store/tracking';
 import { getDb } from '@/lib/db/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
@@ -164,6 +169,13 @@ export default function TaskCompletePage() {
             reason: 'completed',
             taskTitle: task?.title ?? null,
           });
+          try {
+            const route = await trackingApi.getTaskRoute(taskIdNum, companyId);
+            const summary = summarizeTaskRoute(route);
+            toast.success('Task completed', formatTripSummaryToast(summary, 'completed'));
+          } catch {
+            toast.success('Task completed', 'Great work — tracking has stopped.');
+          }
           goToTaskList();
         },
         onError: (err: unknown) => {

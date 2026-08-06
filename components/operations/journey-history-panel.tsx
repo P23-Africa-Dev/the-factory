@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { format, parseISO, subDays } from "date-fns";
+import { format, parse, parseISO, subDays } from "date-fns";
 import {
   CalendarDays,
   Clock,
+  Download,
   Loader2,
   MapPinned,
   Navigation,
@@ -12,6 +13,10 @@ import {
 } from "lucide-react";
 import { useAgentJourneys, useMyJourneys } from "@/hooks/use-field-journeys";
 import type { JourneyCard } from "@/lib/api/field-activity";
+import {
+  buildJourneysCsv,
+  downloadTextFile,
+} from "@/lib/tracking/export-journeys-csv";
 
 function formatKm(meters: number): string {
   if (meters < 1000) return `${meters} m`;
@@ -33,7 +38,7 @@ function JourneyEntry({
   journey: JourneyCard;
   href: string;
 }) {
-  const date = journey.date ? parseISO(journey.date) : null;
+  const date = journey.date ? parse(journey.date, "yyyy-MM-dd", new Date()) : null;
   const dayLabel = date ? format(date, "EEE") : "—";
   const dayNum = date ? format(date, "d") : "—";
   const monthLabel = date ? format(date, "MMM") : "";
@@ -192,6 +197,13 @@ export function JourneyHistoryPanel({
   const journeys = data?.items ?? [];
   const summary = data?.summary;
 
+  const handleExportCsv = () => {
+    if (journeys.length === 0) return;
+    const csv = buildJourneysCsv(journeys, selected.name);
+    const stamp = format(new Date(), "yyyy-MM-dd");
+    downloadTextFile(`journey-history-${selected.userId}-${stamp}.csv`, csv);
+  };
+
   return (
     <div className="flex flex-col rounded-3xl overflow-hidden shadow-[0px_4px_14px_rgba(9,35,45,0.18)]">
       <div className="bg-dash-dark px-5 py-5 shrink-0">
@@ -202,9 +214,21 @@ export function JourneyHistoryPanel({
             </p>
             <p className="text-[15px] font-bold text-white mt-0.5">{selected.name}</p>
           </div>
-          <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full">
-            <CalendarDays size={11} className="text-white/60" />
-            <span className="text-[10px] font-bold text-white/70">Last 30 days</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={journeys.length === 0 || isLoading}
+              className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/15 disabled:opacity-40 px-3 py-1.5 rounded-full transition-colors"
+              title="Export CSV"
+            >
+              <Download size={11} className="text-white/70" />
+              <span className="text-[10px] font-bold text-white/70">Export</span>
+            </button>
+            <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full">
+              <CalendarDays size={11} className="text-white/60" />
+              <span className="text-[10px] font-bold text-white/70">Last 30 days</span>
+            </div>
           </div>
         </div>
 

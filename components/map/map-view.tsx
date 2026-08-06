@@ -46,11 +46,22 @@ import {
 } from '@/lib/tracking/operational-status';
 import {
   hasUsableTaskPosition,
+  isLiveTaskStale,
   resolveMapTasks,
+  resolvePreferredMapTasks,
   resolveTrajectoryTaskIds,
+  countLiveTasksByAgent,
   splitLiveFeedTasks,
   TRACKING_STALE_MS,
 } from '@/lib/tracking/live-feed-groups';
+import { circleFeatureCollection } from '@/lib/map/circle-geojson';
+import {
+  createLiveAgentClusterElement,
+  LIVE_AGENT_CLUSTER_MIN,
+  shouldClusterLiveAgents,
+} from '@/lib/map/live-agent-cluster';
+import Supercluster from 'supercluster';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import { LiveFeedsPanel } from '@/components/map/live-feeds-panel';
 import { AgentAvatar } from '@/components/map/agent-avatar';
 import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
@@ -138,6 +149,12 @@ type GoogleMapsNamespaceLike = {
     Map: new (container: HTMLElement, options: Record<string, unknown>) => GoogleMapLike;
     Marker: new (options: Record<string, unknown>) => GoogleMarkerLike;
     Polyline: new (options: Record<string, unknown>) => GooglePolylineLike;
+    Circle: new (options: Record<string, unknown>) => {
+      setMap: (map: GoogleMapLike | null) => void;
+      setCenter: (point: GoogleLatLng) => void;
+      setRadius: (radius: number) => void;
+      setOptions: (options: Record<string, unknown>) => void;
+    };
     LatLngBounds: new () => GoogleLatLngBoundsLike;
     SymbolPath: {
       CIRCLE: unknown;
@@ -148,11 +165,6 @@ type GoogleMapsNamespaceLike = {
     };
   };
 };
-
-function isTaskStale(lastEventAt: string, nowMs: number): boolean {
-  if (!lastEventAt || !nowMs) return false;
-  return nowMs - new Date(lastEventAt).getTime() > STALE_MS;
-}
 
 function getStatusLabel(status: LiveTaskState['status']): string {
   if (status === 'near_destination') return 'Near destination';
@@ -308,6 +320,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const destinationMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const agentMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const agentMarkerUserIdRef = useRef<Map<number, number>>(new Map());
+  const agentClusterMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
   const popupRef = useRef<mapboxgl.Popup | null>(null);
@@ -315,6 +328,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const locateMePinRef = useRef<mapboxgl.Marker | null>(null);
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
+  const [mapZoom, setMapZoom] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [leftSearchQuery, setLeftSearchQuery] = useState('');
@@ -448,10 +462,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     () => splitLiveFeedTasks(tasks, nowMs, STALE_MS),
     [tasks, nowMs],
   );
-  const mapTasks = useMemo(
-    () => resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId),
-    [feedGroups.active, feedGroups.history, selectedTaskId],
-  );
+  const mapTasks = useMemo(() => {
+    const base = resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId);
+    return resolvePreferredMapTasks(base, selectedTaskId);
+  }, [feedGroups.active, feedGroups.history, selectedTaskId]);
+  const agentTaskCounts = useMemo(() => countLiveTasksByAgent(tasks), [tasks]);
   const trajectoryTaskIds = useMemo(
     () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
     [feedGroups.active, selectedTaskId, followAllActive],
@@ -514,6 +529,22 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     if (selectedTaskId === deepLinkTaskId) return;
     handleSelectTask(deepLinkTaskId);
   }, [deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
+
+  // Deep-link by agent: /map?agent=123 — select that agent's live task when no taskId.
+  useEffect(() => {
+    if (!Number.isFinite(initialAgentId) || initialAgentId <= 0) return;
+    if (Number.isFinite(deepLinkTaskId) && deepLinkTaskId > 0) return;
+    const match = Object.values(liveTasks).find(
+      (task) => task.userId === initialAgentId && hasUsableTaskPosition(task),
+    );
+    if (!match) return;
+    if (selectedTaskId === match.taskId) return;
+    handleSelectTask(match.taskId);
+  }, [initialAgentId, deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
+
+  const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
+    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+  }, []);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -1156,6 +1187,47 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         },
       });
 
+      map.addSource('selection-overlays', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'selection-overlay-fill',
+        type: 'fill',
+        source: 'selection-overlays',
+        paint: {
+          'fill-color': [
+            'match',
+            ['get', 'kind'],
+            'geofence',
+            '#16A34A',
+            '#3B82F6',
+          ],
+          'fill-opacity': 0.12,
+        },
+      });
+      map.addLayer({
+        id: 'selection-overlay-outline',
+        type: 'line',
+        source: 'selection-overlays',
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'kind'],
+            'geofence',
+            '#16A34A',
+            '#3B82F6',
+          ],
+          'line-width': 2,
+          'line-opacity': 0.75,
+        },
+      });
+
+      const syncZoom = () => setMapZoom(map.getZoom());
+      syncZoom();
+      map.on('zoomend', syncZoom);
+      map.on('moveend', syncZoom);
+
       if (initialViewportIsUserLocation) {
         userLocationMarkerRef.current = new mapboxgl.Marker({
           element: createUserLocationIndicatorElement(),
@@ -1179,9 +1251,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       originMarkersRef.current.forEach((marker) => marker.remove());
       destinationMarkersRef.current.forEach((marker) => marker.remove());
       agentMarkersRef.current.forEach((marker) => marker.remove());
+      agentClusterMarkersRef.current.forEach((marker) => marker.remove());
       originMarkersRef.current.clear();
       destinationMarkersRef.current.clear();
       agentMarkersRef.current.clear();
+      agentClusterMarkersRef.current = [];
 
       if (popupRef.current) popupRef.current.remove();
       if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
@@ -1238,13 +1312,63 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const destinationIds = new Set<number>();
 
+    agentClusterMarkersRef.current.forEach((marker) => marker.remove());
+    agentClusterMarkersRef.current = [];
+
+    const zoom = mapZoom || map.getZoom();
+    const clustering = shouldClusterLiveAgents(validTasks.length, zoom);
+    const clusteredTaskIds = new Set<number>();
+
+    if (clustering && bounds) {
+      const clusterable = validTasks.filter(
+        (task) => selectedTaskId !== task.taskId && !trajectoryTaskIds.has(task.taskId),
+      );
+      const points = clusterable.map((task) => ({
+        type: 'Feature' as const,
+        properties: { cluster: false, taskId: task.taskId },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [task.lastPosition[0], task.lastPosition[1]] as [number, number],
+        },
+      }));
+      const clusterIndex = new Supercluster({ radius: 56, maxZoom: 15 });
+      clusterIndex.load(points);
+      const clusters = clusterIndex.getClusters(
+        [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        Math.floor(zoom),
+      );
+
+      clusters.forEach((feature) => {
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        if (feature.properties?.cluster) {
+          const count = Number(feature.properties.point_count ?? 0);
+          const leaves = clusterIndex.getLeaves(Number(feature.id), Infinity);
+          leaves.forEach((leaf) => {
+            const id = Number(leaf.properties?.taskId);
+            if (Number.isFinite(id)) clusteredTaskIds.add(id);
+          });
+          const el = createLiveAgentClusterElement(count);
+          el.addEventListener('click', () => {
+            const expansionZoom = clusterIndex.getClusterExpansionZoom(Number(feature.id));
+            map.easeTo({ center: [lng, lat], zoom: expansionZoom });
+          });
+          const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([lng, lat])
+            .addTo(map);
+          agentClusterMarkersRef.current.push(marker);
+        }
+      });
+    }
+
     validTasks.forEach((task) => {
-      const stale = isTaskStale(task.lastEventAt, now);
+      const stale = isLiveTaskStale(task, now, STALE_MS);
       const derivedOperationalStatus = resolveOperationalStatusFromTask(task, now, STALE_MS);
       const visualState = resolveVisualTaskState(task.status, stale, derivedOperationalStatus);
       const trail = sanitizePolyline(buildTaskTrail(task));
       const currentPoint = task.lastPosition;
       const showTrajectory = trajectoryTaskIds.has(task.taskId);
+      const taskCount = agentTaskCounts.get(task.userId) ?? 1;
+      const hideAgentInCluster = clusteredTaskIds.has(task.taskId);
 
       if (showTrajectory && trail.length >= 2) {
         routeFeatures.push({
@@ -1341,6 +1465,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }
 
       let existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      if (hideAgentInCluster) {
+        if (existingAgentMarker) {
+          existingAgentMarker.remove();
+          agentMarkersRef.current.delete(task.taskId);
+          markerPositionRef.current.delete(task.taskId);
+          agentMarkerUserIdRef.current.delete(task.taskId);
+          const frameId = markerAnimationsRef.current.get(task.taskId);
+          if (frameId) {
+            cancelAnimationFrame(frameId);
+            markerAnimationsRef.current.delete(task.taskId);
+          }
+        }
+        return;
+      }
+
       const trackedUserId = agentMarkerUserIdRef.current.get(task.taskId);
       if (
         existingAgentMarker &&
@@ -1366,6 +1505,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           avatarUrl: task.agentAvatarUrl,
           visualState,
           stale,
+          taskCount,
         });
         el.dataset.agentName = task.agentName;
         el.dataset.avatarUrl = task.agentAvatarUrl ?? '';
@@ -1393,6 +1533,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           avatarUrl: task.agentAvatarUrl,
           visualState,
           stale,
+          taskCount,
         });
         existingAgentMarker.getElement().dataset.agentName = task.agentName;
         existingAgentMarker.getElement().dataset.avatarUrl = task.agentAvatarUrl ?? '';
@@ -1430,6 +1571,42 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       features: forwardFeatures,
     });
 
+    const overlayCircles: Array<{
+      lng: number;
+      lat: number;
+      radiusMeters: number;
+      kind: 'accuracy' | 'geofence';
+    }> = [];
+    if (selectedTaskId != null) {
+      const selected = validTasks.find((t) => t.taskId === selectedTaskId) ?? liveTasks[selectedTaskId];
+      if (selected && hasUsableTaskPosition(selected)) {
+        const accuracy = selected.accuracyMeters;
+        if (typeof accuracy === 'number' && accuracy > 0 && accuracy < 500) {
+          overlayCircles.push({
+            lng: selected.lastPosition[0],
+            lat: selected.lastPosition[1],
+            radiusMeters: accuracy,
+            kind: 'accuracy',
+          });
+        }
+        const radiusM = selected.destination?.radiusM;
+        if (
+          selected.destination &&
+          typeof radiusM === 'number' &&
+          radiusM > 0
+        ) {
+          overlayCircles.push({
+            lng: selected.destination.lng,
+            lat: selected.destination.lat,
+            radiusMeters: radiusM,
+            kind: 'geofence',
+          });
+        }
+      }
+    }
+    const overlaySource = map.getSource('selection-overlays') as mapboxgl.GeoJSONSource | undefined;
+    overlaySource?.setData(circleFeatureCollection(overlayCircles));
+
     originMarkersRef.current.forEach((marker, id) => {
       if (!validIds.has(id)) {
         marker.remove();
@@ -1445,7 +1622,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     });
 
     agentMarkersRef.current.forEach((marker, id) => {
-      if (!validIds.has(id)) {
+      if (!validIds.has(id) || clusteredTaskIds.has(id)) {
         marker.remove();
         agentMarkersRef.current.delete(id);
         markerPositionRef.current.delete(id);
@@ -1457,7 +1634,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
     });
-  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId, bindHoverPopup, handleSelectTask]);
+  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, mapZoom, agentTaskCounts, liveTasks, animateMarkerTo, selectedTaskId, bindHoverPopup, handleSelectTask]);
 
   // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
   useEffect(() => {
@@ -1782,6 +1959,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
+            onViewHistoryTask={handleViewHistoryTask}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
@@ -2077,6 +2255,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const agentMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const destinationMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const routeLinesRef = useRef<Map<number, GooglePolylineLike>>(new Map());
+  const overlayCirclesRef = useRef<Array<{ setMap: (map: GoogleMapLike | null) => void }>>([]);
+  const agentClustererRef = useRef<MarkerClusterer | null>(null);
   const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
   const locateMePinRef = useRef<GoogleMarkerLike | null>(null);
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
@@ -2205,10 +2385,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     () => splitLiveFeedTasks(tasks, nowMs, STALE_MS),
     [tasks, nowMs],
   );
-  const mapTasks = useMemo(
-    () => resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId),
-    [feedGroups.active, feedGroups.history, selectedTaskId],
-  );
+  const mapTasks = useMemo(() => {
+    const base = resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId);
+    return resolvePreferredMapTasks(base, selectedTaskId);
+  }, [feedGroups.active, feedGroups.history, selectedTaskId]);
   const trajectoryTaskIds = useMemo(
     () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
     [feedGroups.active, selectedTaskId, followAllActive],
@@ -2233,6 +2413,21 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (selectedTaskId === deepLinkTaskIdGoogle) return;
     handleSelectTask(deepLinkTaskIdGoogle);
   }, [deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
+
+  useEffect(() => {
+    if (!Number.isFinite(initialAgentId) || initialAgentId <= 0) return;
+    if (Number.isFinite(deepLinkTaskIdGoogle) && deepLinkTaskIdGoogle > 0) return;
+    const match = Object.values(liveTasks).find(
+      (task) => task.userId === initialAgentId && hasUsableTaskPosition(task),
+    );
+    if (!match) return;
+    if (selectedTaskId === match.taskId) return;
+    handleSelectTask(match.taskId);
+  }, [initialAgentId, deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
+
+  const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
+    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+  }, []);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -2678,7 +2873,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     const destinationIds = new Set<number>();
 
     validTasks.forEach((task) => {
-      const stale = isTaskStale(task.lastEventAt, now);
+      const stale = isLiveTaskStale(task, now, STALE_MS);
       const visualState = getVisualState(task, stale);
       const trail = sanitizePolyline(buildTaskTrail(task));
       const showTrajectory = trajectoryTaskIds.has(task.taskId);
@@ -2826,7 +3021,62 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         markerPositionRef.current.delete(id);
       }
     });
-  }, [compact, mapTasks, trajectoryTaskIds, animateGoogleMarkerTo, handleSelectTask]);
+
+    // Cluster agent markers when density is high (mirrors Mapbox Supercluster).
+    const agentMarkerList = Array.from(agentMarkersRef.current.values());
+    if (agentMarkerList.length >= LIVE_AGENT_CLUSTER_MIN) {
+      if (!agentClustererRef.current) {
+        agentClustererRef.current = new MarkerClusterer({
+          map: map as unknown as google.maps.Map,
+          markers: agentMarkerList as unknown as google.maps.Marker[],
+        });
+      } else {
+        agentClustererRef.current.clearMarkers();
+        agentClustererRef.current.addMarkers(agentMarkerList as unknown as google.maps.Marker[]);
+      }
+    } else if (agentClustererRef.current) {
+      agentClustererRef.current.clearMarkers();
+      agentClustererRef.current.setMap(null);
+      agentClustererRef.current = null;
+      agentMarkerList.forEach((marker) => marker.setMap(map));
+    }
+
+    overlayCirclesRef.current.forEach((circle) => circle.setMap(null));
+    overlayCirclesRef.current = [];
+    if (selectedTaskId != null) {
+      const selected = validTasks.find((t) => t.taskId === selectedTaskId) ?? liveTasks[selectedTaskId];
+      if (selected && hasUsableTaskPosition(selected)) {
+        const accuracy = selected.accuracyMeters;
+        if (typeof accuracy === 'number' && accuracy > 0 && accuracy < 500) {
+          const circle = new google.maps.Circle({
+            map,
+            center: { lat: selected.lastPosition[1], lng: selected.lastPosition[0] },
+            radius: accuracy,
+            fillColor: '#3B82F6',
+            fillOpacity: 0.12,
+            strokeColor: '#3B82F6',
+            strokeOpacity: 0.75,
+            strokeWeight: 2,
+          });
+          overlayCirclesRef.current.push(circle);
+        }
+        const radiusM = selected.destination?.radiusM;
+        if (selected.destination && typeof radiusM === 'number' && radiusM > 0) {
+          const circle = new google.maps.Circle({
+            map,
+            center: { lat: selected.destination.lat, lng: selected.destination.lng },
+            radius: radiusM,
+            fillColor: '#16A34A',
+            fillOpacity: 0.12,
+            strokeColor: '#16A34A',
+            strokeOpacity: 0.75,
+            strokeWeight: 2,
+          });
+          overlayCirclesRef.current.push(circle);
+        }
+      }
+    }
+  }, [compact, mapTasks, trajectoryTaskIds, animateGoogleMarkerTo, handleSelectTask, selectedTaskId, liveTasks]);
 
   const leftSearchResults = useMemo(() => {
     const needle = leftSearchQuery.trim().toLowerCase();
@@ -3029,6 +3279,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
+            onViewHistoryTask={handleViewHistoryTask}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel

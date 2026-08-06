@@ -11,6 +11,11 @@ import { toast } from '@/lib/toast';
 import { isDocumentHidden, notifyTrackingStopped } from '@/lib/notifications/trackingAlerts';
 import { isNativeAndroid } from '../native/capacitorPlatform';
 import { isNativeBackgroundWatching } from '../native/nativeBackgroundGeolocation';
+import { withLocationUploadLock } from '@/lib/sync/locationUploadLock';
+import {
+  applyProximityFromSync,
+  subscribeProximityFromSync,
+} from '../proximityFromSync';
 
 interface LocationReporterOptions {
   taskId: number;
@@ -107,6 +112,7 @@ export const useLocationReporter = ({
         const db = await getDb();
         await db.add('locationQueue', {
           taskId: item.taskId,
+          companyId: item.companyId,
           latitude: item.latitude,
           longitude: item.longitude,
           accuracyMeters: item.accuracyMeters,
@@ -114,6 +120,7 @@ export const useLocationReporter = ({
           headingDegrees: item.headingDegrees,
           recordedAt: item.recordedAt,
           synced: 0,
+          inFlight: 0,
           attempts: 0,
           nextAttemptAt: new Date().toISOString(),
           lastError: null,
@@ -134,27 +141,21 @@ export const useLocationReporter = ({
     isUnauthorizedRef.current = false;
   }, [taskId]);
 
-  const applyProximityResponse = useCallback(
-    (response: {
-      arrived: boolean;
-      near_destination?: boolean;
-      distance_remaining_meters?: number | null;
-    }) => {
-      if (response.distance_remaining_meters !== undefined) {
-        const meters = response.distance_remaining_meters ?? null;
-        // Distance stays in-app UI only — never restart FGS to refresh notification text.
-        onDistanceRef.current?.(meters);
+  // Memory flush and syncEngine both notify via applyProximityFromSync.
+  useEffect(() => {
+    return subscribeProximityFromSync((syncedTaskId, payload) => {
+      if (syncedTaskId !== taskIdRef.current) return;
+      if (payload.distance_remaining_meters !== undefined) {
+        onDistanceRef.current?.(payload.distance_remaining_meters ?? null);
       }
-      if (response.near_destination) {
+      if (payload.near_destination) {
         onNearRef.current?.();
       }
-      if (response.arrived) {
-        useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+      if (payload.arrived) {
         onArrivedRef.current?.();
       }
-    },
-    [taskId],
-  );
+    });
+  }, []);
 
   const flush = useCallback(async () => {
     if (isUnauthorizedRef.current) return;
@@ -162,65 +163,89 @@ export const useLocationReporter = ({
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
 
-    const batch = memoryQueue.current.slice(0, MAX_BATCH_SIZE);
-    const currentTaskId = taskIdRef.current;
-    const currentCompanyId = companyIdRef.current;
+    await withLocationUploadLock(async () => {
+      if (isUnauthorizedRef.current) return;
+      if (memoryQueue.current.length === 0) return;
 
-    try {
-      const response = await trackingApi.recordLocation(currentTaskId, {
-        companyId: currentCompanyId,
-        points: batch.map((p) => ({
-          latitude: p.latitude,
-          longitude: p.longitude,
-          accuracyMeters: p.accuracyMeters,
-          speedMps: p.speedMps,
-          headingDegrees: p.headingDegrees,
-          recordedAt: p.recordedAt,
-        })),
-      });
-
-      memoryQueue.current = memoryQueue.current.slice(batch.length);
-
-      const db = await getDb();
-      const tx = db.transaction('locationQueue', 'readwrite');
-      const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
-      const unsynced = pending.filter((p) => p.synced === 0);
+      const batch = memoryQueue.current.slice(0, MAX_BATCH_SIZE);
+      const currentTaskId = taskIdRef.current;
+      const currentCompanyId = companyIdRef.current;
       const syncedTimestamps = new Set(batch.map((b) => b.recordedAt));
-      for (const row of unsynced) {
-        if (row.id != null && syncedTimestamps.has(row.recordedAt)) {
-          await tx.store.put({
-            ...row,
-            synced: 1,
-            attempts: 0,
-            nextAttemptAt: null,
-            lastError: null,
-          });
+
+      // Mark matching IDB rows in-flight so syncEngine skips them.
+      try {
+        const db = await getDb();
+        const tx = db.transaction('locationQueue', 'readwrite');
+        const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
+        for (const row of pending) {
+          if (row.id != null && row.synced === 0 && syncedTimestamps.has(row.recordedAt)) {
+            await tx.store.put({ ...row, inFlight: 1 });
+          }
         }
+        await tx.done;
+      } catch {
+        // Non-fatal — mutex still prevents most duplicate POSTs.
       }
-      await tx.done;
 
-      applyProximityResponse(response);
-    } catch (error: unknown) {
-      const apiErr = error as { status?: number; message?: string };
-      const is422 = apiErr?.status === 422;
+      try {
+        const response = await trackingApi.recordLocation(currentTaskId, {
+          companyId: currentCompanyId,
+          points: batch.map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+            accuracyMeters: p.accuracyMeters,
+            speedMps: p.speedMps,
+            headingDegrees: p.headingDegrees,
+            recordedAt: p.recordedAt,
+          })),
+        });
 
-      if (is422) {
-        isUnauthorizedRef.current = true;
-        memoryQueue.current = [];
+        memoryQueue.current = memoryQueue.current.slice(batch.length);
 
+        const db = await getDb();
+        const tx = db.transaction('locationQueue', 'readwrite');
+        const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
+        const unsynced = pending.filter((p) => p.synced === 0);
+        for (const row of unsynced) {
+          if (row.id != null && syncedTimestamps.has(row.recordedAt)) {
+            await tx.store.put({
+              ...row,
+              synced: 1,
+              inFlight: 0,
+              attempts: 0,
+              nextAttemptAt: null,
+              lastError: null,
+            });
+          }
+        }
+        await tx.done;
+
+        applyProximityFromSync(currentTaskId, response);
+      } catch (error: unknown) {
+        const apiErr = error as { status?: number; message?: string };
+        const status = apiErr?.status;
+        const isAuthFailure = status === 401 || status === 403;
+        const is422 = status === 422;
+
+        // Clear inFlight on failure so syncEngine can retry (except auth/422 drop).
         try {
           const db = await getDb();
           const tx = db.transaction('locationQueue', 'readwrite');
           const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
-          const unsynced = pending.filter((p) => p.synced === 0);
-          for (const row of unsynced) {
-            if (row.id != null) {
-              await tx.store.put({
-                ...row,
-                synced: 1,
-                nextAttemptAt: null,
-                lastError: apiErr?.message ?? null,
-              });
+          for (const row of pending) {
+            if (row.id != null && syncedTimestamps.has(row.recordedAt) && row.inFlight === 1) {
+              if (is422) {
+                // Drop invalid batch; keep tracking running.
+                await tx.store.put({
+                  ...row,
+                  synced: 1,
+                  inFlight: 0,
+                  nextAttemptAt: null,
+                  lastError: apiErr?.message ?? null,
+                });
+              } else {
+                await tx.store.put({ ...row, inFlight: 0 });
+              }
             }
           }
           await tx.done;
@@ -228,18 +253,47 @@ export const useLocationReporter = ({
           // non-fatal
         }
 
-        useTrackingStore.getState().setActiveTrackingTaskId(null);
-        const msg =
-          apiErr?.message || 'You can only track tasks currently assigned to you.';
-        void notifyTrackingStopped(currentTaskId, msg);
-        if (!isDocumentHidden()) {
-          toast.error('Tracking Stopped', msg);
+        if (isAuthFailure) {
+          isUnauthorizedRef.current = true;
+          memoryQueue.current = [];
+
+          try {
+            const db = await getDb();
+            const tx = db.transaction('locationQueue', 'readwrite');
+            const pending = await tx.store.index('by-taskId').getAll(currentTaskId);
+            const unsynced = pending.filter((p) => p.synced === 0);
+            for (const row of unsynced) {
+              if (row.id != null) {
+                await tx.store.put({
+                  ...row,
+                  synced: 1,
+                  inFlight: 0,
+                  nextAttemptAt: null,
+                  lastError: apiErr?.message ?? null,
+                });
+              }
+            }
+            await tx.done;
+          } catch {
+            // non-fatal
+          }
+
+          useTrackingStore.getState().setActiveTrackingTaskId(null);
+          const msg = apiErr?.message || 'Your session expired. Please sign in again.';
+          void notifyTrackingStopped(currentTaskId, msg);
+          if (!isDocumentHidden()) {
+            toast.error('Tracking Stopped', msg);
+          }
+        } else if (is422) {
+          // Validation error for this batch — drop it, keep GPS/tracking alive.
+          memoryQueue.current = memoryQueue.current.slice(batch.length);
+          console.warn('[LocationReporter] Dropping invalid location batch (422):', apiErr?.message);
+        } else {
+          console.error('[LocationReporter] Geolocation sync error:', error);
         }
-      } else {
-        console.error('[LocationReporter] Geolocation sync error:', error);
       }
-    }
-  }, [applyProximityResponse]);
+    });
+  }, []);
 
   useEffect(() => {
     flushRef.current = flush;

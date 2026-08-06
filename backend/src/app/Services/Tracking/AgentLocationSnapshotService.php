@@ -80,6 +80,9 @@ class AgentLocationSnapshotService
 
         if ($role === 'agent') {
             $query->where('user_id', $actor->id);
+        } elseif (! in_array($role, config('tracking.fleet_viewer_roles', ['owner', 'admin', 'supervisor']), true)) {
+            // Unknown / non-fleet roles only see themselves.
+            $query->where('user_id', $actor->id);
         } elseif (! empty($filters['user_id'])) {
             $query->where('user_id', (int) $filters['user_id']);
         }
@@ -119,6 +122,16 @@ class AgentLocationSnapshotService
         if ($role === 'agent' && (int) $actor->id !== (int) $targetUser->id) {
             throw ValidationException::withMessages([
                 'authorization' => ['Agents can only access their own latest location snapshot.'],
+            ]);
+        }
+
+        if (
+            $role !== 'agent'
+            && ! in_array($role, config('tracking.fleet_viewer_roles', ['owner', 'admin', 'supervisor']), true)
+            && (int) $actor->id !== (int) $targetUser->id
+        ) {
+            throw ValidationException::withMessages([
+                'authorization' => ['You are not allowed to view this agent location snapshot.'],
             ]);
         }
 

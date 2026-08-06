@@ -16,8 +16,18 @@ const BACKOFF_STEPS = [1000, 2000, 4000, 8000, 16000, 30000];
 const POLL_INTERVAL_MS = 25_000;
 const FAST_POLL_INTERVAL_MS = 8_000;
 const STALE_THRESHOLD_MS = 15_000;
+/** After this many consecutive close/reconnect failures, surface `wsStatus: 'error'`. */
+const MAX_CONSECUTIVE_FAILURES = 5;
 
 const LOG = "[tracking-ws]";
+
+/**
+ * Auth strategy: connect without putting the bearer token in the URL query
+ * string (avoids token leakage via logs/proxies/Referer). The realtime relay
+ * accepts either `?token=` on connect OR a post-open `authenticate` message —
+ * we use only the message path. `company_id` / `task_ids` remain in the URL
+ * as non-secret subscription hints.
+ */
 
 /** Ref-count so layout + agent map can share one connection lifecycle. */
 let sharedMountCount = 0;
@@ -86,6 +96,7 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
   const mountedRef = useRef(true);
   const authenticatedRef = useRef(false);
   const connectionAttemptRef = useRef(0);
+  const consecutiveFailuresRef = useRef(0);
   const connectRef = useRef<() => void>(() => { });
   const subscribedTaskIdsRef = useRef<number[]>([]);
   const hydrateRef = useRef<(options?: { markInitial?: boolean }) => Promise<void>>(
@@ -222,7 +233,6 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
     store.setWsStatus("connecting");
 
     const params = new URLSearchParams({
-      token,
       company_id: String(companyId),
     });
     if (subscribedTaskIds.length > 0) {
@@ -240,12 +250,14 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
       }
 
       backoffRef.current = 0;
+      consecutiveFailuresRef.current = 0;
       disconnectedAtRef.current = null;
       authenticatedRef.current = false;
       subscribedTaskIdsRef.current = subscribedTaskIds;
       store.setWsStatus("connected");
       stopPolling();
 
+      // Token is sent only here — not duplicated in the WebSocket URL.
       ws.send(JSON.stringify({
         type: "authenticate",
         token,
@@ -392,7 +404,12 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
       if (!mountedRef.current) return;
 
       authenticatedRef.current = false;
-      store.setWsStatus("reconnecting");
+      consecutiveFailuresRef.current += 1;
+      if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+        store.setWsStatus("error");
+      } else {
+        store.setWsStatus("reconnecting");
+      }
       disconnectedAtRef.current = disconnectedAtRef.current ?? Date.now();
 
       const elapsed = Date.now() - disconnectedAtRef.current;

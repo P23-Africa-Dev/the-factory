@@ -31,7 +31,7 @@ export default function TrackingPage() {
 
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { resolveCurrentPosition, ensureLocationPermission, retryLocationPermission, checkPermission } = useGeolocation();
-  const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
+  const { goToMapActivity } = useTrackingNavigation();
   const { startTracking } = useActiveTracking();
   const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
   const [isRequesting, setIsRequesting] = useState(false);
@@ -228,7 +228,7 @@ export default function TrackingPage() {
         isBusy={isRequesting}
         isResume={false}
         onRequest={handleRequest}
-        onDismiss={() => goToTrackingComplete(taskId)}
+        onDismiss={() => router.replace(`/task/${taskId}`)}
         fullScreen
       />
     </div>

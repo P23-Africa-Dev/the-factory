@@ -237,6 +237,8 @@ export function createAgentMarkerElement(input: {
     avatarUrl?: string;
     visualState: VisualTaskState;
     stale: boolean;
+    /** When an agent has multiple live tasks, show a count badge. */
+    taskCount?: number;
 }) {
     const root = document.createElement("div");
     root.dataset.marker = "agent";
@@ -307,12 +309,35 @@ export function createAgentMarkerElement(input: {
         </svg>
     `;
 
+    const badge = document.createElement("span");
+    badge.dataset.part = "task-count";
+    badge.style.cssText = [
+        "position:absolute",
+        "top:-4px",
+        "right:-4px",
+        "min-width:18px",
+        "height:18px",
+        "padding:0 4px",
+        "border-radius:9999px",
+        "background:#DC2626",
+        "color:#fff",
+        "font-size:10px",
+        "font-weight:700",
+        "display:none",
+        "align-items:center",
+        "justify-content:center",
+        "border:2px solid #fff",
+        "z-index:2",
+        "box-sizing:border-box",
+    ].join(";");
+
     shell.appendChild(img);
     shell.appendChild(initials);
     shell.appendChild(generic);
     root.appendChild(heading);
     root.appendChild(halo);
     root.appendChild(shell);
+    root.appendChild(badge);
 
     updateAgentMarkerElement(root, input);
 
@@ -343,6 +368,7 @@ export function updateAgentMarkerElement(
         avatarUrl?: string;
         visualState: VisualTaskState;
         stale: boolean;
+        taskCount?: number;
     }
 ) {
     const palette = VISUAL_PALETTE[input.visualState];
@@ -351,9 +377,22 @@ export function updateAgentMarkerElement(
     const img = root.querySelector<HTMLImageElement>("[data-part='avatar']");
     const initials = root.querySelector<HTMLElement>("[data-part='initials']");
     const generic = root.querySelector<HTMLElement>("[data-part='generic']");
+    const badge = root.querySelector<HTMLElement>("[data-part='task-count']");
 
     if (!shell || !halo || !img || !initials || !generic) {
         return;
+    }
+
+    if (badge) {
+        const count = input.taskCount ?? 0;
+        if (count > 1) {
+            badge.style.display = "flex";
+            badge.textContent = count > 9 ? "9+" : String(count);
+            badge.title = `${count} live tasks`;
+        } else {
+            badge.style.display = "none";
+            badge.textContent = "";
+        }
     }
 
     shell.style.border = `3px solid ${palette.markerBorder}`;

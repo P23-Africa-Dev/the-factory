@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import mapboxgl from "mapbox-gl";
-import { format, parseISO } from "date-fns";
+import { format, parse, parseISO } from "date-fns";
 import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   Loader2,
   MapPin,
   Route,
@@ -26,6 +27,11 @@ import { loadGoogleMapsApi } from "@/lib/map/google-loader";
 import type { JourneyTimelineEvent } from "@/lib/api/field-activity";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
+import { RoutePlaybackControls } from "@/components/operations/route-playback-controls";
+import {
+  buildJourneysCsv,
+  downloadTextFile,
+} from "@/lib/tracking/export-journeys-csv";
 
 const EVENT_COLORS: Record<string, string> = {
   green: "#22C55E",
@@ -57,6 +63,7 @@ function JourneyMap({
   clockIn,
   clockOut,
   bounds,
+  playbackIndex = null,
 }: {
   coordinates: [number, number][];
   timeline: JourneyTimelineEvent[];
@@ -69,10 +76,12 @@ function JourneyMap({
     max_lng: number;
     max_lat: number;
   } | null;
+  playbackIndex?: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const playbackMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const mapboxToken = useMemo(() => getMapboxPublicToken(), []);
   const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
   const { effectiveProvider } = useEffectiveMapProvider();
@@ -293,6 +302,36 @@ function JourneyMap({
     timeline,
   ]);
 
+  // Keep playback marker in sync without remounting the map.
+  useEffect(() => {
+    if (playbackIndex == null || coordinates.length === 0) {
+      playbackMarkerRef.current?.remove();
+      playbackMarkerRef.current = null;
+      return;
+    }
+
+    const idx = Math.min(Math.max(playbackIndex, 0), coordinates.length - 1);
+    const [lng, lat] = coordinates[idx];
+
+    if (effectiveProvider === "google") {
+      return;
+    }
+
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!playbackMarkerRef.current) {
+      const el = document.createElement("div");
+      el.style.cssText =
+        "width:18px;height:18px;border-radius:9999px;background:#0EA5E9;border:3px solid white;box-shadow:0 2px 8px rgba(14,165,233,0.55);";
+      playbackMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
+        .setLngLat([lng, lat])
+        .addTo(map);
+    } else {
+      playbackMarkerRef.current.setLngLat([lng, lat]);
+    }
+  }, [coordinates, effectiveProvider, playbackIndex]);
+
   return <div ref={containerRef} className="h-full w-full rounded-2xl overflow-hidden bg-[#e8ecef]" />;
 }
 
@@ -313,6 +352,7 @@ export function JourneyView({
   const user = useAuthStore((s) => s.user);
   const companyId = getActiveCompanyContext(user)?.apiCompanyId ?? undefined;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [playbackIndex, setPlaybackIndex] = useState(0);
 
   const { data, isLoading, isError } = useJourneyDetail(sessionId, {
     company_id: companyId,
@@ -324,8 +364,19 @@ export function JourneyView({
   const timeline = data?.timeline ?? [];
   const route = data?.route;
   const navigation = data?.navigation;
+  const coordinates = (route?.coordinates ?? []) as [number, number][];
+
+  useEffect(() => {
+    setPlaybackIndex(0);
+  }, [sessionId, coordinates.length]);
 
   const selectedEvent = timeline.find((e) => e.id === selectedId) ?? null;
+
+  const handleExportDay = () => {
+    if (!journey) return;
+    const csv = buildJourneysCsv([journey], data?.agent?.name ?? undefined);
+    downloadTextFile(`journey-${journey.id}-${journey.date ?? "day"}.csv`, csv);
+  };
 
   return (
     <div className="min-h-[calc(100vh-64px)] bg-[#F4F6F7] flex flex-col">
@@ -347,7 +398,7 @@ export function JourneyView({
                 {journey?.date ? (
                   <span className="text-gray-400 font-bold">
                     {" "}
-                    · {format(parseISO(journey.date), "EEE, MMM d yyyy")}
+                    · {format(parse(journey.date, "yyyy-MM-dd", new Date()), "EEE, MMM d yyyy")}
                   </span>
                 ) : null}
               </h1>
@@ -355,6 +406,15 @@ export function JourneyView({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportDay}
+              disabled={!journey}
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-[11px] font-bold text-[#0B1215] disabled:opacity-40"
+            >
+              <Download size={14} />
+              Export CSV
+            </button>
             <button
               type="button"
               disabled={!navigation?.previous_id}
@@ -469,7 +529,7 @@ export function JourneyView({
                 </div>
               )}
             </div>
-            <div className="flex-1 min-h-[280px] p-2">
+            <div className="flex-1 min-h-[280px] p-2 flex flex-col gap-2">
               {route && (route.raw_point_count ?? 0) === 0 ? (
                 <div className="h-full w-full rounded-2xl border border-dashed border-gray-200 bg-[#F8F9FA] flex flex-col items-center justify-center gap-2">
                   <Route className="text-gray-300" size={26} />
@@ -481,14 +541,24 @@ export function JourneyView({
                   </p>
                 </div>
               ) : (
-                <JourneyMap
-                  coordinates={(route?.coordinates ?? []) as [number, number][]}
-                  timeline={timeline}
-                  selectedId={selectedId}
-                  clockIn={route?.clock_in ?? null}
-                  clockOut={route?.clock_out ?? null}
-                  bounds={route?.bounds ?? null}
-                />
+                <>
+                  <div className="flex-1 min-h-[240px]">
+                    <JourneyMap
+                      coordinates={coordinates}
+                      timeline={timeline}
+                      selectedId={selectedId}
+                      clockIn={route?.clock_in ?? null}
+                      clockOut={route?.clock_out ?? null}
+                      bounds={route?.bounds ?? null}
+                      playbackIndex={playbackIndex}
+                    />
+                  </div>
+                  <RoutePlaybackControls
+                    pointCount={coordinates.length}
+                    index={playbackIndex}
+                    onIndexChange={setPlaybackIndex}
+                  />
+                </>
               )}
             </div>
           </section>

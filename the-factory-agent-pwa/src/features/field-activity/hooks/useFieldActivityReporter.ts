@@ -100,6 +100,7 @@ export function useFieldActivityReporter(options: {
       const db = await getDb();
       await db.add('locationQueue', {
         taskId: 0,
+        companyId: getActiveCompanyId(),
         fieldActivitySessionId: sid,
         latitude: item.latitude,
         longitude: item.longitude,
@@ -108,6 +109,7 @@ export function useFieldActivityReporter(options: {
         headingDegrees: item.headingDegrees ?? null,
         recordedAt: item.recordedAt,
         synced: 0,
+        inFlight: 0,
         attempts: 0,
         nextAttemptAt: new Date().toISOString(),
         lastError: null,

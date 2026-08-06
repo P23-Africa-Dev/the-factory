@@ -6,12 +6,23 @@
  * - Network First: API calls (/api/v1/*)
  * - Stale While Revalidate: Mapbox tiles + RSC payloads
  * - Navigation fallback: cached pages, then /offline.html shell
+ *
+ * Background Sync limitations (pure PWA):
+ * - Auth token is mirrored into IndexedDB `syncMeta` by the app (SW cannot
+ *   read localStorage). If credentials are missing, location upload falls
+ *   back to postMessage when a client window is open.
+ * - Proof blobs and offline action queue still require an open client
+ *   (multipart / complex payloads).
+ * - Android APK uses Capgo Capacitor + native FGS; this SW path is for
+ *   installed PWA / browser tabs.
  */
 
 const CACHE_NAME = "factory-agent-pwa-v9";
 const STATIC_CACHE = "factory-static-v9";
 const API_CACHE = "factory-api-v9";
 const PAGE_CACHE = "factory-pages-v9";
+const IDB_NAME = "factory-agent-pwa";
+const LOCATION_BATCH_SIZE = 50;
 
 const STATIC_ASSETS = [
   "/",
@@ -35,8 +46,9 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
         keys
           .filter(
             (key) =>
@@ -46,10 +58,16 @@ self.addEventListener("activate", (event) => {
               key !== PAGE_CACHE,
           )
           .map((key) => caches.delete(key)),
-      ),
-    ),
+      );
+      // Best-effort: drain location queue if no client is open yet.
+      try {
+        await uploadQueuedLocationsFromIdb();
+      } catch {
+        // Non-fatal
+      }
+      await self.clients.claim();
+    })(),
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -97,18 +115,247 @@ self.addEventListener("sync", (event) => {
     event.tag === "proof-sync" ||
     event.tag === "offline-action-sync"
   ) {
-    event.waitUntil(
-      self.clients.matchAll().then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({
-            type: "SYNC_REQUESTED",
-            tag: event.tag,
-          });
-        });
-      }),
-    );
+    event.waitUntil(handleBackgroundSync(event.tag));
   }
 });
+
+async function handleBackgroundSync(tag) {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+
+  if (clients.length > 0) {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: "SYNC_REQUESTED",
+        tag,
+      });
+    });
+    return;
+  }
+
+  // No open client — SW can still upload location points from IndexedDB.
+  if (tag === "location-sync" || tag === "offline-action-sync") {
+    await uploadQueuedLocationsFromIdb();
+  }
+  // Proof / offline-action multipart sync still requires an open client.
+}
+
+function openFactoryDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_NAME);
+    request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readSyncCredentials(db) {
+  if (!db.objectStoreNames.contains("syncMeta")) return null;
+  const tx = db.transaction("syncMeta", "readonly");
+  const row = await idbRequest(tx.objectStore("syncMeta").get("credentials"));
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  if (!row || !row.token || !row.apiBaseUrl) return null;
+  return row;
+}
+
+async function getPendingLocationRows(db) {
+  if (!db.objectStoreNames.contains("locationQueue")) return [];
+  const tx = db.transaction("locationQueue", "readonly");
+  const store = tx.objectStore("locationQueue");
+  let rows = [];
+  if (store.indexNames.contains("by-synced")) {
+    rows = await idbRequest(store.index("by-synced").getAll(0));
+  } else {
+    rows = await idbRequest(store.getAll());
+    rows = rows.filter((r) => r && r.synced === 0);
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  const now = Date.now();
+  return rows.filter((row) => {
+    if (!row || row.inFlight === 1) return false;
+    if (!row.nextAttemptAt) return true;
+    return new Date(row.nextAttemptAt).getTime() <= now;
+  });
+}
+
+async function markLocationRows(db, rows, patch) {
+  if (!rows.length) return;
+  const tx = db.transaction("locationQueue", "readwrite");
+  const store = tx.objectStore("locationQueue");
+  for (const row of rows) {
+    if (row.id == null) continue;
+    store.put({ ...row, ...patch });
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function postLocationBatch(apiBaseUrl, token, path, companyId, points) {
+  const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      company_id: companyId,
+      points: points.map((r) => ({
+        latitude: r.latitude,
+        longitude: r.longitude,
+        accuracy_meters: r.accuracyMeters ?? null,
+        speed_mps: r.speedMps ?? null,
+        heading_degrees: r.headingDegrees ?? null,
+        recorded_at: r.recordedAt,
+      })),
+    }),
+  });
+  return response;
+}
+
+async function uploadQueuedLocationsFromIdb() {
+  let db;
+  try {
+    db = await openFactoryDb();
+  } catch {
+    return;
+  }
+
+  try {
+    const credentials = await readSyncCredentials(db);
+    if (!credentials) return;
+
+    const pending = await getPendingLocationRows(db);
+    if (pending.length === 0) return;
+
+    const fallbackCompanyId = credentials.companyId;
+    const fieldRows = pending.filter(
+      (row) => row.fieldActivitySessionId != null && row.fieldActivitySessionId > 0,
+    );
+    const taskRows = pending.filter((row) => !row.fieldActivitySessionId);
+
+    const byField = {};
+    for (const row of fieldRows) {
+      const sid = Number(row.fieldActivitySessionId);
+      if (!byField[sid]) byField[sid] = [];
+      byField[sid].push(row);
+    }
+
+    for (const [sessionIdRaw, rows] of Object.entries(byField)) {
+      const batch = rows.slice(0, LOCATION_BATCH_SIZE);
+      const companyId = batch[0].companyId || fallbackCompanyId;
+      if (!companyId) continue;
+
+      await markLocationRows(db, batch, { inFlight: 1 });
+      try {
+        const res = await postLocationBatch(
+          credentials.apiBaseUrl,
+          credentials.token,
+          `/agent/field-activity/sessions/${sessionIdRaw}/points`,
+          companyId,
+          batch,
+        );
+        if (res.ok) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
+        } else if (res.status === 422) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            nextAttemptAt: null,
+            lastError: `HTTP ${res.status}`,
+          });
+        } else {
+          await markLocationRows(db, batch, {
+            inFlight: 0,
+            attempts: (batch[0].attempts || 0) + 1,
+            lastError: `HTTP ${res.status}`,
+          });
+        }
+      } catch (err) {
+        await markLocationRows(db, batch, {
+          inFlight: 0,
+          lastError: err && err.message ? err.message : "SW upload failed",
+        });
+      }
+    }
+
+    const byTask = {};
+    for (const row of taskRows) {
+      const tid = Number(row.taskId);
+      if (!tid) continue;
+      if (!byTask[tid]) byTask[tid] = [];
+      byTask[tid].push(row);
+    }
+
+    for (const [taskIdRaw, rows] of Object.entries(byTask)) {
+      const batch = rows.slice(0, LOCATION_BATCH_SIZE);
+      const companyId = batch[0].companyId || fallbackCompanyId;
+      if (!companyId) continue;
+
+      await markLocationRows(db, batch, { inFlight: 1 });
+      try {
+        const res = await postLocationBatch(
+          credentials.apiBaseUrl,
+          credentials.token,
+          `/agent/tasks/${taskIdRaw}/location`,
+          companyId,
+          batch,
+        );
+        if (res.ok) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
+        } else if (res.status === 422) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            nextAttemptAt: null,
+            lastError: `HTTP ${res.status}`,
+          });
+        } else {
+          await markLocationRows(db, batch, {
+            inFlight: 0,
+            attempts: (batch[0].attempts || 0) + 1,
+            lastError: `HTTP ${res.status}`,
+          });
+        }
+      } catch (err) {
+        await markLocationRows(db, batch, {
+          inFlight: 0,
+          lastError: err && err.message ? err.message : "SW upload failed",
+        });
+      }
+    }
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+  }
+}
 
 self.addEventListener("push", (event) => {
   event.waitUntil(
@@ -172,6 +419,10 @@ self.addEventListener("message", (event) => {
 
   if (data.type === "CACHE_ROUTES" && Array.isArray(data.routes)) {
     event.waitUntil(cacheRoutes(data.routes));
+  }
+
+  if (data.type === "SYNC_LOCATIONS_NOW") {
+    event.waitUntil(uploadQueuedLocationsFromIdb());
   }
 });
 

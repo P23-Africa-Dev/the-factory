@@ -79,4 +79,11 @@ export function getActiveCompanyId(): number | null {
 
 export function setActiveCompanyId(companyId: number): void {
   appStore.set('company_id', companyId);
+  // Keep SW-readable credentials in sync for background location upload.
+  const token = appStore.getString('auth_token');
+  if (token) {
+    void import('@/lib/offline/syncCredentials')
+      .then((m) => m.writeSyncCredentials(token))
+      .catch(() => {});
+  }
 }

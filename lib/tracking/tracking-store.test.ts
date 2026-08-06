@@ -207,4 +207,41 @@ describe("tracking store avatar identity", () => {
     expect(alert?.taskTitle).toBe("Site visit");
     expect(alert?.signal).toBe(1);
   });
+
+  it("hydrateFromSnapshots stamps lastReceivedAt for freshness", () => {
+    const before = Date.now();
+
+    useTrackingStore.getState().hydrateFromSnapshots([
+      {
+        agent: { id: 55, name: "Agent Snap", avatar_url: "https://cdn.example.com/snap.png" },
+        task: {
+          id: 42,
+          title: "Hydrate task",
+          status: "in_progress",
+          tracking_session_id: 99,
+        },
+        location: {
+          latitude: 6.51,
+          longitude: 3.41,
+          recorded_at: "2026-07-12T10:00:00.000Z",
+          arrived: false,
+        },
+        status: {
+          is_online: true,
+          is_stale: false,
+          proximity_state: "in_progress",
+          last_seen_at: "2026-07-12T10:00:00.000Z",
+          operational_status: "en_route",
+        },
+        updated_at: "2026-07-12T10:00:00.000Z",
+      },
+    ]);
+
+    const live = useTrackingStore.getState().liveTasks[42];
+    expect(live).toBeDefined();
+    expect(live.userId).toBe(55);
+    expect(typeof live.lastReceivedAt).toBe("number");
+    expect(live.lastReceivedAt!).toBeGreaterThanOrEqual(before);
+    expect(live.lastReceivedAt!).toBeLessThanOrEqual(Date.now());
+  });
 });

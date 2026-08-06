@@ -13,6 +13,7 @@ import {
   useFieldActivityLiveStore,
   type FieldActivityLiveAgent,
 } from "@/store/field-activity-live";
+import { useTrackingStore } from "@/store/tracking";
 
 function mapAgent(dto: FieldActivityLiveAgentDto): FieldActivityLiveAgent {
   const lastLng = dto.last_longitude;
@@ -47,6 +48,9 @@ export function useFieldActivityLiveHydrate(enabled = true) {
   const hydrate = useFieldActivityLiveStore((s) => s.hydrate);
   const clear = useFieldActivityLiveStore((s) => s.clear);
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const wsStatus = useTrackingStore((s) => s.wsStatus);
+  // Field activity points also arrive over WS — poll only when disconnected.
+  const refetchInterval = wsStatus === "connected" ? false : 60_000;
 
   const query = useQuery({
     queryKey: ["field-activity", "live", apiCompanyId],
@@ -58,7 +62,7 @@ export function useFieldActivityLiveHydrate(enabled = true) {
       );
       return res.data;
     },
-    refetchInterval: 60_000,
+    refetchInterval,
     staleTime: 15_000,
   });
 

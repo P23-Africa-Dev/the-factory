@@ -227,3 +227,44 @@ export async function openNativeLocationSettings(): Promise<void> {
     // Ignore
   }
 }
+
+/**
+ * Open Android battery optimization / unrestricted battery settings so the
+ * tracking foreground service is less likely to be killed.
+ * Falls back to app details / general battery settings when the specific
+ * intent is unavailable.
+ */
+export async function openNativeBatteryOptimizationSettings(): Promise<void> {
+  if (!isNativeAndroid()) return;
+
+  const tryOpen = async (url: string): Promise<boolean> => {
+    try {
+      const { App } = await import('@capacitor/app');
+      // Capacitor 8 App plugin exposes openUrl on some platforms; fall through on failure.
+      const opener = (App as unknown as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
+      if (typeof opener === 'function') {
+        await opener({ url });
+        return true;
+      }
+    } catch {
+      // continue
+    }
+    try {
+      window.open(url, '_system');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Prefer the system "Battery optimization" list (ignore battery optimizations).
+  if (await tryOpen('intent:#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end')) {
+    return;
+  }
+  // App-specific battery page (Android 6+).
+  if (await tryOpen('intent:#Intent;action=android.settings.APPLICATION_DETAILS_SETTINGS;end')) {
+    return;
+  }
+  // Last resort: app location settings from the background-geolocation plugin.
+  await openNativeLocationSettings();
+}

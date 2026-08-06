@@ -7,6 +7,11 @@ import { Camera, CheckCircle2, X } from 'lucide-react';
 import type { Task } from '@/features/tasks/types';
 import { taskApi } from '@/features/tasks/api';
 import { useActiveTracking, useGeolocation, buildCompleteFormData } from '@/features/tracking';
+import { trackingApi } from '@/features/tracking/api';
+import {
+  formatTripSummaryToast,
+  summarizeTaskRoute,
+} from '@/features/tracking/tripSummary';
 import { useBottomNavVisibility } from '@/components/shared/BottomNavVisibility';
 import { getDb } from '@/lib/db/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
@@ -179,7 +184,13 @@ export function CompleteRequirementsSheet({
         taskTitle: task?.title ?? null,
       });
 
-      toast.success('Task completed', 'Great work — tracking has stopped.');
+      try {
+        const route = await trackingApi.getTaskRoute(taskId, companyId);
+        const summary = summarizeTaskRoute(route);
+        toast.success('Task completed', formatTripSummaryToast(summary, 'completed'));
+      } catch {
+        toast.success('Task completed', 'Great work — tracking has stopped.');
+      }
       onDone();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';

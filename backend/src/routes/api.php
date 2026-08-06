@@ -77,6 +77,7 @@ use App\Http\Controllers\Api\V1\Task\TaskTrackingController;
 use App\Http\Controllers\Api\V1\Territory\TerritoryController;
 use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
 use App\Http\Controllers\Api\V1\Tracking\AgentPresenceController;
+use App\Http\Controllers\Api\V1\Tracking\TrackingHealthController;
 use App\Http\Controllers\Api\V1\User\MeController;
 use App\Http\Controllers\Api\V1\User\ProfileController;
 use App\Http\Controllers\Api\V1\Workforce\WorkforceSummaryController;
@@ -707,6 +708,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::get('/dashboard/overview', DashboardOverviewController::class)
                 ->name('dashboard.overview');
 
+            Route::get('/tracking/health', TrackingHealthController::class)
+                ->name('tracking.health');
+
             Route::get('/workforce/summary', WorkforceSummaryController::class)
                 ->name('workforce.summary');
 
@@ -750,9 +754,15 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
-                Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
-                Route::post('/{task}/location', [TaskTrackingController::class, 'location'])->name('location');
-                Route::post('/{task}/complete', [TaskTrackingController::class, 'complete'])->name('complete');
+                Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
+                    ->middleware('throttle:api-heavy')
+                    ->name('start');
+                Route::post('/{task}/location', [TaskTrackingController::class, 'location'])
+                    ->middleware('throttle:api-heavy')
+                    ->name('location');
+                Route::post('/{task}/complete', [TaskTrackingController::class, 'complete'])
+                    ->middleware('throttle:api-heavy')
+                    ->name('complete');
                 Route::patch('/{task}/status', [TaskStatusController::class, 'update'])->name('status.update');
                 Route::post('/{task}/proofs', [TaskProofController::class, 'store'])
                     ->middleware('throttle:api-heavy')
@@ -931,9 +941,15 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('destroy');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
-        Route::post('/{task}/start', [TaskTrackingController::class, 'start'])->name('start');
-        Route::post('/{task}/location', [TaskTrackingController::class, 'location'])->name('location');
-        Route::post('/{task}/complete', [TaskTrackingController::class, 'complete'])->name('complete');
+        Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
+            ->middleware('throttle:api-heavy')
+            ->name('start');
+        Route::post('/{task}/location', [TaskTrackingController::class, 'location'])
+            ->middleware('throttle:api-heavy')
+            ->name('location');
+        Route::post('/{task}/complete', [TaskTrackingController::class, 'complete'])
+            ->middleware('throttle:api-heavy')
+            ->name('complete');
         Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
         Route::patch('/{task}/status', [TaskStatusController::class, 'update'])->name('status.update');
         Route::post('/{task}/proofs', [TaskProofController::class, 'store'])

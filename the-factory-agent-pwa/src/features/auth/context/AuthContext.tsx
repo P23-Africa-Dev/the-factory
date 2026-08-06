@@ -47,6 +47,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       setTimeout(() => setToken(storedToken), 0);
       setTimeout(() => setUser(storedUser), 0);
+      if (storedToken) {
+        void import('@/lib/offline/syncCredentials')
+          .then((m) => m.writeSyncCredentials(storedToken))
+          .catch(() => {});
+      }
     } catch (err) {
       console.error('[Auth] Hydration error:', err);
     } finally {
@@ -67,6 +72,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       setToken(newToken);
       setUser(newUser ?? null);
+      void import('@/lib/offline/syncCredentials')
+        .then((m) => m.writeSyncCredentials(newToken))
+        .catch(() => {});
     } catch (err) {
       console.error('[Auth] Login error:', err);
     }
@@ -82,6 +90,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!changed) return prev;
       try {
         appStore.set('auth_user', JSON.stringify(next));
+        if (typeof next.company_id === 'number') {
+          setActiveCompanyId(next.company_id);
+        }
+        const storedToken = appStore.getString('auth_token');
+        if (storedToken) {
+          void import('@/lib/offline/syncCredentials')
+            .then((m) => m.writeSyncCredentials(storedToken))
+            .catch(() => {});
+        }
       } catch (err) {
         console.error('[Auth] updateUser error:', err);
       }
