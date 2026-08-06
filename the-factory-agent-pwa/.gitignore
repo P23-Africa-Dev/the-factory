@@ -54,3 +54,8 @@ android/app/build/
 *.aab
 *.keystore
 *.jks
+
+# Allow the published install APK (overwritten by npm run apk:release)
+!public/downloads/
+!public/downloads/.gitkeep
+!public/downloads/factory23-agent.apk

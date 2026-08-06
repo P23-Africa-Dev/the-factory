@@ -1,5 +1,8 @@
+import { withAgentApkCacheBust } from '@/lib/agent-apk-version';
+
 const DEFAULT_PRODUCTION_URL = "https://app.thefactory23.com";
 const DEFAULT_APK_PATH = "/downloads/factory23-agent.apk";
+
 
 function inferAgentUrlFromHost(host: string, protocol: string): string {
   if (host.includes("localhost") || host.includes("127.0.0.1")) {
@@ -46,23 +49,23 @@ export function getAgentInstallUrl(origin?: string): string {
  */
 export function getAgentApkUrl(origin?: string): string {
   const configured = process.env.NEXT_PUBLIC_AGENT_APK_URL?.trim();
-  if (configured) return normalizeAgentApkDownloadUrl(configured);
+  if (configured) return withAgentApkCacheBust(normalizeAgentApkDownloadUrl(configured));
 
   if (typeof window !== "undefined") {
-    return `${window.location.origin}${DEFAULT_APK_PATH}`;
+    return withAgentApkCacheBust(`${window.location.origin}${DEFAULT_APK_PATH}`);
   }
 
   if (origin) {
     try {
       const parsed = new URL(origin);
-      return `${parsed.origin}${DEFAULT_APK_PATH}`;
+      return withAgentApkCacheBust(`${parsed.origin}${DEFAULT_APK_PATH}`);
     } catch {
       // fall through
     }
   }
 
   // Hosted on the marketing site deploy (public/downloads/factory23-agent.apk).
-  return `https://thefactory23.com${DEFAULT_APK_PATH}`;
+  return withAgentApkCacheBust(`https://thefactory23.com${DEFAULT_APK_PATH}`);
 }
 
 /**
