@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI;
 
 use App\Services\AI\Context\ConversationMemoryService;
+use App\Services\AI\Policy\ToolPolicyService;
 
 class CopilotIntentResolver
 {
@@ -16,6 +17,7 @@ class CopilotIntentResolver
         private readonly ActionDraftStore $actionDraftStore,
         private readonly ReadToolArgsResolver $readToolArgsResolver,
         private readonly TaskInferenceService $taskInferenceService,
+        private readonly ToolPolicyService $toolPolicyService,
     ) {}
     /**
      * @param  array<string, mixed>  $actionArgs
@@ -122,6 +124,26 @@ class CopilotIntentResolver
                     $userId,
                 );
             }
+        }
+
+        // High-confidence Plan My Day must stay a read tool even in AI-first mode.
+        // LLMs often mis-label "plan" as a write action, which yields
+        // "Unsupported action tool requested." from ActionToolRegistry.
+        $rulesIntent = $this->intentClassifier->classify($message);
+        if (
+            ($rulesIntent['type'] ?? '') === 'tool'
+            && ($rulesIntent['tool'] ?? null) === 'planning.daily'
+            && (float) ($rulesIntent['confidence'] ?? 0) >= 0.9
+        ) {
+            return $this->buildResult(
+                $rulesIntent,
+                $actionConfirmed,
+                $actionArgs,
+                $message,
+                $threadId,
+                $companyId,
+                $userId,
+            );
         }
 
         if ($this->intentRoutingSettingService->isAiFirst()) {
@@ -249,7 +271,7 @@ class CopilotIntentResolver
         }
 
         return [
-            'type' => $routeType,
+            'type' => $this->toolPolicyService->normalizeIntentType($routeType, $routeTool),
             'tool' => $routeTool,
             'confidence' => $routeConfidence,
         ];
@@ -363,7 +385,7 @@ class CopilotIntentResolver
         }
 
         return [
-            'type' => $routeType,
+            'type' => $this->toolPolicyService->normalizeIntentType($routeType, $routeTool),
             'tool' => $routeTool,
             'confidence' => max($confidence, $routeConfidence),
         ];

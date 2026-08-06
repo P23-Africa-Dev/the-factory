@@ -61,6 +61,26 @@ final class LlmIntentRouterTest extends TestCase
         $this->assertNull($route['tool']);
     }
 
+    public function test_coerces_planning_daily_mislabelled_as_action_to_tool(): void
+    {
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        $mockRouter->shouldReceive('generateForPurpose')
+            ->once()
+            ->andReturn(new AiGenerationResult(
+                text: '{"intent":"action","tool":"planning.daily","confidence":0.96,"extracted_entities":{}}',
+                provider: 'openai',
+                model: 'gpt-4.1-mini',
+                purpose: 'routing',
+            ));
+
+        $service = new LlmIntentRouter($mockRouter, new ToolPolicyService());
+        $route = $service->route('Plan my day', 'agent');
+
+        $this->assertNotNull($route);
+        $this->assertSame('tool', $route['type']);
+        $this->assertSame('planning.daily', $route['tool']);
+    }
+
     public function test_intent_classifier_matches_common_paraphrases(): void
     {
         $classifier = new IntentClassifier();

@@ -119,6 +119,11 @@ class CopilotService
         $resolvedReadTool = $resolution['resolved_read_tool'];
 
         $intentType = (string) ($intent['type'] ?? 'general');
+        $intentTool = is_string($intent['tool'] ?? null) ? (string) $intent['tool'] : null;
+        if ($intentTool !== null && in_array($intentType, ['tool', 'action'], true)) {
+            $intentType = $this->toolPolicyService->normalizeIntentType($intentType, $intentTool);
+            $intent['type'] = $intentType;
+        }
 
         $assistantText = $this->degradedModeMessage();
         $toolResult = null;

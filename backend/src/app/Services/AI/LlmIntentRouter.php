@@ -58,6 +58,8 @@ Rules:
 - Do NOT choose tasks.create when the user is listing, showing, querying, or asking about existing tasks
 - Phrases like "tasks created by...", "tasks assigned to...", or "what tasks did X create" are tasks.list (tool), not tasks.create (action)
 - Only choose actions when the user explicitly wants to create, schedule, send, or register something new
+- planning.daily is ALWAYS intent "tool" (read-only plan generation), never "action" — even for phrases like "Plan my day" or "prioritize my day"
+- Read tools (lists, summaries, planning.daily, meetings.today, etc.) must use intent "tool"; write tools (*.create, *.schedule, *.send, etc.) must use intent "action"
 PROMPT;
 
         $userPrompt = "Allowed tools and actions:\n{$toolCatalog}\n\nRecent conversation:\n{$recent}\n\nLatest user message:\n{$message}";
@@ -161,6 +163,10 @@ PROMPT;
 
         if ($intent === 'chat') {
             $tool = null;
+        }
+
+        if ($tool !== null) {
+            $intent = $this->toolPolicyService->normalizeIntentType($intent, $tool);
         }
 
         $confidence = (float) ($json['confidence'] ?? 0.0);

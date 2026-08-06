@@ -81,6 +81,37 @@ class ToolPolicyService
         return in_array($tool, $this->allowedToolsForRole($role), true);
     }
 
+    public function isReadTool(string $tool): bool
+    {
+        return in_array($tool, $this->allReadTools(), true);
+    }
+
+    public function isActionTool(string $tool): bool
+    {
+        return in_array($tool, $this->allActionTools(), true);
+    }
+
+    /**
+     * LLM routers sometimes label read tools (e.g. planning.daily) as "action"
+     * because of verbs like "plan". Coerce type to match the tool catalog.
+     */
+    public function normalizeIntentType(string $type, ?string $tool): string
+    {
+        if (! is_string($tool) || $tool === '') {
+            return $type === 'action' ? 'action' : ($type === 'tool' ? 'tool' : $type);
+        }
+
+        if ($this->isReadTool($tool)) {
+            return 'tool';
+        }
+
+        if ($this->isActionTool($tool)) {
+            return 'action';
+        }
+
+        return $type;
+    }
+
     public function allowedToolsForRole(string $role): array
     {
         if ($role === 'agent') {
@@ -92,5 +123,27 @@ class ToolPolicyService
         }
 
         return [...self::READ_TOOLS_AGENT, ...self::ACTION_TOOLS_AGENT];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allReadTools(): array
+    {
+        return array_values(array_unique([
+            ...self::READ_TOOLS_AGENT,
+            ...self::READ_TOOLS_MANAGEMENT,
+        ]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allActionTools(): array
+    {
+        return array_values(array_unique([
+            ...self::ACTION_TOOLS_AGENT,
+            ...self::ACTION_TOOLS_MANAGEMENT,
+        ]));
     }
 }
