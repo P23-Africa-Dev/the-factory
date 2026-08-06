@@ -19,7 +19,7 @@ export function circlePolygon(
 
   const km = Math.min(Math.max(radiusMeters / 1000, 0.001), 50);
   try {
-    return buffer(point([lng, lat]), km, { units: "kilometers", steps: 64 });
+    return buffer(point([lng, lat]), km, { units: "kilometers", steps: 64 }) ?? null;
   } catch {
     return null;
   }
