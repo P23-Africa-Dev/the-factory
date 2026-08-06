@@ -184,7 +184,8 @@ async function cacheRoutes(routes) {
     try {
       const response = await fetch(route);
       if (response.ok) {
-        await cache.put(route, response.clone());
+        const cloned = response.clone();
+        await cache.put(route, cloned);
       }
     } catch {
       // Skip routes that fail to fetch.
@@ -217,7 +218,8 @@ async function handleNavigation(request) {
   try {
     const response = await fetch(request);
     if (shouldCacheNavigationResponse(request, response)) {
-      cache.put(request, response.clone());
+      const cloned = response.clone();
+      cache.put(request, cloned);
     }
     return response;
   } catch {
@@ -242,8 +244,9 @@ async function cacheFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
+      const cloned = response.clone();
       const cache = await caches.open(STATIC_CACHE);
-      cache.put(request, response.clone());
+      cache.put(request, cloned);
     }
     return response;
   } catch {
@@ -260,8 +263,9 @@ async function networkFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
+      const cloned = response.clone();
       const cache = await caches.open(API_CACHE);
-      cache.put(request, response.clone());
+      await cache.put(request, cloned);
     }
     return response;
   } catch {
@@ -282,7 +286,8 @@ async function staleWhileRevalidate(request, cacheName) {
   const fetchPromise = fetch(request)
     .then((response) => {
       if (response.ok) {
-        caches.open(cacheName).then((c) => c.put(request, response.clone()));
+        const cloned = response.clone();
+        caches.open(cacheName).then((c) => c.put(request, cloned));
       }
       return response;
     })

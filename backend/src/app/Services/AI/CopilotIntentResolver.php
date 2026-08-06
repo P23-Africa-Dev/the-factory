@@ -214,6 +214,32 @@ class CopilotIntentResolver
         ?string $resolvedActionTool = null,
         ?string $resolvedReadTool = null,
     ): array {
+        if (isset($intent['tool']) && is_string($intent['tool'])) {
+            $tool = $intent['tool'];
+            $readTools = [
+                'crm.top_leads', 'tasks.overdue', 'tasks.list', 'projects.at_risk_summary',
+                'attendance.today_summary', 'meetings.today', 'tracking.active_agents',
+                'dashboard.overview', 'planning.daily', 'crm.follow_up_summary',
+                'crm.stale_leads', 'crm.visit_extract', 'crm.email_threads',
+                'crm.unread_emails', 'crm.draft_email', 'kpi.team_performance',
+                'org.users', 'drive.files', 'tracking.agent_history',
+                'map.pinned_locations_count', 'crm.calls_count', 'attendance.duration_summary',
+                'field.daily_summary', 'field.agent_visits', 'field.unvisited_customers',
+                'field.territory_coverage', 'field.travel_vs_visit_time', 'field.journey_history',
+                'field.journey_detail'
+            ];
+            $actionTools = [
+                'tasks.create', 'tasks.reassign', 'meetings.schedule', 'notifications.send',
+                'projects.create', 'crm.log_visit', 'crm.create_lead', 'crm.send_email',
+                'kpis.create', 'kpis.update', 'org.users.create'
+            ];
+            if (in_array($tool, $readTools, true)) {
+                $intent['type'] = 'tool';
+            } elseif (in_array($tool, $actionTools, true)) {
+                $intent['type'] = 'action';
+            }
+        }
+
         return [
             'intent' => $intent,
             'action_confirmed' => $actionConfirmed,
