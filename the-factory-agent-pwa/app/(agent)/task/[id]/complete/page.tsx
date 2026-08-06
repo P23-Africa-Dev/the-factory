@@ -160,7 +160,10 @@ export default function TaskCompletePage() {
       { taskId: taskIdNum, formData },
       {
         onSuccess: async () => {
-          await stopTracking();
+          await stopTracking({
+            reason: 'completed',
+            taskTitle: task?.title ?? null,
+          });
           goToTaskList();
         },
         onError: (err: unknown) => {

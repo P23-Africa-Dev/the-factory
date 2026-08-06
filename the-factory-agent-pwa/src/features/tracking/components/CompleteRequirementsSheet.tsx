@@ -174,7 +174,10 @@ export function CompleteRequirementsSheet({
       });
 
       await taskApi.completeTask(taskId, formData);
-      await stopTracking();
+      await stopTracking({
+        reason: 'completed',
+        taskTitle: task?.title ?? null,
+      });
 
       toast.success('Task completed', 'Great work — tracking has stopped.');
       onDone();

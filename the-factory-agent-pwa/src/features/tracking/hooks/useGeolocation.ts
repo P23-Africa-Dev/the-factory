@@ -9,6 +9,11 @@ import {
   buildLiveTrackingMessage,
 } from '../native/nativeBackgroundGeolocation';
 import { useTrackingStore } from '@/store/tracking';
+import {
+  beginLiveTrackingIndicator,
+  buildMapTaskUrl,
+  endLiveTrackingIndicator,
+} from '@/lib/notifications/trackingAlerts';
 
 export type PermissionStatus = 'unknown' | 'prompt' | 'granted' | 'denied';
 
@@ -325,6 +330,12 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
       }
 
       beginWatch();
+      const taskId = useTrackingStore.getState().activeTrackingTaskId;
+      const live = taskId != null ? useTrackingStore.getState().liveTaskMap[taskId] : null;
+      void beginLiveTrackingIndicator({
+        label: live?.taskTitle ?? 'Live session',
+        url: taskId != null ? buildMapTaskUrl(taskId) : '/map',
+      });
     },
     [beginWatch, clearWatcher, rememberPosition, setPermission],
   );
@@ -335,6 +346,8 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
       nativeWatchActiveRef.current = false;
       void stopNativeBackgroundWatch();
       setIsWatching(false);
+    } else {
+      void endLiveTrackingIndicator();
     }
     clearWatcher();
   }, [clearWatcher]);

@@ -1824,13 +1824,16 @@ function MapContent() {
   }, [hasArrived, phase, trackingTask]);
 
   const handleEndActivity = useCallback((): void => {
-    void stopTracking();
-    setTrackingStatus('idle');
     if (hasArrived) {
+      // Arrival opens completion flow — keep silent here; completion sheet notifies.
+      void stopTracking({ reason: 'silent' });
+      setTrackingStatus('idle');
       setPhase('activity_ended');
       return;
     }
     // Not at destination — pause tracking, do not open completion workflow.
+    void stopTracking({ reason: 'paused' });
+    setTrackingStatus('idle');
     setPhase('destination_selected');
     toast.info('Tracking paused', 'Your task is still in progress. Tap Start when you are ready to continue.');
   }, [stopTracking, hasArrived]);
