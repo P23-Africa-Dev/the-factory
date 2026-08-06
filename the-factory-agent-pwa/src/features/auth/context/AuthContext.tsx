@@ -91,6 +91,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     try {
+      // Best-effort: deactivate FCM / clear native push listeners before wiping auth.
+      void import('@/features/tracking/native/nativePushNotifications')
+        .then((m) => m.unregisterNativePush())
+        .catch(() => {});
+
+      // Best-effort: unsubscribe Web Push so this device stops receiving pushes.
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        void navigator.serviceWorker.ready
+          .then((reg) => reg.pushManager?.getSubscription())
+          .then(async (sub) => {
+            if (!sub) return;
+            try {
+              const { client } = await import('@/lib/api/client');
+              await client.delete('/notifications/push-subscriptions', {
+                data: { device_token: sub.endpoint },
+              });
+            } catch {
+              // ignore
+            }
+            try {
+              await sub.unsubscribe();
+            } catch {
+              // ignore
+            }
+          })
+          .catch(() => {});
+      }
+
       // 1. Clear PWA appStore and trackingStore
       appStore.clearAll();
       trackingStore.clearAll();

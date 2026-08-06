@@ -42,6 +42,10 @@ const config: CapacitorConfig = {
       style: 'DARK',
       backgroundColor: '#0B1E26',
     },
+    // FCM push — requires android/app/google-services.json from Firebase Console.
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
   },
 };
 

@@ -1,0 +1,30 @@
+{
+  "_comment": "TEMPLATE ONLY — copy to android/app/google-services.json (gitignored). Download from Firebase Console → Project settings → Your apps → Android app (package: com.thefactory23.agent). Without this file, FCM push will not work on the APK.",
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "your-firebase-project-id",
+    "storage_bucket": "your-firebase-project-id.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:ffffffffffffffff",
+        "android_client_info": {
+          "package_name": "com.thefactory23.agent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyREPLACE_WITH_FIREBASE_ANDROID_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

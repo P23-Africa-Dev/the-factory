@@ -8,10 +8,10 @@
  * - Navigation fallback: cached pages, then /offline.html shell
  */
 
-const CACHE_NAME = "factory-agent-pwa-v8";
-const STATIC_CACHE = "factory-static-v8";
-const API_CACHE = "factory-api-v8";
-const PAGE_CACHE = "factory-pages-v8";
+const CACHE_NAME = "factory-agent-pwa-v9";
+const STATIC_CACHE = "factory-static-v9";
+const API_CACHE = "factory-api-v9";
+const PAGE_CACHE = "factory-pages-v9";
 
 const STATIC_ASSETS = [
   "/",
@@ -111,26 +111,42 @@ self.addEventListener("sync", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  if (!event.data) return;
+  event.waitUntil(
+    (async () => {
+      let data = {};
+      try {
+        data = event.data ? event.data.json() : {};
+      } catch {
+        try {
+          const text = event.data ? event.data.text() : "";
+          data = text ? { body: text } : {};
+        } catch {
+          data = {};
+        }
+      }
 
-  try {
-    const data = event.data.json();
-    const options = {
-      body: data.message || data.body || "",
-      icon: "/icons/icon-192x192.png",
-      badge: "/icons/icon-72x72.png",
-      tag: data.tag || "factory-notification",
-      data: {
-        url: data.action_url || "/",
-      },
-    };
+      const title = data.title || "Factory 23 Agent";
+      const body = data.message || data.body || "";
+      const url = data.action_url || data.url || "/";
+      const tag = data.tag || `factory-notification-${data.notification_id || Date.now()}`;
 
-    event.waitUntil(
-      self.registration.showNotification(data.title || "Factory 23", options),
-    );
-  } catch {
-    // Malformed push — ignore
-  }
+      await self.registration.showNotification(title, {
+        body,
+        icon: "/icons/icon-192x192.png",
+        badge: "/icons/icon-72x72.png",
+        tag,
+        renotify: true,
+        requireInteraction: false,
+        vibrate: [120, 60, 120],
+        data: {
+          url,
+          notification_id: data.notification_id || null,
+          type: data.type || null,
+          category: data.category || null,
+        },
+      });
+    })(),
+  );
 });
 
 self.addEventListener("message", (event) => {
@@ -161,16 +177,25 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/";
+  const rawUrl = event.notification.data?.url || "/";
+  const targetUrl = rawUrl.startsWith("http")
+    ? rawUrl
+    : new URL(rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`, self.location.origin).href;
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window" }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes(url) && "focus" in client) {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          if ("navigate" in client) {
+            return client.focus().then(() => client.navigate(targetUrl));
+          }
           return client.focus();
         }
       }
-      return self.clients.openWindow(url);
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+      return undefined;
     }),
   );
 });
