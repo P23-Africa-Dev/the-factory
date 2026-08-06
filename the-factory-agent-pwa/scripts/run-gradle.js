@@ -51,6 +51,7 @@ function findBuiltApk() {
     task === 'assembleRelease'
       ? [
           path.join(outputsRoot, 'release', 'app-release.apk'),
+          // Unsigned builds are not installable on devices — prefer signed only.
           path.join(outputsRoot, 'release', 'app-release-unsigned.apk'),
         ]
       : [
@@ -82,6 +83,13 @@ function findBuiltApk() {
 const builtApk = findBuiltApk();
 if (!builtApk) {
   console.error('[apk] Build succeeded but no APK was found under android/app/build/outputs/apk');
+  process.exit(1);
+}
+
+if (builtApk.includes('unsigned')) {
+  console.error('[apk] Refusing to publish an UNSIGNED release APK — Android will reject install.');
+  console.error('[apk] Configure android/keystore.properties or ensure release signingConfig is set.');
+  console.error(`[apk] Built file: ${builtApk}`);
   process.exit(1);
 }
 
