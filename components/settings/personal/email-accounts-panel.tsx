@@ -30,6 +30,7 @@ import {
 import { useEmailOAuthReturnToast } from "@/hooks/use-email-oauth-return-toast";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import type {
+  EmailAccountConnectionCheck,
   EmailAccountConnectionTest,
   EmailAccountItem,
   EmailAccountProvider,
@@ -99,11 +100,54 @@ function notifyConnectionTest(test?: EmailAccountConnectionTest | null, fallback
     if (fallbackSuccess) toast.success(fallbackSuccess);
     return;
   }
-  if (test.ok) {
+
+    if (test.ok) {
     toast.success(test.message || "Connection validated successfully.");
+    if (test.imap && !test.imap.ok && test.imap.code === "extension_missing") {
+      toast.warning(test.imap.message, {
+        description: test.imap.fix || undefined,
+        duration: 10000,
+      });
+    }
     return;
   }
-  toast.error(test.message || "Connection validation failed. Edit the settings and try again.");
+
+  const description = [test.smtp, test.imap]
+    .filter((part): part is EmailAccountConnectionCheck => !!part && !part.ok)
+    .map((part) => {
+      const label = part === test.smtp ? "SMTP" : "IMAP";
+      return `${label}: ${part.message}${part.fix ? ` — ${part.fix}` : ""}`;
+    })
+    .join("\n");
+
+  toast.error(test.message?.split("\n")[0] || "Connection validation failed.", {
+    description: description || undefined,
+    duration: 12000,
+  });
+}
+
+function ConnectionIssueBlock({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}) {
+  const lines = message.split("\n").map((line) => line.trim()).filter(Boolean);
+
+  return (
+    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 border border-red-100">
+      <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+      <div className="min-w-0 space-y-1">
+        <p className="text-[11px] font-semibold text-red-800">{title}</p>
+        {lines.map((line) => (
+          <p key={line} className="text-[11px] text-red-700 break-words whitespace-pre-wrap">
+            {line}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PasswordField({
@@ -223,13 +267,7 @@ function AccountCard({
       </div>
 
       {(isError || isExpired) && account.last_error_message && (
-        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 border border-red-100">
-          <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-red-800 mb-0.5">Validation failed</p>
-            <p className="text-[11px] text-red-700 break-words">{account.last_error_message}</p>
-          </div>
-        </div>
+        <ConnectionIssueBlock title="Validation failed" message={account.last_error_message} />
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -412,10 +450,7 @@ function ImapSmtpForm({
       </div>
 
       {isEdit && account?.last_error_message && (
-        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
-          <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-amber-800">{account.last_error_message}</p>
-        </div>
+        <ConnectionIssueBlock title="Last validation issue" message={account.last_error_message} />
       )}
 
       <div className="space-y-1.5">
@@ -757,8 +792,8 @@ export function EmailAccountsPanel() {
           toast.success(result.message || "Connection test passed.");
           refreshAccounts();
         },
-        onError: (err: Error) => {
-          toast.error(getApiErrorMessage(err, "Connection test failed."));
+        onError: (err: Error & { errors?: Record<string, string[] | string> | null }) => {
+          toast.error(getApiErrorMessage(err, "Connection test failed."), { duration: 12000 });
           refreshAccounts();
         },
       },
@@ -835,7 +870,7 @@ export function EmailAccountsPanel() {
                   <>
                     {" · "}
                     <span className="font-semibold">{failedCount} failed</span>
-                    {" — edit or retest to fix"}
+                    {" → edit or retest to fix"}
                   </>
                 )}
               </p>

@@ -189,7 +189,7 @@ class EmailAccountController extends Controller
     }
 
     /**
-     * @return array{ran:bool,ok?:bool,message?:string}
+     * @return array{ran:bool,ok?:bool,message?:string,smtp?:mixed,imap?:mixed}
      */
     private function runImapSmtpConnectionTest($user, EmailAccount $account, ?int $companyId): array
     {
@@ -203,6 +203,8 @@ class EmailAccountController extends Controller
             'ran' => true,
             'ok' => (bool) ($result['ok'] ?? false),
             'message' => (string) ($result['message'] ?? ''),
+            'smtp' => $result['smtp'] ?? null,
+            'imap' => $result['imap'] ?? null,
         ];
     }
 
@@ -248,14 +250,38 @@ class EmailAccountController extends Controller
         );
 
         if (! $result['ok']) {
-            return $this->error(
-                message: $result['message'],
-                errors: ['connection' => [$result['message']]],
-                status: 422,
-            );
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+                'data' => [
+                    'connection_test' => [
+                        'ran' => true,
+                        'ok' => false,
+                        'message' => $result['message'],
+                        'smtp' => $result['smtp'] ?? null,
+                        'imap' => $result['imap'] ?? null,
+                    ],
+                ],
+                'errors' => [
+                    'connection' => [$result['message']],
+                    'smtp' => isset($result['smtp']['message']) ? [$result['smtp']['message']] : null,
+                    'imap' => isset($result['imap']['message']) ? [$result['imap']['message']] : null,
+                ],
+            ], 422);
         }
 
-        return $this->success(message: $result['message']);
+        return $this->success(
+            message: $result['message'],
+            data: [
+                'connection_test' => [
+                    'ran' => true,
+                    'ok' => true,
+                    'message' => $result['message'],
+                    'smtp' => $result['smtp'] ?? null,
+                    'imap' => $result['imap'] ?? null,
+                ],
+            ],
+        );
     }
 
     /**

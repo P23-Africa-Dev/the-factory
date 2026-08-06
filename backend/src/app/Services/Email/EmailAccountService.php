@@ -384,7 +384,12 @@ class EmailAccountService
     /**
      * Test the connection for an email account.
      *
-     * @return array{ok:bool,message:string}
+     * @return array{
+     *   ok:bool,
+     *   message:string,
+     *   smtp?:array<string,mixed>|null,
+     *   imap?:array<string,mixed>|null
+     * }
      */
     public function testConnection(User $user, EmailAccount $account, ?int $companyId = null): array
     {
@@ -396,6 +401,42 @@ class EmailAccountService
         $provider = $this->resolveProvider($account);
 
         try {
+            if ($provider instanceof Providers\ImapSmtpProvider) {
+                $diagnosis = $provider->diagnoseConnection($account->toDTO());
+
+                if (! $diagnosis['ok']) {
+                    $this->markError($account, $diagnosis['message']);
+
+                    return [
+                        'ok' => false,
+                        'message' => $diagnosis['message'],
+                        'smtp' => $diagnosis['smtp'],
+                        'imap' => $diagnosis['imap'],
+                    ];
+                }
+
+                $account->update([
+                    'status' => 'active',
+                    'last_error_message' => null,
+                    'last_error_at' => null,
+                ]);
+
+                Log::info('Email account connection test succeeded', [
+                    'company_id' => $resolvedCompanyId,
+                    'user_id' => $user->id,
+                    'provider' => $account->provider,
+                    'email' => $account->email,
+                    'account_id' => $account->id,
+                ]);
+
+                return [
+                    'ok' => true,
+                    'message' => $diagnosis['message'],
+                    'smtp' => $diagnosis['smtp'],
+                    'imap' => $diagnosis['imap'],
+                ];
+            }
+
             $result = $provider->testConnection($account->toDTO());
 
             if (! $result) {

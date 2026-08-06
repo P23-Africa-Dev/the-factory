@@ -71,10 +71,19 @@ export type UpdateEmailAccountPayload = {
   imap_password?: string | null;
 };
 
+export type EmailAccountConnectionCheck = {
+  ok: boolean;
+  code: string;
+  message: string;
+  fix?: string | null;
+};
+
 export type EmailAccountConnectionTest = {
   ran: boolean;
   ok?: boolean;
   message?: string;
+  smtp?: EmailAccountConnectionCheck | null;
+  imap?: EmailAccountConnectionCheck | null;
 };
 
 export type RefreshTokensPayload = {
