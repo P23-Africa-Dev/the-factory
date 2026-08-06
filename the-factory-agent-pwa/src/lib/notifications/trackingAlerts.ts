@@ -60,7 +60,8 @@ async function showViaServiceWorker(
   }
   try {
     const registration = await navigator.serviceWorker.ready;
-    await registration.showNotification(payload.title, {
+    // `renotify` is supported by browsers for SW notifications but missing from TS DOM types.
+    const options: NotificationOptions & { renotify?: boolean } = {
       body: payload.body,
       icon: '/icons/icon-192x192.png',
       badge: '/icons/icon-72x72.png',
@@ -69,7 +70,8 @@ async function showViaServiceWorker(
       requireInteraction: opts?.requireInteraction ?? false,
       silent: opts?.silent ?? false,
       data: { url: payload.url },
-    });
+    };
+    await registration.showNotification(payload.title, options);
     return true;
   } catch {
     return false;
