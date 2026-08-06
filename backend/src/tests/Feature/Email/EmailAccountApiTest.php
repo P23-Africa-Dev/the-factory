@@ -383,6 +383,65 @@ class EmailAccountApiTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
+    public function test_admin_can_update_imap_smtp_settings(): void
+    {
+        [$company, $admin] = $this->seedCompanyWithAdmin();
+
+        $account = EmailAccount::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $admin->id,
+            'provider' => 'imap_smtp',
+            'email' => 'old@custom-domain.com',
+            'display_name' => 'Old Mail',
+            'smtp_host' => 'smtp.old.com',
+            'smtp_port' => 587,
+            'smtp_encryption' => 'tls',
+            'smtp_username' => 'old@custom-domain.com',
+            'smtp_password_encrypted' => 'old-smtp',
+            'imap_host' => 'imap.old.com',
+            'imap_port' => 993,
+            'imap_encryption' => 'ssl',
+            'imap_username' => 'old@custom-domain.com',
+            'imap_password_encrypted' => 'old-imap',
+            'status' => 'error',
+            'last_error_message' => 'Previous failure',
+            'connected_at' => now(),
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-token', ['*'])->plainTextToken)
+            ->patchJson('/api/v1/admin/email-accounts/' . $account->id, [
+                'company_id' => $company->id,
+                'email' => 'new@custom-domain.com',
+                'display_name' => 'Updated Mail',
+                'smtp_host' => 'smtp.new.com',
+                'smtp_port' => 465,
+                'smtp_encryption' => 'ssl',
+                'smtp_username' => 'new@custom-domain.com',
+                'smtp_password' => 'new-smtp-pass',
+                'imap_host' => 'imap.new.com',
+                'imap_port' => 993,
+                'imap_encryption' => 'ssl',
+                'imap_username' => 'new@custom-domain.com',
+                'imap_password' => 'new-imap-pass',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.account.email', 'new@custom-domain.com')
+            ->assertJsonPath('data.account.display_name', 'Updated Mail')
+            ->assertJsonPath('data.account.smtp_host', 'smtp.new.com')
+            ->assertJsonPath('data.account.smtp_port', 465)
+            ->assertJsonPath('data.account.imap_host', 'imap.new.com')
+            ->assertJsonPath('data.connection_test.ran', true);
+
+        $this->assertDatabaseHas('email_accounts', [
+            'id' => $account->id,
+            'email' => 'new@custom-domain.com',
+            'smtp_host' => 'smtp.new.com',
+            'imap_host' => 'imap.new.com',
+        ]);
+    }
+
     public function test_imap_smtp_requires_host_and_port(): void
     {
         [$company, $admin] = $this->seedCompanyWithAdmin();

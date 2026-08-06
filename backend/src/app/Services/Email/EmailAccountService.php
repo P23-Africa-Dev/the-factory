@@ -186,18 +186,114 @@ class EmailAccountService
     }
 
     /**
-     * Rename an account (display name).
+     * Update account settings (display name, default, and IMAP/SMTP fields).
+     *
+     * @param  array<string,mixed>  $data
      */
-    public function rename(User $user, EmailAccount $account, string $displayName, ?int $companyId = null): EmailAccount
+    public function updateSettings(User $user, EmailAccount $account, array $data, ?int $companyId = null): EmailAccount
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
 
         $this->assertAccountBelongsToUser($account, $resolvedCompanyId, (int) $user->id);
 
-        $account->update(['display_name' => trim($displayName)]);
+        $updates = [];
+
+        if (array_key_exists('display_name', $data)) {
+            $displayName = $data['display_name'];
+            $updates['display_name'] = is_string($displayName) ? trim($displayName) : null;
+            if ($updates['display_name'] === '') {
+                $updates['display_name'] = null;
+            }
+        }
+
+        if ($account->provider === 'imap_smtp') {
+            if (isset($data['email']) && is_string($data['email']) && trim($data['email']) !== '') {
+                $email = strtolower(trim($data['email']));
+                $duplicate = EmailAccount::query()
+                    ->where('company_id', $resolvedCompanyId)
+                    ->where('user_id', $user->id)
+                    ->where('email', $email)
+                    ->where('id', '!=', $account->id)
+                    ->exists();
+
+                if ($duplicate) {
+                    throw ValidationException::withMessages([
+                        'email' => ['This email account is already connected.'],
+                    ]);
+                }
+
+                $updates['email'] = $email;
+            }
+
+            foreach ([
+                'smtp_host',
+                'smtp_encryption',
+                'smtp_username',
+                'imap_host',
+                'imap_encryption',
+                'imap_username',
+            ] as $field) {
+                if (array_key_exists($field, $data) && $data[$field] !== null) {
+                    $updates[$field] = is_string($data[$field]) ? trim((string) $data[$field]) : $data[$field];
+                }
+            }
+
+            if (array_key_exists('smtp_port', $data) && $data['smtp_port'] !== null) {
+                $updates['smtp_port'] = (int) $data['smtp_port'];
+            }
+            if (array_key_exists('imap_port', $data) && $data['imap_port'] !== null) {
+                $updates['imap_port'] = (int) $data['imap_port'];
+            }
+
+            // Passwords are optional on edit — only replace when a new value is provided.
+            if (isset($data['smtp_password']) && is_string($data['smtp_password']) && $data['smtp_password'] !== '') {
+                $updates['smtp_password_encrypted'] = $data['smtp_password'];
+            }
+            if (isset($data['imap_password']) && is_string($data['imap_password']) && $data['imap_password'] !== '') {
+                $updates['imap_password_encrypted'] = $data['imap_password'];
+            }
+
+            // Editing credentials means the previous error may no longer apply until re-tested.
+            $updates['disconnected_at'] = null;
+            if (($account->status === 'disconnected' || $account->status === 'expired') && $updates !== []) {
+                $updates['status'] = 'active';
+            }
+        }
+
+        if (! empty($data['is_default'])) {
+            DB::transaction(function () use ($resolvedCompanyId, $user, $account, $updates): void {
+                EmailAccount::query()
+                    ->where('company_id', $resolvedCompanyId)
+                    ->where('user_id', $user->id)
+                    ->update(['is_default' => false]);
+
+                $account->update(array_merge($updates, ['is_default' => true]));
+            });
+        } elseif ($updates !== []) {
+            $account->update($updates);
+        }
+
+        Log::info('Email account settings updated', [
+            'company_id' => $resolvedCompanyId,
+            'user_id' => $user->id,
+            'provider' => $account->provider,
+            'email' => $account->email,
+            'account_id' => $account->id,
+            'fields' => array_keys($updates),
+        ]);
 
         return $account->fresh();
+    }
+
+    /**
+     * Rename an account (display name).
+     */
+    public function rename(User $user, EmailAccount $account, string $displayName, ?int $companyId = null): EmailAccount
+    {
+        return $this->updateSettings($user, $account, [
+            'display_name' => $displayName,
+        ], $companyId);
     }
 
     /**

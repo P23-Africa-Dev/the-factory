@@ -5,9 +5,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Globe,
   Loader2,
   Mail,
+  Pencil,
   RefreshCw,
   Star,
   Trash2,
@@ -26,7 +29,11 @@ import {
 } from "@/hooks/use-email-accounts";
 import { useEmailOAuthReturnToast } from "@/hooks/use-email-oauth-return-toast";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import type { EmailAccountItem, EmailAccountProvider } from "@/lib/api/email-accounts";
+import type {
+  EmailAccountConnectionTest,
+  EmailAccountItem,
+  EmailAccountProvider,
+} from "@/lib/api/email-accounts";
 
 const PROVIDER_LABELS: Record<EmailAccountProvider, string> = {
   google: "Google / Gmail",
@@ -87,12 +94,63 @@ function openAuthorizationPopup(authorizationUrl: string, popupName: string) {
   toast.info("Complete sign-in in the popup. This page will update automatically.");
 }
 
+function notifyConnectionTest(test?: EmailAccountConnectionTest | null, fallbackSuccess?: string) {
+  if (!test || !test.ran) {
+    if (fallbackSuccess) toast.success(fallbackSuccess);
+    return;
+  }
+  if (test.ok) {
+    toast.success(test.message || "Connection validated successfully.");
+    return;
+  }
+  toast.error(test.message || "Connection validation failed. Edit the settings and try again.");
+}
+
+function PasswordField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[10px] font-semibold text-gray-400">{label}</label>
+      <div className="relative">
+        <input
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete="new-password"
+          className="w-full h-10 rounded-xl border border-gray-200 bg-white px-3 pr-10 text-[12px] text-dash-dark placeholder:text-gray-300 outline-none focus:border-dash-dark"
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-400 hover:text-dash-dark hover:bg-gray-50"
+          aria-label={visible ? "Hide password" : "Show password"}
+        >
+          {visible ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AccountCard({
   account,
   onSetDefault,
   onDisconnect,
   onTest,
   onReconnect,
+  onEdit,
   isSettingDefault,
   isDisconnecting,
   isTesting,
@@ -103,6 +161,7 @@ function AccountCard({
   onDisconnect: () => void;
   onTest: () => void;
   onReconnect: () => void;
+  onEdit: () => void;
   isSettingDefault: boolean;
   isDisconnecting: boolean;
   isTesting: boolean;
@@ -112,13 +171,17 @@ function AccountCard({
   const isError = account.status === "error";
   const isExpired = account.status === "expired";
   const canOAuthReconnect = account.provider !== "imap_smtp";
+  const canEditImap = account.provider === "imap_smtp";
+  const canTest = account.status !== "disconnected";
 
   return (
     <div
       className={`flex flex-col gap-3 p-4 rounded-xl border transition-colors ${
         account.is_default
           ? "border-dash-dark/20 bg-dash-dark/5"
-          : "border-gray-100 bg-white"
+          : isError || isExpired
+            ? "border-red-100 bg-white"
+            : "border-gray-100 bg-white"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -144,6 +207,9 @@ function AccountCard({
             <p className="text-[12px] text-gray-500 truncate">{account.email}</p>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {PROVIDER_LABELS[account.provider]}
+              {account.provider === "imap_smtp" && account.smtp_host
+                ? ` · ${account.smtp_host}`
+                : ""}
             </p>
           </div>
         </div>
@@ -159,7 +225,10 @@ function AccountCard({
       {(isError || isExpired) && account.last_error_message && (
         <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 border border-red-100">
           <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-red-700">{account.last_error_message}</p>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-red-800 mb-0.5">Validation failed</p>
+            <p className="text-[11px] text-red-700 break-words">{account.last_error_message}</p>
+          </div>
         </div>
       )}
 
@@ -178,12 +247,22 @@ function AccountCard({
         <button
           type="button"
           onClick={onTest}
-          disabled={isTesting || !isActive}
+          disabled={isTesting || !canTest}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-gray-600 hover:bg-gray-50 border border-gray-100 transition-colors disabled:opacity-50"
         >
           {isTesting ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
           Test
         </button>
+        {canEditImap && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-dash-dark hover:bg-gray-50 border border-gray-100 transition-colors"
+          >
+            <Pencil size={12} />
+            Edit
+          </button>
+        )}
         {canOAuthReconnect && (isError || isExpired || !isActive) && (
           <button
             type="button"
@@ -212,59 +291,105 @@ function AccountCard({
 function ImapSmtpForm({
   onClose,
   companyId,
+  account,
+  onSaved,
 }: {
   onClose: () => void;
   companyId?: number | string;
+  account?: EmailAccountItem | null;
+  onSaved?: () => void;
 }) {
+  const isEdit = !!account;
   const connectMutation = useConnectEmailAccount();
-  const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [isDefault, setIsDefault] = useState(false);
-  const [smtpHost, setSmtpHost] = useState("");
-  const [smtpPort, setSmtpPort] = useState("587");
-  const [smtpEncryption, setSmtpEncryption] = useState("tls");
-  const [smtpUsername, setSmtpUsername] = useState("");
+  const updateMutation = useUpdateEmailAccount();
+  const [email, setEmail] = useState(account?.email ?? "");
+  const [displayName, setDisplayName] = useState(account?.display_name ?? "");
+  const [isDefault, setIsDefault] = useState(account?.is_default ?? false);
+  const [smtpHost, setSmtpHost] = useState(account?.smtp_host ?? "");
+  const [smtpPort, setSmtpPort] = useState(String(account?.smtp_port ?? 587));
+  const [smtpEncryption, setSmtpEncryption] = useState(account?.smtp_encryption ?? "tls");
+  const [smtpUsername, setSmtpUsername] = useState(account?.smtp_username ?? "");
   const [smtpPassword, setSmtpPassword] = useState("");
-  const [imapHost, setImapHost] = useState("");
-  const [imapPort, setImapPort] = useState("993");
-  const [imapEncryption, setImapEncryption] = useState("ssl");
-  const [imapUsername, setImapUsername] = useState("");
+  const [imapHost, setImapHost] = useState(account?.imap_host ?? "");
+  const [imapPort, setImapPort] = useState(String(account?.imap_port ?? 993));
+  const [imapEncryption, setImapEncryption] = useState(account?.imap_encryption ?? "ssl");
+  const [imapUsername, setImapUsername] = useState(account?.imap_username ?? "");
   const [imapPassword, setImapPassword] = useState("");
+  const [isValidating, setIsValidating] = useState(false);
+
+  const isPending = connectMutation.isPending || updateMutation.isPending || isValidating;
 
   const handleSubmit = () => {
     if (!email.trim() || !smtpHost.trim() || !imapHost.trim()) {
       toast.error("Email, SMTP host, and IMAP host are required.");
       return;
     }
-    if (!smtpPassword.trim() || !imapPassword.trim()) {
+    if (!isEdit && (!smtpPassword.trim() || !imapPassword.trim())) {
       toast.error("SMTP and IMAP passwords are required.");
       return;
     }
 
+    const basePayload = {
+      email: email.trim(),
+      display_name: displayName.trim() || null,
+      is_default: isDefault,
+      company_id: companyId ?? undefined,
+      smtp_host: smtpHost.trim(),
+      smtp_port: Number(smtpPort) || 587,
+      smtp_encryption: smtpEncryption,
+      smtp_username: smtpUsername.trim() || email.trim(),
+      imap_host: imapHost.trim(),
+      imap_port: Number(imapPort) || 993,
+      imap_encryption: imapEncryption,
+      imap_username: imapUsername.trim() || email.trim(),
+    };
+
+    const finish = (test?: EmailAccountConnectionTest | null) => {
+      setIsValidating(false);
+      onClose();
+      onSaved?.();
+      notifyConnectionTest(
+        test,
+        isEdit ? "IMAP/SMTP account updated." : "IMAP/SMTP account connected.",
+      );
+    };
+
+    if (isEdit && account) {
+      setIsValidating(true);
+      toast.info("Saving settings and validating connection…");
+      updateMutation.mutate(
+        {
+          accountId: account.id,
+          payload: {
+            ...basePayload,
+            smtp_password: smtpPassword.trim() || undefined,
+            imap_password: imapPassword.trim() || undefined,
+          },
+        },
+        {
+          onSuccess: (result) => finish(result.data.connection_test),
+          onError: (err: Error) => {
+            setIsValidating(false);
+            toast.error(getApiErrorMessage(err, "Failed to update email account."));
+          },
+        },
+      );
+      return;
+    }
+
+    setIsValidating(true);
+    toast.info("Saving account and validating connection…");
     connectMutation.mutate(
       {
         provider: "imap_smtp",
-        email: email.trim(),
-        display_name: displayName.trim() || null,
-        is_default: isDefault,
-        company_id: companyId ?? undefined,
-        smtp_host: smtpHost.trim(),
-        smtp_port: Number(smtpPort) || 587,
-        smtp_encryption: smtpEncryption,
-        smtp_username: smtpUsername.trim() || email.trim(),
+        ...basePayload,
         smtp_password: smtpPassword,
-        imap_host: imapHost.trim(),
-        imap_port: Number(imapPort) || 993,
-        imap_encryption: imapEncryption,
-        imap_username: imapUsername.trim() || email.trim(),
         imap_password: imapPassword,
       },
       {
-        onSuccess: () => {
-          toast.success("IMAP/SMTP account connected successfully.");
-          onClose();
-        },
+        onSuccess: (result) => finish(result.data.connection_test),
         onError: (err: Error) => {
+          setIsValidating(false);
           toast.error(getApiErrorMessage(err, "Failed to connect email account."));
         },
       },
@@ -274,7 +399,9 @@ function ImapSmtpForm({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-[14px] font-bold text-dash-dark">Configure IMAP / SMTP</h3>
+        <h3 className="text-[14px] font-bold text-dash-dark">
+          {isEdit ? "Edit IMAP / SMTP" : "Configure IMAP / SMTP"}
+        </h3>
         <button
           type="button"
           onClick={onClose}
@@ -283,6 +410,13 @@ function ImapSmtpForm({
           Cancel
         </button>
       </div>
+
+      {isEdit && account?.last_error_message && (
+        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+          <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-800">{account.last_error_message}</p>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider">
@@ -357,16 +491,12 @@ function ImapSmtpForm({
             />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <label className="block text-[10px] font-semibold text-gray-400">Password</label>
-          <input
-            type="password"
-            value={smtpPassword}
-            onChange={(e) => setSmtpPassword(e.target.value)}
-            placeholder="SMTP password / app password"
-            className="w-full h-10 rounded-xl border border-gray-200 bg-white px-3 text-[12px] text-dash-dark placeholder:text-gray-300 outline-none focus:border-dash-dark"
-          />
-        </div>
+        <PasswordField
+          label={isEdit ? "Password (leave blank to keep current)" : "Password"}
+          value={smtpPassword}
+          onChange={setSmtpPassword}
+          placeholder={isEdit ? "Leave blank to keep current password" : "SMTP password / app password"}
+        />
 
         <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider pt-2">IMAP (Incoming)</p>
         <div className="grid grid-cols-3 gap-2">
@@ -414,16 +544,12 @@ function ImapSmtpForm({
             />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <label className="block text-[10px] font-semibold text-gray-400">Password</label>
-          <input
-            type="password"
-            value={imapPassword}
-            onChange={(e) => setImapPassword(e.target.value)}
-            placeholder="IMAP password / app password"
-            className="w-full h-10 rounded-xl border border-gray-200 bg-white px-3 text-[12px] text-dash-dark placeholder:text-gray-300 outline-none focus:border-dash-dark"
-          />
-        </div>
+        <PasswordField
+          label={isEdit ? "Password (leave blank to keep current)" : "Password"}
+          value={imapPassword}
+          onChange={setImapPassword}
+          placeholder={isEdit ? "Leave blank to keep current password" : "IMAP password / app password"}
+        />
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer">
@@ -439,16 +565,18 @@ function ImapSmtpForm({
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={connectMutation.isPending}
+        disabled={isPending}
         className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-dash-dark text-white text-[13px] font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
       >
-        {connectMutation.isPending ? (
+        {isPending ? (
           <>
             <Loader2 size={14} className="animate-spin" />
-            Connecting...
+            {isValidating ? "Validating connection…" : "Saving…"}
           </>
+        ) : isEdit ? (
+          "Save & Validate"
         ) : (
-          "Connect Account"
+          "Connect & Validate"
         )}
       </button>
     </div>
@@ -552,6 +680,7 @@ export function EmailAccountsPanel() {
   const companyId = rawCompanyId ?? undefined;
   const queryClient = useQueryClient();
   const [connectMode, setConnectMode] = useState<"closed" | "picker" | "imap">("closed");
+  const [editingAccount, setEditingAccount] = useState<EmailAccountItem | null>(null);
 
   const { data: accounts, isLoading } = useEmailAccounts(companyId);
   const updateMutation = useUpdateEmailAccount();
@@ -588,6 +717,10 @@ export function EmailAccountsPanel() {
     return () => window.removeEventListener("message", handleMessage);
   }, [refreshAccounts]);
 
+  const activeCount = accounts?.filter((a) => a.status === "active").length ?? 0;
+  const failedCount =
+    accounts?.filter((a) => a.status === "error" || a.status === "expired").length ?? 0;
+
   const handleSetDefault = (account: EmailAccountItem) => {
     updateMutation.mutate(
       {
@@ -616,20 +749,26 @@ export function EmailAccountsPanel() {
   };
 
   const handleTest = (account: EmailAccountItem) => {
+    toast.info("Validating connection…");
     testMutation.mutate(
       { accountId: account.id, companyId },
       {
-        onSuccess: (result) =>
-          toast.success(result.message || "Connection test passed."),
-        onError: (err: Error) =>
-          toast.error(getApiErrorMessage(err, "Connection test failed.")),
+        onSuccess: (result) => {
+          toast.success(result.message || "Connection test passed.");
+          refreshAccounts();
+        },
+        onError: (err: Error) => {
+          toast.error(getApiErrorMessage(err, "Connection test failed."));
+          refreshAccounts();
+        },
       },
     );
   };
 
   const handleReconnect = (account: EmailAccountItem) => {
     if (account.provider === "imap_smtp") {
-      toast.info("Update IMAP/SMTP credentials by removing and reconnecting the account.");
+      setConnectMode("closed");
+      setEditingAccount(account);
       return;
     }
     if (!companyId) {
@@ -654,6 +793,11 @@ export function EmailAccountsPanel() {
     );
   };
 
+  const closeForms = () => {
+    setConnectMode("closed");
+    setEditingAccount(null);
+  };
+
   return (
     <SettingsSectionCard
       title="Email Accounts"
@@ -667,12 +811,33 @@ export function EmailAccountsPanel() {
       ) : (
         <div className="space-y-4">
           {accounts && accounts.length > 0 && (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-              <p className="text-[12px] text-emerald-800">
+            <div
+              className={`flex items-start gap-3 p-3 rounded-xl border ${
+                failedCount > 0
+                  ? "bg-amber-50 border-amber-100"
+                  : "bg-emerald-50 border-emerald-100"
+              }`}
+            >
+              {failedCount > 0 ? (
+                <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              ) : (
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+              )}
+              <p
+                className={`text-[12px] ${
+                  failedCount > 0 ? "text-amber-900" : "text-emerald-800"
+                }`}
+              >
                 {accounts.length} account{accounts.length !== 1 ? "s" : ""} connected
-                {accounts.filter((a) => a.status === "active").length > 0 &&
-                  ` (${accounts.filter((a) => a.status === "active").length} active)`}
+                {" · "}
+                <span className="font-semibold">{activeCount} active</span>
+                {failedCount > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-semibold">{failedCount} failed</span>
+                    {" — edit or retest to fix"}
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -687,9 +852,14 @@ export function EmailAccountsPanel() {
                   onDisconnect={() => handleDisconnect(account)}
                   onTest={() => handleTest(account)}
                   onReconnect={() => handleReconnect(account)}
+                  onEdit={() => {
+                    setConnectMode("closed");
+                    setEditingAccount(account);
+                  }}
                   isSettingDefault={
                     updateMutation.isPending &&
-                    updateMutation.variables?.accountId === account.id
+                    updateMutation.variables?.accountId === account.id &&
+                    !editingAccount
                   }
                   isDisconnecting={
                     disconnectMutation.isPending &&
@@ -699,9 +869,7 @@ export function EmailAccountsPanel() {
                     testMutation.isPending &&
                     testMutation.variables?.accountId === account.id
                   }
-                  isReconnecting={
-                    authorizeMutation.isPending
-                  }
+                  isReconnecting={authorizeMutation.isPending}
                 />
               ))}
             </div>
@@ -719,7 +887,17 @@ export function EmailAccountsPanel() {
             </div>
           )}
 
-          {connectMode === "picker" ? (
+          {editingAccount ? (
+            <div className="border-t border-gray-100 pt-4">
+              <ImapSmtpForm
+                key={`edit-${editingAccount.id}`}
+                companyId={companyId}
+                account={editingAccount}
+                onClose={closeForms}
+                onSaved={refreshAccounts}
+              />
+            </div>
+          ) : connectMode === "picker" ? (
             <div className="border-t border-gray-100 pt-4">
               <ConnectProviderPicker
                 companyId={companyId}
@@ -730,8 +908,10 @@ export function EmailAccountsPanel() {
           ) : connectMode === "imap" ? (
             <div className="border-t border-gray-100 pt-4">
               <ImapSmtpForm
+                key="create-imap"
                 companyId={companyId}
-                onClose={() => setConnectMode("closed")}
+                onClose={closeForms}
+                onSaved={refreshAccounts}
               />
             </div>
           ) : (

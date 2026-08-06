@@ -58,6 +58,23 @@ export type UpdateEmailAccountPayload = {
   display_name?: string | null;
   is_default?: boolean;
   company_id?: number | string;
+  email?: string;
+  smtp_host?: string | null;
+  smtp_port?: number | null;
+  smtp_encryption?: string | null;
+  smtp_username?: string | null;
+  smtp_password?: string | null;
+  imap_host?: string | null;
+  imap_port?: number | null;
+  imap_encryption?: string | null;
+  imap_username?: string | null;
+  imap_password?: string | null;
+};
+
+export type EmailAccountConnectionTest = {
+  ran: boolean;
+  ok?: boolean;
+  message?: string;
 };
 
 export type RefreshTokensPayload = {
@@ -105,7 +122,9 @@ export function getEmailAccount(
 export function connectEmailAccount(
   payload: ConnectEmailAccountPayload,
   token: string,
-): Promise<ApiEnvelope<{ account: EmailAccountItem }>> {
+): Promise<
+  ApiEnvelope<{ account: EmailAccountItem; connection_test?: EmailAccountConnectionTest | null }>
+> {
   return apiRequest({
     method: "POST",
     path: emailAccountsPath(""),
@@ -118,7 +137,9 @@ export function updateEmailAccount(
   accountId: number | string,
   payload: UpdateEmailAccountPayload,
   token: string,
-): Promise<ApiEnvelope<{ account: EmailAccountItem }>> {
+): Promise<
+  ApiEnvelope<{ account: EmailAccountItem; connection_test?: EmailAccountConnectionTest | null }>
+> {
   return apiRequest({
     method: "PATCH",
     path: emailAccountsPath(`/${accountId}`),
