@@ -55,6 +55,8 @@ spec:
                        /var/www/html/storage/app/public
 
               echo "[init-app] Regenerating Laravel caches with production env vars..."
+              # Clear first so baked image config (built without secrets) cannot linger.
+              php artisan config:clear
               php artisan config:cache
               php artisan route:cache
               php artisan event:cache

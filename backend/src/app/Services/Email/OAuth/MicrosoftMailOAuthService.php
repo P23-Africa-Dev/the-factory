@@ -16,15 +16,11 @@ class MicrosoftMailOAuthService
 {
     public function buildAuthorizationUrl(int $companyId, int $userId, bool $forceAccountPicker = false): array
     {
+        $this->assertOAuthConfigured(requireSecret: false);
+
         $clientId = $this->clientId();
         $redirectUri = $this->redirectUri();
         $tenant = $this->tenant();
-
-        if ($clientId === '' || $redirectUri === '') {
-            throw ValidationException::withMessages([
-                'integration' => ['Microsoft 365 email OAuth is not configured yet. Use Google or IMAP/SMTP, or ask platform support to add Microsoft app credentials.'],
-            ]);
-        }
 
         $nonce = (string) Str::uuid();
         $expiresAt = now()->addMinutes(5);
@@ -53,8 +49,24 @@ class MicrosoftMailOAuthService
             'prompt' => $forceAccountPicker ? 'select_account' : 'consent',
         ], '', '&', PHP_QUERY_RFC3986);
 
+        $authorizationUrl = "https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/authorize?" . $query;
+
+        // Guard against PHP http_build_query omitting null/empty client_id (AADSTS900144).
+        if (! str_contains($authorizationUrl, 'client_id=' . rawurlencode($clientId))) {
+            Log::error('Microsoft Mail authorize URL missing client_id after build.', [
+                'tenant' => $tenant,
+                'redirect_uri_set' => $redirectUri !== '',
+            ]);
+
+            throw ValidationException::withMessages([
+                'integration' => [
+                    'Microsoft 365 email OAuth is misconfigured (missing client_id). Set MICROSOFT_MAIL_CLIENT_ID in the API secrets and restart the backend.',
+                ],
+            ]);
+        }
+
         return [
-            'authorization_url' => "https://login.microsoftonline.com/{$tenant}/oauth2/v2.0/authorize?" . $query,
+            'authorization_url' => $authorizationUrl,
             'expires_in_seconds' => 300,
         ];
     }
@@ -131,16 +143,12 @@ class MicrosoftMailOAuthService
      */
     public function exchangeCode(string $code): array
     {
+        $this->assertOAuthConfigured(requireSecret: true);
+
         $clientId = $this->clientId();
         $clientSecret = $this->clientSecret();
         $redirectUri = $this->redirectUri();
         $tenant = $this->tenant();
-
-        if ($clientId === '' || $clientSecret === '' || $redirectUri === '') {
-            throw ValidationException::withMessages([
-                'integration' => ['Microsoft Mail OAuth is not configured. Contact platform support.'],
-            ]);
-        }
 
         $tokenResponse = Http::asForm()
             ->timeout(20)
@@ -158,6 +166,21 @@ class MicrosoftMailOAuthService
                 'status' => $tokenResponse->status(),
                 'body' => $tokenResponse->body(),
             ]);
+
+            $azureError = strtolower((string) ($tokenResponse->json('error') ?? ''));
+            $azureDescription = trim((string) ($tokenResponse->json('error_description') ?? ''));
+
+            if (
+                str_contains($azureError, 'invalid_client')
+                || str_contains(strtolower($azureDescription), 'client secret')
+                || str_contains(strtolower($azureDescription), 'invalid_client')
+            ) {
+                throw ValidationException::withMessages([
+                    'integration' => [
+                        'Microsoft rejected the app credentials. In Azure App registrations, use the Application (client) ID and the client secret Value (not the Secret ID), then update MICROSOFT_MAIL_CLIENT_ID / MICROSOFT_MAIL_CLIENT_SECRET and restart the backend.',
+                    ],
+                ]);
+            }
 
             throw ValidationException::withMessages([
                 'integration' => ['Microsoft token exchange failed. Please retry the connection process.'],
@@ -260,6 +283,42 @@ class MicrosoftMailOAuthService
         $tenant = trim((string) config('services.microsoft_mail.tenant', 'common'));
 
         return $tenant !== '' ? $tenant : 'common';
+    }
+
+    private function assertOAuthConfigured(bool $requireSecret): void
+    {
+        $clientId = $this->clientId();
+        $redirectUri = $this->redirectUri();
+        $clientSecret = $this->clientSecret();
+
+        if ($clientId === '' || $redirectUri === '' || ($requireSecret && $clientSecret === '')) {
+            throw ValidationException::withMessages([
+                'integration' => [
+                    'Microsoft 365 email OAuth is not configured on the API. Set MICROSOFT_MAIL_CLIENT_ID and MICROSOFT_MAIL_CLIENT_SECRET in factory23-secret, apply the secret, restart the backend, then retry. Prefer Google meanwhile.',
+                ],
+            ]);
+        }
+
+        // Application (client) ID from Azure is a GUID.
+        if (! preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $clientId)) {
+            throw ValidationException::withMessages([
+                'integration' => [
+                    'MICROSOFT_MAIL_CLIENT_ID must be the Azure Application (client) ID (a GUID). Check App registrations → Overview.',
+                ],
+            ]);
+        }
+
+        // Secret ID is also a GUID; the Value is a longer opaque string. Using the ID causes later auth failures.
+        if (
+            $requireSecret
+            && preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $clientSecret)
+        ) {
+            throw ValidationException::withMessages([
+                'integration' => [
+                    'MICROSOFT_MAIL_CLIENT_SECRET looks like a Secret ID. Paste the client secret Value from Certificates & secrets (shown only once when created), not the Secret ID.',
+                ],
+            ]);
+        }
     }
 
     private function nonceCacheKey(string $nonce): string

@@ -90,9 +90,30 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function openAuthorizationPopup(authorizationUrl: string, popupName: string) {
-  const popup = window.open(authorizationUrl, popupName, "width=560,height=720");
+  const url = (authorizationUrl || "").trim();
+  if (!url || !/^https:\/\//i.test(url)) {
+    toast.error("Microsoft sign-in URL was missing. Please try again.");
+    return;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const clientId = parsed.searchParams.get("client_id")?.trim() ?? "";
+    if (!clientId) {
+      toast.error(
+        "Microsoft OAuth is not configured (missing client_id). Ask platform support to set MICROSOFT_MAIL_CLIENT_ID on the API, or use Google instead.",
+        { duration: 12000 },
+      );
+      return;
+    }
+  } catch {
+    toast.error("Microsoft sign-in URL was invalid. Please try again.");
+    return;
+  }
+
+  const popup = window.open(url, popupName, "width=560,height=720");
   if (!popup) {
-    window.location.href = authorizationUrl;
+    window.location.href = url;
     return;
   }
   toast.info("Complete sign-in in the popup. This page will update automatically.");
@@ -655,7 +676,9 @@ function ConnectProviderPicker({
           onClose();
         },
         onError: (err: Error) => {
-          toast.error(err.message || `Failed to start ${PROVIDER_LABELS[provider]} sign-in.`);
+          toast.error(getApiErrorMessage(err, `Failed to start ${PROVIDER_LABELS[provider]} sign-in.`), {
+            duration: 12000,
+          });
           setPendingProvider(null);
         },
       },
@@ -899,7 +922,7 @@ export function EmailAccountsPanel() {
           openAuthorizationPopup(result.data.authorization_url, `email-oauth-reconnect-${account.provider}`);
         },
         onError: (err: Error) => {
-          toast.error(err.message || "Failed to start reconnection.");
+          toast.error(getApiErrorMessage(err, "Failed to start reconnection."), { duration: 12000 });
         },
       },
     );
