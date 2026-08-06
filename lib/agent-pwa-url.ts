@@ -40,8 +40,9 @@ export function getAgentInstallUrl(origin?: string): string {
 
 /**
  * Absolute URL for the Android APK download (QR → direct download).
- * Prefer NEXT_PUBLIC_AGENT_APK_URL (supports Google Drive share links — normalized
- * to a direct-download URL). Otherwise same-origin /downloads/factory23-agent.apk.
+ * Prefer NEXT_PUBLIC_AGENT_APK_URL only when it points at a file you actually update
+ * (same-origin /downloads/… is best). A Google Drive URL will NOT update when you
+ * push to GitHub/Vercel — you must re-upload the APK to Drive separately.
  */
 export function getAgentApkUrl(origin?: string): string {
   const configured = process.env.NEXT_PUBLIC_AGENT_APK_URL?.trim();
@@ -60,6 +61,7 @@ export function getAgentApkUrl(origin?: string): string {
     }
   }
 
+  // Hosted on the marketing site deploy (public/downloads/factory23-agent.apk).
   return `https://thefactory23.com${DEFAULT_APK_PATH}`;
 }
 

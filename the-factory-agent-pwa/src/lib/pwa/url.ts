@@ -44,22 +44,16 @@ function normalizeApkDownloadUrl(url: string): string {
   return trimmed;
 }
 
-/** Absolute URL for Android APK download (optional). */
+/** Absolute URL for Android APK download. */
 export function getAgentApkDownloadUrl(): string | null {
   const configured = process.env.NEXT_PUBLIC_AGENT_APK_URL?.trim();
+  // Google Drive links do not update on git push — prefer clearing that Vercel env
+  // and serving /downloads/factory23-agent.apk from this app instead.
   if (configured) return normalizeApkDownloadUrl(configured);
 
   if (typeof window !== "undefined") {
-    // Prefer marketing-site default when browsing the agent origin in local/dev.
-    try {
-      const host = window.location.hostname;
-      if (host.includes("localhost") || host.includes("127.0.0.1")) {
-        return `http://localhost:3000${DEFAULT_APK_PATH}`;
-      }
-    } catch {
-      // fall through
-    }
+    return `${window.location.origin}${DEFAULT_APK_PATH}`;
   }
 
-  return `https://thefactory23.com${DEFAULT_APK_PATH}`;
+  return `https://app.thefactory23.com${DEFAULT_APK_PATH}`;
 }

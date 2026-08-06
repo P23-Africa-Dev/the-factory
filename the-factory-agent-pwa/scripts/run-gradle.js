@@ -14,9 +14,15 @@ const task = process.argv[2] || 'assembleDebug';
 const agentRoot = path.resolve(__dirname, '..');
 const androidDir = path.join(agentRoot, 'android');
 const repoRoot = path.resolve(agentRoot, '..');
-const downloadsDir = path.join(repoRoot, 'public', 'downloads');
 const PUBLISH_NAME = 'factory23-agent.apk';
-const publishPath = path.join(downloadsDir, PUBLISH_NAME);
+/** Main marketing site (thefactory23.com) */
+const marketingDownloadsDir = path.join(repoRoot, 'public', 'downloads');
+/** Agent PWA (app.thefactory23.com) — must also host the APK for install QR */
+const agentDownloadsDir = path.join(agentRoot, 'public', 'downloads');
+const publishTargets = [
+  path.join(marketingDownloadsDir, PUBLISH_NAME),
+  path.join(agentDownloadsDir, PUBLISH_NAME),
+];
 
 const isWin = process.platform === 'win32';
 const gradlewName = isWin ? 'gradlew.bat' : './gradlew';
@@ -93,16 +99,24 @@ if (builtApk.includes('unsigned')) {
   process.exit(1);
 }
 
-fs.mkdirSync(downloadsDir, { recursive: true });
-fs.copyFileSync(builtApk, publishPath);
+fs.mkdirSync(marketingDownloadsDir, { recursive: true });
+fs.mkdirSync(agentDownloadsDir, { recursive: true });
 
-const sizeMb = (fs.statSync(publishPath).size / (1024 * 1024)).toFixed(2);
+const sizeMb = (fs.statSync(builtApk).size / (1024 * 1024)).toFixed(2);
 console.log('');
-console.log(`[apk] Published (replaced): ${publishPath}`);
 console.log(`[apk] Source: ${builtApk}`);
 console.log(`[apk] Size: ${sizeMb} MB`);
+
+for (const publishPath of publishTargets) {
+  fs.copyFileSync(builtApk, publishPath);
+  console.log(`[apk] Published (replaced): ${publishPath}`);
+}
+
 console.log(`[apk] QR / ENV path: /downloads/${PUBLISH_NAME}`);
-console.log('[apk] Commit & push this file to update the download on deploy (replaces the previous APK).');
+console.log('[apk] Commit & push BOTH public/downloads copies so Vercel serves the new APK.');
+console.log(
+  '[apk] If NEXT_PUBLIC_AGENT_APK_URL points at Google Drive, re-upload this APK there OR clear that env var so /downloads/factory23-agent.apk is used.',
+);
 console.log('');
 
 process.exit(0);

@@ -1,16 +1,24 @@
 /**
  * Capacitor FCM push for the Android APK shell.
- * Registers the device token with the Laravel push-subscriptions API so
- * DeliverPushNotificationJob can reach the OS notification tray when the app
- * is backgrounded or killed (LocalNotifications alone cannot do that).
+ *
+ * IMPORTANT: Calling PushNotifications.register() without
+ * android/app/google-services.json crashes the native process
+ * ("Default FirebaseApp is not initialized"). FCM stays opt-in until
+ * Firebase is configured and NEXT_PUBLIC_ENABLE_FCM_PUSH=true.
  */
+import { Capacitor } from '@capacitor/core';
 import { PushNotifications, type Token, type ActionPerformed, type PushNotificationSchema } from '@capacitor/push-notifications';
 import { client } from '@/lib/api/client';
 import { isNativeAndroid } from './capacitorPlatform';
-import { notifyNative } from './nativeLocalNotifications';
+import { ensureNativeLocalNotificationPermission, notifyNative } from './nativeLocalNotifications';
 
 let listenersAttached = false;
 let lastRegisteredToken: string | null = null;
+
+/** FCM requires google-services.json + this flag. Default off to avoid launch crashes. */
+function isFcmPushEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_ENABLE_FCM_PUSH === 'true';
+}
 
 function resolveActionUrl(data: Record<string, unknown> | undefined): string {
   const raw = data?.action_url ?? data?.action_route ?? data?.url;
@@ -84,13 +92,29 @@ function attachListeners(): void {
 }
 
 /**
- * Request notification permission and register for FCM on Android APK.
- * No-ops on web / non-Android platforms.
+ * Request notification permission on Android.
+ * Registers FCM only when explicitly enabled — otherwise uses LocalNotifications only
+ * (avoids fatal Firebase init crash when google-services.json is missing).
  */
 export async function registerNativePush(): Promise<boolean> {
   if (!isNativeAndroid()) return false;
 
   try {
+    // Always ensure local notification permission for tracking/inbox alerts.
+    await ensureNativeLocalNotificationPermission();
+
+    if (!isFcmPushEnabled()) {
+      console.info(
+        '[Push][FCM] Skipped — set NEXT_PUBLIC_ENABLE_FCM_PUSH=true and add android/app/google-services.json',
+      );
+      return false;
+    }
+
+    if (!Capacitor.isPluginAvailable('PushNotifications')) {
+      console.warn('[Push][FCM] PushNotifications plugin not available');
+      return false;
+    }
+
     attachListeners();
 
     let perm = await PushNotifications.checkPermissions();
