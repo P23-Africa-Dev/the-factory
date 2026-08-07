@@ -34,6 +34,17 @@ class FieldActivityElyService
 
         $date = isset($args['date']) ? Carbon::parse((string) $args['date'])->toDateString() : now()->toDateString();
         $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : (int) $user->id;
+        if (is_string($args['agent_name'] ?? null) && trim((string) $args['agent_name']) !== '') {
+            $resolved = User::query()
+                ->whereHas('companies', static function ($q) use ($company): void {
+                    $q->where('companies.id', $company->id);
+                })
+                ->where('name', 'like', '%' . trim((string) $args['agent_name']) . '%')
+                ->value('id');
+            if (is_numeric($resolved)) {
+                $targetUserId = (int) $resolved;
+            }
+        }
 
         if ($role === 'agent') {
             $targetUserId = (int) $user->id;
@@ -85,7 +96,24 @@ class FieldActivityElyService
 
         $from = isset($args['from']) ? Carbon::parse((string) $args['from'])->startOfDay() : now()->subDay()->startOfDay();
         $to = isset($args['to']) ? Carbon::parse((string) $args['to'])->endOfDay() : now()->endOfDay();
+        if (isset($args['date']) && ! isset($args['from']) && ! isset($args['to'])) {
+            $day = Carbon::parse((string) $args['date']);
+            $from = $day->copy()->startOfDay();
+            $to = $day->copy()->endOfDay();
+        }
+
         $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : null;
+        if (is_string($args['agent_name'] ?? null) && trim((string) $args['agent_name']) !== '') {
+            $resolved = User::query()
+                ->whereHas('companies', static function ($q) use ($company): void {
+                    $q->where('companies.id', $company->id);
+                })
+                ->where('name', 'like', '%' . trim((string) $args['agent_name']) . '%')
+                ->value('id');
+            if (is_numeric($resolved)) {
+                $targetUserId = (int) $resolved;
+            }
+        }
         if ($role === 'agent') {
             $targetUserId = (int) $user->id;
         }

@@ -224,6 +224,7 @@ class CopilotIntentResolver
                 'crm.unread_emails', 'crm.draft_email', 'kpi.team_performance',
                 'org.users', 'drive.files', 'tracking.agent_history',
                 'map.pinned_locations_count', 'crm.calls_count', 'attendance.duration_summary',
+                'crm.leads_analytics', 'kpi.list',
                 'field.daily_summary', 'field.agent_visits', 'field.unvisited_customers',
                 'field.territory_coverage', 'field.travel_vs_visit_time', 'field.journey_history',
                 'field.journey_detail'
@@ -467,16 +468,44 @@ class CopilotIntentResolver
             return 'tracking.agent_history';
         }
 
-        if (preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned)\b/i', $normalized) === 1) {
+        if (
+            preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned|pinned\s+on\s+the\s+map|businesses?\s+pinned)\b/i', $normalized) === 1
+            || preg_match('/\bhow\s+many\s+(new\s+)?businesses?\s+(were\s+)?added\b/i', $normalized) === 1
+            || preg_match('/\bwhich\s+agent\s+added\s+the\s+most\s+business/i', $normalized) === 1
+            || preg_match('/\brecently\s+added\s+business/i', $normalized) === 1
+        ) {
             return 'map.pinned_locations_count';
         }
 
-        if (preg_match('/\b(calls?\s+count|how\s+many\s+calls|logged\s+calls)\b/i', $normalized) === 1) {
+        if (
+            preg_match('/\bhow\s+many\s+leads?\s+(were\s+)?added\b/i', $normalized) === 1
+            || preg_match('/\bwho\s+added\s+(those\s+|the\s+)?leads?\b/i', $normalized) === 1
+            || preg_match('/\bconversion\s+rate\b/i', $normalized) === 1
+        ) {
+            return 'crm.leads_analytics';
+        }
+
+        if (preg_match('/\b(calls?\s+count|how\s+many\s+calls|logged\s+calls|most\s+calls)\b/i', $normalized) === 1) {
             return 'crm.calls_count';
         }
 
-        if (preg_match('/\b(attendance\s+duration|clocked\s+in\s+duration|work\s+duration|duration\s+summary)\b/i', $normalized) === 1) {
+        if (preg_match('/\b(attendance\s+duration|clocked\s+in\s+duration|work\s+duration|duration\s+summary|how\s+long\b.{0,30}\bfield)\b/i', $normalized) === 1) {
             return 'attendance.duration_summary';
+        }
+
+        if (
+            preg_match('/\b(attendance|present|absent|late|clock\s+in)\b/i', $normalized) === 1
+            || preg_match('/\b(their|those)\s+names\b/i', $normalized) === 1
+        ) {
+            return 'attendance.today_summary';
+        }
+
+        if (preg_match('/\b(show|list)\b.{0,40}\bkpi\b/i', $normalized) === 1 || preg_match('/\bkpi\s+assigned\s+to\b/i', $normalized) === 1) {
+            return 'kpi.list';
+        }
+
+        if (preg_match('/\b(which\s+businesses?\s+.+\s+visit|how\s+many\s+visits?|visited\s+the\s+most)\b/i', $normalized) === 1) {
+            return 'field.agent_visits';
         }
 
         return null;

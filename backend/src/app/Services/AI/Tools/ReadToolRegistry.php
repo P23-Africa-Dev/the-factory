@@ -62,7 +62,7 @@ class ReadToolRegistry
             'tasks.overdue' => $this->overdueTasks($user, $companyId, $args),
             'tasks.list' => $this->tasksList($user, $companyId, $args),
             'projects.at_risk_summary' => $this->projectRiskSummary($user, $companyId, $args),
-            'attendance.today_summary' => $this->attendanceSummary($user, $companyId),
+            'attendance.today_summary' => $this->attendanceSummary($user, $companyId, $args),
             'meetings.today' => $this->meetingsToday($user, $companyId, $args),
             'tracking.active_agents' => $this->activeAgents($user, $companyId, $args),
             'dashboard.overview' => $this->dashboardOverview($user, $companyId),
@@ -73,7 +73,9 @@ class ReadToolRegistry
             'crm.email_threads' => $this->emailThreads($user, $companyId, $args),
             'crm.unread_emails' => $this->unreadEmails($user, $companyId, $args),
             'crm.draft_email' => $this->draftEmail($user, $companyId, $args),
+            'crm.leads_analytics' => $this->crmLeadsAnalytics($user, $companyId, $args),
             'kpi.team_performance' => $this->teamPerformanceService->analyze($user, $companyId, $args),
+            'kpi.list' => $this->kpiList($user, $companyId, $args),
             'org.users' => $this->organizationUsers($user, $companyId, $args),
             'drive.files' => $this->driveFiles($user, $companyId, $args),
             'tracking.agent_history' => $this->agentHistory($user, $companyId, $args),
@@ -916,23 +918,129 @@ class ReadToolRegistry
         ];
     }
 
-    private function attendanceSummary(User $user, int $companyId): array
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    private function attendanceSummary(User $user, int $companyId, array $args = []): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
         $role = (string) $context['role'];
         $resolvedCompanyId = (int) $context['company']->id;
 
-        $payload = $role === 'agent'
-            ? $this->attendanceService->todayForAgent($user, $resolvedCompanyId)
-            : $this->attendanceService->metricsForManagement($user, [
-                'company_id' => $resolvedCompanyId,
-                'date' => now()->toDateString(),
-            ]);
+        $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
+        $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
+
+        if ($role === 'agent') {
+            $payload = $this->attendanceService->todayForAgent($user, $resolvedCompanyId);
+
+            return [
+                'tool' => 'attendance.today_summary',
+                'summary' => "Your attendance summary for {$date} is ready.",
+                'payload' => array_merge(is_array($payload) ? $payload : [], ['date' => $date]),
+                'sources' => ['attendance.today_summary'],
+            ];
+        }
+
+        $metrics = $this->attendanceService->metricsForManagement($user, [
+            'company_id' => $resolvedCompanyId,
+            'date' => $date,
+        ]);
+
+        $listed = $this->attendanceService->listForManagement($user, [
+            'company_id' => $resolvedCompanyId,
+            'date' => $date,
+            'per_page' => 200,
+        ]);
+
+        $items = collect(is_array($listed['items'] ?? null) ? $listed['items'] : [])
+            ->map(static function (array $item): array {
+                $status = strtolower((string) ($item['status'] ?? 'absent'));
+                $isLate = ($item['is_late'] ?? false) === true || $status === 'late';
+
+                return [
+                    'agent_name' => (string) ($item['agent_name'] ?? 'Unknown'),
+                    'status' => $status,
+                    'is_late' => $isLate,
+                    'clock_in_at' => $item['clock_in_at'] ?? null,
+                    'clock_out_at' => $item['clock_out_at'] ?? null,
+                ];
+            })
+            ->values();
+
+        $lateNames = $items
+            ->filter(static fn (array $item): bool => $item['is_late'] || $item['status'] === 'late')
+            ->pluck('agent_name')
+            ->values()
+            ->all();
+        $presentNames = $items
+            ->filter(static fn (array $item): bool => in_array($item['status'], ['present', 'late', 'auto_clocked_out'], true))
+            ->pluck('agent_name')
+            ->reject(static fn (string $name): bool => in_array($name, $lateNames, true))
+            ->values()
+            ->all();
+        $absentNames = $items
+            ->filter(static fn (array $item): bool => $item['status'] === 'absent')
+            ->pluck('agent_name')
+            ->values()
+            ->all();
+
+        $agentLookup = null;
+        if ($agentName !== '') {
+            $match = $items->first(static function (array $item) use ($agentName): bool {
+                return stripos($item['agent_name'], $agentName) !== false;
+            });
+            $agentLookup = $match !== null
+                ? [
+                    'agent_name' => $match['agent_name'],
+                    'status' => $match['is_late'] ? 'late' : $match['status'],
+                    'clocked_in' => in_array($match['status'], ['present', 'late', 'auto_clocked_out'], true),
+                    'clock_in_at' => $match['clock_in_at'],
+                    'clock_out_at' => $match['clock_out_at'],
+                ]
+                : [
+                    'agent_name' => $agentName,
+                    'status' => 'not_found',
+                    'clocked_in' => false,
+                ];
+        }
+
+        $presentCount = (int) ($metrics['present'] ?? 0);
+        $lateCount = (int) ($metrics['late'] ?? 0);
+        $absentCount = (int) ($metrics['absent'] ?? 0);
+        $total = (int) ($metrics['total_workforce'] ?? 0);
+        $rate = (float) ($metrics['attendance_percentage'] ?? 0);
+
+        $summary = "Attendance for {$date}: {$presentCount} present, {$lateCount} late, {$absentCount} absent out of {$total} agents ({$rate}% attendance).";
+        if ($presentNames !== []) {
+            $summary .= ' Present: ' . implode(', ', $presentNames) . '.';
+        }
+        if ($lateNames !== []) {
+            $summary .= ' Late: ' . implode(', ', $lateNames) . '.';
+        }
+        if ($absentNames !== []) {
+            $summary .= ' Absent: ' . implode(', ', $absentNames) . '.';
+        }
+        if (is_array($agentLookup)) {
+            if (($agentLookup['status'] ?? '') === 'not_found') {
+                $summary .= " No attendance record matched {$agentName} on {$date}.";
+            } else {
+                $summary .= " {$agentLookup['agent_name']} was {$agentLookup['status']} on {$date}.";
+            }
+        }
 
         return [
             'tool' => 'attendance.today_summary',
-            'summary' => 'Attendance summary for today is ready.',
-            'payload' => $payload,
+            'summary' => $summary,
+            'payload' => [
+                ...$metrics,
+                'date' => $date,
+                'present_names' => $presentNames,
+                'late_names' => $lateNames,
+                'absent_names' => $absentNames,
+                'agents' => $items->all(),
+                'agent_lookup' => $agentLookup,
+            ],
             'sources' => ['attendance.today_summary'],
         ];
     }
@@ -1510,19 +1618,54 @@ class ReadToolRegistry
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
 
+        $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
+
         $totalPins = \App\Models\CompanyLocation::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('is_active', true)
             ->count();
 
-        $newToday = \App\Models\CompanyLocation::query()
+        $addedOnDate = \App\Models\CompanyLocation::query()
             ->where('company_id', $resolvedCompanyId)
-            ->whereDate('created_at', now()->toDateString())
+            ->whereDate('created_at', $date)
             ->count();
 
-        $summary = "You have {$totalPins} active pinned locations mapped.";
-        if ($newToday > 0) {
-            $summary .= " {$newToday} location(s) were added today.";
+        $recent = \App\Models\CompanyLocation::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->where('is_active', true)
+            ->with('creator:id,name')
+            ->latest('created_at')
+            ->limit(8)
+            ->get()
+            ->map(static fn ($loc): array => [
+                'name' => (string) ($loc->name ?? $loc->address ?? 'Location'),
+                'added_by' => $loc->creator?->name,
+                'created_at' => optional($loc->created_at)?->toDateString(),
+            ])
+            ->all();
+
+        $topAdder = \App\Models\CompanyLocation::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereDate('created_at', $date)
+            ->whereNotNull('created_by_user_id')
+            ->select('created_by_user_id', DB::raw('count(*) as total'))
+            ->groupBy('created_by_user_id')
+            ->orderByDesc('total')
+            ->with('creator:id,name')
+            ->first();
+
+        // Fallback if relation eager-load on aggregate query is unreliable.
+        $topAdderName = null;
+        $topAdderCount = 0;
+        if ($topAdder !== null) {
+            $topAdderCount = (int) $topAdder->total;
+            $topAdderName = User::query()->whereKey((int) $topAdder->created_by_user_id)->value('name');
+        }
+
+        $summary = "You have {$totalPins} active pinned location(s) on the map.";
+        $summary .= " {$addedOnDate} business/location(s) were added on {$date}.";
+        if ($topAdderName !== null && $topAdderCount > 0) {
+            $summary .= " {$topAdderName} added the most on {$date} ({$topAdderCount}).";
         }
 
         return [
@@ -1530,10 +1673,175 @@ class ReadToolRegistry
             'summary' => $summary,
             'payload' => [
                 'total_pinned_locations' => $totalPins,
-                'added_today' => $newToday,
+                'added_on_date' => $addedOnDate,
+                'added_today' => $date === now()->toDateString() ? $addedOnDate : null,
+                'date' => $date,
+                'top_adder' => $topAdderName !== null ? [
+                    'name' => (string) $topAdderName,
+                    'count' => $topAdderCount,
+                ] : null,
+                'recent_businesses' => $recent,
             ],
             'sources' => ['map.pinned_locations_count'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    private function crmLeadsAnalytics(User $user, int $companyId, array $args): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
+
+        $leadsQuery = \App\Models\Lead::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereDate('created_at', $date);
+
+        $leadsAdded = (clone $leadsQuery)->count();
+        $creators = (clone $leadsQuery)
+            ->whereNotNull('created_by_user_id')
+            ->select('created_by_user_id', DB::raw('count(*) as total'))
+            ->groupBy('created_by_user_id')
+            ->orderByDesc('total')
+            ->get()
+            ->map(function ($row): array {
+                return [
+                    'name' => (string) (User::query()->whereKey((int) $row->created_by_user_id)->value('name') ?? 'Unknown'),
+                    'count' => (int) $row->total,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $wonOnDate = \App\Models\Lead::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->where(function ($q) use ($date): void {
+                $q->whereDate('converted_at', $date)
+                    ->orWhere(function ($inner) use ($date): void {
+                        $inner->where('status', \App\Enums\LeadStatus::WON->value)
+                            ->whereDate('updated_at', $date);
+                    });
+            })
+            ->count();
+
+        $conversionRate = $leadsAdded > 0
+            ? round(($wonOnDate / $leadsAdded) * 100, 1)
+            : 0.0;
+
+        $creatorNames = array_map(static fn (array $row): string => $row['name'] . ' (' . $row['count'] . ')', $creators);
+        $summary = "{$leadsAdded} lead(s) were added on {$date}.";
+        if ($creatorNames !== []) {
+            $summary .= ' Added by: ' . implode(', ', $creatorNames) . '.';
+        }
+        $summary .= " Conversion on {$date}: {$wonOnDate} won / {$leadsAdded} added ({$conversionRate}%).";
+
+        return [
+            'tool' => 'crm.leads_analytics',
+            'summary' => $summary,
+            'payload' => [
+                'date' => $date,
+                'leads_added' => $leadsAdded,
+                'added_by' => $creators,
+                'won_count' => $wonOnDate,
+                'conversion_rate_percent' => $conversionRate,
+            ],
+            'sources' => ['crm.leads_analytics'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    private function kpiList(User $user, int $companyId, array $args): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+
+        $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
+        $assigneeId = null;
+        if ($agentName !== '') {
+            $assigneeId = $this->resolveCompanyUserIdByName($agentName, $resolvedCompanyId);
+        } elseif (isset($args['assigned_to_user_id'])) {
+            $assigneeId = (int) $args['assigned_to_user_id'];
+        }
+
+        if ($role === 'agent') {
+            $assigneeId = (int) $user->id;
+        }
+
+        $filters = [
+            'company_id' => $resolvedCompanyId,
+            'per_page' => 20,
+        ];
+        if ($assigneeId !== null) {
+            $filters['assigned_to_user_id'] = $assigneeId;
+        }
+
+        $page = app(\App\Services\Kpi\KpiService::class)->listForUser($user, $filters);
+        $items = collect($page->items())->map(static function ($kpi): array {
+            $assignee = $kpi->relationLoaded('assignee') ? $kpi->assignee : $kpi->assignee()->first();
+
+            return [
+                'name' => (string) $kpi->name,
+                'target_value' => (string) $kpi->target_value,
+                'status' => $kpi->status?->value ?? (string) $kpi->status,
+                'start_date' => optional($kpi->start_date)?->toDateString(),
+                'end_date' => optional($kpi->end_date)?->toDateString(),
+                'assigned_to_name' => $assignee?->name,
+            ];
+        })->values()->all();
+
+        $assigneeLabel = $assigneeId !== null
+            ? (string) (User::query()->whereKey($assigneeId)->value('name') ?? $agentName)
+            : 'the team';
+
+        $summary = count($items) === 0
+            ? "No KPIs found for {$assigneeLabel}."
+            : count($items) . " KPI(s) assigned to {$assigneeLabel}: " . implode('; ', array_map(
+                static fn (array $item): string => $item['name'] . ' (target: ' . $item['target_value'] . ')',
+                $items,
+            )) . '.';
+
+        return [
+            'tool' => 'kpi.list',
+            'summary' => $summary,
+            'payload' => [
+                'assignee_name' => $assigneeLabel,
+                'items' => $items,
+                'total' => method_exists($page, 'total') ? (int) $page->total() : count($items),
+            ],
+            'sources' => ['kpi.list'],
+        ];
+    }
+
+    private function resolveDateArg(mixed $value): ?string
+    {
+        if (! is_string($value) && ! is_numeric($value)) {
+            return null;
+        }
+
+        $raw = strtolower(trim((string) $value));
+        if ($raw === '') {
+            return null;
+        }
+
+        if ($raw === 'today') {
+            return now()->toDateString();
+        }
+        if ($raw === 'yesterday') {
+            return now()->subDay()->toDateString();
+        }
+
+        try {
+            return \Carbon\Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function crmCallsCount(User $user, int $companyId, array $args): array
@@ -1541,47 +1849,45 @@ class ReadToolRegistry
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
 
+        $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
+
         $query = \App\Models\LeadActivity::query()
             ->where('company_id', $resolvedCompanyId)
-            ->where('type', 'call');
-
-        $dateStr = isset($args['date']) ? (string) $args['date'] : null;
-        if ($dateStr !== null) {
-            try {
-                $date = \Carbon\Carbon::parse($dateStr);
-                $query->whereDate('happened_at', $date->toDateString());
-            } catch (\Throwable $e) {}
-        } else {
-            $query->whereDate('happened_at', now()->toDateString());
-        }
-
-        $totalCalls = $query->count();
-
-        $agentBreakdown = \App\Models\LeadActivity::query()
-            ->where('company_id', $resolvedCompanyId)
             ->where('type', 'call')
-            ->whereDate('happened_at', $dateStr ? \Carbon\Carbon::parse($dateStr)->toDateString() : now()->toDateString())
+            ->whereDate('happened_at', $date);
+
+        $totalCalls = (clone $query)->count();
+
+        $breakdown = (clone $query)
+            ->whereNotNull('created_by_user_id')
             ->select('created_by_user_id', DB::raw('count(*) as count'))
             ->groupBy('created_by_user_id')
             ->orderByDesc('count')
-            ->with('creator:id,name')
-            ->first();
+            ->get()
+            ->map(function ($row): array {
+                return [
+                    'user_id' => (int) $row->created_by_user_id,
+                    'name' => (string) (User::query()->whereKey((int) $row->created_by_user_id)->value('name') ?? 'Unknown'),
+                    'count' => (int) $row->count,
+                ];
+            })
+            ->values()
+            ->all();
 
-        $summary = "Team logged {$totalCalls} call(s) " . ($dateStr ? "on {$dateStr}" : "today") . ".";
-        if ($agentBreakdown && $agentBreakdown->creator) {
-            $summary .= " {$agentBreakdown->creator->name} completed {$agentBreakdown->count} (highest).";
+        $top = $breakdown[0] ?? null;
+        $summary = "Team logged {$totalCalls} call(s) on {$date}.";
+        if (is_array($top)) {
+            $summary .= " {$top['name']} logged the most ({$top['count']}).";
         }
 
         return [
             'tool' => 'crm.calls_count',
             'summary' => $summary,
             'payload' => [
+                'date' => $date,
                 'total_calls' => $totalCalls,
-                'highest_performer' => $agentBreakdown ? [
-                    'user_id' => $agentBreakdown->created_by_user_id,
-                     'name' => $agentBreakdown->creator?->name,
-                     'count' => $agentBreakdown->count,
-                 ] : null,
+                'by_agent' => $breakdown,
+                'highest_performer' => $top,
             ],
             'sources' => ['crm.calls_count'],
         ];
@@ -1592,20 +1898,22 @@ class ReadToolRegistry
         $context = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
 
-        $query = \App\Models\AttendanceRecord::query()
-            ->where('company_id', $resolvedCompanyId);
+        $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
+        $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
 
-        $dateStr = isset($args['date']) ? (string) $args['date'] : null;
-        if ($dateStr !== null) {
-            try {
-                $date = \Carbon\Carbon::parse($dateStr);
-                $query->whereDate('attendance_date', $date->toDateString());
-            } catch (\Throwable $e) {}
-        } else {
-            $query->whereDate('attendance_date', now()->toDateString());
+        $query = \App\Models\AttendanceRecord::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereDate('attendance_date', $date)
+            ->with('user:id,name');
+
+        if ($agentName !== '') {
+            $agentId = $this->resolveCompanyUserIdByName($agentName, $resolvedCompanyId);
+            if ($agentId !== null) {
+                $query->where('user_id', $agentId);
+            }
         }
 
-        $records = $query->with('user:id,name')->get();
+        $records = $query->get();
 
         $items = [];
         foreach ($records as $record) {
@@ -1619,12 +1927,20 @@ class ReadToolRegistry
             }
         }
 
-        $summary = "Attendance duration summary is ready: " . count($items) . " agent(s) clocked in.";
+        $summary = "Attendance duration for {$date}: " . count($items) . ' agent(s) clocked in.';
+        if (count($items) === 1) {
+            $only = $items[0];
+            $mins = (int) ($only['duration_minutes'] ?? 0);
+            $hours = intdiv($mins, 60);
+            $rem = $mins % 60;
+            $summary = "{$only['agent_name']} was in the field for {$hours}h {$rem}m on {$date} (in {$only['clock_in']}, out {$only['clock_out']}).";
+        }
 
         return [
             'tool' => 'attendance.duration_summary',
             'summary' => $summary,
             'payload' => [
+                'date' => $date,
                 'records' => $items,
             ],
             'sources' => ['attendance.duration_summary'],

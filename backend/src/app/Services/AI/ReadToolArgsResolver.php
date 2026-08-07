@@ -41,8 +41,10 @@ class ReadToolArgsResolver
         ?int $companyId = null,
         ?int $userId = null,
     ): array {
+        $common = $this->resolveCommonArgs($message);
+
         if (! in_array($tool, self::LIST_TOOLS, true)) {
-            return [];
+            return $common;
         }
 
         $expandFullList = $this->wantsExplicitFullList($message)
@@ -52,10 +54,10 @@ class ReadToolArgsResolver
             ? $this->readListPresenter->maxExpandedLimit($tool)
             : $this->readListPresenter->previewLimit();
 
-        $args = [
+        $args = array_merge($common, [
             'limit' => $limit,
             'expand_full_list' => $expandFullList,
-        ];
+        ]);
 
         if ($this->isCountOnlyQuestion($message)) {
             $args['count_only'] = true;
@@ -66,6 +68,69 @@ class ReadToolArgsResolver
         }
 
         return $args;
+    }
+
+    /**
+     * Shared date / agent extraction for attendance, field, map, CRM, and tracking tools.
+     *
+     * @return array<string, mixed>
+     */
+    public function resolveCommonArgs(string $message): array
+    {
+        $args = [];
+        $normalized = strtolower(trim($message));
+
+        if (preg_match('/\byesterday\b/i', $normalized) === 1) {
+            $args['date'] = now()->subDay()->toDateString();
+            $args['from'] = now()->subDay()->toDateString();
+            $args['to'] = now()->subDay()->toDateString();
+        } elseif (preg_match('/\btoday\b/i', $normalized) === 1) {
+            $args['date'] = now()->toDateString();
+            $args['from'] = now()->toDateString();
+            $args['to'] = now()->toDateString();
+        } elseif (preg_match('/\bthis\s+week\b/i', $normalized) === 1) {
+            $args['from'] = now()->startOfWeek()->toDateString();
+            $args['to'] = now()->toDateString();
+            $args['date'] = now()->toDateString();
+        } elseif (preg_match('/\bnext\s+week\b/i', $normalized) === 1) {
+            $args['from'] = now()->addWeek()->startOfWeek()->toDateString();
+            $args['to'] = now()->addWeek()->endOfWeek()->toDateString();
+        }
+
+        if (preg_match('/\b(?:did|where\s+did|which\s+businesses?\s+did|how\s+(?:many|long)\s+(?:did|was)|visits?\s+(?:by|for)|kpi\s+assigned\s+to|assigned\s+to)\s+([A-Za-z][A-Za-z\s\.\'-]{1,60}?)(?:\s+(?:go|visit|complete|clock|in|the|field|yesterday|today|this|week|most)\b|\?|$)/i', $message, $matches) === 1) {
+            $candidate = trim((string) $matches[1]);
+            $candidate = trim(preg_replace('/\b(agent|yesterday|today|clock|in|out|field|businesses?|visits?)\b/i', '', $candidate) ?? $candidate);
+            if ($candidate !== '') {
+                $args['agent_name'] = $candidate;
+            }
+        } elseif (preg_match('/\b(?:for|by)\s+([A-Za-z][A-Za-z\s\.\'-]{1,40}?)(?:\s+(?:yesterday|today|this\s+week)\b|\?|$)/i', $message, $matches) === 1) {
+            $candidate = trim((string) $matches[1]);
+            if ($candidate !== '' && ! in_array(strtolower($candidate), ['me', 'my', 'our', 'the', 'all', 'team'], true)) {
+                $args['agent_name'] = $candidate;
+            }
+        }
+
+        return $args;
+    }
+
+    public function latestAttendanceDateFromThread(
+        ?string $threadId,
+        ?int $companyId,
+        ?int $userId,
+    ): ?string {
+        $latest = $this->latestAssistantMessage($threadId, $companyId, $userId);
+        if ($latest === null) {
+            return null;
+        }
+
+        if ((string) ($latest['tool'] ?? '') !== 'attendance.today_summary') {
+            return null;
+        }
+
+        $payload = is_array($latest['payload'] ?? null) ? $latest['payload'] : [];
+        $date = $payload['date'] ?? null;
+
+        return is_string($date) && trim($date) !== '' ? trim($date) : null;
     }
 
     /**

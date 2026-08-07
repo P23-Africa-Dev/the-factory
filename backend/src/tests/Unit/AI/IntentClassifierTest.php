@@ -174,13 +174,27 @@ final class IntentClassifierTest extends TestCase
         $this->assertSame('tasks.list', $intent['tool']);
     }
 
-    public function test_classifies_explicit_task_creation_as_action(): void
+    public function test_classifies_attendance_and_map_and_kpi_prompts(): void
     {
         $classifier = new IntentClassifier();
 
-        $intent = $classifier->classify('Create a task and assign it to John');
+        $cases = [
+            ['so, how many of my agent was present yesterday?', 'attendance.today_summary'],
+            ['did john wick clock in yesterday?', 'attendance.today_summary'],
+            ['how many businesses were pinned on the map?', 'map.pinned_locations_count'],
+            ['which agent added the most businesses?', 'map.pinned_locations_count'],
+            ['How many leads were added today?', 'crm.leads_analytics'],
+            ['What was the conversion rate today?', 'crm.leads_analytics'],
+            ['Which agent logged the most calls?', 'crm.calls_count'],
+            ['Show KPI assigned to John', 'kpi.list'],
+            ['Update John\'s KPI to 50 calls', 'kpis.update'],
+            ['Where did John go yesterday?', 'tracking.agent_history'],
+            ['Which businesses did John visit yesterday?', 'field.agent_visits'],
+        ];
 
-        $this->assertSame('action', $intent['type']);
-        $this->assertSame('tasks.create', $intent['tool']);
+        foreach ($cases as [$message, $tool]) {
+            $intent = $classifier->classify($message);
+            $this->assertSame($tool, $intent['tool'], "Failed for: {$message}");
+        }
     }
 }

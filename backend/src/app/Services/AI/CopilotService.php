@@ -1882,9 +1882,14 @@ class CopilotService
             return ['notes' => $message];
         }
 
-        $args = $this->readToolArgsResolver->isListTool($tool)
-            ? $this->readToolArgsResolver->resolve($tool, $message, $role, $threadId, $companyId, $userId)
-            : [];
+        $args = $this->readToolArgsResolver->resolve($tool, $message, $role, $threadId, $companyId, $userId);
+
+        if ($tool === 'attendance.today_summary' && ! isset($args['date'])) {
+            $priorDate = $this->readToolArgsResolver->latestAttendanceDateFromThread($threadId, $companyId, $userId);
+            if ($priorDate !== null) {
+                $args['date'] = $priorDate;
+            }
+        }
 
         if ($tool === 'crm.top_leads') {
             return array_merge($args, $this->crmLeadReadArgsResolver->resolveFilters($message));

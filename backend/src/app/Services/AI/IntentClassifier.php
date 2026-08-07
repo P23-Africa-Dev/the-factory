@@ -79,6 +79,11 @@ class IntentClassifier
                 '/\b(create|add|set|define)\b.{0,60}\b(key\s*performance\s*indicator|performance\s*target)\b/i',
                 '/\bkpi\s+name\b/i',
                 '/\bset\s+kpi\s+for\b/i',
+                '/\bset\s+all\s+agents[\'\x27]?\s+kpi\b/i',
+            ],
+            'kpis.update' => [
+                '/\b(update|edit|change|modify|raise|increase|decrease)\b.{0,40}\bkpi\b/i',
+                '/\bupdate\s+\w.+?\s+kpi\s+to\b/i',
             ],
             'org.users.create' => [
                 '/\b(create|add|invite|register|onboard)\b.{0,80}\b(agent|supervisor|admin|user|staff|team\s+member)\b/i',
@@ -89,6 +94,10 @@ class IntentClassifier
 
         foreach ($actionPatterns as $tool => $regexPatterns) {
             if ($tool === 'tasks.create' && $this->matchesTaskListQuery($normalized)) {
+                continue;
+            }
+
+            if ($tool === 'kpis.create' && $this->matchesKpiListQuery($normalized)) {
                 continue;
             }
 
@@ -131,6 +140,19 @@ class IntentClassifier
             'crm.draft_email' => [
                 '/\bdraft\b.{0,60}\b(email|mail|message|reminder|follow[\s-]?up)\b/i',
                 '/\bwrite\b.{0,40}\b(email|mail)\b/i',
+            ],
+            'crm.leads_analytics' => [
+                '/\bhow\s+many\s+leads?\s+(were\s+)?added\b/i',
+                '/\bleads?\s+added\s+(today|yesterday)\b/i',
+                '/\bwho\s+added\s+(those\s+|the\s+)?leads?\b/i',
+                '/\bconversion\s+rate\b/i',
+                '/\bwhat\s+was\s+the\s+conversion\b/i',
+            ],
+            'crm.calls_count' => [
+                '/\bhow\s+many\s+calls?\b/i',
+                '/\bcalls?\s+(were\s+)?logged\b/i',
+                '/\bwhich\s+agent\s+logged\s+the\s+most\s+calls?\b/i',
+                '/\bmost\s+calls?\b/i',
             ],
             'crm.top_leads' => [
                 '/\b(top|hot|hottest)\s+leads?\b/i',
@@ -185,7 +207,31 @@ class IntentClassifier
             'attendance.today_summary' => [
                 '/\battendance\b/i',
                 '/\babsent\b/i',
+                '/\bpresent\b/i',
                 '/\bclock\s+(in|out)\b/i',
+                '/\bwho\s+(was|were)\s+(present|late|absent)\b/i',
+                '/\bhow\s+many\b.{0,40}\b(agent|employee|staff).{0,20}\bpresent\b/i',
+            ],
+            'attendance.duration_summary' => [
+                '/\bhow\s+long\b.{0,40}\b(field|clock|attendance|work)\b/i',
+                '/\b(attendance\s+duration|clocked\s+in\s+duration|work\s+duration)\b/i',
+            ],
+            'map.pinned_locations_count' => [
+                '/\b(pinned\s+locations|map\s+pins|locations?\s+pinned|pinned\s+on\s+the\s+map)\b/i',
+                '/\bhow\s+many\s+(locations?|businesses?|pins?)\s+(are\s+)?pinned\b/i',
+                '/\bhow\s+many\s+(new\s+)?businesses?\s+(were\s+)?added\b/i',
+                '/\bwhich\s+agent\s+added\s+the\s+most\s+business/i',
+                '/\brecently\s+added\s+business/i',
+                '/\bbusinesses?\s+pinned\b/i',
+            ],
+            'kpi.list' => [
+                '/\b(show|list|get|display|view)\b.{0,40}\bkpi\b/i',
+                '/\bkpi\s+assigned\s+to\b/i',
+                '/\bwhat\s+kpi\b/i',
+            ],
+            'tracking.agent_history' => [
+                '/\bwhere\s+did\b.{0,40}\bgo\b/i',
+                '/\blocation\s+history\b/i',
             ],
             'meetings.today' => [
                 '/\b(meetings?\s+today|upcoming\s+meetings?|calendar)\b/i',
@@ -197,11 +243,13 @@ class IntentClassifier
             'field.daily_summary' => [
                 '/\bfield\s+(activity|summary|day)\b/i',
                 '/\bdaily\s+field\s+summary\b/i',
-                '/\bhow\s+many\s+(customer\s+)?visits?\b/i',
             ],
             'field.agent_visits' => [
                 '/\b(customer|lead|field)\s+visits?\b/i',
+                '/\bwhich\s+businesses?\s+.+\s+visit/i',
+                '/\bhow\s+many\s+visits?\b/i',
                 '/\bvisits?\s+(yesterday|today|this\s+week)\b/i',
+                '/\bwhich\s+agent\s+visited\s+the\s+most\b/i',
             ],
             'field.unvisited_customers' => [
                 '/\b(haven.?t\s+been\s+visited|not\s+visited|unvisited)\b/i',
@@ -220,7 +268,6 @@ class IntentClassifier
             'field.journey_history' => [
                 '/\bjourney\s+history\b/i',
                 '/\b(daily\s+)?journeys?\b/i',
-                '/\btracking\s+history\b/i',
                 '/\bfield\s+activity\s+timeline\b/i',
             ],
             'field.journey_detail' => [
@@ -299,5 +346,15 @@ class IntentClassifier
         return preg_match('/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view|what|which|how many)\b/i', $normalized) === 1
             || preg_match('/\b(created|assigned)\s+(by|to)\b/i', $normalized) === 1
             || preg_match('/\btasks?\s+(created|assigned)\s+(by|to)\b/i', $normalized) === 1;
+    }
+
+    private function matchesKpiListQuery(string $normalized): bool
+    {
+        if (preg_match('/\bkpi\b/i', $normalized) !== 1) {
+            return false;
+        }
+
+        return preg_match('/\b(show|list|get|display|view|assigned\s+to|what)\b/i', $normalized) === 1
+            && preg_match('/\b(create|add|set|define|new|update|edit|change)\b/i', $normalized) !== 1;
     }
 }

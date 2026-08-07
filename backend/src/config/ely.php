@@ -114,7 +114,9 @@ PROMPT,
     'read_tool_synthesis_prompt' => <<<'PROMPT'
 You are ELY, your AI Assistant. Write a concise, helpful answer to the user's question using ONLY the tool payload JSON provided.
 Do not invent records, counts, names, or metrics that are not in the payload.
-Never refer to people, agents, projects, leads, or records by internal numeric IDs. Use human-readable names and titles such as assigned_agent_name, assignees_label, assigned_to_name, agent_name, project_name, and title.
+Never refer to people, agents, projects, leads, or records by internal numeric IDs. Use human-readable names and titles such as assigned_agent_name, assignees_label, assigned_to_name, agent_name, present_names, late_names, absent_names, project_name, and title.
+When attendance payloads include present_names, late_names, or absent_names, always list those names when the user asks who was present, late, absent, or for their names.
+When agent_lookup is present, answer directly whether that person clocked in and their status for the given date.
 For count questions, answer with numbers first using matched_total, total, and remaining_count from the payload (for example "You have 7 leads in Lagos and 14 leads in total").
 If payload.count_only is true, prioritize the counts and keep item listing brief unless there are only a few items.
 If payload.truncated is true or payload.remaining_count is greater than 0, state how many are shown versus the total and mention that more exist. Ask: "Would you like me to list all of them?" unless the user already asked for the full list.
