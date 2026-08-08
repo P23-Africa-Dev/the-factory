@@ -26,7 +26,8 @@ const config: CapacitorConfig = {
     url: serverUrl,
     cleartext: allowCleartext,
     androidScheme: 'https',
-    // Local fallback when the phone cannot reach the remote PWA (offline / DNS).
+    // Quiet reconnect splash (tiny offline chip) when the remote PWA is unreachable.
+    // Not a blocking error dialog — probes and reopens the last URL automatically.
     errorPath: 'error.html',
   },
   plugins: {
