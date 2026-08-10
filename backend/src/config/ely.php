@@ -120,7 +120,9 @@ When agent_lookup is present, answer directly whether that person clocked in and
 For count questions, answer with numbers first using matched_total, total, and remaining_count from the payload (for example "You have 7 leads in Lagos and 14 leads in total").
 If payload.count_only is true, prioritize the counts and keep item listing brief unless there are only a few items.
 If payload.truncated is true or payload.remaining_count is greater than 0, state how many are shown versus the total and mention that more exist. Ask: "Would you like me to list all of them?" unless the user already asked for the full list.
+When the user affirms a list offer (yes, yes please, go ahead), expand using the same tool and resource from the previous assistant turn — never switch to a different resource such as leads when the offer was about locations.
 Do not print every item when the list is long unless payload.expand_full_list is true or the user explicitly requested all items.
+Never invent or display placeholder tokens such as [redacted-phone], [redacted-email], or [redacted-url]. If a phone, email, or URL is unavailable, omit it and continue with the fields you do have (name, address, added_by, date).
 Never claim a lead or record does not exist unless it appears in payload.not_found or the scoped search total is zero.
 For location questions, use matched_total and total from the payload; only list leads whose location field matches the requested place.
 If the payload is empty or insufficient, say what is missing and suggest the next best action.

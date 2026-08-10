@@ -23,6 +23,13 @@ class ReadToolArgsResolver
         'tracking.active_agents',
         'projects.at_risk_summary',
         'drive.files',
+        'map.pinned_locations_count',
+        'attendance.today_summary',
+        'crm.calls_count',
+        'crm.leads_analytics',
+        'kpi.list',
+        'field.agent_visits',
+        'tracking.agent_history',
     ];
 
     public function __construct(
@@ -241,17 +248,20 @@ class ReadToolArgsResolver
         }
 
         $content = strtolower(trim((string) ($latest['content'] ?? '')));
-        if ($content === '' || ! $this->contentOffersListExpansion($content)) {
+        $offersExpansion = $this->contentOffersListExpansion($content)
+            || $this->payloadLooksTruncated($payload);
+
+        if (! $offersExpansion) {
             return null;
         }
 
-        $tool = (string) ($latest['tool'] ?? '');
-        if ($this->isListTool($tool)) {
+        $tool = trim((string) ($latest['tool'] ?? ''));
+        if ($tool !== '') {
+            // Always honor the tool that just offered the list — never swap to an older thread tool.
             return $tool;
         }
 
-        return $this->inferListToolFromContent($content)
-            ?? $this->findRecentListToolFromThread($threadId, $companyId, $userId);
+        return $this->inferListToolFromContent($content);
     }
 
     private function contentOffersListExpansion(string $normalizedContent): bool
@@ -261,11 +271,28 @@ class ReadToolArgsResolver
             || preg_match('/\blist\s+them(\s+all)?(\s+for\s+you)?\b/i', $normalizedContent) === 1
             || preg_match('/\b(shall|should)\s+i\s+(list|show)\b/i', $normalizedContent) === 1
             || preg_match('/\b(want|like)\s+me\s+to\s+(list|show)\b/i', $normalizedContent) === 1
-            || preg_match('/\boffer_full_list\b/i', $normalizedContent) === 1;
+            || preg_match('/\boffer_full_list\b/i', $normalizedContent) === 1
+            || preg_match('/\bwould\s+you\s+like\s+(me\s+to\s+)?(see|get|have)\s+(the\s+)?(full\s+)?list\b/i', $normalizedContent) === 1;
     }
 
     private function inferListToolFromContent(string $normalizedContent): ?string
     {
+        if (preg_match('/\b(pinned\s+locations?|locations?\s+on\s+the\s+map|map\s+pins?|businesses?\s+(added|pinned))\b/i', $normalizedContent) === 1) {
+            return 'map.pinned_locations_count';
+        }
+
+        if (preg_match('/\b(attendance|present|absent|late)\b/i', $normalizedContent) === 1) {
+            return 'attendance.today_summary';
+        }
+
+        if (preg_match('/\bcalls?\b/i', $normalizedContent) === 1) {
+            return 'crm.calls_count';
+        }
+
+        if (preg_match('/\b(leads?\s+added|conversion\s+rate)\b/i', $normalizedContent) === 1) {
+            return 'crm.leads_analytics';
+        }
+
         if (preg_match('/\b(leads?|crm)\b/i', $normalizedContent) === 1) {
             return 'crm.top_leads';
         }
@@ -286,12 +313,20 @@ class ReadToolArgsResolver
             return 'meetings.today';
         }
 
+        if (preg_match('/\bvisits?\b/i', $normalizedContent) === 1) {
+            return 'field.agent_visits';
+        }
+
         if (preg_match('/\bagents?\b/i', $normalizedContent) === 1) {
             return 'tracking.active_agents';
         }
 
         if (preg_match('/\bprojects?\b/i', $normalizedContent) === 1) {
             return 'projects.at_risk_summary';
+        }
+
+        if (preg_match('/\bkpi\b/i', $normalizedContent) === 1) {
+            return 'kpi.list';
         }
 
         return null;
@@ -434,10 +469,11 @@ class ReadToolArgsResolver
         $normalized = strtolower(trim($message));
 
         return preg_match('/\b(list|show|display|print)\s+(all|every|the\s+full|complete|entire)\b/i', $normalized) === 1
-            || preg_match('/\b(all|every|full|complete|entire)\b.{0,20}\b(list|leads?|tasks?|users?|meetings?|agents?|projects?)\b/i', $normalized) === 1
+            || preg_match('/\b(all|every|full|complete|entire)\b.{0,30}\b(list|leads?|tasks?|users?|meetings?|agents?|projects?|locations?|pins?|businesses?)\b/i', $normalized) === 1
             || preg_match('/\blist\s+(them\s+)?all\b/i', $normalized) === 1
             || preg_match('/\bshow\s+(me\s+)?(the\s+)?full\s+list\b/i', $normalized) === 1
-            || preg_match('/\blist\s+every\s+(one|lead|task|user|meeting|agent)\b/i', $normalized) === 1;
+            || preg_match('/\blist\s+every\s+(one|lead|task|user|meeting|agent|location|pin|business)\b/i', $normalized) === 1
+            || preg_match('/\bgive\s+me\s+(the\s+)?(entire|full|complete)\s+list\b/i', $normalized) === 1;
     }
 
     private function wantsThreadExpansion(

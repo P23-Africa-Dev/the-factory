@@ -218,11 +218,14 @@ class IntentClassifier
             ],
             'map.pinned_locations_count' => [
                 '/\b(pinned\s+locations|map\s+pins|locations?\s+pinned|pinned\s+on\s+the\s+map)\b/i',
+                '/\blocation\s+is\s+pinned\b/i',
+                '/\bpinned\s+by\b/i',
                 '/\bhow\s+many\s+(locations?|businesses?|pins?)\s+(are\s+)?pinned\b/i',
                 '/\bhow\s+many\s+(new\s+)?businesses?\s+(were\s+)?added\b/i',
                 '/\bwhich\s+agent\s+added\s+the\s+most\s+business/i',
                 '/\brecently\s+added\s+business/i',
                 '/\bbusinesses?\s+pinned\b/i',
+                '/\b(list|show|get|give)\b.{0,40}\b(pinned\s+locations?|locations?\s+on\s+the\s+map)\b/i',
             ],
             'kpi.list' => [
                 '/\b(show|list|get|display|view)\b.{0,40}\bkpi\b/i',

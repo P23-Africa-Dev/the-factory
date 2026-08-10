@@ -1619,30 +1619,51 @@ class ReadToolRegistry
         $resolvedCompanyId = (int) $context['company']->id;
 
         $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
+        $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
+        $expandFullList = ($args['expand_full_list'] ?? false) === true
+            || $this->wantsExplicitFullLocationsList($args);
+        $countOnly = ($args['count_only'] ?? false) === true;
 
-        $totalPins = \App\Models\CompanyLocation::query()
+        $baseQuery = \App\Models\CompanyLocation::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('is_active', true)
-            ->count();
+            ->with('creator:id,name');
 
-        $addedOnDate = \App\Models\CompanyLocation::query()
-            ->where('company_id', $resolvedCompanyId)
-            ->whereDate('created_at', $date)
-            ->count();
+        $agentId = null;
+        if ($agentName !== '') {
+            $agentId = $this->resolveCompanyUserIdByName($agentName, $resolvedCompanyId);
+            if ($agentId !== null) {
+                $baseQuery->where('created_by_user_id', $agentId);
+            } else {
+                $baseQuery->whereRaw('1 = 0');
+            }
+        }
 
-        $recent = \App\Models\CompanyLocation::query()
-            ->where('company_id', $resolvedCompanyId)
-            ->where('is_active', true)
-            ->with('creator:id,name')
+        $totalPins = (clone $baseQuery)->count();
+
+        $limit = $expandFullList
+            ? $this->readListPresenter->maxExpandedLimit('map.pinned_locations_count')
+            : $this->readListPresenter->previewLimit();
+
+        $locations = (clone $baseQuery)
             ->latest('created_at')
-            ->limit(8)
+            ->limit($limit)
             ->get()
             ->map(static fn ($loc): array => [
                 'name' => (string) ($loc->name ?? $loc->address ?? 'Location'),
+                'address' => is_string($loc->address) ? (string) $loc->address : null,
                 'added_by' => $loc->creator?->name,
                 'created_at' => optional($loc->created_at)?->toDateString(),
             ])
             ->all();
+
+        $addedOnDateQuery = \App\Models\CompanyLocation::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereDate('created_at', $date);
+        if ($agentId !== null) {
+            $addedOnDateQuery->where('created_by_user_id', $agentId);
+        }
+        $addedOnDate = $addedOnDateQuery->count();
 
         $topAdder = \App\Models\CompanyLocation::query()
             ->where('company_id', $resolvedCompanyId)
@@ -1651,10 +1672,8 @@ class ReadToolRegistry
             ->select('created_by_user_id', DB::raw('count(*) as total'))
             ->groupBy('created_by_user_id')
             ->orderByDesc('total')
-            ->with('creator:id,name')
             ->first();
 
-        // Fallback if relation eager-load on aggregate query is unreliable.
         $topAdderName = null;
         $topAdderCount = 0;
         if ($topAdder !== null) {
@@ -1662,28 +1681,78 @@ class ReadToolRegistry
             $topAdderName = User::query()->whereKey((int) $topAdder->created_by_user_id)->value('name');
         }
 
-        $summary = "You have {$totalPins} active pinned location(s) on the map.";
-        $summary .= " {$addedOnDate} business/location(s) were added on {$date}.";
-        if ($topAdderName !== null && $topAdderCount > 0) {
-            $summary .= " {$topAdderName} added the most on {$date} ({$topAdderCount}).";
+        $payload = $this->readListPresenter->enrichPayload($locations, $totalPins);
+        $payload['total_pinned_locations'] = $totalPins;
+        $payload['added_on_date'] = $addedOnDate;
+        $payload['added_today'] = $date === now()->toDateString() ? $addedOnDate : null;
+        $payload['date'] = $date;
+        $payload['top_adder'] = $topAdderName !== null ? [
+            'name' => (string) $topAdderName,
+            'count' => $topAdderCount,
+        ] : null;
+        $payload['recent_businesses'] = $locations;
+        $payload['filter_agent_name'] = $agentName !== '' ? $agentName : null;
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $assigneeLabel = $agentName !== ''
+            ? (string) (User::query()->whereKey($agentId)->value('name') ?? $agentName)
+            : null;
+
+        if ($assigneeLabel !== null) {
+            $summary = $totalPins === 1
+                ? "{$assigneeLabel} has 1 pinned location on the map."
+                : "{$assigneeLabel} has {$totalPins} pinned locations on the map.";
+        } else {
+            $summary = "You have {$totalPins} active pinned location(s) on the map.";
+        }
+
+        if (! $countOnly && $locations !== []) {
+            $lines = [];
+            foreach ($locations as $index => $item) {
+                $line = ($index + 1) . '. ' . $item['name'];
+                if (! empty($item['address'])) {
+                    $line .= ' — ' . $item['address'];
+                }
+                if (! empty($item['added_by'])) {
+                    $line .= ' (added by ' . $item['added_by'];
+                    if (! empty($item['created_at'])) {
+                        $line .= ' on ' . $item['created_at'];
+                    }
+                    $line .= ')';
+                } elseif (! empty($item['created_at'])) {
+                    $line .= ' (added on ' . $item['created_at'] . ')';
+                }
+                $lines[] = $line;
+            }
+
+            if ($expandFullList || ! $truncated) {
+                $summary .= "\n" . implode("\n", $lines);
+            } else {
+                $previewNames = array_map(static fn (array $item): string => (string) $item['name'], array_slice($locations, 0, min(8, count($locations))));
+                $summary .= ' Recent: ' . implode(', ', $previewNames) . '.';
+                $summary .= "\nWould you like me to list all of them?";
+            }
+        } elseif ($truncated) {
+            $summary .= "\nWould you like me to list all of them?";
         }
 
         return [
             'tool' => 'map.pinned_locations_count',
             'summary' => $summary,
-            'payload' => [
-                'total_pinned_locations' => $totalPins,
-                'added_on_date' => $addedOnDate,
-                'added_today' => $date === now()->toDateString() ? $addedOnDate : null,
-                'date' => $date,
-                'top_adder' => $topAdderName !== null ? [
-                    'name' => (string) $topAdderName,
-                    'count' => $topAdderCount,
-                ] : null,
-                'recent_businesses' => $recent,
-            ],
+            'payload' => $payload,
             'sources' => ['map.pinned_locations_count'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     */
+    private function wantsExplicitFullLocationsList(array $args): bool
+    {
+        return ($args['expand_full_list'] ?? false) === true;
     }
 
     /**

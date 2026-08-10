@@ -469,10 +469,11 @@ class CopilotIntentResolver
         }
 
         if (
-            preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned|pinned\s+on\s+the\s+map|businesses?\s+pinned)\b/i', $normalized) === 1
+            preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned|pinned\s+on\s+the\s+map|businesses?\s+pinned|pinned\s+by|location\s+is\s+pinned)\b/i', $normalized) === 1
             || preg_match('/\bhow\s+many\s+(new\s+)?businesses?\s+(were\s+)?added\b/i', $normalized) === 1
             || preg_match('/\bwhich\s+agent\s+added\s+the\s+most\s+business/i', $normalized) === 1
             || preg_match('/\brecently\s+added\s+business/i', $normalized) === 1
+            || preg_match('/\b(list|show|get|give)\b.{0,40}\b(pinned\s+locations?|locations?\s+on\s+the\s+map)\b/i', $normalized) === 1
         ) {
             return 'map.pinned_locations_count';
         }

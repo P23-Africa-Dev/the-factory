@@ -1951,10 +1951,36 @@ class CopilotService
             return $text;
         }
 
-        $redacted = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '[redacted-email]', $text);
-        $redacted = preg_replace('/\+?\d[\d\s\-()]{7,}\d/', '[redacted-phone]', (string) $redacted);
+        // Protect ISO dates so phone redaction does not treat 2026-08-07 as a phone number.
+        $datePlaceholders = [];
+        $protected = preg_replace_callback(
+            '/\b\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/',
+            static function (array $matches) use (&$datePlaceholders): string {
+                $token = '{{SAFE_DATE_' . count($datePlaceholders) . '}}';
+                $datePlaceholders[$token] = $matches[0];
 
-        return (string) $redacted;
+                return $token;
+            },
+            $text,
+        );
+
+        // Omit sensitive values silently — never show [redacted-*] tokens to users.
+        $redacted = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '', (string) $protected);
+        $redacted = preg_replace('/\+?\d[\d\s\-()]{7,}\d/', '', (string) $redacted);
+        $redacted = preg_replace('/https?:\/\/[^\s<>"\']+/i', '', (string) $redacted);
+        $redacted = preg_replace('/\[redacted-[a-z0-9_-]+\]/i', '', (string) $redacted);
+
+        if ($datePlaceholders !== []) {
+            $redacted = str_replace(array_keys($datePlaceholders), array_values($datePlaceholders), (string) $redacted);
+        }
+
+        $cleaned = preg_replace('/\s{2,}/', ' ', (string) $redacted) ?? (string) $redacted;
+        $cleaned = preg_replace('/\s+([,.;:])/', '$1', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/\(\s*\)/', '', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/\bon\s*([,.;)]|$)/i', '$1', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/,\s*,/', ',', $cleaned) ?? $cleaned;
+
+        return trim($cleaned);
     }
 
     private function isIsoDateLikeString(string $text): bool
