@@ -28,6 +28,7 @@ class ReadToolArgsResolver
         'crm.calls_count',
         'crm.leads_analytics',
         'kpi.list',
+        'field.daily_summary',
         'field.agent_visits',
         'tracking.agent_history',
     ];
@@ -99,15 +100,24 @@ class ReadToolArgsResolver
             $args['from'] = now()->startOfWeek()->toDateString();
             $args['to'] = now()->toDateString();
             $args['date'] = now()->toDateString();
+        } elseif (preg_match('/\b(all\s+days|all\s+time|overall\s+tracking|tracking\s+for\s+all)\b/i', $normalized) === 1) {
+            $args['from'] = now()->subDays(30)->toDateString();
+            $args['to'] = now()->toDateString();
+            $args['date'] = now()->toDateString();
         } elseif (preg_match('/\bnext\s+week\b/i', $normalized) === 1) {
             $args['from'] = now()->addWeek()->startOfWeek()->toDateString();
             $args['to'] = now()->addWeek()->endOfWeek()->toDateString();
         }
 
-        if (preg_match('/\b(?:did|where\s+did|which\s+businesses?\s+did|how\s+(?:many|long)\s+(?:did|was)|visits?\s+(?:by|for)|kpi\s+assigned\s+to|assigned\s+to)\s+([A-Za-z][A-Za-z\s\.\'-]{1,60}?)(?:\s+(?:go|visit|complete|clock|in|the|field|yesterday|today|this|week|most)\b|\?|$)/i', $message, $matches) === 1) {
+        if (preg_match('/\b(?:did|where\s+did|which\s+businesses?\s+did|how\s+(?:many|long)\s+(?:did|was)|visits?\s+(?:by|for)|kpi\s+assigned\s+to|assigned\s+to|tracking\s+(?:for|of))\s+([A-Za-z][A-Za-z\s\.\'-]{1,60}?)(?:\s+(?:go|visit|complete|clock|in|the|field|yesterday|today|this|week|most|tracking)\b|\?|$)/i', $message, $matches) === 1) {
             $candidate = trim((string) $matches[1]);
-            $candidate = trim(preg_replace('/\b(agent|yesterday|today|clock|in|out|field|businesses?|visits?)\b/i', '', $candidate) ?? $candidate);
+            $candidate = trim(preg_replace('/\b(agent|yesterday|today|clock|in|out|field|businesses?|visits?|tracking)\b/i', '', $candidate) ?? $candidate);
             if ($candidate !== '') {
+                $args['agent_name'] = $candidate;
+            }
+        } elseif (preg_match('/\b([A-Za-z][A-Za-z\s\.\'-]{1,40}?)(?:\'s|s\')\s+(?:tracking|field\s+activity|journey)\b/i', $message, $matches) === 1) {
+            $candidate = trim((string) $matches[1]);
+            if ($candidate !== '' && ! in_array(strtolower($candidate), ['me', 'my', 'our', 'the', 'all', 'team', 'today', 'yesterday'], true)) {
                 $args['agent_name'] = $candidate;
             }
         } elseif (preg_match('/\b(?:for|by)\s+([A-Za-z][A-Za-z\s\.\'-]{1,40}?)(?:\s+(?:yesterday|today|this\s+week)\b|\?|$)/i', $message, $matches) === 1) {

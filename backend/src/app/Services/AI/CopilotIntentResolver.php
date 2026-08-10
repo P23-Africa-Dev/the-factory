@@ -424,6 +424,14 @@ class CopilotIntentResolver
             return false;
         }
 
+        // Field GPS / task tracking is a read, even when the phrase includes "start" + "task".
+        if (
+            preg_match('/\b(task\s+tracking|field\s+tracking|tracking\s+system|gps\s+tracking|field\s+activit)/i', $normalized) === 1
+            || preg_match('/\bstart(?:ed|ing)?\s+(task\s+)?tracking\b/i', $normalized) === 1
+        ) {
+            return false;
+        }
+
         return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save|define|invite|onboard)\b/i', $normalized) === 1
             && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business|kpi|user|member|staff|agent|supervisor|admin)\b/i', $normalized) === 1;
     }
@@ -437,6 +445,25 @@ class CopilotIntentResolver
 
         if ($this->looksLikeActionRequest($message)) {
             return null;
+        }
+
+        $classified = $this->intentClassifier->classify($message);
+        $classifiedTool = is_string($classified['tool'] ?? null) ? (string) $classified['tool'] : '';
+        if (
+            ($classified['type'] ?? '') === 'tool'
+            && in_array($classifiedTool, [
+                'field.daily_summary',
+                'field.agent_visits',
+                'field.journey_history',
+                'field.journey_detail',
+                'field.travel_vs_visit_time',
+                'field.territory_coverage',
+                'field.unvisited_customers',
+                'tracking.active_agents',
+                'tracking.agent_history',
+            ], true)
+        ) {
+            return $classifiedTool;
         }
 
         if (
@@ -464,7 +491,7 @@ class CopilotIntentResolver
             return 'drive.files';
         }
 
-        if (preg_match('/\b(location\s+history|where\s+did|track\s+history|history)\b/i', $normalized) === 1) {
+        if (preg_match('/\b(location\s+history|where\s+did|track\s+history)\b/i', $normalized) === 1) {
             return 'tracking.agent_history';
         }
 
@@ -494,8 +521,15 @@ class CopilotIntentResolver
             return 'attendance.duration_summary';
         }
 
+        // Pure attendance only when tracking/GPS is not the subject.
         if (
-            preg_match('/\b(attendance|present|absent|late|clock\s+in)\b/i', $normalized) === 1
+            (
+                preg_match('/\b(attendance|present|absent|late)\b/i', $normalized) === 1
+                || (
+                    preg_match('/\bclock(?:ed)?\s+in\b/i', $normalized) === 1
+                    && preg_match('/\b(tracking|gps|field\s+activit|journey)\b/i', $normalized) !== 1
+                )
+            )
             || preg_match('/\b(their|those)\s+names\b/i', $normalized) === 1
         ) {
             return 'attendance.today_summary';
@@ -507,6 +541,13 @@ class CopilotIntentResolver
 
         if (preg_match('/\b(which\s+businesses?\s+.+\s+visit|how\s+many\s+visits?|visited\s+the\s+most)\b/i', $normalized) === 1) {
             return 'field.agent_visits';
+        }
+
+        if (
+            preg_match('/\b(today|yesterday|this\s+week)[\x27\x60]?s?\s+(tracking|field\s+activit)/i', $normalized) === 1
+            || preg_match('/\b(tracking\s+system|task\s+tracking|field\s+tracking)\b/i', $normalized) === 1
+        ) {
+            return 'field.daily_summary';
         }
 
         return null;

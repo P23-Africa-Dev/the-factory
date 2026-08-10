@@ -190,6 +190,12 @@ final class IntentClassifierTest extends TestCase
             ['Update John\'s KPI to 50 calls', 'kpis.update'],
             ['Where did John go yesterday?', 'tracking.agent_history'],
             ['Which businesses did John visit yesterday?', 'field.agent_visits'],
+            ["Show me today's tracking", 'field.daily_summary'],
+            ['What about today\'s field activities?', 'field.daily_summary'],
+            ['Tell me about the tracking system today', 'field.daily_summary'],
+            ['Who is currently tracking?', 'tracking.active_agents'],
+            ['Show me task tracking after clock in', 'field.daily_summary'],
+            ['John\'s tracking today', 'field.daily_summary'],
         ];
 
         foreach ($cases as [$message, $tool]) {

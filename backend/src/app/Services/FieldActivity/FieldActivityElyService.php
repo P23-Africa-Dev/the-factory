@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\FieldActivity;
 
 use App\Enums\FieldStopClassification;
+use App\Models\Company;
 use App\Models\CompanyLocation;
 use App\Models\FieldActivitySession;
 use App\Models\FieldDailySummary;
@@ -33,7 +34,10 @@ class FieldActivityElyService
         $role = (string) $context['role'];
 
         $date = isset($args['date']) ? Carbon::parse((string) $args['date'])->toDateString() : now()->toDateString();
-        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : (int) $user->id;
+        $from = isset($args['from']) ? Carbon::parse((string) $args['from'])->toDateString() : $date;
+        $to = isset($args['to']) ? Carbon::parse((string) $args['to'])->toDateString() : $date;
+
+        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : null;
         if (is_string($args['agent_name'] ?? null) && trim((string) $args['agent_name']) !== '') {
             $resolved = User::query()
                 ->whereHas('companies', static function ($q) use ($company): void {
@@ -50,36 +54,291 @@ class FieldActivityElyService
             $targetUserId = (int) $user->id;
         }
 
+        // Management asking about "today's tracking" with no named agent → team overview.
+        if ($targetUserId === null) {
+            if ($from !== $to) {
+                return $this->teamRangeOverview($company, $from, $to, $args);
+            }
+
+            return $this->teamDayOverview($company, $date, $args);
+        }
+
+        if ($from !== $to) {
+            $overview = $this->analyticsService->companyOverview($company, $from, $to, $targetUserId);
+            $agent = collect($overview['agents'] ?? [])->first();
+            $name = is_array($agent) ? (string) ($agent['name'] ?? 'Agent') : 'Agent';
+
+            return [
+                'tool' => 'field.daily_summary',
+                'summary' => sprintf(
+                    '%s field tracking %s to %s: %.1f km, %d visits, %d stops across %d session(s).',
+                    $name,
+                    $from,
+                    $to,
+                    ((int) ($overview['totals']['distance_meters'] ?? 0)) / 1000,
+                    (int) ($overview['totals']['visit_count'] ?? 0),
+                    (int) ($overview['totals']['stop_count'] ?? 0),
+                    (int) ($overview['totals']['active_sessions'] ?? 0),
+                ),
+                'payload' => [
+                    'scope' => 'agent',
+                    'from' => $from,
+                    'to' => $to,
+                    'user_id' => $targetUserId,
+                    'totals' => $overview['totals'],
+                    'agents' => $overview['agents'],
+                ],
+                'sources' => ['field.daily_summary'],
+            ];
+        }
+
         $summary = FieldDailySummary::query()
             ->where('company_id', $company->id)
             ->where('user_id', $targetUserId)
             ->whereDate('summary_date', $date)
             ->first();
 
-        if ($summary === null && $targetUserId === (int) $user->id) {
+        $session = FieldActivitySession::query()
+            ->with('user')
+            ->where('company_id', $company->id)
+            ->where('user_id', $targetUserId)
+            ->whereDate('started_at', $date)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($summary === null && $session === null && $targetUserId === (int) $user->id && $date === now()->toDateString()) {
             $today = $this->sessionService->todayForAgent($user, $company->id);
 
             return [
                 'tool' => 'field.daily_summary',
                 'summary' => $today['summary']
                     ? 'Field daily summary loaded.'
-                    : 'No field daily summary yet for this date.',
-                'payload' => $today,
+                    : 'No field tracking session or daily summary yet for this date.',
+                'payload' => array_merge(['scope' => 'agent', 'date' => $date], $today),
                 'sources' => ['field.daily_summary'],
             ];
         }
 
+        $agentName = $session?->user?->name
+            ?? User::query()->whereKey($targetUserId)->value('name')
+            ?? 'Agent';
+        $distance = (int) ($summary?->distance_meters ?? $session?->distance_meters ?? 0);
+        $visits = (int) ($summary?->visit_count ?? $session?->visit_count ?? 0);
+        $stops = (int) ($summary?->stop_count ?? $session?->stop_count ?? 0);
+        $status = $session?->status?->value;
+
+        $summaryText = ($summary === null && $session === null)
+            ? sprintf('No field tracking for %s on %s.', $agentName, $date)
+            : sprintf(
+                '%s field tracking on %s: %.1f km, %d visits, %d stops%s.',
+                $agentName,
+                $date,
+                $distance / 1000,
+                $visits,
+                $stops,
+                $status ? " (session {$status})" : '',
+            );
+
         return [
             'tool' => 'field.daily_summary',
-            'summary' => $summary
-                ? sprintf(
-                    'Field day: %.1f km, %d visits, %d unknown stops.',
-                    ((int) $summary->distance_meters) / 1000,
-                    (int) $summary->visit_count,
-                    (int) $summary->unknown_stop_count,
-                )
-                : 'No field daily summary for that date.',
-            'payload' => $summary ? $this->sessionService->serializeSummary($summary) : null,
+            'summary' => $summaryText,
+            'payload' => [
+                'scope' => 'agent',
+                'date' => $date,
+                'user_id' => $targetUserId,
+                'agent_name' => $agentName,
+                'session' => $session ? $this->sessionService->serializeSession($session) : null,
+                'summary' => $summary ? $this->sessionService->serializeSummary($summary) : null,
+            ],
+            'sources' => ['field.daily_summary'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    private function teamDayOverview(Company $company, string $date, array $args = []): array
+    {
+        $sessions = FieldActivitySession::query()
+            ->with('user')
+            ->where('company_id', $company->id)
+            ->whereDate('started_at', $date)
+            ->orderByDesc('started_at')
+            ->get();
+
+        $summaries = FieldDailySummary::query()
+            ->where('company_id', $company->id)
+            ->whereDate('summary_date', $date)
+            ->get()
+            ->keyBy('user_id');
+
+        $agentsByUser = [];
+        foreach ($sessions as $session) {
+            $uid = (int) $session->user_id;
+            if (! isset($agentsByUser[$uid])) {
+                $summary = $summaries->get($uid);
+                $name = trim((string) ($session->user?->name ?? ''));
+                $agentsByUser[$uid] = [
+                    'user_id' => $uid,
+                    'name' => $name !== '' ? $name : 'Agent',
+                    'session_status' => $session->status?->value,
+                    'is_actively_tracking' => $session->isActive(),
+                    'started_at' => $session->started_at?->toIso8601String(),
+                    'ended_at' => $session->ended_at?->toIso8601String(),
+                    'distance_meters' => (int) ($summary?->distance_meters ?? $session->distance_meters),
+                    'visit_count' => (int) ($summary?->visit_count ?? $session->visit_count),
+                    'stop_count' => (int) ($summary?->stop_count ?? $session->stop_count),
+                    'travel_seconds' => (int) ($summary?->travel_seconds ?? $session->travel_seconds),
+                ];
+            } elseif ($session->isActive()) {
+                $agentsByUser[$uid]['is_actively_tracking'] = true;
+                $agentsByUser[$uid]['session_status'] = $session->status?->value;
+            }
+        }
+
+        foreach ($summaries as $uid => $summary) {
+            if (isset($agentsByUser[(int) $uid])) {
+                continue;
+            }
+            $name = trim((string) (User::query()->whereKey((int) $uid)->value('name') ?? ''));
+            $agentsByUser[(int) $uid] = [
+                'user_id' => (int) $uid,
+                'name' => $name !== '' ? $name : 'Agent',
+                'session_status' => null,
+                'is_actively_tracking' => false,
+                'started_at' => null,
+                'ended_at' => null,
+                'distance_meters' => (int) $summary->distance_meters,
+                'visit_count' => (int) $summary->visit_count,
+                'stop_count' => (int) $summary->stop_count,
+                'travel_seconds' => (int) $summary->travel_seconds,
+            ];
+        }
+
+        $agents = array_values($agentsByUser);
+        $activeNames = array_values(array_map(
+            static fn (array $a): string => (string) $a['name'],
+            array_filter($agents, static fn (array $a): bool => ($a['is_actively_tracking'] ?? false) === true),
+        ));
+        $totalDistance = (int) array_sum(array_map(static fn (array $a): int => (int) ($a['distance_meters'] ?? 0), $agents));
+        $totalVisits = (int) array_sum(array_map(static fn (array $a): int => (int) ($a['visit_count'] ?? 0), $agents));
+        $totalStops = (int) array_sum(array_map(static fn (array $a): int => (int) ($a['stop_count'] ?? 0), $agents));
+        $activeCount = count($activeNames);
+
+        $expand = ($args['expand_full_list'] ?? false) === true;
+        $limit = max(1, min(50, (int) ($args['limit'] ?? ($expand ? 50 : 8))));
+        $preview = array_slice($agents, 0, $limit);
+        $truncated = count($agents) > count($preview);
+
+        if ($agents === []) {
+            $summaryText = sprintf('No field tracking sessions recorded for %s.', $date);
+        } else {
+            $summaryText = sprintf(
+                'Field tracking on %s: %d agent(s) tracked (%.1f km, %d visits, %d stops). %d currently actively tracking%s.',
+                $date,
+                count($agents),
+                $totalDistance / 1000,
+                $totalVisits,
+                $totalStops,
+                $activeCount,
+                $activeNames !== [] ? ': ' . implode(', ', $activeNames) : '',
+            );
+            foreach ($preview as $agent) {
+                $summaryText .= sprintf(
+                    "\n- %s: %.1f km, %d visits, %d stops%s",
+                    $agent['name'],
+                    ((int) $agent['distance_meters']) / 1000,
+                    (int) $agent['visit_count'],
+                    (int) $agent['stop_count'],
+                    ($agent['is_actively_tracking'] ?? false) ? ' (active now)' : '',
+                );
+            }
+            if ($truncated) {
+                $summaryText .= sprintf("\n…and %d more. Would you like me to list all of them?", count($agents) - count($preview));
+            }
+        }
+
+        return [
+            'tool' => 'field.daily_summary',
+            'summary' => $summaryText,
+            'payload' => [
+                'scope' => 'team',
+                'date' => $date,
+                'totals' => [
+                    'agents_tracked' => count($agents),
+                    'actively_tracking' => $activeCount,
+                    'distance_meters' => $totalDistance,
+                    'visit_count' => $totalVisits,
+                    'stop_count' => $totalStops,
+                ],
+                'actively_tracking_names' => $activeNames,
+                'agents' => $preview,
+                'truncated' => count($agents),
+                'truncated' => $truncated,
+                'offer_full_list' => $truncated,
+            ],
+            'sources' => ['field.daily_summary'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @return array<string, mixed>
+     */
+    private function teamRangeOverview(Company $company, string $from, string $to, array $args = []): array
+    {
+        $overview = $this->analyticsService->companyOverview($company, $from, $to, null);
+        $agents = is_array($overview['agents'] ?? null) ? $overview['agents'] : [];
+        $totals = is_array($overview['totals'] ?? null) ? $overview['totals'] : [];
+        $expand = ($args['expand_full_list'] ?? false) === true;
+        $limit = max(1, min(50, (int) ($args['limit'] ?? ($expand ? 50 : 8))));
+        $preview = array_slice($agents, 0, $limit);
+        $truncated = count($agents) > count($preview);
+
+        $summaryText = sprintf(
+            'Field tracking %s to %s: %d agent(s), %.1f km, %d visits, %d stops across %d session(s).',
+            $from,
+            $to,
+            count($agents),
+            ((int) ($totals['distance_meters'] ?? 0)) / 1000,
+            (int) ($totals['visit_count'] ?? 0),
+            (int) ($totals['stop_count'] ?? 0),
+            (int) ($totals['active_sessions'] ?? 0),
+        );
+
+        foreach ($preview as $agent) {
+            if (! is_array($agent)) {
+                continue;
+            }
+            $summaryText .= sprintf(
+                "\n- %s: %.1f km, %d visits, %d stops",
+                (string) ($agent['name'] ?? 'Agent'),
+                ((int) ($agent['distance_meters'] ?? 0)) / 1000,
+                (int) ($agent['visit_count'] ?? 0),
+                (int) ($agent['stop_count'] ?? 0),
+            );
+        }
+        if ($truncated) {
+            $summaryText .= sprintf("\n…and %d more. Would you like me to list all of them?", count($agents) - count($preview));
+        }
+
+        return [
+            'tool' => 'field.daily_summary',
+            'summary' => $summaryText,
+            'payload' => [
+                'scope' => 'team',
+                'from' => $from,
+                'to' => $to,
+                'totals' => $totals,
+                'agents' => $preview,
+                'total' => count($agents),
+                'truncated' => $truncated,
+                'offer_full_list' => $truncated,
+            ],
             'sources' => ['field.daily_summary'],
         ];
     }
