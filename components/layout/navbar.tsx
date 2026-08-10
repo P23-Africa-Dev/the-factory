@@ -8,7 +8,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { clearAuthSession, getAuthTokenFromDocument } from "@/lib/auth/session";
 import { logout } from "@/lib/api/auth";
-import { ChevronDown, Menu, X, LogOut, User, Smartphone, Settings, HardDrive } from "lucide-react";
+import { ChevronDown, Menu, X, LogOut, User, Smartphone, Settings, HardDrive, LineChart } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import LogoutModal from "@/components/ui/logout-modal";
@@ -48,7 +48,6 @@ const navItems = [
     hasDropdown: true,
   },
   { name: "CRM", href: "/crm", icon: CRMIcon },
-  // { name: 'Insight', href: '/insight', icon: InsightIcon },
   { name: "Payroll", href: "/payroll", icon: FinanceIcon, hasDropdown: true },
 ];
 
@@ -307,6 +306,16 @@ export function Navbar() {
                     <HardDrive size={15} />
                     Company Drive
                   </Link>
+                  {!isAgent && (
+                    <Link
+                      href="/insight"
+                      onClick={() => setProfileOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium"
+                    >
+                      <LineChart size={15} />
+                      Insight
+                    </Link>
+                  )}
                   <button
                     onClick={() => {
                       setProfileOpen(false);
