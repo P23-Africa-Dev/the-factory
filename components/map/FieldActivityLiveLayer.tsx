@@ -302,14 +302,20 @@ export function FieldActivityLiveLayer({
           position: { lat: target[1], lng: target[0] },
           map: gmap as unknown as google.maps.Map,
           title: agent.name,
-          icon: createLiveAgentGoogleIcon(color, initials, isSelected),
+          icon: createLiveAgentGoogleIcon(
+            color,
+            initials,
+            isSelected,
+          ) as unknown as google.maps.Icon,
           zIndex: isSelected ? 40 : 20,
         }) as unknown as GoogleMarker;
         entry = { marker, position: target, cancelAnimation: null, iconKey };
         googleLiveMarkersRef.current.set(agent.userId, entry);
       } else {
         if (entry.iconKey !== iconKey) {
-          entry.marker.setIcon(createLiveAgentGoogleIcon(color, initials, isSelected));
+          entry.marker.setIcon(
+            createLiveAgentGoogleIcon(color, initials, isSelected),
+          );
           entry.iconKey = iconKey;
         }
         entry.marker.setMap(gmap);
