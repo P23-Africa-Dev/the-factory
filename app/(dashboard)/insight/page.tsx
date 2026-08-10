@@ -81,10 +81,10 @@ export default function InsightPage() {
   return (
     <div className="p-8 md:p-12 space-y-8">
       <header className="space-y-2">
-        <h1 className="text-4xl font-bold tracking-tight">Insight</h1>
+        <h1 className="text-4xl font-bold tracking-tight">Field Activity Intelligence</h1>
         <p className="text-white/60 max-w-2xl">
-          Field Activity Intelligence — active field time, travel efficiency, visit coverage, and
-          agent performance.
+          Track active field time, travel efficiency, visit coverage, and agent performance —
+          and turn day tracking on or off for your organization.
         </p>
       </header>
 
