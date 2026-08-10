@@ -352,7 +352,8 @@ export function AttendanceViewAgent() {
       return;
     }
 
-    const recorded_at = format(new Date(), "yyyy-MM-dd HH:mm:ss");
+    // ISO with timezone — the backend normalizes to the org timezone.
+    const recorded_at = new Date().toISOString();
     const payload = {
       company_id: apiCompanyId,
       recorded_at,

@@ -165,7 +165,9 @@ function withQuery(path: string, params: Record<string, string | number | boolea
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === "") continue;
-    qs.set(key, String(value));
+    // Laravel's `boolean` rule rejects the string "true"/"false" that
+    // String(true) would produce — encode as 1/0 instead.
+    qs.set(key, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
   }
   const encoded = qs.toString();
   return encoded ? `${path}?${encoded}` : path;

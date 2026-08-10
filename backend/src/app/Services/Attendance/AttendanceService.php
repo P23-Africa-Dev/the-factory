@@ -12,6 +12,7 @@ use App\Models\AttendanceSetting;
 use App\Models\PayrollSetting;
 use App\Models\User;
 use App\Support\AvatarUrlResolver;
+use App\Support\ClientTime;
 use App\Services\Location\MapboxGeocodingService;
 use App\Services\Notification\NotificationService;
 use App\Services\FieldActivity\FieldActivitySessionService;
@@ -42,7 +43,7 @@ class AttendanceService
         $this->ensureValidCoordinates($data);
 
         $setting = $this->requireSetting((int) $context->company->id);
-        $clockInAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
+        $clockInAt = ClientTime::parse($data['recorded_at'] ?? null);
 
         $this->ensureWorkingDay($clockInAt, $setting);
 
@@ -164,7 +165,7 @@ class AttendanceService
         $this->ensureValidCoordinates($data);
 
         $setting = $this->requireSetting((int) $context->company->id);
-        $clockOutAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
+        $clockOutAt = ClientTime::parse($data['recorded_at'] ?? null);
 
         $attendanceDate = $clockOutAt->toDateString();
 

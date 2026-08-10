@@ -1244,13 +1244,7 @@ class TaskTrackingService
     {
         $now = now();
 
-        try {
-            $recordedAt = $value !== null && $value !== ''
-                ? Carbon::parse((string) $value)
-                : $now->copy();
-        } catch (Throwable) {
-            return $now->copy();
-        }
+        $recordedAt = \App\Support\ClientTime::parse($value);
 
         $maxFutureSkewSeconds = max(0, (int) config('tracking.max_recorded_at_future_skew_seconds', 120));
         $maxPastSkewSeconds = max(60, (int) config('tracking.max_recorded_at_past_skew_seconds', 86400));

@@ -48,7 +48,7 @@ class FieldStopDetectionService
             ->first();
 
         $radius = (float) config('field_activity.stop_radius_meters', 50);
-        $dwellSeconds = (int) config('field_activity.stop_dwell_seconds', 900);
+        $dwellSeconds = (int) config('field_activity.stop_dwell_seconds', 300);
         $stopMaxSpeedKmh = (float) config('field_activity.stop_max_speed_kmh', 1.0);
 
         $cluster = [];
@@ -134,7 +134,7 @@ class FieldStopDetectionService
         foreach ($openStops as $stop) {
             // Only confirm if dwell already met; otherwise discard incomplete clusters.
             $dwell = $stop->arrived_at->diffInSeconds($departure);
-            $minDwell = (int) config('field_activity.stop_dwell_seconds', 900);
+            $minDwell = (int) config('field_activity.stop_dwell_seconds', 300);
             if ($dwell < $minDwell) {
                 $stop->delete();
                 continue;

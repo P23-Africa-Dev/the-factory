@@ -29,6 +29,31 @@ class FieldActivityRealtimeService
         ]);
     }
 
+    /**
+     * Publishes the session's last-known position. Used when incoming samples
+     * update the live location but are gated out of trail persistence, so the
+     * management map still receives continuous movement updates.
+     */
+    public function publishLastKnownLocation(FieldActivitySession $session): void
+    {
+        if ($session->last_latitude === null || $session->last_longitude === null) {
+            return;
+        }
+
+        $this->publish([
+            'event' => 'field_activity.location',
+            'version' => 1,
+            'company_id' => (int) $session->company_id,
+            'user_id' => (int) $session->user_id,
+            'field_activity_session_id' => (int) $session->id,
+            'latitude' => (float) $session->last_latitude,
+            'longitude' => (float) $session->last_longitude,
+            'movement_state' => $session->last_movement_state?->value,
+            'recorded_at' => $session->last_recorded_at?->toIso8601String(),
+            'occurred_at' => now()->toIso8601String(),
+        ]);
+    }
+
     public function publishStopCreated(FieldActivitySession $session, FieldStop $stop): void
     {
         $this->publish([

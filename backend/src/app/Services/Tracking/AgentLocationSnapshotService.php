@@ -18,9 +18,7 @@ class AgentLocationSnapshotService
 
     public function upsertFromTrackingEvent(array $payload): AgentLocationSnapshot
     {
-        $recordedAt = isset($payload['recorded_at']) && $payload['recorded_at'] !== null
-            ? Carbon::parse((string) $payload['recorded_at'])
-            : now();
+        $recordedAt = \App\Support\ClientTime::parse($payload['recorded_at'] ?? null);
 
         // `last_seen_at` answers "when did the server last hear from this agent"
         // and drives the is_online / operational_status freshness signal. It must

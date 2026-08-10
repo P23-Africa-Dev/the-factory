@@ -46,6 +46,14 @@ class FieldJourneyApiTest extends TestCase
                     'playback',
                 ],
             ]);
+
+        // Frontend URLSearchParams historically sent "true"/"false" strings;
+        // Laravel's boolean rule rejects those unless normalized.
+        $this->actingAs($owner, 'sanctum')
+            ->getJson("/api/v1/field-activity/journeys/{$session->id}?company_id={$company->id}&include_route=true&include_timeline=true")
+            ->assertOk()
+            ->assertJsonPath('data.journey.id', $session->id)
+            ->assertJsonPath('data.route.point_count', 2);
     }
 
     public function test_agent_can_only_view_own_journeys(): void

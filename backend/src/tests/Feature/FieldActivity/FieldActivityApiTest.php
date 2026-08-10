@@ -31,7 +31,7 @@ class FieldActivityApiTest extends TestCase
     {
         parent::setUp();
 
-        Config::set('field_activity.stop_dwell_seconds', 900);
+        Config::set('field_activity.stop_dwell_seconds', 300);
         Config::set('field_activity.stop_radius_meters', 50);
         Config::set('field_activity.persist_min_interval_seconds', 0);
         Config::set('field_activity.persist_min_distance_meters', 0);
@@ -97,6 +97,130 @@ class FieldActivityApiTest extends TestCase
         $this->assertSame(6.5244, round((float) $point->latitude, 4));
         $this->assertSame(3.3792, round((float) $point->longitude, 4));
         $this->assertSame('stopped', $point->movement_state?->value);
+    }
+
+    public function test_clock_in_with_utc_recorded_at_is_stored_in_app_timezone(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:10', 'Africa/Lagos'));
+
+        // The PWA sends recorded_at as UTC ISO. 09:00:00Z == 10:00:00 Lagos.
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_m' => 10,
+                'recorded_at' => '2026-07-29T09:00:00.000Z',
+            ])
+            ->assertCreated();
+
+        $record = AttendanceRecord::query()
+            ->where('company_id', $company->id)
+            ->where('user_id', $agent->id)
+            ->firstOrFail();
+
+        $this->assertSame(
+            '2026-07-29 10:00:00',
+            $record->clock_in_at?->format('Y-m-d H:i:s'),
+            'UTC recorded_at must be converted to the app timezone before storage.',
+        );
+    }
+
+    public function test_utc_recorded_points_do_not_inflate_active_seconds(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+
+        // Two points, one and two minutes after clock-in, sent as UTC ISO the
+        // way the PWA does (09:01Z == 10:01 Lagos). Before the timezone fix,
+        // each mixed-timezone interval added ~3600 phantom seconds.
+        $this->actingAs($agent, 'sanctum')
+            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+                'company_id' => $company->id,
+                'points' => [
+                    [
+                        'latitude' => 6.5250,
+                        'longitude' => 3.3800,
+                        'speed_mps' => 5,
+                        'recorded_at' => '2026-07-29T09:01:00.000Z',
+                    ],
+                    [
+                        'latitude' => 6.5260,
+                        'longitude' => 3.3810,
+                        'speed_mps' => 5,
+                        'recorded_at' => '2026-07-29T09:02:00.000Z',
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $session->refresh();
+        $activeSeconds = (int) $session->travel_seconds + (int) $session->stationary_seconds;
+
+        $this->assertSame(
+            120,
+            $activeSeconds,
+            "Active seconds should equal the real elapsed time (got {$activeSeconds}).",
+        );
+    }
+
+    public function test_offline_gap_between_points_is_capped_for_active_seconds(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+        Config::set('field_activity.max_active_interval_seconds', 900);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+
+        // Simulate device coming back online after 5 hours offline.
+        $this->actingAs($agent, 'sanctum')
+            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+                'company_id' => $company->id,
+                'points' => [[
+                    'latitude' => 6.5300,
+                    'longitude' => 3.3900,
+                    'speed_mps' => 4,
+                    'recorded_at' => '2026-07-29T14:00:00+01:00',
+                ]],
+            ])
+            ->assertOk();
+
+        $session->refresh();
+        $activeSeconds = (int) $session->travel_seconds + (int) $session->stationary_seconds;
+
+        $this->assertSame(
+            900,
+            $activeSeconds,
+            "Offline gaps must be capped (got {$activeSeconds}).",
+        );
     }
 
     public function test_management_live_hydrate_returns_active_route_and_stops(): void
@@ -182,7 +306,7 @@ class FieldActivityApiTest extends TestCase
         ]);
     }
 
-    public function test_batch_points_create_stop_after_fifteen_minute_dwell(): void
+    public function test_batch_points_create_stop_after_five_minute_dwell(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();
         $company->forceFill(['field_activity_enabled' => true])->save();
@@ -202,7 +326,8 @@ class FieldActivityApiTest extends TestCase
         $baseLat = 6.5300;
         $baseLng = 3.3800;
         $points = [];
-        for ($i = 0; $i <= 16; $i++) {
+        // 0..6 minutes of near-stationary samples = 6 minutes dwell (>= 5 min threshold).
+        for ($i = 0; $i <= 6; $i++) {
             $points[] = [
                 'latitude' => $baseLat + ($i * 0.000001),
                 'longitude' => $baseLng,
@@ -219,15 +344,15 @@ class FieldActivityApiTest extends TestCase
                 'points' => $points,
             ])
             ->assertOk()
-            ->assertJsonPath('data.persisted_count', 17);
+            ->assertJsonPath('data.persisted_count', 7);
 
         $this->assertTrue(
             FieldStop::query()->where('field_activity_session_id', $session->id)->exists(),
-            'Expected a confirmed stop after 15+ minutes of stationary points.',
+            'Expected a confirmed stop after 5+ minutes of stationary points.',
         );
     }
 
-    public function test_brief_stop_under_fifteen_minutes_does_not_create_stop(): void
+    public function test_brief_stop_under_five_minutes_does_not_create_stop(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();
         $company->forceFill(['field_activity_enabled' => true])->save();
@@ -245,7 +370,8 @@ class FieldActivityApiTest extends TestCase
         $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
 
         $points = [];
-        for ($i = 0; $i <= 5; $i++) {
+        // 0..3 minutes = 3 minutes dwell (under the 5 min threshold).
+        for ($i = 0; $i <= 3; $i++) {
             $points[] = [
                 'latitude' => 6.5400,
                 'longitude' => 3.3900,
