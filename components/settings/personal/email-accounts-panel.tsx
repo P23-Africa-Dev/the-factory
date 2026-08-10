@@ -983,7 +983,7 @@ export function EmailAccountsPanel() {
                   <>
                     {" · "}
                     <span className="font-semibold">{failedCount} failed</span>
-                    {" — reconnect or switch to Google/Microsoft"}
+                    {" . reconnect or switch to Google/Microsoft"}
                   </>
                 )}
               </p>
