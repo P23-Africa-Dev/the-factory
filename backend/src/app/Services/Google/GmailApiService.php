@@ -112,10 +112,23 @@ class GmailApiService
      */
     public function getMessage(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId, string $format = 'full'): array
     {
-        $response = $this->request(
+        $response = $this->rawRequest(
             $connection,
             'GET',
             'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '?format=' . urlencode($format),
+        );
+
+        // Deleted/expired messages referenced in history should not fail the whole sync.
+        if ($response->status() === 404) {
+            throw ValidationException::withMessages([
+                'message' => ['Gmail message not found.'],
+            ]);
+        }
+
+        $this->throwIfFailed(
+            $connection,
+            $response,
+            'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId),
         );
 
         /** @var array<string,mixed> */
@@ -185,7 +198,7 @@ class GmailApiService
      */
     public function listHistory(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $startHistoryId): array
     {
-        $response = $this->request(
+        $response = $this->rawRequest(
             $connection,
             'GET',
             'https://www.googleapis.com/gmail/v1/users/me/history?' . http_build_query([
@@ -193,6 +206,14 @@ class GmailApiService
                 'historyTypes' => ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'],
             ]),
         );
+
+        if ($response->status() === 404) {
+            throw new StaleGmailHistoryException(
+                'Gmail history cursor is stale. A full resync is required.',
+            );
+        }
+
+        $this->throwIfFailed($connection, $response, 'https://www.googleapis.com/gmail/v1/users/me/history');
 
         /** @var array<string,mixed> $data */
         $data = $response->json();

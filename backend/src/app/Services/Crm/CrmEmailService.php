@@ -23,6 +23,7 @@ use App\Services\Email\EmailAccountService;
 use App\Services\Email\EmailMessageDTO;
 use App\Services\Email\EmailProviderInterface;
 use App\Services\Email\ParsedEmailDTO;
+use App\Services\Google\StaleGmailHistoryException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -1098,7 +1099,24 @@ class CrmEmailService
             if ($emailAccount->history_id === null) {
                 $this->runInitialMailboxBackfill($provider, $accountDTO, $emailAccount, $companyId);
             } else {
-                $history = $provider->listHistory($accountDTO, (string) $emailAccount->history_id);
+                try {
+                    $history = $provider->listHistory($accountDTO, (string) $emailAccount->history_id);
+                } catch (StaleGmailHistoryException $exception) {
+                    Log::warning('CRM email history cursor stale; resetting mailbox sync.', [
+                        'company_id' => $companyId,
+                        'email_account_id' => $emailAccount->id,
+                        'provider' => $emailAccount->provider,
+                        'history_id' => $emailAccount->history_id,
+                        'error' => $exception->getMessage(),
+                    ]);
+
+                    $emailAccount->update(['history_id' => null]);
+                    $emailAccount->refresh();
+                    $this->runInitialMailboxBackfill($provider, $accountDTO, $emailAccount, $companyId);
+
+                    return;
+                }
+
                 $messageIds = [];
 
                 foreach ($history['history'] as $entry) {
@@ -1134,7 +1152,21 @@ class CrmEmailService
                 $messageIds = array_values(array_unique($messageIds));
 
                 foreach ($messageIds as $providerMessageId) {
-                    $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId);
+                    try {
+                        $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId);
+                    } catch (\Throwable $exception) {
+                        if ($this->isMissingProviderMessageError($exception)) {
+                            Log::info('CRM email sync skipped missing provider message.', [
+                                'company_id' => $companyId,
+                                'email_account_id' => $emailAccount->id,
+                                'provider_message_id' => $providerMessageId,
+                            ]);
+
+                            continue;
+                        }
+
+                        throw $exception;
+                    }
                 }
 
                 $this->emailAccountService->updateSyncState(
@@ -1157,7 +1189,9 @@ class CrmEmailService
                 'error' => $exception->getMessage(),
             ]);
 
-            $this->emailAccountService->markError($emailAccount, $exception->getMessage());
+            if ($this->shouldMarkAccountConnectionError($exception)) {
+                $this->emailAccountService->markError($emailAccount, $exception->getMessage());
+            }
 
             throw $exception;
         }
@@ -1322,5 +1356,51 @@ class CrmEmailService
     private function applyMessageTimelineOrder($query)
     {
         return $query->orderByRaw('COALESCE(sent_at, received_at) ASC');
+    }
+
+    private function shouldMarkAccountConnectionError(\Throwable $exception): bool
+    {
+        $message = strtolower($this->exceptionMessage($exception));
+
+        if ($message === '') {
+            return false;
+        }
+
+        if (
+            str_contains($message, 'requested entity was not found')
+            || str_contains($message, 'rate limit')
+            || str_contains($message, 'message not found')
+            || str_contains($message, 'history cursor is stale')
+        ) {
+            return false;
+        }
+
+        return str_contains($message, 'authorization failed')
+            || str_contains($message, 'invalid_grant')
+            || str_contains($message, 'token refresh failed')
+            || str_contains($message, 'reconnect')
+            || str_contains($message, 'access expired')
+            || str_contains($message, 'invalid_client');
+    }
+
+    private function isMissingProviderMessageError(\Throwable $exception): bool
+    {
+        $message = strtolower($this->exceptionMessage($exception));
+
+        return str_contains($message, 'message not found')
+            || str_contains($message, 'requested entity was not found');
+    }
+
+    private function exceptionMessage(\Throwable $exception): string
+    {
+        if ($exception instanceof ValidationException) {
+            $first = collect($exception->errors())->flatten()->first();
+
+            if (is_string($first) && trim($first) !== '') {
+                return trim($first);
+            }
+        }
+
+        return trim($exception->getMessage());
     }
 }

@@ -362,6 +362,25 @@ class EmailAccountServiceTest extends TestCase
         $this->assertNotNull($account->last_error_at);
     }
 
+    public function test_update_sync_state_clears_connection_errors(): void
+    {
+        $account = $this->service->connect($this->user, [
+            'company_id' => $this->company->id,
+            'provider' => 'google',
+            'email' => 'sync@gmail.com',
+            'access_token' => 'token',
+        ]);
+
+        $this->service->markError($account, 'Gmail API error: Requested entity was not found.');
+
+        $this->service->updateSyncState($account->fresh(), 'history-999');
+
+        $account->refresh();
+        $this->assertEquals('active', $account->status);
+        $this->assertNull($account->last_error_message);
+        $this->assertEquals('history-999', $account->history_id);
+    }
+
     public function test_update_sync_state_sets_history_id_and_timestamp(): void
     {
         $account = $this->service->connect($this->user, [

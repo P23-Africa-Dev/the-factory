@@ -381,7 +381,7 @@ class EmailAccountService
     }
 
     /**
-     * Mark an account as having an error.
+     * Mark an account as having a connection/auth error (shown in Settings).
      */
     public function markError(EmailAccount $account, string $errorMessage): void
     {
@@ -402,13 +402,16 @@ class EmailAccountService
     }
 
     /**
-     * Update sync state after a successful sync.
+     * Update sync state after a successful sync and clear stale connection error flags.
      */
     public function updateSyncState(EmailAccount $account, ?string $historyId): void
     {
         $account->update([
             'history_id' => $historyId,
             'last_synced_at' => now(),
+            'status' => 'active',
+            'last_error_message' => null,
+            'last_error_at' => null,
         ]);
     }
 
