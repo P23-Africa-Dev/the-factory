@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useFieldActivityToday } from './queries';
 import { useFieldActivityReporter } from './hooks/useFieldActivityReporter';
+import { registerFieldActivityFlush } from './flushRegistry';
 
 /**
  * Starts day-level field GPS when attendance-linked session is active.
@@ -14,7 +15,7 @@ export function FieldActivityProvider({ children }: { children: React.ReactNode 
   const session = data?.session;
   const isActive = enabled && session?.status === 'active' && session.id != null;
 
-  useFieldActivityReporter({
+  const { flush } = useFieldActivityReporter({
     sessionId: isActive ? session!.id : null,
     active: Boolean(isActive),
     movingIntervalSeconds: data?.config?.moving_interval_seconds ?? 60,
@@ -22,8 +23,10 @@ export function FieldActivityProvider({ children }: { children: React.ReactNode 
   });
 
   useEffect(() => {
-    // Keep session warm after clock-in navigations.
-  }, [isActive, session?.id]);
+    // Expose flush so clock-out can push the final leg before the session closes.
+    registerFieldActivityFlush(flush);
+    return () => registerFieldActivityFlush(null);
+  }, [flush]);
 
   return <>{children}</>;
 }

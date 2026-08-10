@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   classifyAgentFieldStop,
+  getAgentDailySummary,
   getAgentPendingReview,
 } from "@/lib/api/field-activity";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -12,7 +13,24 @@ import { useAuthStore } from "@/store/auth";
 
 export const AGENT_FIELD_REVIEW_KEYS = {
   pending: ["agent-field-activity", "pending-review"] as const,
+  dailySummary: ["agent-field-activity", "daily-summary"] as const,
 };
+
+export function useAgentDailySummary(enabled = true) {
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId } = getActiveCompanyContext(user);
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: [...AGENT_FIELD_REVIEW_KEYS.dailySummary, apiCompanyId],
+    queryFn: async () => {
+      const res = await getAgentDailySummary(token, apiCompanyId ?? undefined);
+      return res.data;
+    },
+    enabled: enabled && hasActiveApiSession(token),
+    staleTime: 1000 * 30,
+  });
+}
 
 export function useAgentPendingReview(enabled = true) {
   const user = useAuthStore((s) => s.user);

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 import { useAttendanceStats, useAttendanceToday, useClockIn, useClockOut, useAttendanceHistory } from "@/hooks/use-attendance";
+import { useFieldActivityReporter } from "@/components/tracking/field-activity-reporter-provider";
 import { JourneyHistoryPanel } from "@/components/operations/journey-history-panel";
 import {
   AgentDayReviewModal,
@@ -309,6 +310,7 @@ export function AttendanceViewAgent() {
 
   const clockInMut = useClockIn();
   const clockOutMut = useClockOut();
+  const fieldActivity = useFieldActivityReporter();
 
   const attendanceList: AttendanceItem[] = (historyData?.items ?? []).map((r) =>
     mapRecord(r, user?.name ?? "Me", user?.avatar),
@@ -371,6 +373,13 @@ export function AttendanceViewAgent() {
         onError: (err: Error) => toast.error(err.message ?? "Failed to clock in."),
       });
     } else if (clockOut) {
+      // Push any buffered journey points before the session is closed,
+      // otherwise the final leg of the route is rejected and lost.
+      try {
+        await fieldActivity.flush();
+      } catch {
+        // Best effort — clock-out proceeds regardless.
+      }
       clockOutMut.mutate(payload, {
         onSuccess: () => {
           toast.success("Clocked out successfully!");

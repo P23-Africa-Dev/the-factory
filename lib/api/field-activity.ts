@@ -171,6 +171,112 @@ function withQuery(path: string, params: Record<string, string | number | boolea
   return encoded ? `${path}?${encoded}` : path;
 }
 
+export type FieldActivitySessionDto = {
+  id: number;
+  company_id: number;
+  user_id: number;
+  attendance_record_id: number | null;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  distance_meters: number;
+  travel_seconds: number;
+  stationary_seconds: number;
+  stop_count: number;
+  visit_count: number;
+  unknown_stop_count: number;
+  last_latitude: number | null;
+  last_longitude: number | null;
+  last_movement_state: string | null;
+  last_recorded_at: string | null;
+};
+
+export type FieldDailySummaryDto = {
+  id: number;
+  summary_date: string | null;
+  distance_meters: number;
+  travel_seconds: number;
+  stationary_seconds: number;
+  stop_count: number;
+  visit_count: number;
+  unknown_stop_count: number;
+  personal_stop_count: number;
+  ignored_stop_count: number;
+  narrative: string | null;
+  metrics: Record<string, unknown> | null;
+  generated_at: string | null;
+};
+
+export type FieldStopDto = {
+  id: number;
+  field_activity_session_id: number;
+  arrived_at: string | null;
+  departed_at: string | null;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  duration_seconds: number;
+  classification: string | null;
+  classified_by: string | null;
+  classified_at: string | null;
+  lead_id: number | null;
+};
+
+export type FieldActivityTodayResponse = {
+  enabled: boolean;
+  session: FieldActivitySessionDto | null;
+  summary: FieldDailySummaryDto | null;
+  stops: FieldStopDto[];
+  config: {
+    moving_interval_seconds: number;
+    stationary_interval_seconds: number;
+    stop_dwell_seconds: number;
+  };
+};
+
+export type FieldPointPayload = {
+  latitude: number;
+  longitude: number;
+  accuracy_meters?: number | null;
+  speed_mps?: number | null;
+  heading_degrees?: number | null;
+  recorded_at: string;
+};
+
+export function getFieldActivityToday(token: string, companyId?: number | string) {
+  return apiRequest<FieldActivityTodayResponse>({
+    method: "GET",
+    path: withQuery("/agent/field-activity/today", { company_id: companyId }),
+    token,
+  });
+}
+
+export function getAgentDailySummary(token: string, companyId?: number | string) {
+  return apiRequest<{
+    summary: FieldDailySummaryDto | null;
+    session: FieldActivitySessionDto | null;
+    stops: FieldStopDto[];
+  }>({
+    method: "GET",
+    path: withQuery("/agent/field-activity/daily-summary", { company_id: companyId }),
+    token,
+  });
+}
+
+export function recordFieldActivityPoints(
+  sessionId: number,
+  points: FieldPointPayload[],
+  token: string,
+  companyId?: number | string,
+) {
+  return apiRequest<{ persisted_count: number; session: FieldActivitySessionDto }>({
+    method: "POST",
+    path: `/agent/field-activity/sessions/${sessionId}/points`,
+    body: { company_id: companyId, points },
+    token,
+  });
+}
+
 export function getFieldActivitySettings(token: string, companyId?: number) {
   return apiRequest<FieldActivitySettings>({
     method: "GET",
