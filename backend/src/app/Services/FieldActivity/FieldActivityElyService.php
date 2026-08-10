@@ -542,11 +542,22 @@ class FieldActivityElyService
     public function journeyHistory(User $user, int $companyId, array $args = []): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
+        $company = $context['company'];
         $role = (string) $context['role'];
-        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : (int) $user->id;
-        if ($role === 'agent') {
-            $targetUserId = (int) $user->id;
+
+        $resolved = $this->resolveTargetUserId($user, $company, $role, $args);
+        if (($resolved['error'] ?? null) !== null) {
+            return [
+                'tool' => 'field.journey_history',
+                'summary' => (string) $resolved['error'],
+                'payload' => [
+                    'agent_name' => $args['agent_name'] ?? null,
+                    'items' => [],
+                ],
+                'sources' => ['field.journey_history'],
+            ];
         }
+        $targetUserId = (int) $resolved['user_id'];
 
         $target = User::query()->findOrFail($targetUserId);
         $filters = [
@@ -559,16 +570,24 @@ class FieldActivityElyService
 
         $data = $this->journeyService->listForAgent($user, $target, $filters);
         $count = count($data['items'] ?? []);
+        $agentLabel = (string) ($data['agent']['name'] ?? $target->name ?? 'agent');
 
         return [
             'tool' => 'field.journey_history',
-            'summary' => sprintf(
-                'Found %d journeys for %s (%s–%s).',
-                $count,
-                $data['agent']['name'] ?? 'agent',
-                $data['summary']['from'] ?? '',
-                $data['summary']['to'] ?? '',
-            ),
+            'summary' => $count > 0
+                ? sprintf(
+                    'Found %d journey(s) for %s (%s–%s).',
+                    $count,
+                    $agentLabel,
+                    $data['summary']['from'] ?? '',
+                    $data['summary']['to'] ?? '',
+                )
+                : sprintf(
+                    'No journeys were found for %s between %s and %s.',
+                    $agentLabel,
+                    $data['summary']['from'] ?? ($filters['from'] ?? 'the selected range'),
+                    $data['summary']['to'] ?? ($filters['to'] ?? 'now'),
+                ),
             'payload' => $data,
             'sources' => ['field.journey_history'],
         ];
@@ -582,13 +601,21 @@ class FieldActivityElyService
     {
         $sessionId = isset($args['session_id']) ? (int) $args['session_id'] : null;
         $date = isset($args['date']) ? Carbon::parse((string) $args['date'])->toDateString() : null;
-        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : (int) $user->id;
 
         $context = $this->companyContextService->resolve($user, $companyId);
+        $company = $context['company'];
         $role = (string) $context['role'];
-        if ($role === 'agent') {
-            $targetUserId = (int) $user->id;
+
+        $resolved = $this->resolveTargetUserId($user, $company, $role, $args);
+        if (($resolved['error'] ?? null) !== null) {
+            return [
+                'tool' => 'field.journey_detail',
+                'summary' => (string) $resolved['error'],
+                'payload' => null,
+                'sources' => ['field.journey_detail'],
+            ];
         }
+        $targetUserId = (int) $resolved['user_id'];
 
         $session = null;
         if ($sessionId) {
@@ -603,9 +630,11 @@ class FieldActivityElyService
         }
 
         if ($session === null) {
+            $agentName = User::query()->whereKey($targetUserId)->value('name') ?? 'agent';
+
             return [
                 'tool' => 'field.journey_detail',
-                'summary' => 'No journey found for that agent/date.',
+                'summary' => sprintf('No journey found for %s%s.', $agentName, $date ? " on {$date}" : ''),
                 'payload' => null,
                 'sources' => ['field.journey_detail'],
             ];
@@ -639,5 +668,48 @@ class FieldActivityElyService
             ],
             'sources' => ['field.journey_detail'],
         ];
+    }
+
+    /**
+     * Resolve which company user a management/agent prompt is asking about.
+     *
+     * @param  array<string, mixed>  $args
+     * @return array{user_id: int, error?: string}
+     */
+    private function resolveTargetUserId(User $actor, Company $company, string $role, array $args): array
+    {
+        if ($role === 'agent') {
+            return ['user_id' => (int) $actor->id];
+        }
+
+        if (isset($args['user_id']) && is_numeric($args['user_id'])) {
+            return ['user_id' => (int) $args['user_id']];
+        }
+
+        $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
+        if ($agentName !== '') {
+            $resolved = User::query()
+                ->whereHas('companies', static function ($q) use ($company): void {
+                    $q->where('companies.id', $company->id);
+                })
+                ->where(function ($q) use ($agentName): void {
+                    $q->whereRaw('LOWER(name) = ?', [strtolower($agentName)])
+                        ->orWhere('name', 'like', '%' . $agentName . '%');
+                })
+                ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [strtolower($agentName)])
+                ->value('id');
+
+            if (is_numeric($resolved)) {
+                return ['user_id' => (int) $resolved];
+            }
+
+            return [
+                'user_id' => (int) $actor->id,
+                'error' => "I couldn't find an agent named \"{$agentName}\" in this company.",
+            ];
+        }
+
+        // Management with no named agent: keep caller as default for self-scoped tools.
+        return ['user_id' => (int) $actor->id];
     }
 }

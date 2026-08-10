@@ -346,7 +346,8 @@ class IntentClassifier
         ) === 1
             || preg_match('/\btask\s+tracking\b/i', $normalized) === 1
             || preg_match('/\bstart(?:ed|ing)?\s+(task\s+)?tracking\b/i', $normalized) === 1
-            || preg_match('/\b(location|movement)\s+history\b/i', $normalized) === 1;
+            || preg_match('/\b(location|movement)\s+history\b/i', $normalized) === 1
+            || preg_match('/\bcheck\b.{0,40}\b(agent|tracking|field)\b/i', $normalized) === 1;
 
         if (! $mentionsTracking && preg_match('/\b(in\s+the\s+field|field\s+agents?)\b/i', $normalized) !== 1) {
             return null;
@@ -406,6 +407,7 @@ class IntentClassifier
         }
 
         // Default: day/team field tracking after clock-in / start task tracking.
+        // Also covers "tracking activities" and "check for agent X".
         return 'field.daily_summary';
     }
 

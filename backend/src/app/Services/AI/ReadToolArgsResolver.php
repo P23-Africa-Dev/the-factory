@@ -30,6 +30,7 @@ class ReadToolArgsResolver
         'kpi.list',
         'field.daily_summary',
         'field.agent_visits',
+        'field.journey_history',
         'tracking.agent_history',
     ];
 
@@ -87,6 +88,8 @@ class ReadToolArgsResolver
     {
         $args = [];
         $normalized = strtolower(trim($message));
+        // Normalize curly/smart apostrophes so "Taraji's" extracts reliably.
+        $messageForNames = str_replace(["\u{2018}", "\u{2019}", "\u{02BC}", '`'], "'", $message);
 
         if (preg_match('/\byesterday\b/i', $normalized) === 1) {
             $args['date'] = now()->subDay()->toDateString();
@@ -109,25 +112,58 @@ class ReadToolArgsResolver
             $args['to'] = now()->addWeek()->endOfWeek()->toDateString();
         }
 
-        if (preg_match('/\b(?:did|where\s+did|which\s+businesses?\s+did|how\s+(?:many|long)\s+(?:did|was)|visits?\s+(?:by|for)|kpi\s+assigned\s+to|assigned\s+to|tracking\s+(?:for|of))\s+([A-Za-z][A-Za-z\s\.\'-]{1,60}?)(?:\s+(?:go|visit|complete|clock|in|the|field|yesterday|today|this|week|most|tracking)\b|\?|$)/i', $message, $matches) === 1) {
-            $candidate = trim((string) $matches[1]);
-            $candidate = trim(preg_replace('/\b(agent|yesterday|today|clock|in|out|field|businesses?|visits?|tracking)\b/i', '', $candidate) ?? $candidate);
-            if ($candidate !== '') {
-                $args['agent_name'] = $candidate;
-            }
-        } elseif (preg_match('/\b([A-Za-z][A-Za-z\s\.\'-]{1,40}?)(?:\'s|s\')\s+(?:tracking|field\s+activity|journey)\b/i', $message, $matches) === 1) {
-            $candidate = trim((string) $matches[1]);
-            if ($candidate !== '' && ! in_array(strtolower($candidate), ['me', 'my', 'our', 'the', 'all', 'team', 'today', 'yesterday'], true)) {
-                $args['agent_name'] = $candidate;
-            }
-        } elseif (preg_match('/\b(?:for|by)\s+([A-Za-z][A-Za-z\s\.\'-]{1,40}?)(?:\s+(?:yesterday|today|this\s+week)\b|\?|$)/i', $message, $matches) === 1) {
-            $candidate = trim((string) $matches[1]);
-            if ($candidate !== '' && ! in_array(strtolower($candidate), ['me', 'my', 'our', 'the', 'all', 'team'], true)) {
-                $args['agent_name'] = $candidate;
-            }
+        $agentName = $this->extractAgentNameFromMessage($messageForNames);
+        if ($agentName !== null) {
+            $args['agent_name'] = $agentName;
         }
 
         return $args;
+    }
+
+    /**
+     * Extract a mentioned field agent from natural-language prompts.
+     */
+    public function extractAgentNameFromMessage(string $message): ?string
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return null;
+        }
+
+        $patterns = [
+            // "Taraji's tracking activities" / "John's journey" (avoid matching What's/who's)
+            '/\b([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})\s*\'s\s+(?:tracking(?:\s+activit(?:y|ies))?|field\s+activit(?:y|ies)|journey|location\s+history|attendance|clock)\b/i',
+            // "journey history for Taraji" / "tracking for Taraji" / "check for agent Taraji Henson"
+            '/\b(?:journey\s+history\s+for|history\s+for|tracking\s+(?:activities\s+)?(?:for|of)|visits?\s+(?:by|for)|kpi\s+assigned\s+to|assigned\s+to|where\s+did|which\s+businesses?\s+did|check(?:\s+on)?(?:\s+for)?(?:\s+agent)?|did)\s+([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})(?:\s+(?:go|visit|complete|clock|in|the|field|yesterday|today|this|week|most|tracking|before|after|activit(?:y|ies))\b|\?|$)/i',
+            // "for agent Taraji Henson" / "for Taraji"
+            '/\b(?:for|by)\s+(?:agent\s+)?([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})(?:\s+(?:yesterday|today|this\s+week|before|after)\b|\?|$)/i',
+            // "agent Taraji Henson"
+            '/\bagent\s+([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})(?:\s+(?:yesterday|today|this\s+week|before|after|tracking|journey)\b|\?|$)/i',
+        ];
+
+        $blocked = ['me', 'my', 'our', 'the', 'all', 'team', 'today', 'yesterday', 'what', 'whats', 'who', 'whom', 'this', 'that', 'before', 'after'];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $message, $matches) !== 1) {
+                continue;
+            }
+
+            $candidate = trim((string) ($matches[1] ?? ''));
+            $candidate = trim(preg_replace(
+                '/\b(agent|yesterday|today|clock|in|out|field|businesses?|visits?|tracking|activit(?:y|ies)|journey|history|before|after)\b/i',
+                '',
+                $candidate,
+            ) ?? $candidate);
+            $candidate = trim(preg_replace('/\s+/', ' ', $candidate) ?? $candidate);
+
+            if ($candidate === '' || in_array(strtolower($candidate), $blocked, true)) {
+                continue;
+            }
+
+            return $candidate;
+        }
+
+        return null;
     }
 
     public function latestAttendanceDateFromThread(

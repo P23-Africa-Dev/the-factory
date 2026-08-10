@@ -737,6 +737,11 @@ class ReadToolRegistry
             return null;
         }
 
+        $candidate = trim(preg_replace('/^(agent|for)\s+/i', '', $candidate) ?? $candidate);
+        if ($candidate === '') {
+            return null;
+        }
+
         $query = User::query()
             ->whereHas('companies', static function ($q) use ($companyId): void {
                 $q->where('companies.id', $companyId);
@@ -754,6 +759,15 @@ class ReadToolRegistry
 
         if ($matches->count() === 1) {
             return (int) $matches->first();
+        }
+
+        // Prefer first-name matches when unique (e.g. "Taraji" → "Taraji Henson").
+        $firstNameMatches = (clone $query)
+            ->where('name', 'like', $candidate . ' %')
+            ->limit(2)
+            ->pluck('id');
+        if ($firstNameMatches->count() === 1) {
+            return (int) $firstNameMatches->first();
         }
 
         return null;
@@ -1522,20 +1536,42 @@ class ReadToolRegistry
         $role = (string) $context['role'];
 
         $agentId = isset($args['agent_id']) ? (int) $args['agent_id'] : null;
-        $agentName = isset($args['agent_name']) ? (string) $args['agent_name'] : null;
+        $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
 
-        if ($agentName !== null) {
+        if ($agentName !== '') {
             $resolved = $this->resolveCompanyUserIdByName($agentName, $resolvedCompanyId);
-            if ($resolved !== null) {
-                $agentId = $resolved;
+            if ($resolved === null) {
+                return [
+                    'tool' => 'tracking.agent_history',
+                    'summary' => "I couldn't find an agent named \"{$agentName}\" in this company.",
+                    'payload' => [
+                        'agent_name' => $agentName,
+                        'date' => isset($args['date']) ? (string) $args['date'] : now()->toDateString(),
+                        'timeline' => [],
+                    ],
+                    'sources' => ['tracking.agent_history'],
+                ];
             }
+            $agentId = $resolved;
         }
 
         if ($agentId === null) {
-            $agentId = $user->id;
+            // Management without a named agent should not silently read their own empty trail.
+            if ($role !== 'agent') {
+                return [
+                    'tool' => 'tracking.agent_history',
+                    'summary' => 'Which agent\'s tracking should I look up? For example: "What\'s Taraji\'s tracking today?"',
+                    'payload' => [
+                        'date' => isset($args['date']) ? (string) $args['date'] : now()->toDateString(),
+                        'timeline' => [],
+                    ],
+                    'sources' => ['tracking.agent_history'],
+                ];
+            }
+            $agentId = (int) $user->id;
         }
 
-        if ($role === 'agent' && $agentId !== $user->id) {
+        if ($role === 'agent' && $agentId !== (int) $user->id) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'agent_id' => ['Agents can only view their own location history.'],
             ]);
@@ -1547,56 +1583,126 @@ class ReadToolRegistry
         } catch (\Throwable $e) {
             $date = now();
         }
+        $dateKey = $date->toDateString();
 
-        $points = \App\Models\TaskLocationPoint::query()
+        $targetUser = User::find($agentId);
+        $targetName = $targetUser ? (string) $targetUser->name : 'Agent';
+
+        $session = \App\Models\FieldActivitySession::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('user_id', $agentId)
-            ->whereDate('recorded_at', $date->toDateString())
+            ->whereDate('started_at', $dateKey)
+            ->orderByDesc('id')
+            ->first();
+
+        $summaryRow = \App\Models\FieldDailySummary::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->where('user_id', $agentId)
+            ->whereDate('summary_date', $dateKey)
+            ->first();
+
+        $stops = $session
+            ? \App\Models\FieldStop::query()
+                ->where('field_activity_session_id', $session->id)
+                ->orderBy('arrived_at')
+                ->get()
+            : collect();
+
+        $timeline = [];
+        foreach ($stops as $stop) {
+            $arrived = $stop->arrived_at;
+            $departed = $stop->departed_at;
+            $label = $stop->address
+                ?: ($stop->classification?->value ?? 'stop');
+            $durationMins = ($arrived && $departed) ? $arrived->diffInMinutes($departed) : 0;
+            $timeline[] = [
+                'source' => 'field_stop',
+                'location' => $label,
+                'classification' => $stop->classification?->value,
+                'arrival' => $arrived?->format('g:i A'),
+                'departure' => $departed?->format('g:i A'),
+                'duration' => $durationMins > 0 ? "{$durationMins}m" : 'briefly',
+                'latitude' => $stop->latitude,
+                'longitude' => $stop->longitude,
+            ];
+        }
+
+        $taskPoints = \App\Models\TaskLocationPoint::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->where('user_id', $agentId)
+            ->whereDate('recorded_at', $dateKey)
             ->orderBy('recorded_at')
             ->with('task:id,title,location_text')
             ->get();
 
-        $targetUser = User::find($agentId);
-        $targetName = $targetUser ? $targetUser->name : 'Agent';
-
-        $timeline = [];
         $visitedTasks = [];
-        foreach ($points as $point) {
-            if ($point->task_id !== null && $point->task) {
-                $taskTitle = $point->task->title;
-                if (! isset($visitedTasks[$taskTitle])) {
-                    $visitedTasks[$taskTitle] = [
-                        'title' => $taskTitle,
-                        'first_seen' => $point->recorded_at,
-                        'last_seen' => $point->recorded_at,
-                        'location' => $point->task->location_text ?? 'Unknown',
-                    ];
-                } else {
-                    $visitedTasks[$taskTitle]['last_seen'] = $point->recorded_at;
-                }
+        foreach ($taskPoints as $point) {
+            if ($point->task_id === null || $point->task === null) {
+                continue;
+            }
+            $taskTitle = (string) $point->task->title;
+            if (! isset($visitedTasks[$taskTitle])) {
+                $visitedTasks[$taskTitle] = [
+                    'title' => $taskTitle,
+                    'first_seen' => $point->recorded_at,
+                    'last_seen' => $point->recorded_at,
+                    'location' => $point->task->location_text ?? 'Unknown',
+                ];
+            } else {
+                $visitedTasks[$taskTitle]['last_seen'] = $point->recorded_at;
             }
         }
 
         foreach ($visitedTasks as $vt) {
             $durationMins = $vt['last_seen']->diffInMinutes($vt['first_seen']);
             $timeline[] = [
+                'source' => 'task_visit',
                 'location' => $vt['title'] . ' (' . $vt['location'] . ')',
                 'arrival' => $vt['first_seen']->format('g:i A'),
                 'departure' => $vt['last_seen']->format('g:i A'),
-                'duration' => $durationMins > 0 ? "{$durationMins}m" : "briefly",
+                'duration' => $durationMins > 0 ? "{$durationMins}m" : 'briefly',
             ];
         }
 
-        $timeline = array_slice($timeline, 0, 6);
+        $distance = (int) ($summaryRow?->distance_meters ?? $session?->distance_meters ?? 0);
+        $visits = (int) ($summaryRow?->visit_count ?? $session?->visit_count ?? 0);
+        $stopCount = (int) ($summaryRow?->stop_count ?? $session?->stop_count ?? count($stops));
+        $pointCount = $session
+            ? (int) \App\Models\FieldLocationPoint::query()
+                ->where('field_activity_session_id', $session->id)
+                ->count()
+            : 0;
 
-        $summary = "{$targetName} location history for {$date->toDateString()}:";
-        if (count($timeline) > 0) {
-            $summary .= "\nTimeline:";
-            foreach ($timeline as $entry) {
-                $summary .= "\n- {$entry['arrival']} — Arrived at {$entry['location']}, stayed for {$entry['duration']}, departed at {$entry['departure']}";
-            }
+        $summary = "{$targetName} tracking activities for {$dateKey}:";
+        if ($session === null && $summaryRow === null && $timeline === []) {
+            $summary = "No tracking activities were recorded for {$targetName} on {$dateKey}.";
         } else {
-            $summary .= " No recorded task visits found on this date.";
+            $summary .= sprintf(
+                " %.1f km, %d visits, %d stops%s.",
+                $distance / 1000,
+                $visits,
+                $stopCount,
+                $session?->status?->value ? ' (session ' . $session->status->value . ')' : '',
+            );
+            if ($session?->started_at) {
+                $summary .= ' Tracking started ' . $session->started_at->format('g:i A');
+                if ($session->ended_at) {
+                    $summary .= ', ended ' . $session->ended_at->format('g:i A');
+                } else {
+                    $summary .= ' and is still active';
+                }
+                $summary .= '.';
+            }
+            if ($timeline !== []) {
+                $summary .= "\nTimeline:";
+                foreach (array_slice($timeline, 0, 12) as $entry) {
+                    $summary .= "\n- {$entry['arrival']} — {$entry['location']}"
+                        . (isset($entry['duration']) ? ", stayed {$entry['duration']}" : '')
+                        . (isset($entry['departure']) && $entry['departure'] ? ", left {$entry['departure']}" : '');
+                }
+            } elseif ($pointCount > 0) {
+                $summary .= " {$pointCount} GPS point(s) were recorded during the field session.";
+            }
         }
 
         return [
@@ -1605,8 +1711,24 @@ class ReadToolRegistry
             'payload' => [
                 'agent_id' => $agentId,
                 'agent_name' => $targetName,
-                'date' => $date->toDateString(),
-                'points_count' => $points->count(),
+                'date' => $dateKey,
+                'session' => $session ? [
+                    'id' => $session->id,
+                    'status' => $session->status?->value,
+                    'started_at' => $session->started_at?->toIso8601String(),
+                    'ended_at' => $session->ended_at?->toIso8601String(),
+                    'distance_meters' => (int) $session->distance_meters,
+                    'visit_count' => (int) $session->visit_count,
+                    'stop_count' => (int) $session->stop_count,
+                ] : null,
+                'summary' => $summaryRow ? [
+                    'distance_meters' => (int) $summaryRow->distance_meters,
+                    'visit_count' => (int) $summaryRow->visit_count,
+                    'stop_count' => (int) $summaryRow->stop_count,
+                ] : null,
+                'points_count' => $pointCount + $taskPoints->count(),
+                'field_points_count' => $pointCount,
+                'task_points_count' => $taskPoints->count(),
                 'timeline' => $timeline,
             ],
             'sources' => ['tracking.agent_history'],

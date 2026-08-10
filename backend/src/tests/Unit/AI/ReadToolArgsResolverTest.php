@@ -410,6 +410,22 @@ final class ReadToolArgsResolverTest extends TestCase
         $this->assertSame([], $args);
     }
 
+    public function test_extracts_taraji_from_tracking_and_journey_prompts(): void
+    {
+        $cases = [
+            "What's Taraji's tracking activities for today before clock out" => 'Taraji',
+            "What’s Taraji’s tracking activities for today before clock out" => 'Taraji',
+            "What's the Journey history for Taraji" => 'Taraji',
+            'Check for agent Taraji Henson' => 'Taraji Henson',
+            "John's tracking today" => 'John',
+        ];
+
+        foreach ($cases as $message => $expected) {
+            $args = $this->resolver->resolveCommonArgs($message);
+            $this->assertSame($expected, $args['agent_name'] ?? null, "Failed for: {$message}");
+        }
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */
