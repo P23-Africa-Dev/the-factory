@@ -35,6 +35,14 @@ import {
   resolveHeading,
 } from '@/lib/tracking/dead-reckoning';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import { fetchMapMatchingRoute } from '@/lib/tracking/map-matching';
+import {
+  createMarkerMotion,
+  enqueueMarkerFix,
+  isMarkerMotionComplete,
+  sampleMarkerPosition,
+  type MarkerMotionState,
+} from '@/lib/tracking/marker-motion';
 import {
   getMapboxNavigationStyle,
   resolveMapAppearance,
@@ -323,6 +331,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const agentClusterMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
+  const markerMotionRef = useRef<Map<number, MarkerMotionState>>(new Map());
+  const queuedTargetRef = useRef<Map<number, string>>(new Map());
+  const motionRafRef = useRef(0);
+  const snappedTrailsRef = useRef<Map<number, [number, number][]>>(new Map());
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const pulseMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
@@ -767,67 +779,47 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     );
   }, [locating, setLocating]);
 
-  const animateMarkerTo = useCallback((
+  const ensureMotionLoop = useCallback(() => {
+    if (motionRafRef.current) return;
+
+    const step = (now: number) => {
+      let pending = false;
+      markerMotionRef.current.forEach((state, taskId) => {
+        const marker = agentMarkersRef.current.get(taskId);
+        if (!marker) return;
+        const pos = sampleMarkerPosition(state, now);
+        marker.setLngLat(pos);
+        markerPositionRef.current.set(taskId, pos);
+        if (!isMarkerMotionComplete(state, now)) pending = true;
+      });
+      if (pending) {
+        motionRafRef.current = requestAnimationFrame(step);
+      } else {
+        motionRafRef.current = 0;
+      }
+    };
+
+    motionRafRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const queueAgentMotion = useCallback((
     taskId: number,
     marker: mapboxgl.Marker,
     target: [number, number],
-    motion?: { speedMps?: number | null; headingDegrees?: number | null },
+    recordedAtMs?: number,
   ) => {
+    const key = `${target[0].toFixed(6)},${target[1].toFixed(6)}`;
+    if (queuedTargetRef.current.get(taskId) === key) return;
+    queuedTargetRef.current.set(taskId, key);
+
+    const now = performance.now();
+    const existing = markerMotionRef.current.get(taskId);
     const cached = markerPositionRef.current.get(taskId);
     const current = cached ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
-
-    const existingFrame = markerAnimationsRef.current.get(taskId);
-    if (existingFrame) {
-      cancelAnimationFrame(existingFrame);
-      markerAnimationsRef.current.delete(taskId);
-    }
-
-    const startedAt = performance.now();
-    const catchUpFrom: [number, number] = current;
-    const skipCatchUp = areSamePoint(current, target);
-    const speedMps = motion?.speedMps ?? null;
-    const headingDegrees = motion?.headingDegrees ?? null;
-    const canPredict =
-      typeof speedMps === 'number' && speedMps > 0.5 &&
-      typeof headingDegrees === 'number' && Number.isFinite(headingDegrees);
-
-    // Phase 1: ease from the current rendered position to the new fix.
-    // Phase 2: dead-reckon forward along speed/heading so movement stays
-    // continuous until the next fix re-anchors the marker.
-    const step = (frameNow: number) => {
-      const elapsed = frameNow - startedAt;
-
-      if (!skipCatchUp && elapsed < MARKER_ANIMATION_MS) {
-        const progress = elapsed / MARKER_ANIMATION_MS;
-        const eased = progress < 0.5
-          ? 2 * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-
-        marker.setLngLat([
-          catchUpFrom[0] + (target[0] - catchUpFrom[0]) * eased,
-          catchUpFrom[1] + (target[1] - catchUpFrom[1]) * eased,
-        ]);
-        markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
-        return;
-      }
-
-      if (!canPredict || elapsed > MAX_PREDICTION_MS) {
-        marker.setLngLat(target);
-        markerPositionRef.current.set(taskId, target);
-        markerAnimationsRef.current.delete(taskId);
-        return;
-      }
-
-      const predictSeconds = (elapsed - (skipCatchUp ? 0 : MARKER_ANIMATION_MS)) / 1000;
-      const predicted = projectPosition(target, speedMps, headingDegrees, predictSeconds);
-      marker.setLngLat(predicted);
-      markerPositionRef.current.set(taskId, predicted);
-      markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
-    };
-
-    const firstFrame = requestAnimationFrame(step);
-    markerAnimationsRef.current.set(taskId, firstFrame);
-  }, [setSelectedTaskId]);
+    const base = existing ?? createMarkerMotion(current, now);
+    markerMotionRef.current.set(taskId, enqueueMarkerFix(base, target, now, recordedAtMs));
+    ensureMotionLoop();
+  }, [ensureMotionLoop]);
 
   // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
   useEffect(() => {
@@ -1246,7 +1238,12 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       mapLoadedRef.current = false;
       markerAnimationsRef.current.forEach((frameId) => cancelAnimationFrame(frameId));
       markerAnimationsRef.current.clear();
+      if (motionRafRef.current) cancelAnimationFrame(motionRafRef.current);
+      motionRafRef.current = 0;
       markerPositionRef.current.clear();
+      markerMotionRef.current.clear();
+      queuedTargetRef.current.clear();
+      snappedTrailsRef.current.clear();
 
       originMarkersRef.current.forEach((marker) => marker.remove());
       destinationMarkersRef.current.forEach((marker) => marker.remove());
@@ -1316,12 +1313,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     agentClusterMarkersRef.current = [];
 
     const zoom = mapZoom || map.getZoom();
-    const clustering = shouldClusterLiveAgents(validTasks.length, zoom);
+    const clustering = shouldClusterLiveAgents(validTasks.length, zoom, {
+      disableClustering: selectedTaskId != null,
+    });
     const clusteredTaskIds = new Set<number>();
 
     if (clustering && bounds) {
       const clusterable = validTasks.filter(
-        (task) => selectedTaskId !== task.taskId && !trajectoryTaskIds.has(task.taskId),
+        (task) => selectedTaskId !== task.taskId,
       );
       const points = clusterable.map((task) => ({
         type: 'Feature' as const,
@@ -1364,7 +1363,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       const stale = isLiveTaskStale(task, now, STALE_MS);
       const derivedOperationalStatus = resolveOperationalStatusFromTask(task, now, STALE_MS);
       const visualState = resolveVisualTaskState(task.status, stale, derivedOperationalStatus);
-      const trail = sanitizePolyline(buildTaskTrail(task));
+      const rawTrail = sanitizePolyline(buildTaskTrail(task));
+      const trail = snappedTrailsRef.current.get(task.taskId) ?? rawTrail;
       const currentPoint = task.lastPosition;
       const showTrajectory = trajectoryTaskIds.has(task.taskId);
       const taskCount = agentTaskCounts.get(task.userId) ?? 1;
@@ -1523,6 +1523,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           .addTo(map);
         agentMarkersRef.current.set(task.taskId, marker);
         markerPositionRef.current.set(task.taskId, task.lastPosition);
+        markerMotionRef.current.set(task.taskId, createMarkerMotion(task.lastPosition, performance.now()));
+        queuedTargetRef.current.set(
+          task.taskId,
+          `${task.lastPosition[0].toFixed(6)},${task.lastPosition[1].toFixed(6)}`,
+        );
         if (task.userId > 0) {
           agentMarkerUserIdRef.current.set(task.taskId, task.userId);
         }
@@ -1541,10 +1546,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         existingAgentMarker.getElement().dataset.statusLabel = getStatusLabel(task.status);
         const heading = resolveHeading(task.headingDegrees ?? null, trail);
         updateAgentMarkerHeading(existingAgentMarker.getElement(), stale ? null : heading);
-        animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition, {
-          speedMps: stale ? null : task.speedMps,
-          headingDegrees: stale ? null : heading,
-        });
+        if (!stale) {
+          queueAgentMotion(
+            task.taskId,
+            existingAgentMarker,
+            task.lastPosition,
+            new Date(task.lastEventAt).getTime(),
+          );
+        }
       }
     });
 
@@ -1627,6 +1636,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         agentMarkersRef.current.delete(id);
         markerPositionRef.current.delete(id);
         agentMarkerUserIdRef.current.delete(id);
+        markerMotionRef.current.delete(id);
+        queuedTargetRef.current.delete(id);
         const frameId = markerAnimationsRef.current.get(id);
         if (frameId) {
           cancelAnimationFrame(frameId);
@@ -1634,7 +1645,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
     });
-  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, mapZoom, agentTaskCounts, liveTasks, animateMarkerTo, selectedTaskId, bindHoverPopup, handleSelectTask]);
+  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, mapZoom, agentTaskCounts, liveTasks, queueAgentMotion, selectedTaskId, bindHoverPopup, handleSelectTask]);
 
   // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
   useEffect(() => {
@@ -1700,6 +1711,50 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     fetchAll();
     return () => { cancelled = true; };
+  }, [mapTasks, trajectoryTaskIds, token, mapVersion]);
+
+  useEffect(() => {
+    if (!token || !mapLoadedRef.current) return;
+
+    let cancelled = false;
+
+    async function matchTrails() {
+      let didChange = false;
+      for (const task of mapTasks) {
+        if (cancelled) return;
+        if (!trajectoryTaskIds.has(task.taskId)) continue;
+        const raw = sanitizePolyline(buildTaskTrail(task));
+        if (raw.length < 5) continue;
+        const windowed = raw.slice(-25);
+        const snapped = await fetchMapMatchingRoute(windowed, token, 'driving');
+        if (cancelled) return;
+        if (snapped.length >= 2) {
+          const prefix = raw.length > windowed.length ? raw.slice(0, raw.length - windowed.length) : [];
+          snappedTrailsRef.current.set(task.taskId, [...prefix, ...snapped]);
+          didChange = true;
+        }
+      }
+
+      if (!didChange || cancelled || !mapRef.current) return;
+      const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+      mapTasks.forEach((task) => {
+        if (!trajectoryTaskIds.has(task.taskId)) return;
+        const trail = snappedTrailsRef.current.get(task.taskId) ?? sanitizePolyline(buildTaskTrail(task));
+        if (trail.length < 2) return;
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: trail },
+          properties: { taskId: task.taskId, status: task.status },
+        });
+      });
+      const src = mapRef.current.getSource('live-routes') as mapboxgl.GeoJSONSource | undefined;
+      src?.setData({ type: 'FeatureCollection', features });
+    }
+
+    void matchTrails();
+    return () => {
+      cancelled = true;
+    };
   }, [mapTasks, trajectoryTaskIds, token, mapVersion]);
 
   // ── No token fallback ────────────────────────────────────────────────────────

@@ -115,14 +115,15 @@ describe("live-feed-groups", () => {
     expect(history.map((t) => t.taskId)).toEqual([12]);
   });
 
-  it("shouldShowTrajectory gates by selection and follow-all", () => {
+  it("shouldShowTrajectory draws trails for all active agents", () => {
     const activeIds = new Set([1, 2]);
-    expect(shouldShowTrajectory(1, null, false, activeIds)).toBe(false);
+    expect(shouldShowTrajectory(1, null, false, activeIds)).toBe(true);
     expect(shouldShowTrajectory(1, 1, false, activeIds)).toBe(true);
-    expect(shouldShowTrajectory(2, 1, false, activeIds)).toBe(false);
+    expect(shouldShowTrajectory(2, 1, false, activeIds)).toBe(true);
     expect(shouldShowTrajectory(1, null, true, activeIds)).toBe(true);
     expect(shouldShowTrajectory(2, null, true, activeIds)).toBe(true);
     expect(shouldShowTrajectory(99, null, true, activeIds)).toBe(false);
+    expect(shouldShowTrajectory(99, 99, false, activeIds)).toBe(true);
   });
 
   it("resolveMapTasks includes selected history agent on map", () => {
@@ -132,11 +133,11 @@ describe("live-feed-groups", () => {
     expect(resolveMapTasks(active, history, 9).map((t) => t.taskId)).toEqual([1, 9]);
   });
 
-  it("resolveTrajectoryTaskIds matches follow-all and selection modes", () => {
+  it("resolveTrajectoryTaskIds includes every active agent plus a selected history task", () => {
     const active = [task({ taskId: 1 }), task({ taskId: 2 })];
-    expect(Array.from(resolveTrajectoryTaskIds(active, null, false))).toEqual([]);
-    expect(Array.from(resolveTrajectoryTaskIds(active, 2, false))).toEqual([2]);
-    expect(Array.from(resolveTrajectoryTaskIds(active, null, true))).toEqual([1, 2]);
+    expect(Array.from(resolveTrajectoryTaskIds(active, null, false)).sort()).toEqual([1, 2]);
+    expect(Array.from(resolveTrajectoryTaskIds(active, 2, false)).sort()).toEqual([1, 2]);
+    expect(Array.from(resolveTrajectoryTaskIds(active, 9, false)).sort()).toEqual([1, 2, 9]);
   });
 
   it("counts multiple live tasks per agent and prefers the newest for map pins", () => {

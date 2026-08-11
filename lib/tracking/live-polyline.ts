@@ -1,5 +1,8 @@
-/** Max distance (m) between trail origin and current position to treat as same live session. */
-export const MAX_LIVE_TRAIL_ORIGIN_DRIFT_M = 200;
+/** Max gap (m) between the last trail vertex and a new fix to treat as the same session. */
+export const MAX_LIVE_TRAIL_GAP_M = 400;
+
+/** @deprecated origin-vs-current was the wrong check; kept for callers that still import it. */
+export const MAX_LIVE_TRAIL_ORIGIN_DRIFT_M = MAX_LIVE_TRAIL_GAP_M;
 
 export function haversineMeters(
   lng1: number,
@@ -23,17 +26,24 @@ export function shouldKeepLivePolyline(
   anchor: [number, number] | undefined,
 ): boolean {
   if (!polyline?.length || !anchor) return false;
-  const [lng, lat] = polyline[0];
-  return haversineMeters(lng, lat, anchor[0], anchor[1]) <= MAX_LIVE_TRAIL_ORIGIN_DRIFT_M;
+  const last = polyline[polyline.length - 1];
+  return haversineMeters(last[0], last[1], anchor[0], anchor[1]) <= MAX_LIVE_TRAIL_GAP_M;
 }
 
-/** Live trail for map display: never resurrect a stale session breadcrumb on hydrate. */
+/** Live trail for map display: keep a continuing session; reset only on teleport / new session. */
 export function resolveLivePolylineForHydrate(
   prevPolyline: [number, number][] | undefined,
   anchor: [number, number] | undefined,
 ): [number, number][] {
-  if (shouldKeepLivePolyline(prevPolyline, anchor)) {
-    return prevPolyline!;
+  if (!anchor) return prevPolyline?.length ? prevPolyline : [];
+  if (!shouldKeepLivePolyline(prevPolyline, anchor)) {
+    return [anchor];
   }
-  return anchor ? [anchor] : [];
+
+  const trail = prevPolyline!;
+  const last = trail[trail.length - 1];
+  if (last[0] === anchor[0] && last[1] === anchor[1]) {
+    return trail;
+  }
+  return [...trail, anchor];
 }

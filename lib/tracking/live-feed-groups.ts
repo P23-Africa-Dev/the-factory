@@ -82,7 +82,8 @@ export function shouldShowTrajectory(
   followAllActive: boolean,
   activeTaskIds: ReadonlySet<number>,
 ): boolean {
-  if (followAllActive) return activeTaskIds.has(taskId);
+  if (activeTaskIds.has(taskId)) return true;
+  if (followAllActive) return false;
   return selectedTaskId != null && selectedTaskId === taskId;
 }
 
@@ -103,15 +104,11 @@ export function resolveMapTasks(
 export function resolveTrajectoryTaskIds(
   active: LiveTaskState[],
   selectedTaskId: number | null,
-  followAllActive: boolean,
+  _followAllActive: boolean,
 ): Set<number> {
-  if (followAllActive) {
-    return new Set(active.map((task) => task.taskId));
-  }
-  if (selectedTaskId != null) {
-    return new Set([selectedTaskId]);
-  }
-  return new Set();
+  const ids = new Set(active.map((task) => task.taskId));
+  if (selectedTaskId != null) ids.add(selectedTaskId);
+  return ids;
 }
 
 export function taskMatchesSearch(task: LiveTaskState, needle: string): boolean {

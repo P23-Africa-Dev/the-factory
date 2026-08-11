@@ -2,9 +2,14 @@
 export const LIVE_AGENT_CLUSTER_MIN = 12;
 
 /** Max zoom at which agents may still merge into clusters. */
-export const LIVE_AGENT_CLUSTER_MAX_ZOOM = 15;
+export const LIVE_AGENT_CLUSTER_MAX_ZOOM = 12;
 
-export function shouldClusterLiveAgents(agentCount: number, zoom: number): boolean {
+export function shouldClusterLiveAgents(
+  agentCount: number,
+  zoom: number,
+  options?: { disableClustering?: boolean },
+): boolean {
+  if (options?.disableClustering) return false;
   return agentCount >= LIVE_AGENT_CLUSTER_MIN && zoom < LIVE_AGENT_CLUSTER_MAX_ZOOM;
 }
 

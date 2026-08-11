@@ -17,6 +17,13 @@ import {
   type DestinationMarkerKind,
 } from '@/lib/map/map-markers';
 import { resolveNavigationBearing, smoothBearingDegrees } from '@/lib/map/route-geometry';
+import {
+  createMarkerMotion,
+  enqueueMarkerFix,
+  isMarkerMotionComplete,
+  sampleMarkerPosition,
+  type MarkerMotionState,
+} from '@/features/tracking/lib/markerMotion';
 
 export type MapboxMapMode = 'preview' | 'navigation';
 
@@ -33,12 +40,6 @@ export type SavedLocationPin = {
 const NAV_CAMERA_PADDING = { top: 120, bottom: 220, left: 48, right: 48 };
 const NAV_PITCH = 55;
 const NAV_ZOOM = 17;
-const MARKER_ANIMATION_MS = 850;
-
-// Treat positions within ~0.5m as identical to avoid jitter from GPS noise.
-function arePointsClose(a: [number, number], b: [number, number]): boolean {
-  return Math.abs(a[0] - b[0]) < 5e-6 && Math.abs(a[1] - b[1]) < 5e-6;
-}
 
 export type MapboxMapProps = {
   agentPosition: [number, number] | null;
@@ -267,6 +268,8 @@ export function MapboxMap({
   const agentMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const markerAnimationRef = useRef<number | null>(null);
   const markerPositionRef = useRef<[number, number] | null>(null);
+  const markerMotionRef = useRef<MarkerMotionState | null>(null);
+  const queuedTargetRef = useRef<string | null>(null);
   const destMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const destMarkerKindRef = useRef<DestinationMarkerKind | null>(null);
   const savedMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
@@ -284,43 +287,33 @@ export function MapboxMap({
   const [isManual, setIsManual] = useState(false);
   const isManualRef = useRef(false);
 
-  // Smoothly tween the agent marker between GPS fixes (rAF lerp) so movement
-  // reads as continuous instead of teleporting on each update.
   const animateAgentMarker = useCallback(
-    (marker: mapboxgl.Marker, target: [number, number], durationMs: number) => {
+    (marker: mapboxgl.Marker, target: [number, number]) => {
+      const key = `${target[0].toFixed(6)},${target[1].toFixed(6)}`;
+      if (queuedTargetRef.current === key) return;
+      queuedTargetRef.current = key;
+
+      const now = performance.now();
       const current = marker.getLngLat();
       const from = markerPositionRef.current ?? [current.lng, current.lat];
-
-      if (arePointsClose(from, target)) {
-        marker.setLngLat(target);
-        markerPositionRef.current = target;
-        return;
-      }
+      const base = markerMotionRef.current ?? createMarkerMotion(from, now);
+      markerMotionRef.current = enqueueMarkerFix(base, target, now);
 
       if (markerAnimationRef.current !== null) {
         cancelAnimationFrame(markerAnimationRef.current);
         markerAnimationRef.current = null;
       }
 
-      const startedAt = performance.now();
-      const step = (now: number) => {
-        const progress = Math.min((now - startedAt) / durationMs, 1);
-        const eased =
-          progress < 0.5
-            ? 2 * progress * progress
-            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-
-        marker.setLngLat([
-          from[0] + (target[0] - from[0]) * eased,
-          from[1] + (target[1] - from[1]) * eased,
-        ]);
-
-        if (progress < 1) {
+      const step = (frameNow: number) => {
+        const state = markerMotionRef.current;
+        if (!state) return;
+        const pos = sampleMarkerPosition(state, frameNow);
+        marker.setLngLat(pos);
+        markerPositionRef.current = pos;
+        if (!isMarkerMotionComplete(state, frameNow)) {
           markerAnimationRef.current = requestAnimationFrame(step);
           return;
         }
-
-        markerPositionRef.current = target;
         markerAnimationRef.current = null;
       };
 
@@ -641,8 +634,7 @@ export function MapboxMap({
         };
 
         if (agentMarkerRef.current) {
-          const duration = mapMode === 'navigation' ? 400 : MARKER_ANIMATION_MS;
-          animateAgentMarker(agentMarkerRef.current, agentPos, duration);
+          animateAgentMarker(agentMarkerRef.current, agentPos);
           updateAgentMarkerElement(agentMarkerRef.current.getElement(), markerInput);
         } else {
           const el = createAgentMarkerElement(markerInput);
@@ -650,6 +642,8 @@ export function MapboxMap({
             .setLngLat(agentPos)
             .addTo(map);
           markerPositionRef.current = agentPos;
+          markerMotionRef.current = createMarkerMotion(agentPos, performance.now());
+          queuedTargetRef.current = `${agentPos[0].toFixed(6)},${agentPos[1].toFixed(6)}`;
         }
 
         const heading = marker.headingDegrees;

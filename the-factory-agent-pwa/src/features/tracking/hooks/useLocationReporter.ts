@@ -26,9 +26,22 @@ interface LocationReporterOptions {
   onDistanceRemaining?: (meters: number | null) => void;
 }
 
-const FLUSH_INTERVAL_MS = 30_000;
+const HEARTBEAT_FLUSH_MS = 30_000;
+const MOVING_FLUSH_MS = 2_000;
+const FLUSH_DISTANCE_M = 20;
+const MOVING_SPEED_MPS = 0.5;
 const MAX_BATCH_SIZE = 50;
 const MAX_QUEUE_SIZE = 100;
+
+function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export const useLocationReporter = ({
   taskId,
@@ -43,6 +56,7 @@ export const useLocationReporter = ({
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isUnauthorizedRef = useRef(false);
   const needsImmediateFlushRef = useRef(false);
+  const lastFlushRef = useRef<{ atMs: number; lng: number; lat: number } | null>(null);
   const flushRef = useRef<(() => Promise<void>) | null>(null);
   const enqueueRef = useRef<(loc: LocationObject) => Promise<void>>(async () => {});
   const startWatchingRef = useRef(startWatching);
@@ -98,15 +112,27 @@ export const useLocationReporter = ({
         lastUpdatedAt: new Date(loc.timestamp).toISOString(),
       });
 
-      if (needsImmediateFlushRef.current) {
-        needsImmediateFlushRef.current = false;
-        void flushRef.current?.();
-      }
-
       if (memoryQueue.current.length >= MAX_QUEUE_SIZE) {
         memoryQueue.current.shift();
       }
       memoryQueue.current.push(item);
+
+      if (needsImmediateFlushRef.current) {
+        needsImmediateFlushRef.current = false;
+        void flushRef.current?.();
+      } else {
+        const last = lastFlushRef.current;
+        const nowMs = Date.now();
+        const movedM = last
+          ? haversineMeters(last.lng, last.lat, loc.coords.longitude, loc.coords.latitude)
+          : FLUSH_DISTANCE_M;
+        const elapsed = last ? nowMs - last.atMs : MOVING_FLUSH_MS;
+        const speed = loc.coords.speed ?? 0;
+        const moving = speed > MOVING_SPEED_MPS || movedM > 3;
+        if (!last || movedM >= FLUSH_DISTANCE_M || (moving && elapsed >= MOVING_FLUSH_MS)) {
+          void flushRef.current?.();
+        }
+      }
 
       try {
         const db = await getDb();
@@ -221,6 +247,15 @@ export const useLocationReporter = ({
         await tx.done;
 
         applyProximityFromSync(currentTaskId, response);
+
+        const lastPoint = batch[batch.length - 1];
+        if (lastPoint) {
+          lastFlushRef.current = {
+            atMs: Date.now(),
+            lng: lastPoint.longitude,
+            lat: lastPoint.latitude,
+          };
+        }
       } catch (error: unknown) {
         const apiErr = error as { status?: number; message?: string };
         const status = apiErr?.status;
@@ -325,9 +360,10 @@ export const useLocationReporter = ({
       void flushRef.current?.();
     }, 1000);
 
+    lastFlushRef.current = null;
     flushIntervalRef.current = setInterval(() => {
       void flushRef.current?.();
-    }, FLUSH_INTERVAL_MS);
+    }, HEARTBEAT_FLUSH_MS);
 
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return;
