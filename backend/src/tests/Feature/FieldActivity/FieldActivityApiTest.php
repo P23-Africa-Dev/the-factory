@@ -352,6 +352,90 @@ class FieldActivityApiTest extends TestCase
         );
     }
 
+    public function test_incremental_single_point_posts_create_stop_after_five_minute_dwell(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+        $baseLat = 6.5310;
+        $baseLng = 3.3810;
+
+        for ($i = 0; $i <= 6; $i++) {
+            $this->actingAs($agent, 'sanctum')
+                ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+                    'company_id' => $company->id,
+                    'points' => [[
+                        'latitude' => $baseLat,
+                        'longitude' => $baseLng,
+                        'speed_mps' => 0.04,
+                        'recorded_at' => Carbon::parse('2026-07-29 10:10:00', 'Africa/Lagos')
+                            ->addMinutes($i)
+                            ->toIso8601String(),
+                    ]],
+                ])
+                ->assertOk();
+        }
+
+        $this->assertTrue(
+            FieldStop::query()->where('field_activity_session_id', $session->id)->exists(),
+            'Expected a stop even when each GPS sample arrives in its own request.',
+        );
+    }
+
+    public function test_slow_gps_jitter_inside_radius_still_creates_stop(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/agent/attendance/clock-in', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+            ])
+            ->assertCreated();
+
+        $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+
+        $points = [];
+        for ($i = 0; $i <= 6; $i++) {
+            $points[] = [
+                'latitude' => 6.5162 + ($i * 0.00001),
+                'longitude' => 3.3457,
+                // ~4.3 km/h — classified SLOW, typical standing GPS jitter.
+                'speed_mps' => 1.2,
+                'recorded_at' => Carbon::parse('2026-07-29 10:20:00', 'Africa/Lagos')
+                    ->addMinutes($i)
+                    ->toIso8601String(),
+            ];
+        }
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+                'company_id' => $company->id,
+                'points' => $points,
+            ])
+            ->assertOk();
+
+        $this->assertTrue(
+            FieldStop::query()->where('field_activity_session_id', $session->id)->exists(),
+            'Expected a stop when the agent stayed in one place even if GPS labelled samples as slow.',
+        );
+    }
+
     public function test_brief_stop_under_five_minutes_does_not_create_stop(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();

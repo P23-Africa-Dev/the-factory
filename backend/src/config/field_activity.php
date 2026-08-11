@@ -42,6 +42,8 @@ return [
     */
     'stop_radius_meters' => (float) env('FIELD_ACTIVITY_STOP_RADIUS_METERS', 50),
     'stop_dwell_seconds' => (int) env('FIELD_ACTIVITY_STOP_DWELL_SECONDS', 300),
+    // Do not bridge two same-place samples across a long GPS outage.
+    'stop_max_gap_seconds' => (int) env('FIELD_ACTIVITY_STOP_MAX_GAP_SECONDS', 900),
     'stop_reminder_seconds' => (int) env('FIELD_ACTIVITY_STOP_REMINDER_SECONDS', 1800),
 
     /*
