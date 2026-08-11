@@ -80,8 +80,16 @@ class AgentLocationSnapshotService
 
         if ($role === 'agent') {
             $query->where('user_id', $actor->id);
-        } elseif (! empty($filters['user_id'])) {
-            $query->where('user_id', (int) $filters['user_id']);
+        } else {
+            if ($role === 'supervisor') {
+                $query->whereHas('agent', function (\Illuminate\Database\Eloquent\Builder $agentQuery) use ($actor): void {
+                    $agentQuery->where('supervisor_user_id', $actor->id);
+                });
+            }
+
+            if (! empty($filters['user_id'])) {
+                $query->where('user_id', (int) $filters['user_id']);
+            }
         }
 
         if (! empty($filters['task_id'])) {
@@ -119,6 +127,12 @@ class AgentLocationSnapshotService
         if ($role === 'agent' && (int) $actor->id !== (int) $targetUser->id) {
             throw ValidationException::withMessages([
                 'authorization' => ['Agents can only access their own latest location snapshot.'],
+            ]);
+        }
+
+        if ($role === 'supervisor' && (int) $targetUser->supervisor_user_id !== (int) $actor->id) {
+            throw ValidationException::withMessages([
+                'authorization' => ['Supervisors can only access location snapshots of agents assigned to them.'],
             ]);
         }
 
