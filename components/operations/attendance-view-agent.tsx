@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 import { useAttendanceStats, useAttendanceToday, useClockIn, useClockOut, useAttendanceHistory } from "@/hooks/use-attendance";
-import { JourneyHistoryPanel } from "@/components/operations/journey-history-panel";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { AgentAttendanceRecord } from "@/lib/api/attendance";
@@ -706,16 +705,6 @@ export function AttendanceViewAgent() {
                 agentName={user?.name ?? "Me"}
                 records={historyData?.items ?? []}
                 isLoading={historyLoading}
-              />
-
-              <JourneyHistoryPanel
-                selected={{
-                  userId: user?.id ?? selected.id,
-                  name: user?.name ?? selected.name,
-                }}
-                companyId={apiCompanyId ?? undefined}
-                journeyBasePath="/agent/operations/journeys"
-                mode="mine"
               />
             </>
           ) : (
