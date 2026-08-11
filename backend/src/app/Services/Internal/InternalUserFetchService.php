@@ -51,6 +51,10 @@ class InternalUserFetchService
             $query->where('is_active', true);
         }
 
+        if ((string) $context['role'] === 'supervisor') {
+            $query->where('supervisor_user_id', $actor->id);
+        }
+
         if ($roleFilter !== null) {
             $query->where('internal_role', $roleFilter);
         }
@@ -76,6 +80,10 @@ class InternalUserFetchService
         $this->accessService->ensureCanManageInternalUsers((string) $context['role']);
 
         $query = $this->baseQuery((int) $context['company']->id);
+
+        if ((string) $context['role'] === 'supervisor') {
+            $query->where('supervisor_user_id', $actor->id);
+        }
 
         if (! empty($filters['role'])) {
             $query->where('internal_role', (string) $filters['role']);

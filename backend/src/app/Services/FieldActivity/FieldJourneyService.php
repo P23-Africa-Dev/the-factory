@@ -44,6 +44,14 @@ class FieldJourneyService
         } else {
             $this->attendanceAccessService->ensureCanManage($context);
             $this->assertUserInCompany($target, (int) $company->id);
+
+            if ($context->role === 'supervisor') {
+                if ((int) $target->supervisor_user_id !== (int) $actor->id) {
+                    throw ValidationException::withMessages([
+                        'authorization' => ['Supervisors can only view journey history of agents assigned to them.'],
+                    ]);
+                }
+            }
         }
 
         [$from, $to] = $this->resolveDateRange($filters);
@@ -140,6 +148,15 @@ class FieldJourneyService
 
         if (! $context->isAgent()) {
             $this->attendanceAccessService->ensureCanManage($context);
+
+            if ($context->role === 'supervisor') {
+                $sessionUser = User::query()->find($session->user_id);
+                if (! $sessionUser || (int) $sessionUser->supervisor_user_id !== (int) $actor->id) {
+                    throw ValidationException::withMessages([
+                        'authorization' => ['Supervisors can only view journeys of agents assigned to them.'],
+                    ]);
+                }
+            }
         }
 
         $includeRoute = ($options['include_route'] ?? true) !== false;
