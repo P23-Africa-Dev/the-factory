@@ -18,6 +18,7 @@ class FieldStopDetectionService
     public function __construct(
         private readonly FieldLocationIntelligenceService $intelligenceService,
         private readonly FieldActivityRealtimeService $realtimeService,
+        private readonly FieldDailySummaryService $dailySummaryService,
     ) {}
 
     /**
@@ -270,5 +271,11 @@ class FieldStopDetectionService
             'visit_count' => $visitCount,
             'unknown_stop_count' => $unknownCount,
         ]);
+
+        try {
+            $this->dailySummaryService->buildForSession($session->fresh() ?? $session, false);
+        } catch (\Throwable) {
+            // Counts on the session are already correct; summary is best-effort.
+        }
     }
 }

@@ -364,7 +364,7 @@ class FieldJourneyService
                 'task' => 'Task'.($stop->task?->title ? ' · '.$stop->task->title : ''),
                 'personal' => 'Personal Stop',
                 'ignored' => 'Ignored Stop',
-                default => 'Unknown Stop',
+                default => $stop->address ? 'Stop · '.$stop->address : 'Stop',
             };
 
             $color = match ($type) {
@@ -572,8 +572,12 @@ class FieldJourneyService
     ): array {
         $date = $session->started_at?->toDateString();
         $travel = (int) $session->travel_seconds;
-        $visitCount = (int) ($summary?->visit_count ?? $session->visit_count);
-        $stopCount = (int) ($summary?->stop_count ?? $session->stop_count);
+        // Session counts are kept in sync by stop detection. Daily summaries can
+        // lag (EOD snapshot taken before late GPS / redetect), so never let a
+        // stale summary zero-out stops that already exist on the session.
+        $visitCount = (int) $session->visit_count;
+        $stopCount = (int) $session->stop_count;
+        $unknownStopCount = (int) $session->unknown_stop_count;
         $efficiency = null;
         if ($travel > 0 || $visitCount > 0) {
             $visitSecondsApprox = max(0, (int) $session->stationary_seconds);
@@ -594,7 +598,7 @@ class FieldJourneyService
             'active_seconds' => (int) $session->travel_seconds + (int) $session->stationary_seconds,
             'stop_count' => $stopCount,
             'visit_count' => $visitCount,
-            'unknown_stop_count' => (int) ($summary?->unknown_stop_count ?? $session->unknown_stop_count),
+            'unknown_stop_count' => $unknownStopCount,
             'travel_efficiency' => $efficiency,
             'narrative' => $summary?->narrative,
             'attendance_record_id' => $session->attendance_record_id,

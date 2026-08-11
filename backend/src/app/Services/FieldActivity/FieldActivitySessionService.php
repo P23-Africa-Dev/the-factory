@@ -891,15 +891,19 @@ class FieldActivitySessionService
      */
     public function serializeSummary(FieldDailySummary $summary): array
     {
+        $session = $summary->field_activity_session_id
+            ? FieldActivitySession::query()->find($summary->field_activity_session_id)
+            : null;
+
         return [
             'id' => $summary->id,
             'summary_date' => $summary->summary_date?->toDateString(),
-            'distance_meters' => (int) $summary->distance_meters,
-            'travel_seconds' => (int) $summary->travel_seconds,
-            'stationary_seconds' => (int) $summary->stationary_seconds,
-            'stop_count' => (int) $summary->stop_count,
-            'visit_count' => (int) $summary->visit_count,
-            'unknown_stop_count' => (int) $summary->unknown_stop_count,
+            'distance_meters' => (int) ($session?->distance_meters ?? $summary->distance_meters),
+            'travel_seconds' => (int) ($session?->travel_seconds ?? $summary->travel_seconds),
+            'stationary_seconds' => (int) ($session?->stationary_seconds ?? $summary->stationary_seconds),
+            'stop_count' => (int) ($session?->stop_count ?? $summary->stop_count),
+            'visit_count' => (int) ($session?->visit_count ?? $summary->visit_count),
+            'unknown_stop_count' => (int) ($session?->unknown_stop_count ?? $summary->unknown_stop_count),
             'personal_stop_count' => (int) $summary->personal_stop_count,
             'ignored_stop_count' => (int) $summary->ignored_stop_count,
             'narrative' => $summary->narrative,

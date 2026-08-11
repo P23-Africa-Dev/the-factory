@@ -119,8 +119,12 @@ function DayBreakdown() {
   const distance = summary?.distance_meters ?? session?.distance_meters ?? 0;
   const travel = summary?.travel_seconds ?? session?.travel_seconds ?? 0;
   const stationary = summary?.stationary_seconds ?? session?.stationary_seconds ?? 0;
-  const stopCount = summary?.stop_count ?? session?.stop_count ?? 0;
-  const visitCount = summary?.visit_count ?? session?.visit_count ?? 0;
+  const stopCount = Math.max(
+    summary?.stop_count ?? 0,
+    session?.stop_count ?? 0,
+    stops.length,
+  );
+  const visitCount = Math.max(summary?.visit_count ?? 0, session?.visit_count ?? 0);
 
   if (isLoading) {
     return (

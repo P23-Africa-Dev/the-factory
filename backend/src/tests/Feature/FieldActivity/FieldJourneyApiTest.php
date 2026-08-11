@@ -7,6 +7,7 @@ namespace Tests\Feature\FieldActivity;
 use App\Models\AttendanceRecord;
 use App\Models\Company;
 use App\Models\FieldActivitySession;
+use App\Models\FieldDailySummary;
 use App\Models\FieldLocationPoint;
 use App\Models\FieldStop;
 use App\Models\User;
@@ -86,6 +87,60 @@ class FieldJourneyApiTest extends TestCase
         $this->actingAs($agent, 'sanctum')
             ->getJson("/api/v1/agent/field-activity/journeys/{$otherSession->id}?company_id={$company->id}")
             ->assertStatus(422);
+    }
+
+    public function test_journey_card_uses_session_stop_counts_not_stale_daily_summary(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $session = $this->seedJourney($company, $agent);
+
+        $session->update([
+            'stop_count' => 1,
+            'visit_count' => 0,
+            'unknown_stop_count' => 1,
+        ]);
+
+        FieldDailySummary::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'field_activity_session_id' => $session->id,
+            'summary_date' => '2026-07-29',
+            'distance_meters' => 12500,
+            'travel_seconds' => 7200,
+            'stationary_seconds' => 14400,
+            'stop_count' => 0,
+            'visit_count' => 0,
+            'unknown_stop_count' => 0,
+            'personal_stop_count' => 0,
+            'ignored_stop_count' => 0,
+            'generated_at' => now(),
+        ]);
+
+        $this->actingAs($owner, 'sanctum')
+            ->getJson("/api/v1/field-activity/agents/{$agent->id}/journeys?company_id={$company->id}&preset=last_30_days")
+            ->assertOk()
+            ->assertJsonPath('data.items.0.stop_count', 1)
+            ->assertJsonPath('data.items.0.unknown_stop_count', 1)
+            ->assertJsonPath('data.summary.stop_count', 1);
+
+        $this->actingAs($owner, 'sanctum')
+            ->getJson("/api/v1/field-activity/journeys/{$session->id}?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.journey.stop_count', 1)
+            ->assertJsonPath('data.stats.stop_count', 1)
+            ->assertJsonPath('data.stops.0.address', null);
+
+        $stop = FieldStop::query()->where('field_activity_session_id', $session->id)->firstOrFail();
+        $stop->update(['address' => 'Dela Nursing Home, Ikeja']);
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/agent/field-activity/journeys/{$session->id}?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.stops.0.address', 'Dela Nursing Home, Ikeja')
+            ->assertJsonFragment([
+                'stop_id' => $stop->id,
+                'address' => 'Dela Nursing Home, Ikeja',
+            ]);
     }
 
     public function test_agent_cannot_list_another_agents_journeys_via_management_route(): void

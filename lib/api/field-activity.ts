@@ -42,6 +42,21 @@ export type FieldActivityAnalytics = {
   }>;
 };
 
+export type FieldStopDto = {
+  id: number;
+  field_activity_session_id: number;
+  arrived_at: string | null;
+  departed_at: string | null;
+  latitude: number;
+  longitude: number;
+  address: string | null;
+  duration_seconds: number;
+  classification: string | null;
+  classified_by: string | null;
+  classified_at: string | null;
+  lead_id: number | null;
+};
+
 export type JourneyCard = {
   id: number;
   date: string | null;
@@ -99,7 +114,7 @@ export type JourneyDetail = {
     maximum_speed_kmh: number | null;
     narrative: string | null;
   };
-  stops: Array<Record<string, unknown>>;
+  stops: FieldStopDto[];
   timeline: JourneyTimelineEvent[];
   route: {
     type: string;
@@ -207,21 +222,6 @@ export type FieldDailySummaryDto = {
   narrative: string | null;
   metrics: Record<string, unknown> | null;
   generated_at: string | null;
-};
-
-export type FieldStopDto = {
-  id: number;
-  field_activity_session_id: number;
-  arrived_at: string | null;
-  departed_at: string | null;
-  latitude: number;
-  longitude: number;
-  address: string | null;
-  duration_seconds: number;
-  classification: string | null;
-  classified_by: string | null;
-  classified_at: string | null;
-  lead_id: number | null;
 };
 
 export type FieldActivityTodayResponse = {

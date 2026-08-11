@@ -13,6 +13,7 @@ use App\Models\FieldLocationPoint;
 use App\Models\FieldStop;
 use App\Models\User;
 use App\Services\FieldActivity\FieldActivityRealtimeService;
+use App\Services\FieldActivity\FieldDailySummaryService;
 use App\Services\FieldActivity\FieldLocationIntelligenceService;
 use App\Services\FieldActivity\FieldStopDetectionService;
 use Carbon\Carbon;
@@ -107,8 +108,10 @@ class FieldStopDetectionServiceTest extends TestCase
         $intelligence->shouldReceive('enrichStop')->andReturnUsing(static fn ($stop) => $stop);
         $realtime = Mockery::mock(FieldActivityRealtimeService::class);
         $realtime->shouldReceive('publishStopCreated')->andReturnNull();
+        $summaries = Mockery::mock(FieldDailySummaryService::class);
+        $summaries->shouldReceive('buildForSession')->andReturnUsing(static fn ($s) => $s);
 
-        return [$session, new FieldStopDetectionService($intelligence, $realtime)];
+        return [$session, new FieldStopDetectionService($intelligence, $realtime, $summaries)];
     }
 
     private function addPoint(

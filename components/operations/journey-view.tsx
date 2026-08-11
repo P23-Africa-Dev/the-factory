@@ -24,7 +24,7 @@ import {
 } from "@/lib/config/public-env";
 import { getCountryFallbackViewport } from "@/lib/map/default-viewport";
 import { loadGoogleMapsApi } from "@/lib/map/google-loader";
-import type { JourneyTimelineEvent } from "@/lib/api/field-activity";
+import type { FieldStopDto, JourneyTimelineEvent } from "@/lib/api/field-activity";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import { RoutePlaybackControls } from "@/components/operations/route-playback-controls";
@@ -56,9 +56,70 @@ function formatDuration(seconds: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function stopPopupHtml(args: {
+  title: string;
+  address: string | null;
+  when: string | null;
+  duration: string | null;
+}): string {
+  return `<div style="max-width:240px;padding:2px 0;font-family:system-ui,sans-serif">
+    <div style="font-size:12px;font-weight:700;color:#0B1215">${escapeHtml(args.title)}</div>
+    ${args.when ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${escapeHtml(args.when)}</div>` : ""}
+    ${args.duration ? `<div style="font-size:11px;color:#6B7280">${escapeHtml(args.duration)}</div>` : ""}
+    <div style="font-size:11px;color:#0B1215;margin-top:4px">${escapeHtml(args.address || "Address unavailable")}</div>
+  </div>`;
+}
+
+function stopMarkerColor(classification: string | null | undefined): string {
+  if (classification === "customer_visit" || classification === "lead_visit") return "#F97316";
+  if (classification === "org_visit" || classification === "task") return "#3B82F6";
+  if (classification === "meeting") return "#A855F7";
+  if (classification === "personal") return "#14B8A6";
+  if (classification === "ignore") return "#9CA3AF";
+  return "#F97316";
+}
+
+function formatStopWindow(arrivedAt: string | null, departedAt: string | null): string | null {
+  if (!arrivedAt) return null;
+  const start = format(parseISO(arrivedAt), "h:mm a");
+  if (!departedAt) return `Arrived ${start}`;
+  return `${start} – ${format(parseISO(departedAt), "h:mm a")}`;
+}
+
+function createNumberedStopElement(index: number, color: string, selected: boolean): HTMLDivElement {
+  const el = document.createElement("div");
+  const size = selected ? 28 : 24;
+  el.style.cssText = [
+    `width:${size}px`,
+    `height:${size}px`,
+    "border-radius:9999px",
+    `background:${color}`,
+    "color:white",
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "font-size:11px",
+    "font-weight:800",
+    "border:2px solid white",
+    "box-shadow:0 2px 8px rgba(15,23,42,0.28)",
+    "cursor:pointer",
+  ].join(";");
+  el.textContent = String(index);
+  return el;
+}
+
 function JourneyMap({
   coordinates,
   timeline,
+  stops,
   selectedId,
   clockIn,
   clockOut,
@@ -67,6 +128,7 @@ function JourneyMap({
 }: {
   coordinates: [number, number][];
   timeline: JourneyTimelineEvent[];
+  stops: FieldStopDto[];
   selectedId: string | null;
   clockIn: { latitude: number; longitude: number } | null;
   clockOut: { latitude: number; longitude: number } | null;
@@ -149,13 +211,15 @@ function JourneyMap({
         }
 
         const gBounds = new google.maps.LatLngBounds();
+        const InfoWindow = (google.maps as unknown as { InfoWindow: new (opts: Record<string, unknown>) => { setContent: (html: string) => void; open: (opts: unknown) => void; close: () => void } }).InfoWindow;
         const addDot = (
           lat: number,
           lng: number,
           color: string,
           selected: boolean,
+          popupHtml?: string,
         ) => {
-          new google.maps.Marker({
+          const marker = new google.maps.Marker({
             position: { lat, lng },
             map,
             icon: {
@@ -167,6 +231,15 @@ function JourneyMap({
               strokeWeight: 2,
             },
           });
+          if (popupHtml) {
+            const info = new InfoWindow({ content: popupHtml });
+            (marker as unknown as { addListener: (ev: string, fn: () => void) => void }).addListener("mouseover", () => {
+              info.open({ map, anchor: marker });
+            });
+            (marker as unknown as { addListener: (ev: string, fn: () => void) => void }).addListener("mouseout", () => {
+              info.close();
+            });
+          }
           gBounds.extend({ lat, lng });
         };
 
@@ -175,12 +248,27 @@ function JourneyMap({
 
         timeline.forEach((event) => {
           if (event.latitude == null || event.longitude == null) return;
-          if (event.type === "travel") return;
+          if (event.type === "travel" || event.stop_id != null) return;
           addDot(
             event.latitude,
             event.longitude,
             EVENT_COLORS[event.color] ?? "#9CA3AF",
             event.id === selectedId,
+          );
+        });
+
+        stops.forEach((stop, index) => {
+          addDot(
+            stop.latitude,
+            stop.longitude,
+            stopMarkerColor(stop.classification),
+            selectedId === `stop_${stop.id}`,
+            stopPopupHtml({
+              title: `Stop ${index + 1}`,
+              address: stop.address,
+              when: formatStopWindow(stop.arrived_at, stop.departed_at),
+              duration: stop.duration_seconds > 0 ? formatDuration(stop.duration_seconds) : null,
+            }),
           );
         });
 
@@ -237,17 +325,33 @@ function JourneyMap({
         lat: number,
         color: string,
         selected: boolean,
+        popupHtml?: string,
+        element?: HTMLElement,
       ) => {
-        const el = document.createElement("div");
-        el.style.width = selected ? "16px" : "12px";
-        el.style.height = selected ? "16px" : "12px";
-        el.style.borderRadius = "9999px";
-        el.style.background = color;
-        el.style.border = "2px solid white";
-        el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.25)";
+        const el = element ?? document.createElement("div");
+        if (!element) {
+          el.style.width = selected ? "16px" : "12px";
+          el.style.height = selected ? "16px" : "12px";
+          el.style.borderRadius = "9999px";
+          el.style.background = color;
+          el.style.border = "2px solid white";
+          el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.25)";
+        }
         const marker = new mapboxgl.Marker({ element: el })
           .setLngLat([lng, lat])
           .addTo(map);
+        if (popupHtml) {
+          const popup = new mapboxgl.Popup({
+            offset: 14,
+            closeButton: false,
+            closeOnClick: false,
+          }).setHTML(popupHtml);
+          marker.setPopup(popup);
+          el.addEventListener("mouseenter", () => marker.togglePopup());
+          el.addEventListener("mouseleave", () => {
+            if (marker.getPopup()?.isOpen()) marker.togglePopup();
+          });
+        }
         markersRef.current.push(marker);
       };
 
@@ -256,12 +360,29 @@ function JourneyMap({
 
       timeline.forEach((event) => {
         if (event.latitude == null || event.longitude == null) return;
-        if (event.type === "travel") return;
+        if (event.type === "travel" || event.stop_id != null) return;
         addMarker(
           event.longitude,
           event.latitude,
           EVENT_COLORS[event.color] ?? "#9CA3AF",
           event.id === selectedId,
+        );
+      });
+
+      stops.forEach((stop, index) => {
+        const color = stopMarkerColor(stop.classification);
+        addMarker(
+          stop.longitude,
+          stop.latitude,
+          color,
+          selectedId === `stop_${stop.id}`,
+          stopPopupHtml({
+            title: `Stop ${index + 1}`,
+            address: stop.address,
+            when: formatStopWindow(stop.arrived_at, stop.departed_at),
+            duration: stop.duration_seconds > 0 ? formatDuration(stop.duration_seconds) : null,
+          }),
+          createNumberedStopElement(index + 1, color, selectedId === `stop_${stop.id}`),
         );
       });
 
@@ -299,6 +420,7 @@ function JourneyMap({
     googleApiKey,
     mapboxToken,
     selectedId,
+    stops,
     timeline,
   ]);
 
@@ -362,6 +484,7 @@ export function JourneyView({
   const journey = data?.journey;
   const stats = data?.stats;
   const timeline = data?.timeline ?? [];
+  const stops = data?.stops ?? [];
   const route = data?.route;
   const navigation = data?.navigation;
   const coordinates = (route?.coordinates ?? []) as [number, number][];
@@ -499,6 +622,11 @@ export function JourneyView({
                             {formatDuration(event.duration_seconds)}
                           </p>
                         )}
+                        {event.address ? (
+                          <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">
+                            {event.address}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </button>
@@ -546,6 +674,7 @@ export function JourneyView({
                     <JourneyMap
                       coordinates={coordinates}
                       timeline={timeline}
+                      stops={stops}
                       selectedId={selectedId}
                       clockIn={route?.clock_in ?? null}
                       clockOut={route?.clock_out ?? null}
@@ -574,6 +703,51 @@ export function JourneyView({
               </p>
             </div>
             <div className="p-4 space-y-3 overflow-y-auto">
+              {stops.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                    Stops
+                  </p>
+                  {stops.map((stop, index) => {
+                    const active = selectedId === `stop_${stop.id}`;
+                    return (
+                      <button
+                        key={stop.id}
+                        type="button"
+                        onClick={() => setSelectedId(`stop_${stop.id}`)}
+                        className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors ${
+                          active
+                            ? "border-[#F97316]/40 bg-orange-50"
+                            : "border-gray-100 bg-[#F8F9FA] hover:border-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span
+                            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white"
+                            style={{ background: stopMarkerColor(stop.classification) }}
+                          >
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-[#0B1215] truncate">
+                              {stop.address || `Stop ${index + 1}`}
+                            </p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">
+                              {formatStopWindow(stop.arrived_at, stop.departed_at) ?? "Time unavailable"}
+                              {stop.duration_seconds > 0
+                                ? ` · ${formatDuration(stop.duration_seconds)}`
+                                : ""}
+                            </p>
+                            <p className="text-[10px] text-gray-400 capitalize mt-0.5">
+                              {(stop.classification ?? "pending").replaceAll("_", " ")}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {[
                 {
                   icon: Route,
