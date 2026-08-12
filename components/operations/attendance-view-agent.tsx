@@ -728,16 +728,6 @@ export function AttendanceViewAgent() {
                 records={historyData?.items ?? []}
                 isLoading={historyLoading}
               />
-
-              <JourneyHistoryPanel
-                selected={{
-                  userId: user?.id ?? selected.id,
-                  name: user?.name ?? selected.name,
-                }}
-                companyId={apiCompanyId ?? undefined}
-                journeyBasePath="/agent/operations/journeys"
-                mode="mine"
-              />
             </>
           ) : (
             <div className="flex items-center justify-center h-40 text-gray-400 text-[13px]">

@@ -25,7 +25,7 @@ export default function AgentJourneyPage({
     <JourneyView
       sessionId={sessionId}
       asAgent
-      backHref="/agent/operations?tab=attendance"
+      backHref="/agent/operations/journey_history"
       journeyBasePath="/agent/operations/journeys"
     />
   );

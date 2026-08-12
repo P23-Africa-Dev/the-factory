@@ -1045,10 +1045,13 @@ class AttendanceService
         $date = $this->resolveSnapshotDate($context->company->id, $filters['date'] ?? null);
         $includeClockedOut = filter_var($filters['include_clocked_out'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
+        $supervisorUserId = $context->role === 'supervisor' ? (int) $user->id : null;
+
         $items = $this->buildMapSnapshotItems(
             companyId: (int) $context->company->id,
             date: $date,
             includeClockedOut: $includeClockedOut,
+            supervisorUserId: $supervisorUserId,
         );
 
         return [
@@ -1084,8 +1087,13 @@ class AttendanceService
     /**
      * @return list<array<string, mixed>>
      */
-    private function buildMapSnapshotItems(int $companyId, string $date, bool $includeClockedOut, ?int $userId = null): array
-    {
+    private function buildMapSnapshotItems(
+        int $companyId,
+        string $date,
+        bool $includeClockedOut,
+        ?int $userId = null,
+        ?int $supervisorUserId = null,
+    ): array {
         $query = AttendanceRecord::query()
             ->with('user')
             ->where('company_id', $companyId)
@@ -1098,6 +1106,12 @@ class AttendanceService
 
         if ($userId !== null) {
             $query->where('user_id', $userId);
+        }
+
+        if ($supervisorUserId !== null) {
+            $query->whereHas('user', function (\Illuminate\Database\Eloquent\Builder $userQuery) use ($supervisorUserId): void {
+                $userQuery->where('supervisor_user_id', $supervisorUserId);
+            });
         }
 
         return $query
