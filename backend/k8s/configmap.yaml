@@ -121,11 +121,24 @@ data:
   TASK_TRACKING_PRUNE_CHUNK_SIZE: "1000"
   MAP_PROVIDER_DEFAULT: "mapbox"
 
-  # ── Google Calendar / Gmail OAuth ───────────────────────────────────────────
+  # ── Google Calendar OAuth (meetings only) ───────────────────────────────────
   # Client ID + secret live in factory23-secret. Redirect URI must match Google Cloud Console.
   GOOGLE_CALENDAR_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
-  # Least privilege: gmail.modify already includes read access, so gmail.readonly is omitted.
-  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events"
+
+  # ── Email Accounts OAuth (mailbox connect) ──────────────────────────────────
+  # Google Mail reuses the calendar OAuth client + the SAME registered redirect URI.
+  # CalendarIntegrationController multiplexes email-account vs calendar state.
+  GOOGLE_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
+  GOOGLE_MAIL_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+  MICROSOFT_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/microsoft/callback"
+  MICROSOFT_MAIL_TENANT: "common"
+  MICROSOFT_MAIL_SCOPES: "openid,email,profile,offline_access,https://graph.microsoft.com/Mail.ReadWrite,https://graph.microsoft.com/Mail.Send,https://graph.microsoft.com/User.Read"
+  ZOHO_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/zoho/callback"
+  ZOHO_MAIL_DATACENTER: "com"
+  ZOHO_MAIL_SCOPES: "ZohoMail.messages.ALL,ZohoMail.accounts.READ"
+  # Custom IMAP/SMTP disabled until an off-cluster mail relay exists (DOKS blocks outbound SMTP).
+  EMAIL_IMAP_SMTP_ENABLED: "false"
 
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"
@@ -144,6 +157,11 @@ data:
   TRACKING_WS_AUTH_TIMEOUT_MS: "10000"
   TRACKING_WS_MAX_MESSAGE_BYTES: "32768"
   TRACKING_WS_LOG_LEVEL: "info"
+
+  # ── Push notifications (non-secret) ───────────────────────────────────────────
+  VAPID_SUBJECT: "mailto:info@thefactory23.com"
+  NOTIFICATIONS_PUSH_PROVIDER: "log"
+  NOTIFICATIONS_PUSH_MAX_FAILED_ATTEMPTS: "5"
 
   # ── API rate limits (per minute unless noted) ─────────────────────────────────
   RATE_LIMIT_API_PER_MINUTE: "300"

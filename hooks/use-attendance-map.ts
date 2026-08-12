@@ -11,6 +11,7 @@ import {
   type AttendanceMapSnapshotsParams,
 } from "@/lib/api/attendance";
 import { useAttendanceMapStore } from "@/store/attendance-map";
+import { useTrackingStore } from "@/store/tracking";
 
 export const ATTENDANCE_MAP_KEYS = {
   snapshots: (params: AttendanceMapSnapshotsParams, scope: "management" | "agent") =>
@@ -32,6 +33,9 @@ export function useAttendanceMapSnapshots(
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const setSnapshots = useAttendanceMapStore((s) => s.setSnapshots);
+  const wsStatus = useTrackingStore((s) => s.wsStatus);
+  // WS pushes attendance events live — poll only as fallback when disconnected.
+  const refetchInterval = wsStatus === "connected" ? false : pollIntervalMs;
 
   const query = useQuery({
     queryKey: ATTENDANCE_MAP_KEYS.snapshots({ ...params, company_id: companyId ?? params.company_id }, scope),
@@ -45,7 +49,7 @@ export function useAttendanceMapSnapshots(
     },
     enabled: enabled && !!token && !!(companyId ?? params.company_id),
     staleTime: 30_000,
-    refetchInterval: pollIntervalMs,
+    refetchInterval,
   });
 
   useEffect(() => {

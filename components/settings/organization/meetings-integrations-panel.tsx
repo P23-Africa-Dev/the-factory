@@ -58,7 +58,7 @@ export function MeetingsIntegrationsPanel() {
     onSuccess: (url) => {
       window.location.href = url;
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to connect Google."),
+    onError: (err: Error) => toast.error(err.message || "Failed to connect Google Calendar."),
   });
 
   const reconnectMutation = useMutation({
@@ -77,7 +77,7 @@ export function MeetingsIntegrationsPanel() {
       await disconnectCalendarIntegration({ company_id: companyId! }, token ?? "");
     },
     onSuccess: () => {
-      toast.success("Organization Google connection removed.");
+      toast.success("Organization Google Calendar disconnected.");
       queryClient.invalidateQueries({ queryKey: ["org-calendar-status", companyId] });
     },
     onError: (err: Error) => toast.error(err.message || "Failed to disconnect."),
@@ -102,7 +102,7 @@ export function MeetingsIntegrationsPanel() {
   return (
     <SettingsSectionCard
       title="Meetings & Integrations"
-      description="Organization Google Calendar, Gmail, and meeting defaults"
+      description="Organization Google Calendar and meeting defaults. CRM email uses Email Accounts."
       scope="organization"
     >
       {loadingCalendar || loadingSettings ? (
@@ -121,14 +121,14 @@ export function MeetingsIntegrationsPanel() {
             )}
             <div className="flex-1">
               <p className="text-[14px] font-bold text-dash-dark">
-                {connected ? "Google connected" : "Google not connected"}
+                {connected ? "Google Calendar connected" : "Google Calendar not connected"}
               </p>
               {status?.organizer_email && (
                 <p className="text-[12px] text-gray-600 mt-0.5">{status.organizer_email}</p>
               )}
-              {status?.gmail_enabled != null && (
+              {!connected && (
                 <p className="text-[12px] text-gray-500 mt-1">
-                  Gmail sync: {status.gmail_enabled ? "enabled" : "disabled"}
+                  Connect the org calendar for shared meeting scheduling.
                 </p>
               )}
             </div>
@@ -143,7 +143,7 @@ export function MeetingsIntegrationsPanel() {
                   disabled={connectMutation.isPending}
                   className="px-4 py-2.5 rounded-xl bg-dash-dark text-white text-[13px] font-semibold"
                 >
-                  Connect organization Google
+                  Connect organization Calendar
                 </button>
               )}
               {connected && status?.requires_reauthentication && (

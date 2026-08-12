@@ -43,6 +43,24 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Agent APK — avoid stale CDN/browser copies after apk:release.
+        source: '/downloads/:path*.apk',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate',
+          },
+          {
+            key: 'Content-Type',
+            value: 'application/vnd.android.package-archive',
+          },
+          {
+            key: 'Content-Disposition',
+            value: 'attachment; filename="factory23-agent.apk"',
+          },
+        ],
+      },
     ];
   },
 };

@@ -20,6 +20,7 @@ class SendCrmEmailRequest extends FormRequest
     {
         return [
             'company_id' => ['sometimes', 'integer', 'exists:companies,id'],
+            'email_account_id' => ['sometimes', 'integer', 'exists:email_accounts,id'],
             'to' => ['required', 'array', 'min:1'],
             'to.*.email' => ['required', 'email', 'max:255'],
             'to.*.name' => ['nullable', 'string', 'max:255'],

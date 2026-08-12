@@ -140,6 +140,40 @@ final class CopilotIntentRoutingModeTest extends TestCase
         $this->assertSame('tasks.list', $response->json('data.response.tool'));
     }
 
+    public function test_ai_first_plan_my_day_stays_read_tool_even_if_llm_labels_it_action(): void
+    {
+        [$company, $user] = $this->seedCompanyUser();
+        $this->setAiFirstRoutingMode();
+
+        $mockRouter = Mockery::mock(AiProviderRouter::class);
+        // Plan My Day is short-circuited by high-confidence rules before the LLM router.
+        $mockRouter->shouldReceive('generateForPurpose')->never();
+        $mockRouter->shouldReceive('routingMetadata')->andReturn([
+            'provider' => 'openai',
+            'model' => 'gpt-4.1-mini',
+            'purpose' => 'operational',
+            'stack' => 'openai_claude',
+        ]);
+        $this->app->instance(AiProviderRouter::class, $mockRouter);
+
+        $response = $this->actingAs($user)->postJson('/api/v1/copilot/chat', [
+            'company_id' => $company->id,
+            'message' => 'Plan my day',
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'planning.daily')
+            ->assertJsonPath('data.response.sources.0', 'planning.daily');
+
+        $this->assertNotSame(
+            'Unsupported action tool requested.',
+            $response->json('data.response.content'),
+        );
+        $this->assertNull($response->json('data.response.payload.confirmation_required'));
+        $this->assertIsArray($response->json('data.response.payload.items'));
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */

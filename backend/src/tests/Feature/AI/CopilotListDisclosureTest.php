@@ -250,6 +250,105 @@ final class CopilotListDisclosureTest extends TestCase
         );
     }
 
+    public function test_yes_please_expands_pinned_locations_not_leads(): void
+    {
+        [$company, $admin, $pipelineId] = $this->seedCompanyAdminWithPipeline();
+        $agent = User::factory()->createOne(['name' => 'Tommy Shelby', 'is_active' => true]);
+        $company->users()->attach($agent->id, ['role' => 'agent', 'joined_at' => now()]);
+
+        for ($i = 1; $i <= 12; $i++) {
+            \App\Models\CompanyLocation::query()->create([
+                'company_id' => $company->id,
+                'name' => 'Pinned Spot ' . $i,
+                'address' => 'Address ' . $i,
+                'latitude' => 6.4 + ($i * 0.01),
+                'longitude' => 3.3 + ($i * 0.01),
+                'is_active' => true,
+                'created_by_user_id' => $agent->id,
+            ]);
+        }
+
+        for ($i = 1; $i <= 5; $i++) {
+            Lead::query()->create([
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'created_by_user_id' => $admin->id,
+                'name' => 'Lead ' . $i,
+                'status' => 'new',
+                'phone' => '+23480100000' . $i,
+                'location' => 'Lagos',
+            ]);
+        }
+
+        $first = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'can you give me the list of the pinned locations on the map',
+            ]);
+
+        $first
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'map.pinned_locations_count');
+
+        $threadId = (string) $first->json('data.thread_id');
+        $this->assertStringContainsString('Would you like me to list all of them?', (string) $first->json('data.response.content'));
+
+        $expanded = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'thread_id' => $threadId,
+                'message' => 'yes please!',
+            ]);
+
+        $expanded
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'map.pinned_locations_count');
+
+        $this->assertNotSame('crm.top_leads', $expanded->json('data.response.tool'));
+        $content = (string) $expanded->json('data.response.content');
+        $this->assertStringContainsString('Pinned Spot', $content);
+        $this->assertStringNotContainsString('[redacted-phone]', $content);
+        $this->assertStringNotContainsString('Lead 1', $content);
+    }
+
+    public function test_location_dates_are_not_shown_as_redacted_phone(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $agent = User::factory()->createOne(['name' => 'John Wick', 'is_active' => true]);
+        $company->users()->attach($agent->id, ['role' => 'agent', 'joined_at' => now()]);
+
+        \App\Models\CompanyLocation::query()->create([
+            'company_id' => $company->id,
+            'name' => 'Test location wick',
+            'address' => 'Marina',
+            'latitude' => 6.45,
+            'longitude' => 3.39,
+            'is_active' => true,
+            'created_by_user_id' => $agent->id,
+            'created_at' => now()->subDay(),
+            'updated_at' => now()->subDay(),
+        ]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'what location is pinned by john',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'map.pinned_locations_count');
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('Test location wick', $content);
+        $this->assertStringNotContainsString('[redacted-phone]', $content);
+        $this->assertStringNotContainsString('[redacted-email]', $content);
+        $this->assertMatchesRegularExpression('/\d{4}-\d{2}-\d{2}/', $content);
+    }
+
     /**
      * @return array{0: Company, 1: User}
      */

@@ -11,13 +11,14 @@ import {
 import {
   isDocumentHidden,
   notifyTrackingArrived,
+  notifyTrackingCompleted,
   showDeviceAlert,
   showTrackingAlert,
 } from '@/lib/notifications/trackingAlerts';
 
 /**
  * Bridges WebSocket / store events to OS device notifications.
- * - Native APK: LocalNotifications for pending inbox items + arrival status flips.
+ * - Native APK: LocalNotifications for pending inbox items + arrival/complete flips.
  * - PWA: surfaces when the document is hidden.
  */
 export function useDeviceNotificationBridge(): void {
@@ -70,6 +71,11 @@ export function useDeviceNotificationBridge(): void {
       if (prev == null) continue;
       if (next === 'arrived' && prev !== 'arrived') {
         void notifyTrackingArrived(task.taskId);
+      }
+      // WS-driven completion when the agent isn't on the complete screen.
+      // Deduped by tag if CompleteRequirementsSheet already notified.
+      if (next === 'completed' && prev !== 'completed') {
+        void notifyTrackingCompleted(task.taskId, task.taskTitle);
       }
     }
   }, [liveTaskMap]);

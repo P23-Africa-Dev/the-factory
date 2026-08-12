@@ -15,8 +15,8 @@ export type NativeWatchOptions = {
   message?: string;
 };
 
-const DEFAULT_TITLE = 'Factory 23 (Live tracking)';
-const DEFAULT_MESSAGE = 'Tap to open map · Location shared with your team';
+const DEFAULT_TITLE = 'Factory 23 · Tracking active';
+const DEFAULT_MESSAGE = 'Location sharing is on · Tap to return to the map';
 
 let watcherId: string | null = null;
 let onUpdateCb: LocationCallback | null = null;
@@ -63,13 +63,19 @@ function toLocationObject(raw: {
 /** Request Android 13+ notification permission so the tracking FGS notification can show. */
 export async function ensureNativeNotificationPermission(): Promise<void> {
   if (!isNativeAndroid()) return;
-  if (typeof Notification === 'undefined') return;
   try {
-    if (Notification.permission === 'granted') return;
-    if (Notification.permission === 'denied') return;
-    await Notification.requestPermission();
+    // Prefer Capacitor LocalNotifications (POST_NOTIFICATIONS on Android 13+).
+    const { ensureNativeLocalNotificationPermission } = await import('./nativeLocalNotifications');
+    await ensureNativeLocalNotificationPermission();
   } catch {
-    // Non-fatal — location may still work; notification may be suppressed.
+    // Fallback for older WebView Notification API.
+    if (typeof Notification === 'undefined') return;
+    try {
+      if (Notification.permission === 'granted' || Notification.permission === 'denied') return;
+      await Notification.requestPermission();
+    } catch {
+      // Non-fatal — location may still work; notification may be suppressed.
+    }
   }
 }
 
@@ -84,7 +90,7 @@ export function formatDistanceRemaining(meters: number): string {
 
 export function buildLiveTrackingTitle(destinationLabel?: string | null): string {
   const label = destinationLabel?.trim();
-  if (label) return `Live tracking · ${label}`;
+  if (label) return `Factory 23 · Tracking · ${label}`;
   return DEFAULT_TITLE;
 }
 
@@ -93,7 +99,7 @@ export function buildLiveTrackingMessage(distanceMeters?: number | null): string
     typeof distanceMeters === 'number' && Number.isFinite(distanceMeters)
       ? formatDistanceRemaining(distanceMeters)
       : '';
-  if (dist) return `${dist} · Tap to open map · Location shared with your team`;
+  if (dist) return `${dist} · Location sharing is on · Tap to open map`;
   return DEFAULT_MESSAGE;
 }
 
@@ -144,6 +150,18 @@ export async function startNativeBackgroundWatch(
   // Freeze body at start — never restart the FGS just to refresh distance copy.
   const message = options?.message?.trim() || DEFAULT_MESSAGE;
   await addWatcherInternal(title, message);
+
+  // Mirror a controllable sticky LocalNotification for clearer UX copy.
+  try {
+    const { beginLiveTrackingIndicator } = await import('@/lib/notifications/trackingAlerts');
+    const label = title.replace(/^Factory 23 · Tracking(?: · )?/, '').trim() || 'Live session';
+    await beginLiveTrackingIndicator({
+      label: label === 'active' ? 'Live session' : label,
+      url: '/map',
+    });
+  } catch {
+    // Non-fatal — FGS notification still indicates tracking.
+  }
 }
 
 /**
@@ -165,6 +183,12 @@ export async function stopNativeBackgroundWatch(opts?: {
     if (!opts?.keepCallbacks) {
       onUpdateCb = null;
       onErrorCb = null;
+      try {
+        const { endLiveTrackingIndicator } = await import('@/lib/notifications/trackingAlerts');
+        await endLiveTrackingIndicator();
+      } catch {
+        // ignore
+      }
     }
     return;
   }
@@ -178,6 +202,15 @@ export async function stopNativeBackgroundWatch(opts?: {
     await BackgroundGeolocation.removeWatcher({ id });
   } catch {
     // Ignore — watcher may already be gone.
+  }
+
+  if (!opts?.keepCallbacks) {
+    try {
+      const { endLiveTrackingIndicator } = await import('@/lib/notifications/trackingAlerts');
+      await endLiveTrackingIndicator();
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -193,4 +226,45 @@ export async function openNativeLocationSettings(): Promise<void> {
   } catch {
     // Ignore
   }
+}
+
+/**
+ * Open Android battery optimization / unrestricted battery settings so the
+ * tracking foreground service is less likely to be killed.
+ * Falls back to app details / general battery settings when the specific
+ * intent is unavailable.
+ */
+export async function openNativeBatteryOptimizationSettings(): Promise<void> {
+  if (!isNativeAndroid()) return;
+
+  const tryOpen = async (url: string): Promise<boolean> => {
+    try {
+      const { App } = await import('@capacitor/app');
+      // Capacitor 8 App plugin exposes openUrl on some platforms; fall through on failure.
+      const opener = (App as unknown as { openUrl?: (opts: { url: string }) => Promise<void> }).openUrl;
+      if (typeof opener === 'function') {
+        await opener({ url });
+        return true;
+      }
+    } catch {
+      // continue
+    }
+    try {
+      window.open(url, '_system');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Prefer the system "Battery optimization" list (ignore battery optimizations).
+  if (await tryOpen('intent:#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end')) {
+    return;
+  }
+  // App-specific battery page (Android 6+).
+  if (await tryOpen('intent:#Intent;action=android.settings.APPLICATION_DETAILS_SETTINGS;end')) {
+    return;
+  }
+  // Last resort: app location settings from the background-geolocation plugin.
+  await openNativeLocationSettings();
 }

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  countLiveTasksByAgent,
+  formatRelativeLastSeen,
   isActivelyOnTask,
   isHistoryFeedTask,
   resolveMapTasks,
+  resolvePreferredMapTasks,
   resolveTrajectoryTaskIds,
   shouldShowTrajectory,
   splitLiveFeedTasks,
@@ -112,14 +115,15 @@ describe("live-feed-groups", () => {
     expect(history.map((t) => t.taskId)).toEqual([12]);
   });
 
-  it("shouldShowTrajectory gates by selection and follow-all", () => {
+  it("shouldShowTrajectory draws trails for all active agents", () => {
     const activeIds = new Set([1, 2]);
-    expect(shouldShowTrajectory(1, null, false, activeIds)).toBe(false);
+    expect(shouldShowTrajectory(1, null, false, activeIds)).toBe(true);
     expect(shouldShowTrajectory(1, 1, false, activeIds)).toBe(true);
-    expect(shouldShowTrajectory(2, 1, false, activeIds)).toBe(false);
+    expect(shouldShowTrajectory(2, 1, false, activeIds)).toBe(true);
     expect(shouldShowTrajectory(1, null, true, activeIds)).toBe(true);
     expect(shouldShowTrajectory(2, null, true, activeIds)).toBe(true);
     expect(shouldShowTrajectory(99, null, true, activeIds)).toBe(false);
+    expect(shouldShowTrajectory(99, 99, false, activeIds)).toBe(true);
   });
 
   it("resolveMapTasks includes selected history agent on map", () => {
@@ -129,10 +133,48 @@ describe("live-feed-groups", () => {
     expect(resolveMapTasks(active, history, 9).map((t) => t.taskId)).toEqual([1, 9]);
   });
 
-  it("resolveTrajectoryTaskIds matches follow-all and selection modes", () => {
+  it("resolveTrajectoryTaskIds includes every active agent plus a selected history task", () => {
     const active = [task({ taskId: 1 }), task({ taskId: 2 })];
-    expect(Array.from(resolveTrajectoryTaskIds(active, null, false))).toEqual([]);
-    expect(Array.from(resolveTrajectoryTaskIds(active, 2, false))).toEqual([2]);
-    expect(Array.from(resolveTrajectoryTaskIds(active, null, true))).toEqual([1, 2]);
+    expect(Array.from(resolveTrajectoryTaskIds(active, null, false)).sort()).toEqual([1, 2]);
+    expect(Array.from(resolveTrajectoryTaskIds(active, 2, false)).sort()).toEqual([1, 2]);
+    expect(Array.from(resolveTrajectoryTaskIds(active, 9, false)).sort()).toEqual([1, 2, 9]);
+  });
+
+  it("counts multiple live tasks per agent and prefers the newest for map pins", () => {
+    const a1 = task({
+      taskId: 1,
+      userId: 42,
+      movementStarted: true,
+      lastEventAt: "2026-07-12T11:58:00.000Z",
+    });
+    const a2 = task({
+      taskId: 2,
+      userId: 42,
+      movementStarted: true,
+      lastEventAt: "2026-07-12T11:59:30.000Z",
+    });
+    const b1 = task({
+      taskId: 3,
+      userId: 99,
+      movementStarted: true,
+      lastEventAt: "2026-07-12T11:59:00.000Z",
+    });
+
+    const counts = countLiveTasksByAgent([a1, a2, b1]);
+    expect(counts.get(42)).toBe(2);
+    expect(counts.get(99)).toBe(1);
+
+    const preferred = resolvePreferredMapTasks([a1, a2, b1], null);
+    expect(preferred.map((t) => t.taskId).sort()).toEqual([2, 3]);
+
+    const withSelected = resolvePreferredMapTasks([a1, a2, b1], 1);
+    expect(withSelected.some((t) => t.taskId === 1)).toBe(true);
+    expect(withSelected.some((t) => t.taskId === 2)).toBe(true);
+  });
+
+  it("formats relative last seen labels", () => {
+    expect(formatRelativeLastSeen("2026-07-12T11:59:50.000Z", NOW)).toBe("just now");
+    expect(formatRelativeLastSeen("2026-07-12T11:57:00.000Z", NOW)).toBe("3m ago");
+    expect(formatRelativeLastSeen("2026-07-12T09:00:00.000Z", NOW)).toBe("3h ago");
   });
 });

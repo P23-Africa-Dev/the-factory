@@ -255,14 +255,14 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                   <div className="flex flex-col items-center justify-center py-2 gap-3">
                     {tab === 'pwa' ? <AgentInstallQrCode size={240} /> : <AgentApkQrCode size={240} />}
-                    {/* {tab === 'apk' && (
+                    {tab === 'apk' && (
                       <a
                         href={apkUrl}
                         className="text-[11px] font-semibold text-[#75ADAF] hover:underline"
                       >
                         Or open download link
                       </a>
-                    )} */}
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-4 min-w-0">

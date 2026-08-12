@@ -12,6 +12,11 @@ import { getActiveCompanyId } from '@/lib/storage/stores';
 import { useLocationReporter } from './hooks/useLocationReporter';
 import { isNativeAndroid } from './native/capacitorPlatform';
 import { stopNativeBackgroundWatch } from './native/nativeBackgroundGeolocation';
+import {
+  endLiveTrackingIndicator,
+  notifyTrackingCompleted,
+  notifyTrackingPaused,
+} from '@/lib/notifications/trackingAlerts';
 
 type TrackingCallbacks = {
   onArrived?: () => void;
@@ -19,9 +24,18 @@ type TrackingCallbacks = {
   onDistanceRemaining?: (meters: number | null) => void;
 };
 
+export type StopTrackingReason = 'completed' | 'paused' | 'stopped' | 'silent';
+
+type StopTrackingOptions = {
+  /** Why tracking ended — drives the device notification. Default: silent. */
+  reason?: StopTrackingReason;
+  /** Optional title used in the “completed” notification. */
+  taskTitle?: string | null;
+};
+
 interface ActiveTrackingContextValue {
   startTracking: (taskId: number, companyId: number, callbacks?: TrackingCallbacks) => void;
-  stopTracking: () => Promise<void>;
+  stopTracking: (options?: StopTrackingOptions) => Promise<void>;
   isTracking: boolean;
   activeTaskId: number | null;
 }
@@ -84,18 +98,39 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
     [setActiveTrackingTaskId],
   );
 
-  const stopTracking = useCallback(async () => {
-    if (flushRef.current) {
-      await flushRef.current();
-    }
-    if (isNativeAndroid()) {
-      await stopNativeBackgroundWatch();
-    }
-    callbacksRef.current = {};
-    setActiveTrackingTaskId(null);
-    setServerSimulatesMovement(false);
-    setCompanyId(0);
-  }, [setActiveTrackingTaskId, setServerSimulatesMovement]);
+  const stopTracking = useCallback(
+    async (options?: StopTrackingOptions) => {
+      const reason = options?.reason ?? 'silent';
+      const taskId = useTrackingStore.getState().activeTrackingTaskId;
+      const liveTitle =
+        options?.taskTitle ??
+        (taskId != null ? useTrackingStore.getState().liveTaskMap[taskId]?.taskTitle : null);
+
+      if (flushRef.current) {
+        await flushRef.current();
+      }
+      if (isNativeAndroid()) {
+        await stopNativeBackgroundWatch();
+      } else {
+        await endLiveTrackingIndicator();
+      }
+
+      callbacksRef.current = {};
+      setActiveTrackingTaskId(null);
+      setServerSimulatesMovement(false);
+      setCompanyId(0);
+
+      if (taskId == null || reason === 'silent') return;
+
+      if (reason === 'completed') {
+        await notifyTrackingCompleted(taskId, liveTitle);
+      } else if (reason === 'paused') {
+        await notifyTrackingPaused(taskId);
+      }
+      // 'stopped' alerts are fired by callers (e.g. unauthorized / error paths)
+    },
+    [setActiveTrackingTaskId, setServerSimulatesMovement],
+  );
 
   const handleFlushReady = useCallback((flush: () => Promise<void>) => {
     flushRef.current = flush;

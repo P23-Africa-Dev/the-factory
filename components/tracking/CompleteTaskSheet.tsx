@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Camera, CheckCircle, Loader2, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getCurrentPosition } from "@/lib/tracking/geolocation";
@@ -24,11 +24,22 @@ export function CompleteTaskSheet({
   onClose,
 }: CompleteTaskSheetProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewsRef = useRef<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    previewsRef.current = previews;
+  }, [previews]);
+
+  useEffect(() => {
+    return () => {
+      previewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   const canSubmit = files.length >= minimumPhotos && !submitting;
 

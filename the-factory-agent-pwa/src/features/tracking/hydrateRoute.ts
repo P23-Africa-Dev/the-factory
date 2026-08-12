@@ -1,7 +1,7 @@
 import { useTrackingStore } from '@/store/tracking';
 import type { TaskRoute } from './types';
 
-const MAX_LIVE_TRAIL_ORIGIN_DRIFT_M = 200;
+const MAX_LIVE_TRAIL_GAP_M = 400;
 
 function haversineMeters(lng1: number, lat1: number, lng2: number, lat2: number): number {
   const R = 6371000;
@@ -20,8 +20,8 @@ function shouldKeepLivePolyline(
   anchor: [number, number] | undefined,
 ): boolean {
   if (!polyline?.length || !anchor) return false;
-  const [lng, lat] = polyline[0];
-  return haversineMeters(lng, lat, anchor[0], anchor[1]) <= MAX_LIVE_TRAIL_ORIGIN_DRIFT_M;
+  const last = polyline[polyline.length - 1];
+  return haversineMeters(last[0], last[1], anchor[0], anchor[1]) <= MAX_LIVE_TRAIL_GAP_M;
 }
 
 /** Hydrate Zustand live task state from GET /agent/tasks/{id}/route */
@@ -33,11 +33,17 @@ export function hydrateLiveTaskFromRoute(taskId: number, route: TaskRoute): void
     ? ([lastPoint.longitude, lastPoint.latitude] as [number, number])
     : prev?.lastPosition;
 
-  const polyline = shouldKeepLivePolyline(prev?.polyline, lastPosition ?? undefined)
-    ? prev!.polyline!
-    : lastPosition
-      ? [lastPosition]
-      : [];
+  let polyline: [number, number][] = [];
+  if (lastPosition && shouldKeepLivePolyline(prev?.polyline, lastPosition)) {
+    const trail = prev!.polyline!;
+    const last = trail[trail.length - 1];
+    polyline =
+      last[0] === lastPosition[0] && last[1] === lastPosition[1]
+        ? trail
+        : [...trail, lastPosition];
+  } else if (lastPosition) {
+    polyline = [lastPosition];
+  }
 
   useTrackingStore.getState().upsertTask(taskId, {
     polyline,

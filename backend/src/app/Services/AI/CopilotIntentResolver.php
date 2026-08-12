@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI;
 
 use App\Services\AI\Context\ConversationMemoryService;
+use App\Services\AI\Policy\ToolPolicyService;
 
 class CopilotIntentResolver
 {
@@ -16,6 +17,7 @@ class CopilotIntentResolver
         private readonly ActionDraftStore $actionDraftStore,
         private readonly ReadToolArgsResolver $readToolArgsResolver,
         private readonly TaskInferenceService $taskInferenceService,
+        private readonly ToolPolicyService $toolPolicyService,
     ) {}
     /**
      * @param  array<string, mixed>  $actionArgs
@@ -124,6 +126,26 @@ class CopilotIntentResolver
             }
         }
 
+        // High-confidence Plan My Day must stay a read tool even in AI-first mode.
+        // LLMs often mis-label "plan" as a write action, which yields
+        // "Unsupported action tool requested." from ActionToolRegistry.
+        $rulesIntent = $this->intentClassifier->classify($message);
+        if (
+            ($rulesIntent['type'] ?? '') === 'tool'
+            && ($rulesIntent['tool'] ?? null) === 'planning.daily'
+            && (float) ($rulesIntent['confidence'] ?? 0) >= 0.9
+        ) {
+            return $this->buildResult(
+                $rulesIntent,
+                $actionConfirmed,
+                $actionArgs,
+                $message,
+                $threadId,
+                $companyId,
+                $userId,
+            );
+        }
+
         if ($this->intentRoutingSettingService->isAiFirst()) {
             $llmIntent = $this->routeWithLlm($message, $role, $threadId, $companyId, $userId);
             if ($llmIntent !== null) {
@@ -192,6 +214,33 @@ class CopilotIntentResolver
         ?string $resolvedActionTool = null,
         ?string $resolvedReadTool = null,
     ): array {
+        if (isset($intent['tool']) && is_string($intent['tool'])) {
+            $tool = $intent['tool'];
+            $readTools = [
+                'crm.top_leads', 'tasks.overdue', 'tasks.list', 'projects.at_risk_summary',
+                'attendance.today_summary', 'meetings.today', 'tracking.active_agents',
+                'dashboard.overview', 'planning.daily', 'crm.follow_up_summary',
+                'crm.stale_leads', 'crm.visit_extract', 'crm.email_threads',
+                'crm.unread_emails', 'crm.draft_email', 'kpi.team_performance',
+                'org.users', 'drive.files', 'tracking.agent_history',
+                'map.pinned_locations_count', 'crm.calls_count', 'attendance.duration_summary',
+                'crm.leads_analytics', 'kpi.list',
+                'field.daily_summary', 'field.agent_visits', 'field.unvisited_customers',
+                'field.territory_coverage', 'field.travel_vs_visit_time', 'field.journey_history',
+                'field.journey_detail'
+            ];
+            $actionTools = [
+                'tasks.create', 'tasks.reassign', 'meetings.schedule', 'notifications.send',
+                'projects.create', 'crm.log_visit', 'crm.create_lead', 'crm.send_email',
+                'kpis.create', 'kpis.update', 'org.users.create'
+            ];
+            if (in_array($tool, $readTools, true)) {
+                $intent['type'] = 'tool';
+            } elseif (in_array($tool, $actionTools, true)) {
+                $intent['type'] = 'action';
+            }
+        }
+
         return [
             'intent' => $intent,
             'action_confirmed' => $actionConfirmed,
@@ -249,7 +298,7 @@ class CopilotIntentResolver
         }
 
         return [
-            'type' => $routeType,
+            'type' => $this->toolPolicyService->normalizeIntentType($routeType, $routeTool),
             'tool' => $routeTool,
             'confidence' => $routeConfidence,
         ];
@@ -363,7 +412,7 @@ class CopilotIntentResolver
         }
 
         return [
-            'type' => $routeType,
+            'type' => $this->toolPolicyService->normalizeIntentType($routeType, $routeTool),
             'tool' => $routeTool,
             'confidence' => max($confidence, $routeConfidence),
         ];
@@ -372,6 +421,14 @@ class CopilotIntentResolver
     {
         $normalized = strtolower(trim($message));
         if ($normalized === '') {
+            return false;
+        }
+
+        // Field GPS / task tracking is a read, even when the phrase includes "start" + "task".
+        if (
+            preg_match('/\b(task\s+tracking|field\s+tracking|tracking\s+system|gps\s+tracking|field\s+activit)/i', $normalized) === 1
+            || preg_match('/\bstart(?:ed|ing)?\s+(task\s+)?tracking\b/i', $normalized) === 1
+        ) {
             return false;
         }
 
@@ -388,6 +445,25 @@ class CopilotIntentResolver
 
         if ($this->looksLikeActionRequest($message)) {
             return null;
+        }
+
+        $classified = $this->intentClassifier->classify($message);
+        $classifiedTool = is_string($classified['tool'] ?? null) ? (string) $classified['tool'] : '';
+        if (
+            ($classified['type'] ?? '') === 'tool'
+            && in_array($classifiedTool, [
+                'field.daily_summary',
+                'field.agent_visits',
+                'field.journey_history',
+                'field.journey_detail',
+                'field.travel_vs_visit_time',
+                'field.territory_coverage',
+                'field.unvisited_customers',
+                'tracking.active_agents',
+                'tracking.agent_history',
+            ], true)
+        ) {
+            return $classifiedTool;
         }
 
         if (
@@ -415,20 +491,63 @@ class CopilotIntentResolver
             return 'drive.files';
         }
 
-        if (preg_match('/\b(location\s+history|where\s+did|track\s+history|history)\b/i', $normalized) === 1) {
+        if (preg_match('/\b(location\s+history|where\s+did|track\s+history)\b/i', $normalized) === 1) {
             return 'tracking.agent_history';
         }
 
-        if (preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned)\b/i', $normalized) === 1) {
+        if (
+            preg_match('/\b(pinned\s+locations|map\s+pins|pinned\s+count|locations?\s+pinned|pinned\s+on\s+the\s+map|businesses?\s+pinned|pinned\s+by|location\s+is\s+pinned)\b/i', $normalized) === 1
+            || preg_match('/\bhow\s+many\s+(new\s+)?businesses?\s+(were\s+)?added\b/i', $normalized) === 1
+            || preg_match('/\bwhich\s+agent\s+added\s+the\s+most\s+business/i', $normalized) === 1
+            || preg_match('/\brecently\s+added\s+business/i', $normalized) === 1
+            || preg_match('/\b(list|show|get|give)\b.{0,40}\b(pinned\s+locations?|locations?\s+on\s+the\s+map)\b/i', $normalized) === 1
+        ) {
             return 'map.pinned_locations_count';
         }
 
-        if (preg_match('/\b(calls?\s+count|how\s+many\s+calls|logged\s+calls)\b/i', $normalized) === 1) {
+        if (
+            preg_match('/\bhow\s+many\s+leads?\s+(were\s+)?added\b/i', $normalized) === 1
+            || preg_match('/\bwho\s+added\s+(those\s+|the\s+)?leads?\b/i', $normalized) === 1
+            || preg_match('/\bconversion\s+rate\b/i', $normalized) === 1
+        ) {
+            return 'crm.leads_analytics';
+        }
+
+        if (preg_match('/\b(calls?\s+count|how\s+many\s+calls|logged\s+calls|most\s+calls)\b/i', $normalized) === 1) {
             return 'crm.calls_count';
         }
 
-        if (preg_match('/\b(attendance\s+duration|clocked\s+in\s+duration|work\s+duration|duration\s+summary)\b/i', $normalized) === 1) {
+        if (preg_match('/\b(attendance\s+duration|clocked\s+in\s+duration|work\s+duration|duration\s+summary|how\s+long\b.{0,30}\bfield)\b/i', $normalized) === 1) {
             return 'attendance.duration_summary';
+        }
+
+        // Pure attendance only when tracking/GPS is not the subject.
+        if (
+            (
+                preg_match('/\b(attendance|present|absent|late)\b/i', $normalized) === 1
+                || (
+                    preg_match('/\bclock(?:ed)?\s+in\b/i', $normalized) === 1
+                    && preg_match('/\b(tracking|gps|field\s+activit|journey)\b/i', $normalized) !== 1
+                )
+            )
+            || preg_match('/\b(their|those)\s+names\b/i', $normalized) === 1
+        ) {
+            return 'attendance.today_summary';
+        }
+
+        if (preg_match('/\b(show|list)\b.{0,40}\bkpi\b/i', $normalized) === 1 || preg_match('/\bkpi\s+assigned\s+to\b/i', $normalized) === 1) {
+            return 'kpi.list';
+        }
+
+        if (preg_match('/\b(which\s+businesses?\s+.+\s+visit|how\s+many\s+visits?|visited\s+the\s+most)\b/i', $normalized) === 1) {
+            return 'field.agent_visits';
+        }
+
+        if (
+            preg_match('/\b(today|yesterday|this\s+week)[\x27\x60]?s?\s+(tracking|field\s+activit)/i', $normalized) === 1
+            || preg_match('/\b(tracking\s+system|task\s+tracking|field\s+tracking)\b/i', $normalized) === 1
+        ) {
+            return 'field.daily_summary';
         }
 
         return null;

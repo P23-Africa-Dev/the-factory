@@ -15,7 +15,16 @@ class TaskAccessContext
 
     public function canManageTasks(): bool
     {
-        return in_array($this->role, ['owner', 'admin', 'supervisor'], true);
+        return $this->canViewFleetLocations();
+    }
+
+    /**
+     * Who can see every agent's live location for the company.
+     * Keep this aligned with canManageTasks so route + fleet map authz match.
+     */
+    public function canViewFleetLocations(): bool
+    {
+        return in_array($this->role, config('tracking.fleet_viewer_roles', ['owner', 'admin', 'supervisor']), true);
     }
 
     public function canViewProofFiles(): bool

@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\AI\Crm;
 
-use App\Models\CompanyCalendarConnection;
+use App\Models\EmailAccount;
 use App\Models\Lead;
 use App\Models\User;
-use App\Models\UserCalendarConnection;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Providers\AiProviderRouter;
-use App\Services\Google\GoogleScopeHelper;
 use Illuminate\Support\Str;
 
 class EmailInferenceService
@@ -274,7 +272,8 @@ class EmailInferenceService
     {
         if ((! isset($actionArgs['lead_id']) || (int) ($actionArgs['lead_id'] ?? 0) <= 0)
             && is_string($actionArgs['lead_name'] ?? null)
-            && trim((string) $actionArgs['lead_name']) !== '') {
+            && trim((string) $actionArgs['lead_name']) !== ''
+        ) {
             $lead = $this->resolveLeadByName($companyId, (string) $actionArgs['lead_name']);
             if ($lead !== null) {
                 $actionArgs['lead_id'] = (int) $lead->id;
@@ -347,7 +346,7 @@ class EmailInferenceService
 
         $to = is_array($args['to'] ?? null) ? $args['to'] : [];
         $hasRecipient = collect($to)->contains(
-            static fn (mixed $recipient): bool => is_array($recipient)
+            static fn(mixed $recipient): bool => is_array($recipient)
                 && filter_var(trim((string) ($recipient['email'] ?? '')), FILTER_VALIDATE_EMAIL) !== false,
         );
 
@@ -362,49 +361,47 @@ class EmailInferenceService
     }
 
     /**
-     * @return array{gmail_ready: bool, requires_connection: bool, requires_gmail_reconnect: bool}
+     * Check whether the user/company has an active email account for sending CRM emails.
+     *
+     * @return array{email_ready: bool, requires_connection: bool, active_accounts: int, providers: list<string>}
+     */
+    public function emailIntegrationStatus(int $companyId, ?int $userId = null): array
+    {
+        $query = EmailAccount::query()
+            ->where('company_id', $companyId)
+            ->where('status', 'active');
+
+        if ($userId !== null && $userId > 0) {
+            $query->where('user_id', $userId);
+        }
+
+        $accounts = $query->orderByDesc('is_default')->orderBy('email')->get();
+        $providers = $accounts->pluck('provider')->unique()->values()->all();
+
+        return [
+            'email_ready' => $accounts->isNotEmpty(),
+            'requires_connection' => $accounts->isEmpty(),
+            'active_accounts' => $accounts->count(),
+            'providers' => $providers,
+        ];
+    }
+
+    /**
+     * Legacy alias kept for backward compatibility with existing callers.
+     *
+     * @return array{gmail_ready: bool, requires_connection: bool, requires_gmail_reconnect: bool, email_ready: bool, active_accounts: int, providers: list<string>}
      */
     public function gmailIntegrationStatus(int $companyId, ?int $userId = null): array
     {
-        if ($userId !== null && $userId > 0) {
-            $userConnection = UserCalendarConnection::query()
-                ->where('company_id', $companyId)
-                ->where('user_id', $userId)
-                ->where('status', 'active')
-                ->whereNull('disconnected_at')
-                ->first();
-
-            if ($userConnection !== null) {
-                $gmailEnabled = GoogleScopeHelper::connectionHasGmailScopes($userConnection);
-
-                return [
-                    'gmail_ready' => $gmailEnabled,
-                    'requires_connection' => false,
-                    'requires_gmail_reconnect' => ! $gmailEnabled,
-                ];
-            }
-        }
-
-        $connection = CompanyCalendarConnection::query()
-            ->where('company_id', $companyId)
-            ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->first();
-
-        if ($connection === null) {
-            return [
-                'gmail_ready' => false,
-                'requires_connection' => true,
-                'requires_gmail_reconnect' => false,
-            ];
-        }
-
-        $gmailEnabled = GoogleScopeHelper::connectionHasGmailScopes($connection);
+        $status = $this->emailIntegrationStatus($companyId, $userId);
 
         return [
-            'gmail_ready' => $gmailEnabled,
-            'requires_connection' => false,
-            'requires_gmail_reconnect' => ! $gmailEnabled,
+            'gmail_ready' => $status['email_ready'],
+            'requires_connection' => $status['requires_connection'],
+            'requires_gmail_reconnect' => false,
+            'email_ready' => $status['email_ready'],
+            'active_accounts' => $status['active_accounts'],
+            'providers' => $status['providers'],
         ];
     }
 
@@ -466,8 +463,8 @@ class EmailInferenceService
         }
 
         $candidateNames = array_values(array_unique(array_filter(
-            array_map(static fn (string $name): string => trim($name), $candidateNames),
-            static fn (string $name): bool => $name !== '' && strlen($name) >= 2,
+            array_map(static fn(string $name): string => trim($name), $candidateNames),
+            static fn(string $name): bool => $name !== '' && strlen($name) >= 2,
         )));
 
         foreach ($candidateNames as $candidateName) {
@@ -924,9 +921,9 @@ class EmailInferenceService
             'subject' => $fallbackSubject,
             'body_text' => $this->personalizeBody(
                 $greeting . "\n\n"
-                . "I wanted to follow up regarding our recent conversation. Please let me know if you have any updates or questions.\n\n"
-                . "Best regards,\n"
-                . ($senderName !== '' ? $senderName : 'Your team'),
+                    . "I wanted to follow up regarding our recent conversation. Please let me know if you have any updates or questions.\n\n"
+                    . "Best regards,\n"
+                    . ($senderName !== '' ? $senderName : 'Your team'),
                 $senderName,
                 $leadName,
             ),

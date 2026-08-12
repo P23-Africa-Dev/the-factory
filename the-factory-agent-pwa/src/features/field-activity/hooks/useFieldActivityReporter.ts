@@ -15,6 +15,10 @@ import {
   updateNativeBackgroundNotification,
 } from '@/features/tracking/native/nativeBackgroundGeolocation';
 import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
+import {
+  notifyFieldTrackingEnded,
+  notifyFieldTrackingStarted,
+} from '@/lib/notifications/trackingAlerts';
 import { fieldActivityApi } from '../api';
 import type { FieldPointPayload } from '../types';
 
@@ -58,6 +62,7 @@ export function useFieldActivityReporter(options: {
   const stationaryRef = useRef(stationaryIntervalSeconds);
   const watchdogIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastWatchdogToastAt = useRef(0);
+  const hadActiveSessionRef = useRef(false);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -95,6 +100,7 @@ export function useFieldActivityReporter(options: {
       const db = await getDb();
       await db.add('locationQueue', {
         taskId: 0,
+        companyId: getActiveCompanyId(),
         fieldActivitySessionId: sid,
         latitude: item.latitude,
         longitude: item.longitude,
@@ -103,6 +109,7 @@ export function useFieldActivityReporter(options: {
         headingDegrees: item.headingDegrees ?? null,
         recordedAt: item.recordedAt,
         synced: 0,
+        inFlight: 0,
         attempts: 0,
         nextAttemptAt: new Date().toISOString(),
         lastError: null,
@@ -210,8 +217,15 @@ export function useFieldActivityReporter(options: {
         clearInterval(watchdogIntervalRef.current);
         watchdogIntervalRef.current = null;
       }
+      if (hadActiveSessionRef.current) {
+        hadActiveSessionRef.current = false;
+        void notifyFieldTrackingEnded(true);
+      }
       return;
     }
+
+    hadActiveSessionRef.current = true;
+    void notifyFieldTrackingStarted();
 
     const companyId = getActiveCompanyId();
     void (async () => {

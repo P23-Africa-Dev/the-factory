@@ -58,6 +58,8 @@ Rules:
 - Do NOT choose tasks.create when the user is listing, showing, querying, or asking about existing tasks
 - Phrases like "tasks created by...", "tasks assigned to...", or "what tasks did X create" are tasks.list (tool), not tasks.create (action)
 - Only choose actions when the user explicitly wants to create, schedule, send, or register something new
+- planning.daily is ALWAYS intent "tool" (read-only plan generation), never "action" — even for phrases like "Plan my day" or "prioritize my day"
+- Read tools (lists, summaries, planning.daily, meetings.today, etc.) must use intent "tool"; write tools (*.create, *.schedule, *.send, etc.) must use intent "action"
 PROMPT;
 
         $userPrompt = "Allowed tools and actions:\n{$toolCatalog}\n\nRecent conversation:\n{$recent}\n\nLatest user message:\n{$message}";
@@ -95,18 +97,24 @@ PROMPT;
     {
         $descriptions = [
             'crm.top_leads' => 'List or count CRM leads / pipeline',
+            'crm.leads_analytics' => 'Leads added today, who added them, conversion rate',
             'crm.stale_leads' => 'Leads not contacted recently',
             'crm.follow_up_summary' => 'Follow-up recommendations',
+            'crm.calls_count' => 'CRM calls logged and top caller',
             'tasks.overdue' => 'Overdue or due-today tasks',
             'tasks.list' => 'List or query existing tasks (by assignee, creator, or status)',
             'planning.daily' => 'Plan my day / priorities',
             'meetings.today' => 'Meetings today / calendar',
-            'attendance.today_summary' => 'Attendance snapshot',
+            'attendance.today_summary' => 'Attendance snapshot with present/late/absent names',
+            'attendance.duration_summary' => 'How long agents were in the field',
             'dashboard.overview' => 'Dashboard / KPI snapshot',
             'kpi.team_performance' => 'Team performance ranking',
-            'tracking.active_agents' => 'Active agents / where is agent',
-            'field.daily_summary' => 'Field activity daily summary / visits / distance',
-            'field.agent_visits' => 'List agent field visits',
+            'kpi.list' => 'Show KPIs assigned to a person',
+            'tracking.active_agents' => 'Who is actively tracking / live field agents / currently in the field',
+            'tracking.agent_history' => 'Where an agent went / GPS location history / movement trail',
+            'map.pinned_locations_count' => 'Pinned map locations and businesses added',
+            'field.daily_summary' => 'Today\'s tracking / field activities / task tracking after clock-in / distance and visits for a day or range',
+            'field.agent_visits' => 'List agent field visits / businesses visited',
             'field.unvisited_customers' => 'Customers/leads not visited recently',
             'field.territory_coverage' => 'Territory field coverage',
             'field.travel_vs_visit_time' => 'Travel vs productive visit time',
@@ -119,6 +127,7 @@ PROMPT;
             'tasks.reassign' => 'Reassign a task',
             'meetings.schedule' => 'Schedule a meeting',
             'kpis.create' => 'Create a KPI',
+            'kpis.update' => 'Update an existing KPI target or assignee',
             'crm.create_lead' => 'Add CRM lead',
             'crm.send_email' => 'Send CRM email',
             'crm.log_visit' => 'Log a field visit',
@@ -161,6 +170,10 @@ PROMPT;
 
         if ($intent === 'chat') {
             $tool = null;
+        }
+
+        if ($tool !== null) {
+            $intent = $this->toolPolicyService->normalizeIntentType($intent, $tool);
         }
 
         $confidence = (float) ($json['confidence'] ?? 0.0);

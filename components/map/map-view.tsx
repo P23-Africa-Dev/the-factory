@@ -35,6 +35,14 @@ import {
   resolveHeading,
 } from '@/lib/tracking/dead-reckoning';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import { fetchMapMatchingRoute } from '@/lib/tracking/map-matching';
+import {
+  createMarkerMotion,
+  enqueueMarkerFix,
+  isMarkerMotionComplete,
+  sampleMarkerPosition,
+  type MarkerMotionState,
+} from '@/lib/tracking/marker-motion';
 import {
   getMapboxNavigationStyle,
   resolveMapAppearance,
@@ -46,11 +54,22 @@ import {
 } from '@/lib/tracking/operational-status';
 import {
   hasUsableTaskPosition,
+  isLiveTaskStale,
   resolveMapTasks,
+  resolvePreferredMapTasks,
   resolveTrajectoryTaskIds,
+  countLiveTasksByAgent,
   splitLiveFeedTasks,
   TRACKING_STALE_MS,
 } from '@/lib/tracking/live-feed-groups';
+import { circleFeatureCollection } from '@/lib/map/circle-geojson';
+import {
+  createLiveAgentClusterElement,
+  LIVE_AGENT_CLUSTER_MIN,
+  shouldClusterLiveAgents,
+} from '@/lib/map/live-agent-cluster';
+import Supercluster from 'supercluster';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import { LiveFeedsPanel } from '@/components/map/live-feeds-panel';
 import { AgentAvatar } from '@/components/map/agent-avatar';
 import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
@@ -65,8 +84,11 @@ import { LocationSearchInput } from '@/components/map/LocationSearchInput';
 import { BusinessListPanel } from '@/components/map/BusinessListPanel';
 import { ClockedInLayer } from '@/components/map/ClockedInLayer';
 import { ClockedInPanel } from '@/components/map/ClockedInPanel';
+import { FieldActivityLiveLayer } from '@/components/map/FieldActivityLiveLayer';
 import { useAttendanceMapSnapshots } from '@/hooks/use-attendance-map';
+import { useFieldActivityLiveHydrate } from '@/hooks/use-field-activity-live';
 import { useAttendanceMapStore } from '@/store/attendance-map';
+import { useFieldActivityLiveStore } from '@/store/field-activity-live';
 import type { AttendanceMapSnapshotItem } from '@/lib/api/attendance';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
 import {
@@ -135,6 +157,12 @@ type GoogleMapsNamespaceLike = {
     Map: new (container: HTMLElement, options: Record<string, unknown>) => GoogleMapLike;
     Marker: new (options: Record<string, unknown>) => GoogleMarkerLike;
     Polyline: new (options: Record<string, unknown>) => GooglePolylineLike;
+    Circle: new (options: Record<string, unknown>) => {
+      setMap: (map: GoogleMapLike | null) => void;
+      setCenter: (point: GoogleLatLng) => void;
+      setRadius: (radius: number) => void;
+      setOptions: (options: Record<string, unknown>) => void;
+    };
     LatLngBounds: new () => GoogleLatLngBoundsLike;
     SymbolPath: {
       CIRCLE: unknown;
@@ -145,11 +173,6 @@ type GoogleMapsNamespaceLike = {
     };
   };
 };
-
-function isTaskStale(lastEventAt: string, nowMs: number): boolean {
-  if (!lastEventAt || !nowMs) return false;
-  return nowMs - new Date(lastEventAt).getTime() > STALE_MS;
-}
 
 function getStatusLabel(status: LiveTaskState['status']): string {
   if (status === 'near_destination') return 'Near destination';
@@ -305,13 +328,19 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const destinationMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const agentMarkersRef = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const agentMarkerUserIdRef = useRef<Map<number, number>>(new Map());
+  const agentClusterMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
   const markerPositionRef = useRef<Map<number, [number, number]>>(new Map());
+  const markerMotionRef = useRef<Map<number, MarkerMotionState>>(new Map());
+  const queuedTargetRef = useRef<Map<number, string>>(new Map());
+  const motionRafRef = useRef(0);
+  const snappedTrailsRef = useRef<Map<number, [number, number][]>>(new Map());
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const pulseMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const userLocationMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const locateMePinRef = useRef<mapboxgl.Marker | null>(null);
   const directionRoutesRef = useRef<Map<number, [number, number][]>>(new Map());
+  const [mapZoom, setMapZoom] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [leftSearchQuery, setLeftSearchQuery] = useState('');
@@ -395,6 +424,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const savedLocations = infiniteSavedLocations;
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
+  useFieldActivityLiveHydrate(!compact);
+  const fieldLiveAgentsMap = useFieldActivityLiveStore((s) => s.agents);
+  const fieldLiveAgents = useMemo(() => Object.values(fieldLiveAgentsMap), [fieldLiveAgentsMap]);
+  const fieldFollowUserId = useFieldActivityLiveStore((s) => s.followUserId);
+  const fieldFollowAll = useFieldActivityLiveStore((s) => s.followAll);
+  const fieldFocusMode = useFieldActivityLiveStore((s) => s.focusMode);
+  const setFieldFollowUserId = useFieldActivityLiveStore((s) => s.setFollowUserId);
+  const setFieldFollowAll = useFieldActivityLiveStore((s) => s.setFollowAll);
+  const setFieldFocusMode = useFieldActivityLiveStore((s) => s.setFocusMode);
+  const fieldFollowAllLastFitRef = useRef(0);
   const clockedInItemMap = useAttendanceMapStore((s) => s.items);
   const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
   const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
@@ -402,9 +441,13 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   const handleClockedInSelect = useCallback((item: AttendanceMapSnapshotItem) => {
     setSelectedClockedInUserId(item.user_id);
+    const live = useFieldActivityLiveStore.getState().agents[item.user_id];
+    const center = live?.lastPosition
+      ? live.lastPosition
+      : ([item.longitude, item.latitude] as [number, number]);
     const map = mapRef.current;
     if (!map) return;
-    map.flyTo({ center: [item.longitude, item.latitude], zoom: Math.max(map.getZoom(), 14), speed: 1.2 });
+    map.flyTo({ center, zoom: Math.max(map.getZoom(), 14), speed: 1.2 });
   }, [setSelectedClockedInUserId]);
 
   const highlightedClockedInUserId =
@@ -431,10 +474,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     () => splitLiveFeedTasks(tasks, nowMs, STALE_MS),
     [tasks, nowMs],
   );
-  const mapTasks = useMemo(
-    () => resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId),
-    [feedGroups.active, feedGroups.history, selectedTaskId],
-  );
+  const mapTasks = useMemo(() => {
+    const base = resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId);
+    return resolvePreferredMapTasks(base, selectedTaskId);
+  }, [feedGroups.active, feedGroups.history, selectedTaskId]);
+  const agentTaskCounts = useMemo(() => countLiveTasksByAgent(tasks), [tasks]);
   const trajectoryTaskIds = useMemo(
     () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
     [feedGroups.active, selectedTaskId, followAllActive],
@@ -497,6 +541,22 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     if (selectedTaskId === deepLinkTaskId) return;
     handleSelectTask(deepLinkTaskId);
   }, [deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
+
+  // Deep-link by agent: /map?agent=123 — select that agent's live task when no taskId.
+  useEffect(() => {
+    if (!Number.isFinite(initialAgentId) || initialAgentId <= 0) return;
+    if (Number.isFinite(deepLinkTaskId) && deepLinkTaskId > 0) return;
+    const match = Object.values(liveTasks).find(
+      (task) => task.userId === initialAgentId && hasUsableTaskPosition(task),
+    );
+    if (!match) return;
+    if (selectedTaskId === match.taskId) return;
+    handleSelectTask(match.taskId);
+  }, [initialAgentId, deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
+
+  const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
+    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+  }, []);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -719,67 +779,47 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     );
   }, [locating, setLocating]);
 
-  const animateMarkerTo = useCallback((
+  const ensureMotionLoop = useCallback(() => {
+    if (motionRafRef.current) return;
+
+    const step = (now: number) => {
+      let pending = false;
+      markerMotionRef.current.forEach((state, taskId) => {
+        const marker = agentMarkersRef.current.get(taskId);
+        if (!marker) return;
+        const pos = sampleMarkerPosition(state, now);
+        marker.setLngLat(pos);
+        markerPositionRef.current.set(taskId, pos);
+        if (!isMarkerMotionComplete(state, now)) pending = true;
+      });
+      if (pending) {
+        motionRafRef.current = requestAnimationFrame(step);
+      } else {
+        motionRafRef.current = 0;
+      }
+    };
+
+    motionRafRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const queueAgentMotion = useCallback((
     taskId: number,
     marker: mapboxgl.Marker,
     target: [number, number],
-    motion?: { speedMps?: number | null; headingDegrees?: number | null },
+    recordedAtMs?: number,
   ) => {
+    const key = `${target[0].toFixed(6)},${target[1].toFixed(6)}`;
+    if (queuedTargetRef.current.get(taskId) === key) return;
+    queuedTargetRef.current.set(taskId, key);
+
+    const now = performance.now();
+    const existing = markerMotionRef.current.get(taskId);
     const cached = markerPositionRef.current.get(taskId);
     const current = cached ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
-
-    const existingFrame = markerAnimationsRef.current.get(taskId);
-    if (existingFrame) {
-      cancelAnimationFrame(existingFrame);
-      markerAnimationsRef.current.delete(taskId);
-    }
-
-    const startedAt = performance.now();
-    const catchUpFrom: [number, number] = current;
-    const skipCatchUp = areSamePoint(current, target);
-    const speedMps = motion?.speedMps ?? null;
-    const headingDegrees = motion?.headingDegrees ?? null;
-    const canPredict =
-      typeof speedMps === 'number' && speedMps > 0.5 &&
-      typeof headingDegrees === 'number' && Number.isFinite(headingDegrees);
-
-    // Phase 1: ease from the current rendered position to the new fix.
-    // Phase 2: dead-reckon forward along speed/heading so movement stays
-    // continuous until the next fix re-anchors the marker.
-    const step = (frameNow: number) => {
-      const elapsed = frameNow - startedAt;
-
-      if (!skipCatchUp && elapsed < MARKER_ANIMATION_MS) {
-        const progress = elapsed / MARKER_ANIMATION_MS;
-        const eased = progress < 0.5
-          ? 2 * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-
-        marker.setLngLat([
-          catchUpFrom[0] + (target[0] - catchUpFrom[0]) * eased,
-          catchUpFrom[1] + (target[1] - catchUpFrom[1]) * eased,
-        ]);
-        markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
-        return;
-      }
-
-      if (!canPredict || elapsed > MAX_PREDICTION_MS) {
-        marker.setLngLat(target);
-        markerPositionRef.current.set(taskId, target);
-        markerAnimationsRef.current.delete(taskId);
-        return;
-      }
-
-      const predictSeconds = (elapsed - (skipCatchUp ? 0 : MARKER_ANIMATION_MS)) / 1000;
-      const predicted = projectPosition(target, speedMps, headingDegrees, predictSeconds);
-      marker.setLngLat(predicted);
-      markerPositionRef.current.set(taskId, predicted);
-      markerAnimationsRef.current.set(taskId, requestAnimationFrame(step));
-    };
-
-    const firstFrame = requestAnimationFrame(step);
-    markerAnimationsRef.current.set(taskId, firstFrame);
-  }, [setSelectedTaskId]);
+    const base = existing ?? createMarkerMotion(current, now);
+    markerMotionRef.current.set(taskId, enqueueMarkerFix(base, target, now, recordedAtMs));
+    ensureMotionLoop();
+  }, [ensureMotionLoop]);
 
   // ── Staleness clock (state, not Date.now() in render — react-hooks/purity) ─
   useEffect(() => {
@@ -862,6 +902,54 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       suppressFollowBreakRef.current = false;
     });
   }, [isFollowing, followAllActive, selectedTask, selectedTask?.lastPosition?.[0], selectedTask?.lastPosition?.[1]]);
+
+  // Field-activity follow: keep camera on selected clocked-in agent day trail.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || leftTab !== 'clocked-in' || fieldFollowAll || fieldFollowUserId == null) return;
+    const agent = fieldLiveAgentsMap[fieldFollowUserId];
+    const pos = agent?.lastPosition;
+    if (!pos) return;
+    const [lng, lat] = pos;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    suppressFollowBreakRef.current = true;
+    map.easeTo({ center: [lng, lat], duration: 900, essential: true });
+    map.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+  }, [
+    leftTab,
+    fieldFollowAll,
+    fieldFollowUserId,
+    fieldLiveAgentsMap,
+    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[0],
+    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[1],
+  ]);
+
+  // Field-activity follow-all: fit bounds to every active field agent.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || leftTab !== 'clocked-in' || !fieldFollowAll || fieldLiveAgents.length === 0) return;
+
+    const now = Date.now();
+    if (now - fieldFollowAllLastFitRef.current < 2000) return;
+    fieldFollowAllLastFitRef.current = now;
+
+    const bounds = new mapboxgl.LngLatBounds();
+    let hasPoint = false;
+    for (const agent of fieldLiveAgents) {
+      const pos = agent.lastPosition ?? agent.polyline[agent.polyline.length - 1];
+      if (!pos) continue;
+      bounds.extend(pos);
+      hasPoint = true;
+    }
+    if (!hasPoint) return;
+    suppressFollowBreakRef.current = true;
+    map.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 900 });
+    map.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+  }, [leftTab, fieldFollowAll, fieldLiveAgents]);
 
   // Follow-all: fit bounds to every actively tracking agent (throttled).
   useEffect(() => {
@@ -1091,6 +1179,47 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         },
       });
 
+      map.addSource('selection-overlays', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'selection-overlay-fill',
+        type: 'fill',
+        source: 'selection-overlays',
+        paint: {
+          'fill-color': [
+            'match',
+            ['get', 'kind'],
+            'geofence',
+            '#16A34A',
+            '#3B82F6',
+          ],
+          'fill-opacity': 0.12,
+        },
+      });
+      map.addLayer({
+        id: 'selection-overlay-outline',
+        type: 'line',
+        source: 'selection-overlays',
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'kind'],
+            'geofence',
+            '#16A34A',
+            '#3B82F6',
+          ],
+          'line-width': 2,
+          'line-opacity': 0.75,
+        },
+      });
+
+      const syncZoom = () => setMapZoom(map.getZoom());
+      syncZoom();
+      map.on('zoomend', syncZoom);
+      map.on('moveend', syncZoom);
+
       if (initialViewportIsUserLocation) {
         userLocationMarkerRef.current = new mapboxgl.Marker({
           element: createUserLocationIndicatorElement(),
@@ -1109,14 +1238,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       mapLoadedRef.current = false;
       markerAnimationsRef.current.forEach((frameId) => cancelAnimationFrame(frameId));
       markerAnimationsRef.current.clear();
+      if (motionRafRef.current) cancelAnimationFrame(motionRafRef.current);
+      motionRafRef.current = 0;
       markerPositionRef.current.clear();
+      markerMotionRef.current.clear();
+      queuedTargetRef.current.clear();
+      snappedTrailsRef.current.clear();
 
       originMarkersRef.current.forEach((marker) => marker.remove());
       destinationMarkersRef.current.forEach((marker) => marker.remove());
       agentMarkersRef.current.forEach((marker) => marker.remove());
+      agentClusterMarkersRef.current.forEach((marker) => marker.remove());
       originMarkersRef.current.clear();
       destinationMarkersRef.current.clear();
       agentMarkersRef.current.clear();
+      agentClusterMarkersRef.current = [];
 
       if (popupRef.current) popupRef.current.remove();
       if (pulseMarkerRef.current) pulseMarkerRef.current.remove();
@@ -1173,13 +1309,66 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const destinationIds = new Set<number>();
 
+    agentClusterMarkersRef.current.forEach((marker) => marker.remove());
+    agentClusterMarkersRef.current = [];
+
+    const zoom = mapZoom || map.getZoom();
+    const clustering = shouldClusterLiveAgents(validTasks.length, zoom, {
+      disableClustering: selectedTaskId != null,
+    });
+    const clusteredTaskIds = new Set<number>();
+
+    if (clustering && bounds) {
+      const clusterable = validTasks.filter(
+        (task) => selectedTaskId !== task.taskId,
+      );
+      const points = clusterable.map((task) => ({
+        type: 'Feature' as const,
+        properties: { cluster: false, taskId: task.taskId },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [task.lastPosition[0], task.lastPosition[1]] as [number, number],
+        },
+      }));
+      const clusterIndex = new Supercluster({ radius: 56, maxZoom: 15 });
+      clusterIndex.load(points);
+      const clusters = clusterIndex.getClusters(
+        [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        Math.floor(zoom),
+      );
+
+      clusters.forEach((feature) => {
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        if (feature.properties?.cluster) {
+          const count = Number(feature.properties.point_count ?? 0);
+          const leaves = clusterIndex.getLeaves(Number(feature.id), Infinity);
+          leaves.forEach((leaf) => {
+            const id = Number(leaf.properties?.taskId);
+            if (Number.isFinite(id)) clusteredTaskIds.add(id);
+          });
+          const el = createLiveAgentClusterElement(count);
+          el.addEventListener('click', () => {
+            const expansionZoom = clusterIndex.getClusterExpansionZoom(Number(feature.id));
+            map.easeTo({ center: [lng, lat], zoom: expansionZoom });
+          });
+          const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+            .setLngLat([lng, lat])
+            .addTo(map);
+          agentClusterMarkersRef.current.push(marker);
+        }
+      });
+    }
+
     validTasks.forEach((task) => {
-      const stale = isTaskStale(task.lastEventAt, now);
+      const stale = isLiveTaskStale(task, now, STALE_MS);
       const derivedOperationalStatus = resolveOperationalStatusFromTask(task, now, STALE_MS);
       const visualState = resolveVisualTaskState(task.status, stale, derivedOperationalStatus);
-      const trail = sanitizePolyline(buildTaskTrail(task));
+      const rawTrail = sanitizePolyline(buildTaskTrail(task));
+      const trail = snappedTrailsRef.current.get(task.taskId) ?? rawTrail;
       const currentPoint = task.lastPosition;
       const showTrajectory = trajectoryTaskIds.has(task.taskId);
+      const taskCount = agentTaskCounts.get(task.userId) ?? 1;
+      const hideAgentInCluster = clusteredTaskIds.has(task.taskId);
 
       if (showTrajectory && trail.length >= 2) {
         routeFeatures.push({
@@ -1276,6 +1465,21 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       }
 
       let existingAgentMarker = agentMarkersRef.current.get(task.taskId);
+      if (hideAgentInCluster) {
+        if (existingAgentMarker) {
+          existingAgentMarker.remove();
+          agentMarkersRef.current.delete(task.taskId);
+          markerPositionRef.current.delete(task.taskId);
+          agentMarkerUserIdRef.current.delete(task.taskId);
+          const frameId = markerAnimationsRef.current.get(task.taskId);
+          if (frameId) {
+            cancelAnimationFrame(frameId);
+            markerAnimationsRef.current.delete(task.taskId);
+          }
+        }
+        return;
+      }
+
       const trackedUserId = agentMarkerUserIdRef.current.get(task.taskId);
       if (
         existingAgentMarker &&
@@ -1301,6 +1505,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           avatarUrl: task.agentAvatarUrl,
           visualState,
           stale,
+          taskCount,
         });
         el.dataset.agentName = task.agentName;
         el.dataset.avatarUrl = task.agentAvatarUrl ?? '';
@@ -1318,6 +1523,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           .addTo(map);
         agentMarkersRef.current.set(task.taskId, marker);
         markerPositionRef.current.set(task.taskId, task.lastPosition);
+        markerMotionRef.current.set(task.taskId, createMarkerMotion(task.lastPosition, performance.now()));
+        queuedTargetRef.current.set(
+          task.taskId,
+          `${task.lastPosition[0].toFixed(6)},${task.lastPosition[1].toFixed(6)}`,
+        );
         if (task.userId > 0) {
           agentMarkerUserIdRef.current.set(task.taskId, task.userId);
         }
@@ -1328,6 +1538,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           avatarUrl: task.agentAvatarUrl,
           visualState,
           stale,
+          taskCount,
         });
         existingAgentMarker.getElement().dataset.agentName = task.agentName;
         existingAgentMarker.getElement().dataset.avatarUrl = task.agentAvatarUrl ?? '';
@@ -1335,10 +1546,14 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         existingAgentMarker.getElement().dataset.statusLabel = getStatusLabel(task.status);
         const heading = resolveHeading(task.headingDegrees ?? null, trail);
         updateAgentMarkerHeading(existingAgentMarker.getElement(), stale ? null : heading);
-        animateMarkerTo(task.taskId, existingAgentMarker, task.lastPosition, {
-          speedMps: stale ? null : task.speedMps,
-          headingDegrees: stale ? null : heading,
-        });
+        if (!stale) {
+          queueAgentMotion(
+            task.taskId,
+            existingAgentMarker,
+            task.lastPosition,
+            new Date(task.lastEventAt).getTime(),
+          );
+        }
       }
     });
 
@@ -1365,6 +1580,42 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       features: forwardFeatures,
     });
 
+    const overlayCircles: Array<{
+      lng: number;
+      lat: number;
+      radiusMeters: number;
+      kind: 'accuracy' | 'geofence';
+    }> = [];
+    if (selectedTaskId != null) {
+      const selected = validTasks.find((t) => t.taskId === selectedTaskId) ?? liveTasks[selectedTaskId];
+      if (selected && hasUsableTaskPosition(selected)) {
+        const accuracy = selected.accuracyMeters;
+        if (typeof accuracy === 'number' && accuracy > 0 && accuracy < 500) {
+          overlayCircles.push({
+            lng: selected.lastPosition[0],
+            lat: selected.lastPosition[1],
+            radiusMeters: accuracy,
+            kind: 'accuracy',
+          });
+        }
+        const radiusM = selected.destination?.radiusM;
+        if (
+          selected.destination &&
+          typeof radiusM === 'number' &&
+          radiusM > 0
+        ) {
+          overlayCircles.push({
+            lng: selected.destination.lng,
+            lat: selected.destination.lat,
+            radiusMeters: radiusM,
+            kind: 'geofence',
+          });
+        }
+      }
+    }
+    const overlaySource = map.getSource('selection-overlays') as mapboxgl.GeoJSONSource | undefined;
+    overlaySource?.setData(circleFeatureCollection(overlayCircles));
+
     originMarkersRef.current.forEach((marker, id) => {
       if (!validIds.has(id)) {
         marker.remove();
@@ -1380,11 +1631,13 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     });
 
     agentMarkersRef.current.forEach((marker, id) => {
-      if (!validIds.has(id)) {
+      if (!validIds.has(id) || clusteredTaskIds.has(id)) {
         marker.remove();
         agentMarkersRef.current.delete(id);
         markerPositionRef.current.delete(id);
         agentMarkerUserIdRef.current.delete(id);
+        markerMotionRef.current.delete(id);
+        queuedTargetRef.current.delete(id);
         const frameId = markerAnimationsRef.current.get(id);
         if (frameId) {
           cancelAnimationFrame(frameId);
@@ -1392,7 +1645,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         }
       }
     });
-  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, animateMarkerTo, selectedTaskId, bindHoverPopup, handleSelectTask]);
+  }, [mapTasks, trajectoryTaskIds, tick, compact, mapVersion, nowMs, mapZoom, agentTaskCounts, liveTasks, queueAgentMotion, selectedTaskId, bindHoverPopup, handleSelectTask]);
 
   // ── Fetch Mapbox Directions routes for tasks with destinations ───────────────
   useEffect(() => {
@@ -1458,6 +1711,50 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
     fetchAll();
     return () => { cancelled = true; };
+  }, [mapTasks, trajectoryTaskIds, token, mapVersion]);
+
+  useEffect(() => {
+    if (!token || !mapLoadedRef.current) return;
+
+    let cancelled = false;
+
+    async function matchTrails() {
+      let didChange = false;
+      for (const task of mapTasks) {
+        if (cancelled) return;
+        if (!trajectoryTaskIds.has(task.taskId)) continue;
+        const raw = sanitizePolyline(buildTaskTrail(task));
+        if (raw.length < 5) continue;
+        const windowed = raw.slice(-25);
+        const snapped = await fetchMapMatchingRoute(windowed, token, 'driving');
+        if (cancelled) return;
+        if (snapped.length >= 2) {
+          const prefix = raw.length > windowed.length ? raw.slice(0, raw.length - windowed.length) : [];
+          snappedTrailsRef.current.set(task.taskId, [...prefix, ...snapped]);
+          didChange = true;
+        }
+      }
+
+      if (!didChange || cancelled || !mapRef.current) return;
+      const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+      mapTasks.forEach((task) => {
+        if (!trajectoryTaskIds.has(task.taskId)) return;
+        const trail = snappedTrailsRef.current.get(task.taskId) ?? sanitizePolyline(buildTaskTrail(task));
+        if (trail.length < 2) return;
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: trail },
+          properties: { taskId: task.taskId, status: task.status },
+        });
+      });
+      const src = mapRef.current.getSource('live-routes') as mapboxgl.GeoJSONSource | undefined;
+      src?.setData({ type: 'FeatureCollection', features });
+    }
+
+    void matchTrails();
+    return () => {
+      cancelled = true;
+    };
   }, [mapTasks, trajectoryTaskIds, token, mapVersion]);
 
   // ── No token fallback ────────────────────────────────────────────────────────
@@ -1655,6 +1952,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       </div>
 
       {/* Left panel — agent/business search + tabs */}
+      {!fieldFocusMode && (
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
         {/* Dynamic search filter */}
         <div className="px-4 pt-4 pb-2 shrink-0">
@@ -1716,6 +2014,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
+            onViewHistoryTask={handleViewHistoryTask}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
@@ -1723,6 +2022,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
+            followAllActive={fieldFollowAll}
+            focusMode={fieldFocusMode}
+            onFollowSelected={() => {
+              if (highlightedClockedInUserId != null) {
+                setFieldFollowUserId(highlightedClockedInUserId);
+              }
+            }}
+            onToggleFollowAll={() => setFieldFollowAll(!fieldFollowAll)}
+            onToggleFocusMode={() => setFieldFocusMode(!fieldFocusMode)}
           />
         ) : (
           <BusinessListPanel
@@ -1748,7 +2056,17 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           />
         )}
       </div>
+      )}
 
+      {fieldFocusMode && (
+        <button
+          type="button"
+          onClick={() => setFieldFocusMode(false)}
+          className="absolute top-20 left-4 z-30 inline-flex items-center gap-2 rounded-full bg-[#0A192F] px-4 py-2 text-[12px] font-semibold text-white shadow-lg"
+        >
+          Exit focus
+        </button>
+      )}
 
       {showBusinessPins && (
         <SavedLocationsLayer
@@ -1794,6 +2112,17 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           items={clockedInItems}
           selectedUserId={highlightedClockedInUserId}
           onSelectUserId={setSelectedClockedInUserId}
+          getMapboxMap={() => mapRef.current}
+        />
+      )}
+
+      {(leftTab === 'clocked-in' || compact) && (
+        <FieldActivityLiveLayer
+          provider="mapbox"
+          ready={mapVersion > 0}
+          agents={fieldLiveAgents}
+          selectedUserId={highlightedClockedInUserId}
+          followAll={fieldFollowAll}
           getMapboxMap={() => mapRef.current}
         />
       )}
@@ -1981,6 +2310,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const agentMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const destinationMarkersRef = useRef<Map<number, GoogleMarkerLike>>(new Map());
   const routeLinesRef = useRef<Map<number, GooglePolylineLike>>(new Map());
+  const overlayCirclesRef = useRef<Array<{ setMap: (map: GoogleMapLike | null) => void }>>([]);
+  const agentClustererRef = useRef<MarkerClusterer | null>(null);
   const userLocationMarkerRef = useRef<GoogleMarkerLike | null>(null);
   const locateMePinRef = useRef<GoogleMarkerLike | null>(null);
   const markerAnimationsRef = useRef<Map<number, number>>(new Map());
@@ -2058,6 +2389,16 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const savedLocations = infiniteSavedLocations;
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
+  useFieldActivityLiveHydrate(!compact);
+  const fieldLiveAgentsMap = useFieldActivityLiveStore((s) => s.agents);
+  const fieldLiveAgents = useMemo(() => Object.values(fieldLiveAgentsMap), [fieldLiveAgentsMap]);
+  const fieldFollowUserId = useFieldActivityLiveStore((s) => s.followUserId);
+  const fieldFollowAll = useFieldActivityLiveStore((s) => s.followAll);
+  const fieldFocusMode = useFieldActivityLiveStore((s) => s.focusMode);
+  const setFieldFollowUserId = useFieldActivityLiveStore((s) => s.setFollowUserId);
+  const setFieldFollowAll = useFieldActivityLiveStore((s) => s.setFollowAll);
+  const setFieldFocusMode = useFieldActivityLiveStore((s) => s.setFocusMode);
+  const fieldFollowAllLastFitRef = useRef(0);
   const clockedInItemMap = useAttendanceMapStore((s) => s.items);
   const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
   const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
@@ -2065,9 +2406,12 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   const handleClockedInSelect = useCallback((item: AttendanceMapSnapshotItem) => {
     setSelectedClockedInUserId(item.user_id);
+    const live = useFieldActivityLiveStore.getState().agents[item.user_id];
     const map = mapRef.current;
     if (!map) return;
-    map.panTo({ lat: item.latitude, lng: item.longitude });
+    const lat = live?.lastPosition?.[1] ?? item.latitude;
+    const lng = live?.lastPosition?.[0] ?? item.longitude;
+    map.panTo({ lat, lng });
     if (map.getZoom() < 14) {
       map.setZoom(14);
     }
@@ -2096,10 +2440,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     () => splitLiveFeedTasks(tasks, nowMs, STALE_MS),
     [tasks, nowMs],
   );
-  const mapTasks = useMemo(
-    () => resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId),
-    [feedGroups.active, feedGroups.history, selectedTaskId],
-  );
+  const mapTasks = useMemo(() => {
+    const base = resolveMapTasks(feedGroups.active, feedGroups.history, selectedTaskId);
+    return resolvePreferredMapTasks(base, selectedTaskId);
+  }, [feedGroups.active, feedGroups.history, selectedTaskId]);
   const trajectoryTaskIds = useMemo(
     () => resolveTrajectoryTaskIds(feedGroups.active, selectedTaskId, followAllActive),
     [feedGroups.active, selectedTaskId, followAllActive],
@@ -2124,6 +2468,21 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (selectedTaskId === deepLinkTaskIdGoogle) return;
     handleSelectTask(deepLinkTaskIdGoogle);
   }, [deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
+
+  useEffect(() => {
+    if (!Number.isFinite(initialAgentId) || initialAgentId <= 0) return;
+    if (Number.isFinite(deepLinkTaskIdGoogle) && deepLinkTaskIdGoogle > 0) return;
+    const match = Object.values(liveTasks).find(
+      (task) => task.userId === initialAgentId && hasUsableTaskPosition(task),
+    );
+    if (!match) return;
+    if (selectedTaskId === match.taskId) return;
+    handleSelectTask(match.taskId);
+  }, [initialAgentId, deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
+
+  const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
+    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+  }, []);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -2435,6 +2794,43 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     map.panTo({ lat, lng });
   }, [isFollowing, followAllActive, followedTask, followedTask?.lastPosition?.[0], followedTask?.lastPosition?.[1]]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || leftTab !== 'clocked-in' || fieldFollowAll || fieldFollowUserId == null) return;
+    const agent = fieldLiveAgentsMap[fieldFollowUserId];
+    const pos = agent?.lastPosition;
+    if (!pos) return;
+    map.panTo({ lat: pos[1], lng: pos[0] });
+  }, [
+    leftTab,
+    fieldFollowAll,
+    fieldFollowUserId,
+    fieldLiveAgentsMap,
+    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[0],
+    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[1],
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const google = googleRef.current;
+    if (!map || !google || leftTab !== 'clocked-in' || !fieldFollowAll || fieldLiveAgents.length === 0) return;
+
+    const now = Date.now();
+    if (now - fieldFollowAllLastFitRef.current < 2000) return;
+    fieldFollowAllLastFitRef.current = now;
+
+    const bounds = new google.maps.LatLngBounds();
+    let hasPoint = false;
+    for (const agent of fieldLiveAgents) {
+      const pos = agent.lastPosition ?? agent.polyline[agent.polyline.length - 1];
+      if (!pos) continue;
+      bounds.extend({ lat: pos[1], lng: pos[0] });
+      hasPoint = true;
+    }
+    if (!hasPoint) return;
+    map.fitBounds(bounds, 80);
+  }, [leftTab, fieldFollowAll, fieldLiveAgents, googleReady]);
+
   // Follow-all: fit bounds to every actively tracking agent (throttled).
   useEffect(() => {
     const map = mapRef.current;
@@ -2532,7 +2928,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     const destinationIds = new Set<number>();
 
     validTasks.forEach((task) => {
-      const stale = isTaskStale(task.lastEventAt, now);
+      const stale = isLiveTaskStale(task, now, STALE_MS);
       const visualState = getVisualState(task, stale);
       const trail = sanitizePolyline(buildTaskTrail(task));
       const showTrajectory = trajectoryTaskIds.has(task.taskId);
@@ -2680,7 +3076,62 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         markerPositionRef.current.delete(id);
       }
     });
-  }, [compact, mapTasks, trajectoryTaskIds, animateGoogleMarkerTo, handleSelectTask]);
+
+    // Cluster agent markers when density is high (mirrors Mapbox Supercluster).
+    const agentMarkerList = Array.from(agentMarkersRef.current.values());
+    if (agentMarkerList.length >= LIVE_AGENT_CLUSTER_MIN) {
+      if (!agentClustererRef.current) {
+        agentClustererRef.current = new MarkerClusterer({
+          map: map as unknown as google.maps.Map,
+          markers: agentMarkerList as unknown as google.maps.Marker[],
+        });
+      } else {
+        agentClustererRef.current.clearMarkers();
+        agentClustererRef.current.addMarkers(agentMarkerList as unknown as google.maps.Marker[]);
+      }
+    } else if (agentClustererRef.current) {
+      agentClustererRef.current.clearMarkers();
+      agentClustererRef.current.setMap(null);
+      agentClustererRef.current = null;
+      agentMarkerList.forEach((marker) => marker.setMap(map));
+    }
+
+    overlayCirclesRef.current.forEach((circle) => circle.setMap(null));
+    overlayCirclesRef.current = [];
+    if (selectedTaskId != null) {
+      const selected = validTasks.find((t) => t.taskId === selectedTaskId) ?? liveTasks[selectedTaskId];
+      if (selected && hasUsableTaskPosition(selected)) {
+        const accuracy = selected.accuracyMeters;
+        if (typeof accuracy === 'number' && accuracy > 0 && accuracy < 500) {
+          const circle = new google.maps.Circle({
+            map,
+            center: { lat: selected.lastPosition[1], lng: selected.lastPosition[0] },
+            radius: accuracy,
+            fillColor: '#3B82F6',
+            fillOpacity: 0.12,
+            strokeColor: '#3B82F6',
+            strokeOpacity: 0.75,
+            strokeWeight: 2,
+          });
+          overlayCirclesRef.current.push(circle);
+        }
+        const radiusM = selected.destination?.radiusM;
+        if (selected.destination && typeof radiusM === 'number' && radiusM > 0) {
+          const circle = new google.maps.Circle({
+            map,
+            center: { lat: selected.destination.lat, lng: selected.destination.lng },
+            radius: radiusM,
+            fillColor: '#16A34A',
+            fillOpacity: 0.12,
+            strokeColor: '#16A34A',
+            strokeOpacity: 0.75,
+            strokeWeight: 2,
+          });
+          overlayCirclesRef.current.push(circle);
+        }
+      }
+    }
+  }, [compact, mapTasks, trajectoryTaskIds, animateGoogleMarkerTo, handleSelectTask, selectedTaskId, liveTasks]);
 
   const leftSearchResults = useMemo(() => {
     const needle = leftSearchQuery.trim().toLowerCase();
@@ -2821,6 +3272,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       </div>
 
       {/* Left panel — agent/business search + tabs */}
+      {!fieldFocusMode && (
       <div className="absolute top-20 left-4 right-4 md:top-8 md:left-8 md:right-auto md:w-[340px] z-20 bg-white rounded-[32px] shadow-2xl shadow-black/10 overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
         {/* Dynamic search filter */}
         <div className="px-4 pt-4 pb-2 shrink-0">
@@ -2882,6 +3334,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             onToggleHistory={() => setShowHistoryFeeds((prev) => !prev)}
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
+            onViewHistoryTask={handleViewHistoryTask}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
@@ -2889,6 +3342,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
+            followAllActive={fieldFollowAll}
+            focusMode={fieldFocusMode}
+            onFollowSelected={() => {
+              if (highlightedClockedInUserId != null) {
+                setFieldFollowUserId(highlightedClockedInUserId);
+              }
+            }}
+            onToggleFollowAll={() => setFieldFollowAll(!fieldFollowAll)}
+            onToggleFocusMode={() => setFieldFocusMode(!fieldFocusMode)}
           />
         ) : (
           <BusinessListPanel
@@ -2917,7 +3379,17 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           />
         )}
       </div>
+      )}
 
+      {fieldFocusMode && (
+        <button
+          type="button"
+          onClick={() => setFieldFocusMode(false)}
+          className="absolute top-20 left-4 z-30 inline-flex items-center gap-2 rounded-full bg-[#0A192F] px-4 py-2 text-[12px] font-semibold text-white shadow-lg"
+        >
+          Exit focus
+        </button>
+      )}
 
       {showBusinessPins && (
         <SavedLocationsLayer
@@ -2943,6 +3415,21 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           items={clockedInItems}
           selectedUserId={highlightedClockedInUserId}
           onSelectUserId={setSelectedClockedInUserId}
+          getGoogleMap={() =>
+            mapRef.current && googleRef.current
+              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+              : null
+          }
+        />
+      )}
+
+      {(leftTab === 'clocked-in' || compact) && (
+        <FieldActivityLiveLayer
+          provider="google"
+          ready={googleReady}
+          agents={fieldLiveAgents}
+          selectedUserId={highlightedClockedInUserId}
+          followAll={fieldFollowAll}
           getGoogleMap={() =>
             mapRef.current && googleRef.current
               ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)

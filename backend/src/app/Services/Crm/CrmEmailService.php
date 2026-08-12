@@ -9,19 +9,21 @@ use App\Enums\CrmEmailStatus;
 use App\Jobs\ProcessEmailAttachmentJob;
 use App\Jobs\SendCrmEmailJob;
 use App\Jobs\SyncLeadEmailsJob;
-use App\Models\CompanyCalendarConnection;
 use App\Models\CrmEmailActivityLog;
 use App\Models\CrmEmailAttachment;
 use App\Models\CrmEmailMessage;
 use App\Models\CrmEmailThread;
+use App\Models\EmailAccount;
 use App\Models\Lead;
-use App\Models\UserCalendarConnection;
 use App\Models\User;
 use App\Services\Analytics\AggregateCacheService;
 use App\Services\Company\CompanyContextService;
-use App\Services\Google\GmailApiService;
-use App\Services\Google\GmailMessageParser;
-use App\Services\Google\GoogleScopeHelper;
+use App\Services\Email\EmailAccountDTO;
+use App\Services\Email\EmailAccountService;
+use App\Services\Email\EmailMessageDTO;
+use App\Services\Email\EmailProviderInterface;
+use App\Services\Email\ParsedEmailDTO;
+use App\Services\Google\StaleGmailHistoryException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -36,8 +38,7 @@ class CrmEmailService
 {
     public function __construct(
         private readonly CompanyContextService $companyContextService,
-        private readonly GmailApiService $gmailApiService,
-        private readonly GmailMessageParser $gmailMessageParser,
+        private readonly EmailAccountService $emailAccountService,
         private readonly AggregateCacheService $cacheService,
     ) {}
 
@@ -79,13 +80,17 @@ class CrmEmailService
     }
 
     /**
+     * Queue an email for sending via the user's selected email account.
+     *
      * @param  array<string,mixed>  $data
      */
     public function queueSend(User $user, Lead $lead, array $data): CrmEmailMessage
     {
         $context = $this->authorizeLeadAccess($user, $lead, $data['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
-        $connection = $this->requireUserGmailConnection($companyId, (int) $user->id);
+
+        // Resolve the email account to send from
+        $emailAccount = $this->resolveSendingAccount($user, $companyId, $data);
 
         $to = $this->normalizeRecipients($data['to'] ?? []);
         $cc = $this->normalizeRecipients($data['cc'] ?? []);
@@ -116,13 +121,13 @@ class CrmEmailService
         }
 
         $thread = null;
-        $gmailThreadId = isset($data['gmail_thread_id']) ? trim((string) $data['gmail_thread_id']) : null;
+        $providerThreadId = isset($data['gmail_thread_id']) ? trim((string) $data['gmail_thread_id']) : null;
 
-        if ($gmailThreadId !== null && $gmailThreadId !== '') {
+        if ($providerThreadId !== null && $providerThreadId !== '') {
             $thread = CrmEmailThread::query()
                 ->where('company_id', $companyId)
                 ->where('lead_id', $lead->id)
-                ->where('gmail_thread_id', $gmailThreadId)
+                ->where('gmail_thread_id', $providerThreadId)
                 ->first();
         }
 
@@ -148,8 +153,8 @@ class CrmEmailService
             'gmail_thread_id' => $thread->gmail_thread_id,
             'direction' => CrmEmailDirection::Sent,
             'status' => CrmEmailStatus::Sending,
-            'from_name' => $connection->organizer_name,
-            'from_email' => $connection->organizer_email,
+            'from_name' => $emailAccount->display_name ?? $emailAccount->email,
+            'from_email' => $emailAccount->email,
             'to_recipients' => $to,
             'cc_recipients' => $cc,
             'bcc_recipients' => $bcc,
@@ -158,7 +163,7 @@ class CrmEmailService
             'body_text' => $bodyText,
             'is_read' => true,
             'sent_by_user_id' => $user->id,
-            'gmail_account_email' => $connection->organizer_email,
+            'gmail_account_email' => $emailAccount->email,
             'sent_at' => now(),
         ]);
 
@@ -173,7 +178,9 @@ class CrmEmailService
             'to' => $to,
             'cc' => $cc,
             'bcc' => $bcc,
-            'gmail_account_email' => $connection->organizer_email,
+            'email_account_id' => $emailAccount->id,
+            'email_account_email' => $emailAccount->email,
+            'provider' => $emailAccount->provider,
         ], $message->id, $thread->id, (int) $lead->id);
 
         SendCrmEmailJob::dispatch(
@@ -181,23 +188,41 @@ class CrmEmailService
             isset($data['reply_to_gmail_message_id']) ? trim((string) $data['reply_to_gmail_message_id']) : null,
         );
 
+        Log::info('CRM email queued for sending.', [
+            'message_id' => $message->id,
+            'company_id' => $companyId,
+            'lead_id' => $lead->id,
+            'user_id' => $user->id,
+            'email_account_id' => $emailAccount->id,
+            'provider' => $emailAccount->provider,
+            'subject' => $subject,
+        ]);
+
         $this->invalidateLeadCache($companyId, (int) $lead->id);
         $this->cacheService->bumpCompanyVersion($companyId);
 
         return $message->load(['attachments', 'sentBy:id,name,email', 'thread']);
     }
 
+    /**
+     * Send a queued message by its ID. Called from SendCrmEmailJob.
+     */
     public function sendMessageById(int $messageId, ?string $inReplyToGmailMessageId = null): void
     {
         $message = CrmEmailMessage::query()->with(['thread', 'attachments'])->findOrFail($messageId);
-        $connection = $this->requireUserGmailConnection((int) $message->company_id, (int) $message->sent_by_user_id);
+        $companyId = (int) $message->company_id;
+        $userId = (int) $message->sent_by_user_id;
+
+        $emailAccount = $this->requireUserEmailAccount($companyId, $userId, (string) $message->gmail_account_email);
+        $provider = $this->emailAccountService->resolveProvider($emailAccount);
+        $accountDTO = $emailAccount->toDTO();
 
         $extraHeaders = [];
-        $replyToGmailMessageId = trim((string) ($inReplyToGmailMessageId ?? ''));
+        $replyToMessageId = trim((string) ($inReplyToGmailMessageId ?? ''));
 
-        if ($replyToGmailMessageId !== '') {
-            $extraHeaders[] = 'In-Reply-To: <' . $replyToGmailMessageId . '>';
-            $extraHeaders[] = 'References: <' . $replyToGmailMessageId . '>';
+        if ($replyToMessageId !== '') {
+            $extraHeaders[] = 'In-Reply-To: <' . $replyToMessageId . '>';
+            $extraHeaders[] = 'References: <' . $replyToMessageId . '>';
         }
 
         $attachments = $message->attachments
@@ -219,8 +244,9 @@ class CrmEmailService
                 ? null
                 : (string) $message->gmail_thread_id;
 
-            $result = $this->gmailApiService->sendMessage(
-                connection: $connection,
+            $emailMessageDTO = new EmailMessageDTO(
+                fromEmail: $emailAccount->email,
+                fromName: $emailAccount->display_name,
                 to: is_array($message->to_recipients) ? $message->to_recipients : [],
                 cc: is_array($message->cc_recipients) ? $message->cc_recipients : [],
                 bcc: is_array($message->bcc_recipients) ? $message->bcc_recipients : [],
@@ -231,6 +257,8 @@ class CrmEmailService
                 threadId: $threadId,
                 extraHeaders: $extraHeaders,
             );
+
+            $result = $provider->send($accountDTO, $emailMessageDTO);
 
             $message->update([
                 'gmail_message_id' => $result['id'],
@@ -247,39 +275,63 @@ class CrmEmailService
             ]);
             $message->thread?->increment('message_count');
 
-            $this->logActivity((int) $message->company_id, (int) $message->sent_by_user_id, 'send', [
+            $this->logActivity($companyId, $userId, 'send', [
                 'message_id' => $message->id,
-                'gmail_message_id' => $result['id'],
-                'gmail_thread_id' => $result['threadId'],
+                'provider_message_id' => $result['id'],
+                'provider_thread_id' => $result['threadId'],
                 'subject' => $message->subject,
                 'status' => 'sent',
-                'gmail_account_email' => $connection->organizer_email,
+                'email_account_id' => $emailAccount->id,
+                'email_account_email' => $emailAccount->email,
+                'provider' => $emailAccount->provider,
             ], $message->id, (int) $message->thread_id, (int) $message->lead_id);
+
+            Log::info('CRM email sent successfully.', [
+                'message_id' => $message->id,
+                'company_id' => $companyId,
+                'lead_id' => (int) $message->lead_id,
+                'provider_message_id' => $result['id'],
+                'provider' => $emailAccount->provider,
+            ]);
         } catch (\Throwable $exception) {
             $message->update([
                 'status' => CrmEmailStatus::Failed,
                 'error_message' => $exception->getMessage(),
             ]);
 
-            $this->logActivity((int) $message->company_id, (int) $message->sent_by_user_id, 'fail', [
+            $this->logActivity($companyId, $userId, 'send_failed', [
                 'message_id' => $message->id,
                 'subject' => $message->subject,
                 'status' => 'failed',
                 'error' => $exception->getMessage(),
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
             ], $message->id, (int) $message->thread_id, (int) $message->lead_id);
+
+            Log::error('CRM email send failed.', [
+                'message_id' => $message->id,
+                'company_id' => $companyId,
+                'lead_id' => (int) $message->lead_id,
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
+                'error' => $exception->getMessage(),
+            ]);
 
             throw $exception;
         } finally {
-            $this->invalidateLeadCache((int) $message->company_id, (int) $message->lead_id);
-            $this->cacheService->bumpCompanyVersion((int) $message->company_id);
+            $this->invalidateLeadCache($companyId, (int) $message->lead_id);
+            $this->cacheService->bumpCompanyVersion($companyId);
         }
     }
 
+    /**
+     * Sync emails for a specific lead using the user's connected email account.
+     */
     public function syncLead(int $companyId, int $leadId, ?int $userId = null): void
     {
         if ($userId === null || $userId <= 0) {
             throw ValidationException::withMessages([
-                'integration' => ['A connected personal Google account is required to sync lead emails.'],
+                'integration' => ['A connected email account is required to sync lead emails.'],
             ]);
         }
 
@@ -290,38 +342,106 @@ class CrmEmailService
             return;
         }
 
-        $connection = $this->requireUserGmailConnection($companyId, $userId);
-        $query = sprintf('(from:%s OR to:%s) -in:trash -in:spam', $email, $email);
+        $emailAccount = $this->requireUserEmailAccount($companyId, $userId);
+        $provider = $this->emailAccountService->resolveProvider($emailAccount);
+        $accountDTO = $emailAccount->toDTO();
+
+        Log::info('CRM lead email sync started.', [
+            'company_id' => $companyId,
+            'lead_id' => $leadId,
+            'lead_email' => $email,
+            'user_id' => $userId,
+            'email_account_id' => $emailAccount->id,
+            'provider' => $emailAccount->provider,
+        ]);
+
+        $this->logActivity($companyId, $userId, 'sync_started', [
+            'lead_id' => $leadId,
+            'lead_email' => $email,
+            'email_account_id' => $emailAccount->id,
+            'provider' => $emailAccount->provider,
+        ], null, null, $leadId);
+
+        $query = $this->buildLeadSyncQuery($emailAccount->provider, $email);
         $pageToken = null;
+        $syncedCount = 0;
 
-        do {
-            $listing = $this->gmailApiService->listMessagesForQuery($connection, $query, $pageToken, 50);
-            $messages = $listing['messages'];
+        try {
+            do {
+                $listing = $provider->listMessages($accountDTO, $query, $pageToken, 50);
+                $messages = $listing['messages'];
 
-            foreach ($messages as $item) {
-                $gmailMessageId = (string) ($item['id'] ?? '');
+                foreach ($messages as $item) {
+                    $providerMessageId = (string) ($item['id'] ?? '');
 
-                if ($gmailMessageId === '') {
-                    continue;
+                    if ($providerMessageId === '') {
+                        continue;
+                    }
+
+                    $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId, (int) $lead->id);
+                    $syncedCount++;
                 }
 
-                $this->upsertGmailMessage($connection, $companyId, $gmailMessageId, (int) $lead->id);
-            }
+                $pageToken = $listing['nextPageToken'];
+            } while ($pageToken !== null && $pageToken !== '');
 
-            $pageToken = $listing['nextPageToken'];
-        } while ($pageToken !== null && $pageToken !== '');
+            Log::info('CRM lead email sync completed.', [
+                'company_id' => $companyId,
+                'lead_id' => $leadId,
+                'synced_count' => $syncedCount,
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
+            ]);
+
+            $this->logActivity($companyId, $userId, 'sync_completed', [
+                'lead_id' => $leadId,
+                'lead_email' => $email,
+                'synced_count' => $syncedCount,
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
+            ], null, null, $leadId);
+        } catch (\Throwable $exception) {
+            Log::error('CRM lead email sync failed.', [
+                'company_id' => $companyId,
+                'lead_id' => $leadId,
+                'lead_email' => $email,
+                'synced_count' => $syncedCount,
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
+                'error' => $exception->getMessage(),
+            ]);
+
+            $this->logActivity($companyId, $userId, 'sync_failed', [
+                'lead_id' => $leadId,
+                'lead_email' => $email,
+                'synced_count' => $syncedCount,
+                'error' => $exception->getMessage(),
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
+            ], null, null, $leadId);
+
+            throw $exception;
+        }
 
         $this->invalidateLeadCache($companyId, $leadId);
     }
 
+    /**
+     * Sync company-wide email history using the company's default email account.
+     */
     public function syncCompany(int $companyId): void
     {
-        $this->syncConnectionHistory($this->requireCompanyGmailConnection($companyId), $companyId);
+        $emailAccount = $this->requireCompanyEmailAccount($companyId);
+        $this->syncAccountHistory($emailAccount, $companyId);
     }
 
+    /**
+     * Sync a specific user's email history.
+     */
     public function syncUser(int $companyId, int $userId): void
     {
-        $this->syncConnectionHistory($this->requireUserGmailConnection($companyId, $userId), $companyId);
+        $emailAccount = $this->requireUserEmailAccount($companyId, $userId);
+        $this->syncAccountHistory($emailAccount, $companyId);
     }
 
     public function markAsRead(User $user, Lead $lead, CrmEmailMessage $message, ?int $companyId = null): CrmEmailMessage
@@ -331,12 +451,35 @@ class CrmEmailService
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
         if (! $message->is_read && ! str_starts_with((string) $message->gmail_message_id, 'pending-')) {
-            $connection = $this->requireUserGmailConnection($resolvedCompanyId, (int) $user->id);
-            $this->gmailApiService->markAsRead($connection, (string) $message->gmail_message_id);
+            $emailAccount = $this->requireUserEmailAccount($resolvedCompanyId, (int) $user->id);
+            $provider = $this->emailAccountService->resolveProvider($emailAccount);
+
+            try {
+                $provider->markAsRead($emailAccount->toDTO(), (string) $message->gmail_message_id);
+            } catch (\Throwable $exception) {
+                Log::warning('CRM email mark-as-read provider call failed.', [
+                    'message_id' => $message->id,
+                    'company_id' => $resolvedCompanyId,
+                    'lead_id' => (int) $lead->id,
+                    'provider_message_id' => $message->gmail_message_id,
+                    'email_account_id' => $emailAccount->id,
+                    'provider' => $emailAccount->provider,
+                    'error' => $exception->getMessage(),
+                ]);
+                // Continue — still mark as read locally even if provider call fails
+            }
         }
 
         $message->update(['is_read' => true]);
         $message->thread?->decrement('unread_count');
+
+        $this->logActivity($resolvedCompanyId, (int) $user->id, 'mark_read', [
+            'message_id' => $message->id,
+            'provider_message_id' => $message->gmail_message_id,
+            'subject' => $message->subject,
+            'thread_id' => (int) $message->thread_id,
+            'lead_id' => (int) $lead->id,
+        ], $message->id, (int) $message->thread_id, (int) $lead->id);
 
         return $message->fresh();
     }
@@ -348,18 +491,49 @@ class CrmEmailService
         $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
 
         $threadId = (int) $message->thread_id;
-        $gmailMessageId = (string) $message->gmail_message_id;
+        $providerMessageId = (string) $message->gmail_message_id;
 
-        if ($gmailMessageId !== '' && ! str_starts_with($gmailMessageId, 'pending-')) {
-            $connection = $this->resolveGmailConnectionForMessage(
+        if ($providerMessageId !== '' && ! str_starts_with($providerMessageId, 'pending-')) {
+            $emailAccount = $this->resolveEmailAccountForMessage(
                 $resolvedCompanyId,
                 (int) $user->id,
                 $message,
             );
-            $this->gmailApiService->trashMessage($connection, $gmailMessageId);
+            $provider = $this->emailAccountService->resolveProvider($emailAccount);
+
+            try {
+                $provider->trashMessage($emailAccount->toDTO(), $providerMessageId);
+            } catch (\Throwable $exception) {
+                Log::warning('CRM email delete provider call failed.', [
+                    'message_id' => $message->id,
+                    'company_id' => $resolvedCompanyId,
+                    'lead_id' => (int) $lead->id,
+                    'provider_message_id' => $providerMessageId,
+                    'email_account_id' => $emailAccount->id,
+                    'provider' => $emailAccount->provider,
+                    'error' => $exception->getMessage(),
+                ]);
+                // Continue — still delete locally even if provider call fails
+            }
         }
 
         $message->delete();
+
+        Log::info('CRM email deleted.', [
+            'message_id' => $message->id,
+            'company_id' => $resolvedCompanyId,
+            'lead_id' => (int) $lead->id,
+            'thread_id' => $threadId,
+            'provider_message_id' => $providerMessageId,
+        ]);
+
+        $this->logActivity($resolvedCompanyId, (int) $user->id, 'delete', [
+            'message_id' => $message->id,
+            'provider_message_id' => $providerMessageId,
+            'subject' => $message->subject,
+            'thread_id' => $threadId,
+            'lead_id' => (int) $lead->id,
+        ], $message->id, $threadId, (int) $lead->id);
 
         $thread = CrmEmailThread::query()->find($threadId);
         if ($thread !== null) {
@@ -383,12 +557,26 @@ class CrmEmailService
         $context = $this->authorizeLeadAccess($user, $lead, $companyId);
         $resolvedCompanyId = (int) $context['company']->id;
 
-        $path = Storage::disk('local')->putFile(
-            'crm-email-attachments/company-' . $resolvedCompanyId . '/lead-' . $lead->id,
-            $file,
-        );
+        try {
+            $path = Storage::disk('local')->putFile(
+                'crm-email-attachments/company-' . $resolvedCompanyId . '/lead-' . $lead->id,
+                $file,
+            );
+        } catch (\Throwable $exception) {
+            Log::error('CRM email attachment storage failed.', [
+                'company_id' => $resolvedCompanyId,
+                'lead_id' => (int) $lead->id,
+                'user_id' => (int) $user->id,
+                'filename' => $file->getClientOriginalName(),
+                'error' => $exception->getMessage(),
+            ]);
 
-        return CrmEmailAttachment::query()->create([
+            throw ValidationException::withMessages([
+                'file' => ['Failed to store the attachment. Please try again.'],
+            ]);
+        }
+
+        $attachment = CrmEmailAttachment::query()->create([
             'company_id' => $resolvedCompanyId,
             'uploaded_by_user_id' => $user->id,
             'filename' => $file->getClientOriginalName(),
@@ -398,6 +586,25 @@ class CrmEmailService
             'storage_path' => $path,
             'sync_status' => 'uploaded',
         ]);
+
+        Log::info('CRM email attachment uploaded.', [
+            'attachment_id' => $attachment->id,
+            'company_id' => $resolvedCompanyId,
+            'lead_id' => (int) $lead->id,
+            'user_id' => (int) $user->id,
+            'filename' => $attachment->filename,
+            'size_bytes' => $attachment->size_bytes,
+        ]);
+
+        $this->logActivity($resolvedCompanyId, (int) $user->id, 'upload_attachment', [
+            'attachment_id' => $attachment->id,
+            'filename' => $attachment->filename,
+            'mime_type' => $attachment->mime_type,
+            'size_bytes' => $attachment->size_bytes,
+            'lead_id' => (int) $lead->id,
+        ], null, null, (int) $lead->id);
+
+        return $attachment;
     }
 
     public function downloadAttachment(User $user, CrmEmailAttachment $attachment, ?int $companyId = null): CrmEmailAttachment
@@ -511,48 +718,57 @@ class CrmEmailService
         );
     }
 
-    private function upsertGmailMessage(
-        CompanyCalendarConnection|UserCalendarConnection $connection,
+    // ─── Private helpers ────────────────────────────────────────────────
+
+    /**
+     * Upsert a single email message from any provider into the CRM.
+     */
+    private function upsertEmailMessage(
+        EmailProviderInterface $provider,
+        EmailAccountDTO $accountDTO,
+        EmailAccount $emailAccount,
         int $companyId,
-        string $gmailMessageId,
+        string $providerMessageId,
         ?int $forcedLeadId = null,
     ): void {
         $existing = CrmEmailMessage::withTrashed()
             ->where('company_id', $companyId)
-            ->where('gmail_message_id', $gmailMessageId)
+            ->where('gmail_message_id', $providerMessageId)
             ->first();
 
-        // Intentionally deleted in CRM — never re-import from Gmail sync.
+        // Intentionally deleted in CRM — never re-import.
         if ($existing !== null) {
             return;
         }
 
-        $raw = $this->gmailApiService->getMessage($connection, $gmailMessageId);
-        $parsed = $this->gmailMessageParser->parse($raw);
+        $raw = $provider->getMessage($accountDTO, $providerMessageId);
+        $parsed = $provider->parseMessage($raw);
 
+        // Skip trashed/spam messages (label-based filtering is provider-specific;
+        // we check the raw payload for known trash/spam indicators).
         $labelIds = is_array($raw['labelIds'] ?? null) ? $raw['labelIds'] : [];
         if (in_array('TRASH', $labelIds, true) || in_array('SPAM', $labelIds, true)) {
             return;
         }
 
         $leadId = $forcedLeadId ?? $this->resolveLeadIdFromParticipants($companyId, $parsed);
-        $organizerEmail = strtolower((string) $connection->organizer_email);
-        $fromEmail = strtolower((string) ($parsed['from_email'] ?? ''));
-        $direction = $fromEmail === $organizerEmail
+        $accountEmail = strtolower($emailAccount->email);
+        $fromEmail = strtolower((string) ($parsed->fromEmail ?? ''));
+        $direction = $fromEmail === $accountEmail
             ? CrmEmailDirection::Sent
             : CrmEmailDirection::Received;
 
         $thread = CrmEmailThread::query()->firstOrCreate(
             [
                 'company_id' => $companyId,
-                'gmail_thread_id' => $parsed['gmail_thread_id'],
+                'gmail_thread_id' => $parsed->threadId,
             ],
             [
                 'lead_id' => $leadId,
-                'subject' => $parsed['subject'],
-                'snippet' => $parsed['snippet'],
-                'last_message_at' => $parsed['sent_at'] ? Carbon::parse($parsed['sent_at']) : now(),
-                'unread_count' => $parsed['is_read'] ? 0 : 1,
+                'subject' => $parsed->subject,
+                'snippet' => $parsed->snippet,
+                'last_message_at' => $parsed->sentAt ? Carbon::parse($parsed->sentAt) : now(),
+                'unread_count' => $parsed->isRead ? 0 : 1,
                 'message_count' => 0,
                 'participant_emails' => $this->extractParticipantEmails($parsed),
             ],
@@ -566,32 +782,32 @@ class CrmEmailService
             'company_id' => $companyId,
             'thread_id' => $thread->id,
             'lead_id' => $leadId ?? $thread->lead_id,
-            'gmail_message_id' => $parsed['gmail_message_id'],
-            'gmail_thread_id' => $parsed['gmail_thread_id'],
+            'gmail_message_id' => $parsed->messageId,
+            'gmail_thread_id' => $parsed->threadId,
             'direction' => $direction,
             'status' => CrmEmailStatus::Delivered,
-            'from_name' => $parsed['from_name'],
-            'from_email' => $parsed['from_email'],
-            'to_recipients' => $parsed['to_recipients'],
-            'cc_recipients' => $parsed['cc_recipients'],
-            'bcc_recipients' => $parsed['bcc_recipients'],
-            'subject' => $parsed['subject'],
-            'body_html' => $parsed['body_html'],
-            'body_text' => $parsed['body_text'],
-            'is_read' => $parsed['is_read'],
-            'is_starred' => $parsed['is_starred'],
-            'gmail_account_email' => $connection->organizer_email,
-            'sent_at' => $direction === CrmEmailDirection::Sent && $parsed['sent_at'] ? Carbon::parse($parsed['sent_at']) : null,
-            'received_at' => $direction === CrmEmailDirection::Received && $parsed['sent_at'] ? Carbon::parse($parsed['sent_at']) : null,
+            'from_name' => $parsed->fromName,
+            'from_email' => $parsed->fromEmail,
+            'to_recipients' => $parsed->toRecipients,
+            'cc_recipients' => $parsed->ccRecipients,
+            'bcc_recipients' => $parsed->bccRecipients,
+            'subject' => $parsed->subject,
+            'body_html' => $parsed->bodyHtml,
+            'body_text' => $parsed->bodyText,
+            'is_read' => $parsed->isRead,
+            'is_starred' => $parsed->isStarred,
+            'gmail_account_email' => $emailAccount->email,
+            'sent_at' => $direction === CrmEmailDirection::Sent && $parsed->sentAt ? Carbon::parse($parsed->sentAt) : null,
+            'received_at' => $direction === CrmEmailDirection::Received && $parsed->sentAt ? Carbon::parse($parsed->sentAt) : null,
         ]);
 
-        foreach ($parsed['attachments'] as $attachmentMeta) {
+        foreach ($parsed->attachments as $attachmentMeta) {
             try {
                 $attachment = CrmEmailAttachment::query()->create([
                     'company_id' => $companyId,
                     'message_id' => $message->id,
                     'gmail_attachment_id' => $attachmentMeta['attachment_id'],
-                    'gmail_message_id' => $parsed['gmail_message_id'],
+                    'gmail_message_id' => $parsed->messageId,
                     'filename' => $attachmentMeta['filename'],
                     'mime_type' => $attachmentMeta['mime_type'],
                     'size_bytes' => $attachmentMeta['size'],
@@ -603,33 +819,38 @@ class CrmEmailService
                 Log::warning('CRM email attachment metadata could not be stored.', [
                     'company_id' => $companyId,
                     'message_id' => $message->id,
-                    'gmail_message_id' => $parsed['gmail_message_id'],
+                    'provider_message_id' => $parsed->messageId,
                     'error' => $exception->getMessage(),
                 ]);
             }
         }
 
         $thread->update([
-            'subject' => $parsed['subject'] ?? $thread->subject,
-            'snippet' => $parsed['snippet'] ?? $thread->snippet,
-            'last_message_at' => $parsed['sent_at'] ? Carbon::parse($parsed['sent_at']) : $thread->last_message_at,
+            'subject' => $parsed->subject ?? $thread->subject,
+            'snippet' => $parsed->snippet ?? $thread->snippet,
+            'last_message_at' => $parsed->sentAt ? Carbon::parse($parsed->sentAt) : $thread->last_message_at,
             'message_count' => $thread->messages()->count(),
             'unread_count' => $thread->messages()->where('is_read', false)->count(),
         ]);
 
-        $this->logActivity($companyId, null, 'receive', [
+        $syncAction = $direction === CrmEmailDirection::Sent ? 'sync_sent' : 'sync_received';
+
+        $this->logActivity($companyId, null, $syncAction, [
             'message_id' => $message->id,
-            'gmail_message_id' => $parsed['gmail_message_id'],
-            'gmail_thread_id' => $parsed['gmail_thread_id'],
-            'subject' => $parsed['subject'],
-            'from_email' => $parsed['from_email'],
+            'provider_message_id' => $parsed->messageId,
+            'provider_thread_id' => $parsed->threadId,
+            'subject' => $parsed->subject,
+            'from_email' => $parsed->fromEmail,
+            'direction' => $direction->value,
+            'email_account_id' => $emailAccount->id,
+            'provider' => $emailAccount->provider,
         ], $message->id, $thread->id, $leadId);
     }
 
     /**
-     * @param  array<string,mixed>  $parsed
+     * Resolve a lead ID from the participants of a parsed email.
      */
-    private function resolveLeadIdFromParticipants(int $companyId, array $parsed): ?int
+    private function resolveLeadIdFromParticipants(int $companyId, ParsedEmailDTO $parsed): ?int
     {
         $emails = $this->extractParticipantEmails($parsed);
 
@@ -647,19 +868,20 @@ class CrmEmailService
     }
 
     /**
-     * @param  array<string,mixed>  $parsed
+     * Extract all participant email addresses from a parsed email.
+     *
      * @return list<string>
      */
-    private function extractParticipantEmails(array $parsed): array
+    private function extractParticipantEmails(ParsedEmailDTO $parsed): array
     {
         $emails = [];
 
-        if (! empty($parsed['from_email'])) {
-            $emails[] = strtolower((string) $parsed['from_email']);
+        if ($parsed->fromEmail !== null && $parsed->fromEmail !== '') {
+            $emails[] = strtolower($parsed->fromEmail);
         }
 
-        foreach (['to_recipients', 'cc_recipients', 'bcc_recipients'] as $key) {
-            foreach (is_array($parsed[$key] ?? null) ? $parsed[$key] : [] as $recipient) {
+        foreach ([$parsed->toRecipients, $parsed->ccRecipients, $parsed->bccRecipients] as $group) {
+            foreach ($group as $recipient) {
                 if (! empty($recipient['email'])) {
                     $emails[] = strtolower((string) $recipient['email']);
                 }
@@ -733,161 +955,326 @@ class CrmEmailService
             ->update(['message_id' => $message->id]);
     }
 
-    private function requireUserGmailConnection(int $companyId, int $userId): UserCalendarConnection
-    {
-        $connection = UserCalendarConnection::query()
-            ->where('company_id', $companyId)
-            ->where('user_id', $userId)
-            ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->first();
-
-        if ($connection === null) {
-            throw ValidationException::withMessages([
-                'integration' => ['Google account is not connected. Connect your Google account to send and receive CRM emails.'],
-            ]);
-        }
-
-        if (! GoogleScopeHelper::connectionHasGmailScopes($connection)) {
-            throw ValidationException::withMessages([
-                'integration' => ['Gmail permissions are missing. Reconnect your Google account to enable email.'],
-            ]);
-        }
-
-        return $connection;
-    }
-
     /**
-     * Prefer the mailbox that originally synced/owned the CRM message.
+     * Resolve which email account to send from.
+     *
+     * Priority:
+     *   1. Explicit email_account_id in the request data.
+     *   2. User's default email account.
+     *   3. First active account (fallback).
      */
-    private function resolveGmailConnectionForMessage(
-        int $companyId,
-        int $userId,
-        CrmEmailMessage $message,
-    ): CompanyCalendarConnection|UserCalendarConnection {
-        $accountEmail = strtolower(trim((string) ($message->gmail_account_email ?? '')));
+    private function resolveSendingAccount(User $user, int $companyId, array $data): EmailAccount
+    {
+        $explicitId = isset($data['email_account_id']) ? (int) $data['email_account_id'] : null;
 
-        $userConnection = UserCalendarConnection::query()
-            ->where('company_id', $companyId)
-            ->where('user_id', $userId)
-            ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->first();
-
-        if (
-            $userConnection !== null
-            && GoogleScopeHelper::connectionHasGmailScopes($userConnection)
-            && ($accountEmail === '' || strtolower((string) $userConnection->organizer_email) === $accountEmail)
-        ) {
-            return $userConnection;
-        }
-
-        if ($accountEmail !== '') {
-            $matchedUserConnection = UserCalendarConnection::query()
+        if ($explicitId !== null && $explicitId > 0) {
+            $account = EmailAccount::query()
                 ->where('company_id', $companyId)
+                ->where('user_id', $user->id)
                 ->where('status', 'active')
-                ->whereNull('disconnected_at')
-                ->whereRaw('LOWER(organizer_email) = ?', [$accountEmail])
-                ->first();
+                ->find($explicitId);
 
-            if (
-                $matchedUserConnection !== null
-                && GoogleScopeHelper::connectionHasGmailScopes($matchedUserConnection)
-            ) {
-                return $matchedUserConnection;
-            }
-
-            $companyConnection = CompanyCalendarConnection::query()
-                ->where('company_id', $companyId)
-                ->where('status', 'active')
-                ->whereNull('disconnected_at')
-                ->whereRaw('LOWER(organizer_email) = ?', [$accountEmail])
-                ->first();
-
-            if (
-                $companyConnection !== null
-                && GoogleScopeHelper::connectionHasGmailScopes($companyConnection)
-            ) {
-                return $companyConnection;
+            if ($account !== null) {
+                return $account;
             }
         }
 
-        if ($userConnection !== null && GoogleScopeHelper::connectionHasGmailScopes($userConnection)) {
-            return $userConnection;
+        $default = $this->emailAccountService->getDefaultAccount($user, $companyId);
+
+        if ($default !== null) {
+            return $default;
         }
 
         throw ValidationException::withMessages([
-            'integration' => ['Google account is not connected. Connect your Google account to manage CRM emails.'],
+            'email_account_id' => ['No active email account is connected. Connect an email account to send CRM emails.'],
         ]);
     }
 
-    private function requireCompanyGmailConnection(int $companyId): CompanyCalendarConnection
+    /**
+     * Require an active email account for the given user.
+     */
+    private function requireUserEmailAccount(int $companyId, int $userId, ?string $preferredEmail = null): EmailAccount
     {
-        $connection = CompanyCalendarConnection::query()
+        $query = EmailAccount::query()
             ->where('company_id', $companyId)
-            ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->first();
+            ->where('user_id', $userId)
+            ->where('status', 'active');
 
-        if ($connection === null) {
-            throw ValidationException::withMessages([
-                'integration' => ['No active company Google account is connected for CRM history sync.'],
-            ]);
-        }
-
-        if (! GoogleScopeHelper::connectionHasGmailScopes($connection)) {
-            throw ValidationException::withMessages([
-                'integration' => ['Gmail permissions are missing. Reconnect your Google account to enable email.'],
-            ]);
-        }
-
-        return $connection;
-    }
-
-    private function syncConnectionHistory(
-        CompanyCalendarConnection|UserCalendarConnection $connection,
-        int $companyId,
-    ): void {
-        if ($connection->gmail_history_id === null) {
-            $profile = $this->gmailApiService->getProfile($connection);
-            $connection->update([
-                'gmail_history_id' => isset($profile['historyId']) ? (string) $profile['historyId'] : null,
-                'gmail_last_synced_at' => now(),
-            ]);
-
-            return;
-        }
-
-        $history = $this->gmailApiService->listHistory($connection, (string) $connection->gmail_history_id);
-        $messageIds = [];
-
-        foreach ($history['history'] as $entry) {
-            foreach (['messagesAdded', 'messages'] as $key) {
-                $items = is_array($entry[$key] ?? null) ? $entry[$key] : [];
-
-                foreach ($items as $item) {
-                    $message = is_array($item['message'] ?? null) ? $item['message'] : $item;
-                    $id = (string) ($message['id'] ?? '');
-
-                    if ($id !== '') {
-                        $messageIds[] = $id;
-                    }
-                }
+        if ($preferredEmail !== null && $preferredEmail !== '') {
+            $matched = (clone $query)->whereRaw('LOWER(email) = ?', [strtolower($preferredEmail)])->first();
+            if ($matched !== null) {
+                return $matched;
             }
         }
 
-        $messageIds = array_values(array_unique($messageIds));
+        $account = $query->orderByDesc('is_default')->orderBy('created_at')->first();
 
-        foreach ($messageIds as $gmailMessageId) {
-            $this->upsertGmailMessage($connection, $companyId, $gmailMessageId);
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'integration' => ['No active email account is connected. Connect an email account to send and receive CRM emails.'],
+            ]);
         }
 
-        $connection->update([
-            'gmail_history_id' => $history['historyId'] ?? $connection->gmail_history_id,
-            'gmail_last_synced_at' => now(),
+        return $account;
+    }
+
+    /**
+     * Resolve the email account that owns a given CRM message.
+     */
+    private function resolveEmailAccountForMessage(
+        int $companyId,
+        int $userId,
+        CrmEmailMessage $message,
+    ): EmailAccount {
+        $accountEmail = strtolower(trim((string) ($message->gmail_account_email ?? '')));
+
+        // Try matching by the stored account email
+        if ($accountEmail !== '') {
+            $matched = EmailAccount::query()
+                ->where('company_id', $companyId)
+                ->where('status', 'active')
+                ->whereRaw('LOWER(email) = ?', [$accountEmail])
+                ->first();
+
+            if ($matched !== null) {
+                return $matched;
+            }
+        }
+
+        // Fall back to the user's default account
+        $userAccount = EmailAccount::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->orderByDesc('is_default')
+            ->first();
+
+        if ($userAccount !== null) {
+            return $userAccount;
+        }
+
+        throw ValidationException::withMessages([
+            'integration' => ['No active email account is connected. Connect an email account to manage CRM emails.'],
+        ]);
+    }
+
+    /**
+     * Require a company-level email account (for company-wide sync).
+     */
+    private function requireCompanyEmailAccount(int $companyId): EmailAccount
+    {
+        $account = EmailAccount::query()
+            ->where('company_id', $companyId)
+            ->where('status', 'active')
+            ->orderByDesc('is_default')
+            ->orderBy('created_at')
+            ->first();
+
+        if ($account === null) {
+            throw ValidationException::withMessages([
+                'integration' => ['No active company email account is connected for CRM history sync.'],
+            ]);
+        }
+
+        return $account;
+    }
+
+    /**
+     * Sync history for a given email account using the provider's history/delta API.
+     */
+    private function syncAccountHistory(EmailAccount $emailAccount, int $companyId): void
+    {
+        $provider = $this->emailAccountService->resolveProvider($emailAccount);
+        $accountDTO = $emailAccount->toDTO();
+
+        Log::info('CRM email account history sync started.', [
+            'company_id' => $companyId,
+            'email_account_id' => $emailAccount->id,
+            'provider' => $emailAccount->provider,
+            'email' => $emailAccount->email,
+            'history_id' => $emailAccount->history_id,
         ]);
 
+        try {
+            if ($emailAccount->history_id === null) {
+                $this->runInitialMailboxBackfill($provider, $accountDTO, $emailAccount, $companyId);
+            } else {
+                try {
+                    $history = $provider->listHistory($accountDTO, (string) $emailAccount->history_id);
+                } catch (StaleGmailHistoryException $exception) {
+                    Log::warning('CRM email history cursor stale; resetting mailbox sync.', [
+                        'company_id' => $companyId,
+                        'email_account_id' => $emailAccount->id,
+                        'provider' => $emailAccount->provider,
+                        'history_id' => $emailAccount->history_id,
+                        'error' => $exception->getMessage(),
+                    ]);
+
+                    $emailAccount->update(['history_id' => null]);
+                    $emailAccount->refresh();
+                    $this->runInitialMailboxBackfill($provider, $accountDTO, $emailAccount, $companyId);
+
+                    return;
+                }
+
+                $messageIds = [];
+
+                foreach ($history['history'] as $entry) {
+                    if (! is_array($entry)) {
+                        continue;
+                    }
+
+                    foreach (['messagesAdded', 'messages'] as $key) {
+                        $items = is_array($entry[$key] ?? null) ? $entry[$key] : [];
+
+                        foreach ($items as $item) {
+                            $message = is_array($item['message'] ?? null) ? $item['message'] : $item;
+                            if (! is_array($message)) {
+                                continue;
+                            }
+                            $id = (string) ($message['id'] ?? '');
+
+                            if ($id !== '') {
+                                $messageIds[] = $id;
+                            }
+                        }
+                    }
+                }
+
+                // Providers without incremental history (Zoho/IMAP) return empty history —
+                // fall back to a recent listMessages backfill.
+                if ($messageIds === [] && in_array($emailAccount->provider, ['zoho', 'imap_smtp'], true)) {
+                    $this->runInitialMailboxBackfill($provider, $accountDTO, $emailAccount, $companyId);
+
+                    return;
+                }
+
+                $messageIds = array_values(array_unique($messageIds));
+
+                foreach ($messageIds as $providerMessageId) {
+                    try {
+                        $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId);
+                    } catch (\Throwable $exception) {
+                        if ($this->isMissingProviderMessageError($exception)) {
+                            Log::info('CRM email sync skipped missing provider message.', [
+                                'company_id' => $companyId,
+                                'email_account_id' => $emailAccount->id,
+                                'provider_message_id' => $providerMessageId,
+                            ]);
+
+                            continue;
+                        }
+
+                        throw $exception;
+                    }
+                }
+
+                $this->emailAccountService->updateSyncState(
+                    $emailAccount,
+                    $history['historyId'] ?? $emailAccount->history_id,
+                );
+
+                Log::info('CRM email account history sync completed.', [
+                    'company_id' => $companyId,
+                    'email_account_id' => $emailAccount->id,
+                    'provider' => $emailAccount->provider,
+                    'messages_synced' => count($messageIds),
+                ]);
+            }
+        } catch (\Throwable $exception) {
+            Log::error('CRM email account history sync failed.', [
+                'company_id' => $companyId,
+                'email_account_id' => $emailAccount->id,
+                'provider' => $emailAccount->provider,
+                'error' => $exception->getMessage(),
+            ]);
+
+            if ($this->shouldMarkAccountConnectionError($exception)) {
+                $this->emailAccountService->markError($emailAccount, $exception->getMessage());
+            }
+
+            throw $exception;
+        }
+
         $this->cacheService->bumpCompanyVersion($companyId);
+    }
+
+    /**
+     * First-sync / fallback: import recent mailbox messages then seed a cursor.
+     */
+    private function runInitialMailboxBackfill(
+        EmailProviderInterface $provider,
+        EmailAccountDTO $accountDTO,
+        EmailAccount $emailAccount,
+        int $companyId,
+    ): void {
+        $synced = 0;
+        $pageToken = null;
+        $pages = 0;
+
+        do {
+            $listing = $provider->listMessages($accountDTO, '', $pageToken, 50);
+            $messages = is_array($listing['messages'] ?? null) ? $listing['messages'] : [];
+
+            foreach ($messages as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $providerMessageId = (string) ($item['id'] ?? '');
+                if ($providerMessageId === '') {
+                    continue;
+                }
+
+                try {
+                    $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId);
+                    $synced++;
+                } catch (\Throwable $exception) {
+                    Log::warning('CRM email initial backfill message failed.', [
+                        'company_id' => $companyId,
+                        'email_account_id' => $emailAccount->id,
+                        'provider_message_id' => $providerMessageId,
+                        'error' => $exception->getMessage(),
+                    ]);
+                }
+            }
+
+            $pageToken = isset($listing['nextPageToken']) ? (string) $listing['nextPageToken'] : null;
+            $pages++;
+        } while ($pageToken !== null && $pageToken !== '' && $pages < 3);
+
+        $historyId = null;
+        try {
+            $profile = $provider->getProfile($accountDTO);
+            if (isset($profile['historyId']) && (string) $profile['historyId'] !== '') {
+                $historyId = (string) $profile['historyId'];
+            }
+        } catch (\Throwable) {
+            // Profile optional for cursor seeding.
+        }
+
+        if ($historyId === null) {
+            $historyId = (string) time();
+        }
+
+        $this->emailAccountService->updateSyncState($emailAccount, $historyId);
+
+        Log::info('CRM email account initial backfill completed.', [
+            'company_id' => $companyId,
+            'email_account_id' => $emailAccount->id,
+            'provider' => $emailAccount->provider,
+            'messages_synced' => $synced,
+        ]);
+    }
+
+    private function buildLeadSyncQuery(string $provider, string $email): string
+    {
+        return match ($provider) {
+            'google' => sprintf('(from:%s OR to:%s)', $email, $email),
+            'microsoft' => 'participants:' . $email,
+            'zoho' => 'participants:' . $email,
+            'imap_smtp' => 'participants:' . $email,
+            default => $email,
+        };
     }
 
     /**
@@ -969,5 +1356,51 @@ class CrmEmailService
     private function applyMessageTimelineOrder($query)
     {
         return $query->orderByRaw('COALESCE(sent_at, received_at) ASC');
+    }
+
+    private function shouldMarkAccountConnectionError(\Throwable $exception): bool
+    {
+        $message = strtolower($this->exceptionMessage($exception));
+
+        if ($message === '') {
+            return false;
+        }
+
+        if (
+            str_contains($message, 'requested entity was not found')
+            || str_contains($message, 'rate limit')
+            || str_contains($message, 'message not found')
+            || str_contains($message, 'history cursor is stale')
+        ) {
+            return false;
+        }
+
+        return str_contains($message, 'authorization failed')
+            || str_contains($message, 'invalid_grant')
+            || str_contains($message, 'token refresh failed')
+            || str_contains($message, 'reconnect')
+            || str_contains($message, 'access expired')
+            || str_contains($message, 'invalid_client');
+    }
+
+    private function isMissingProviderMessageError(\Throwable $exception): bool
+    {
+        $message = strtolower($this->exceptionMessage($exception));
+
+        return str_contains($message, 'message not found')
+            || str_contains($message, 'requested entity was not found');
+    }
+
+    private function exceptionMessage(\Throwable $exception): string
+    {
+        if ($exception instanceof ValidationException) {
+            $first = collect($exception->errors())->flatten()->first();
+
+            if (is_string($first) && trim($first) !== '') {
+                return trim($first);
+            }
+        }
+
+        return trim($exception->getMessage());
     }
 }

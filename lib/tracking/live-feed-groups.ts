@@ -1,30 +1,17 @@
-import { resolveOperationalStatusFromTask } from "@/lib/tracking/operational-status";
+import {
+  isLiveTaskStale,
+  resolveOperationalStatusFromTask,
+  taskAgeMs,
+} from "@/lib/tracking/operational-status";
 import type { LiveTaskState } from "@/types/tracking";
+
+export { taskAgeMs, isLiveTaskStale };
 
 /** Matches backend `tracking.agent_location_stale_after_seconds` default (300s). */
 export const TRACKING_STALE_MS = 300_000;
 
 export function hasUsableTaskPosition(task: LiveTaskState): boolean {
   return task.lastPosition[0] !== 0 || task.lastPosition[1] !== 0;
-}
-
-/**
- * Milliseconds since we last heard from this agent. Prefers the client-stamped
- * `lastReceivedAt` (set the moment a WS event / snapshot arrives) because the
- * server/device `lastEventAt` can carry a skewed timezone offset that makes a
- * live agent look ~1h stale. Falls back to `lastEventAt` when no receive stamp.
- */
-export function taskAgeMs(task: LiveTaskState, nowMs: number): number {
-  if (typeof task.lastReceivedAt === "number" && task.lastReceivedAt > 0) {
-    return nowMs - task.lastReceivedAt;
-  }
-  if (!task.lastEventAt) return 0;
-  return nowMs - new Date(task.lastEventAt).getTime();
-}
-
-function isTaskStale(task: LiveTaskState, nowMs: number, staleMs: number): boolean {
-  if (!nowMs) return false;
-  return taskAgeMs(task, nowMs) > staleMs;
 }
 
 /**
@@ -46,7 +33,7 @@ export function isActivelyOnTask(
   // "offline" flags are derived from server-vs-device time and misfire under
   // clock skew (a live, actively-tracking agent then looks offline), so they
   // must NOT gate activity here.
-  if (isTaskStale(task, nowMs, staleMs)) return false;
+  if (isLiveTaskStale(task, nowMs, staleMs)) return false;
 
   const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, staleMs);
   return operationalStatus !== "completed";
@@ -95,7 +82,8 @@ export function shouldShowTrajectory(
   followAllActive: boolean,
   activeTaskIds: ReadonlySet<number>,
 ): boolean {
-  if (followAllActive) return activeTaskIds.has(taskId);
+  if (activeTaskIds.has(taskId)) return true;
+  if (followAllActive) return false;
   return selectedTaskId != null && selectedTaskId === taskId;
 }
 
@@ -116,15 +104,11 @@ export function resolveMapTasks(
 export function resolveTrajectoryTaskIds(
   active: LiveTaskState[],
   selectedTaskId: number | null,
-  followAllActive: boolean,
+  _followAllActive: boolean,
 ): Set<number> {
-  if (followAllActive) {
-    return new Set(active.map((task) => task.taskId));
-  }
-  if (selectedTaskId != null) {
-    return new Set([selectedTaskId]);
-  }
-  return new Set();
+  const ids = new Set(active.map((task) => task.taskId));
+  if (selectedTaskId != null) ids.add(selectedTaskId);
+  return ids;
 }
 
 export function taskMatchesSearch(task: LiveTaskState, needle: string): boolean {
@@ -137,4 +121,67 @@ export function taskMatchesSearch(task: LiveTaskState, needle: string): boolean 
     (task.taskAddress ?? "").toLowerCase().includes(q) ||
     String(task.taskId).includes(q)
   );
+}
+
+/** Count open/live tasks per agent (userId). Completed tasks are excluded. */
+export function countLiveTasksByAgent(
+  tasks: LiveTaskState[],
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const task of tasks) {
+    if (task.status === "completed") continue;
+    if (task.userId <= 0) continue;
+    counts.set(task.userId, (counts.get(task.userId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Prefer the most recently updated task per agent for map pins, keeping every
+ * task available in the store/feed. Selected task is always retained.
+ */
+export function resolvePreferredMapTasks(
+  tasks: LiveTaskState[],
+  selectedTaskId: number | null,
+): LiveTaskState[] {
+  const byAgent = new Map<number, LiveTaskState>();
+  const orphans: LiveTaskState[] = [];
+
+  const sorted = [...tasks].sort(sortByLastEventDesc);
+
+  for (const task of sorted) {
+    if (task.userId <= 0) {
+      orphans.push(task);
+      continue;
+    }
+    if (!byAgent.has(task.userId)) {
+      byAgent.set(task.userId, task);
+    }
+  }
+
+  const preferred = [...byAgent.values(), ...orphans];
+  if (selectedTaskId == null) return preferred;
+
+  const selected = tasks.find((t) => t.taskId === selectedTaskId);
+  if (!selected) return preferred;
+  if (preferred.some((t) => t.taskId === selectedTaskId)) return preferred;
+  return [...preferred, selected];
+}
+
+export function formatRelativeLastSeen(
+  iso: string | undefined,
+  nowMs: number,
+): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const ageMs = Math.max(0, nowMs - then);
+  const sec = Math.floor(ageMs / 1000);
+  if (sec < 45) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hrs = Math.floor(min / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }

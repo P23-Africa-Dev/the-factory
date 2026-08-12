@@ -5,6 +5,8 @@
 export interface LocationQueueEntry {
   id?: number; // Auto-incremented by IndexedDB
   taskId: number;
+  /** Company that owns the task/session — preferred over active company at sync time. */
+  companyId?: number | null;
   /** When set, point belongs to a day-level field activity session (not a task). */
   fieldActivitySessionId?: number | null;
   latitude: number;
@@ -14,9 +16,20 @@ export interface LocationQueueEntry {
   headingDegrees: number | null;
   recordedAt: string;
   synced: 0 | 1; // 0 = pending, 1 = sent
+  /** 1 while a memory flush or syncEngine POST is in flight for this row. */
+  inFlight?: 0 | 1;
   attempts?: number;
   nextAttemptAt?: string | null;
   lastError?: string | null;
+}
+
+/** Auth mirror for service-worker background location upload (SW cannot read localStorage). */
+export interface SyncMetaEntry {
+  id: string;
+  token: string;
+  apiBaseUrl: string;
+  companyId: number | null;
+  updatedAt: string;
 }
 
 export interface ProofQueueEntry {

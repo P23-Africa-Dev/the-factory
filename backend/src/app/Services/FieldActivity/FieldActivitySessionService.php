@@ -22,11 +22,11 @@ use App\Models\User;
 use App\Services\Attendance\AttendanceAccessService;
 use App\Services\Notification\NotificationService;
 use App\Services\Tracking\AgentLocationSnapshotService;
+use App\Support\ClientTime;
 use App\Support\GeoDistance;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -41,6 +41,7 @@ class FieldActivitySessionService
         private readonly FieldCrmBridgeService $crmBridgeService,
         private readonly AgentLocationSnapshotService $snapshotService,
         private readonly NotificationService $notificationService,
+        private readonly FieldActivityRealtimeService $realtimeService,
     ) {}
 
     public function startForAttendance(AttendanceRecord $record, Company $company): ?FieldActivitySession
@@ -149,7 +150,7 @@ class FieldActivitySessionService
         bool $autoClosed = false,
         bool $withNarrative = false,
     ): FieldDailySummary {
-        $ended = $endedAt instanceof Carbon ? $endedAt : ($endedAt !== null ? Carbon::parse($endedAt) : now());
+        $ended = $endedAt instanceof Carbon ? $endedAt : ClientTime::parse($endedAt);
 
         $this->stopDetectionService->finalizeOpenStops($session, $ended);
 
@@ -261,6 +262,10 @@ class FieldActivitySessionService
             $this->upsertLiveSnapshot($session, $last);
             $this->publishRealtime($session, $last);
             $this->maybeSendStopReminder($session);
+        } elseif ($rawPoints !== []) {
+            // Samples were gated out of trail persistence but still moved the
+            // last-known position — publish it so the live map stays smooth.
+            $this->realtimeService->publishLastKnownLocation($session);
         }
 
         Log::debug('field_activity.lifecycle.points_ingested', [
@@ -301,9 +306,14 @@ class FieldActivitySessionService
             return null;
         }
 
-        $recordedAt = isset($raw['recorded_at']) && $raw['recorded_at'] !== null
-            ? Carbon::parse((string) $raw['recorded_at'])
-            : now();
+        $recordedAt = ClientTime::parse($raw['recorded_at'] ?? null);
+
+        // Never rewind the session's time cursor: an out-of-order or
+        // clock-skewed point must not move last_recorded_at into the past,
+        // otherwise later points accrue phantom active time.
+        $cursorAt = $session->last_recorded_at !== null && $recordedAt->lt($session->last_recorded_at)
+            ? $session->last_recorded_at->copy()
+            : $recordedAt;
 
         $previous = null;
         if ($session->last_latitude !== null && $session->last_longitude !== null) {
@@ -328,7 +338,7 @@ class FieldActivitySessionService
                 'last_latitude' => $lat,
                 'last_longitude' => $lng,
                 'last_accuracy_meters' => isset($raw['accuracy_meters']) ? (float) $raw['accuracy_meters'] : null,
-                'last_recorded_at' => $recordedAt,
+                'last_recorded_at' => $cursorAt,
                 'last_movement_state' => $interpreted['movement_state'],
             ])->save();
 
@@ -360,8 +370,13 @@ class FieldActivitySessionService
 
         $intervalSeconds = 0;
         if ($session->last_recorded_at !== null) {
-            $intervalSeconds = max(0, $session->last_recorded_at->diffInSeconds($recordedAt));
+            $intervalSeconds = (int) max(0, $session->last_recorded_at->diffInSeconds($recordedAt));
         }
+
+        // Cap the interval so offline gaps (app killed, no GPS for hours)
+        // are not credited as travel/stationary time.
+        $maxInterval = max(60, (int) config('field_activity.max_active_interval_seconds', 900));
+        $intervalSeconds = min($intervalSeconds, $maxInterval);
 
         $travelAdd = 0;
         $stationaryAdd = 0;
@@ -378,11 +393,11 @@ class FieldActivitySessionService
             'last_latitude' => $lat,
             'last_longitude' => $lng,
             'last_accuracy_meters' => isset($raw['accuracy_meters']) ? (float) $raw['accuracy_meters'] : null,
-            'last_recorded_at' => $recordedAt,
+            'last_recorded_at' => $cursorAt,
             'last_movement_state' => $interpreted['movement_state'],
             'last_persisted_latitude' => $lat,
             'last_persisted_longitude' => $lng,
-            'last_persisted_recorded_at' => $recordedAt,
+            'last_persisted_recorded_at' => $cursorAt,
         ])->save();
 
         return $point;
@@ -450,28 +465,7 @@ class FieldActivitySessionService
 
     private function publishRealtime(FieldActivitySession $session, FieldLocationPoint $point): void
     {
-        try {
-            $prefix = (string) config('field_activity.redis_channel_prefix', 'factory23.tracking');
-            $payload = [
-                'type' => 'field_activity.location',
-                'channel' => "{$prefix}.company.{$session->company_id}",
-                'payload' => [
-                    'field_activity_session_id' => $session->id,
-                    'user_id' => $session->user_id,
-                    'company_id' => $session->company_id,
-                    'latitude' => $point->latitude,
-                    'longitude' => $point->longitude,
-                    'movement_state' => $point->movement_state?->value,
-                    'recorded_at' => $point->recorded_at?->toIso8601String(),
-                ],
-            ];
-            Redis::connection('pubsub')->publish(
-                "{$prefix}.company.{$session->company_id}",
-                json_encode($payload, JSON_THROW_ON_ERROR),
-            );
-        } catch (Throwable $e) {
-            Log::debug('field_activity.realtime_publish_failed', ['message' => $e->getMessage()]);
-        }
+        $this->realtimeService->publishLocation($session, $point);
     }
 
     private function maybeSendStopReminder(FieldActivitySession $session): void
@@ -531,8 +525,8 @@ class FieldActivitySessionService
             ),
             'reference_type' => FieldDailySummary::class,
             'reference_id' => (int) $summary->id,
-            'action_url' => '/agent/field-activity',
-            'action_route' => 'field-activity.today',
+            'action_url' => '/agent/field-activity?inbox=1',
+            'action_route' => 'field-activity.pending-review',
             'priority' => NotificationPriority::NORMAL->value,
             'created_by_user_id' => null,
             'metadata' => [
@@ -586,7 +580,7 @@ class FieldActivitySessionService
             'config' => [
                 'moving_interval_seconds' => (int) config('field_activity.moving_interval_seconds', 60),
                 'stationary_interval_seconds' => (int) config('field_activity.stationary_interval_seconds', 300),
-                'stop_dwell_seconds' => (int) config('field_activity.stop_dwell_seconds', 900),
+                'stop_dwell_seconds' => (int) config('field_activity.stop_dwell_seconds', 300),
             ],
         ];
     }
@@ -897,15 +891,19 @@ class FieldActivitySessionService
      */
     public function serializeSummary(FieldDailySummary $summary): array
     {
+        $session = $summary->field_activity_session_id
+            ? FieldActivitySession::query()->find($summary->field_activity_session_id)
+            : null;
+
         return [
             'id' => $summary->id,
             'summary_date' => $summary->summary_date?->toDateString(),
-            'distance_meters' => (int) $summary->distance_meters,
-            'travel_seconds' => (int) $summary->travel_seconds,
-            'stationary_seconds' => (int) $summary->stationary_seconds,
-            'stop_count' => (int) $summary->stop_count,
-            'visit_count' => (int) $summary->visit_count,
-            'unknown_stop_count' => (int) $summary->unknown_stop_count,
+            'distance_meters' => (int) ($session?->distance_meters ?? $summary->distance_meters),
+            'travel_seconds' => (int) ($session?->travel_seconds ?? $summary->travel_seconds),
+            'stationary_seconds' => (int) ($session?->stationary_seconds ?? $summary->stationary_seconds),
+            'stop_count' => (int) ($session?->stop_count ?? $summary->stop_count),
+            'visit_count' => (int) ($session?->visit_count ?? $summary->visit_count),
+            'unknown_stop_count' => (int) ($session?->unknown_stop_count ?? $summary->unknown_stop_count),
             'personal_stop_count' => (int) $summary->personal_stop_count,
             'ignored_stop_count' => (int) $summary->ignored_stop_count,
             'narrative' => $summary->narrative,

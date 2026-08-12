@@ -47,10 +47,70 @@ return [
             'GOOGLE_CALENDAR_REDIRECT_URI',
             rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/calendar/integration/callback',
         ),
+        // Calendar meetings only — Gmail/CRM mailbox uses google_mail scopes via Email Accounts.
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_CALENDAR_SCOPES',
-            'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
+            'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events',
         ))))),
+    ],
+
+    // Email Accounts OAuth — reuses Google client credentials by default.
+    // IMPORTANT: redirect_uri must be registered in Google Cloud Console. Defaults to the
+    // already-registered calendar callback so Email Accounts works without a second URI.
+    'google_mail' => [
+        'client_id' => env('GOOGLE_MAIL_CLIENT_ID', env('GOOGLE_CALENDAR_CLIENT_ID')),
+        'client_secret' => env('GOOGLE_MAIL_CLIENT_SECRET', env('GOOGLE_CALENDAR_CLIENT_SECRET')),
+        'redirect_uri' => env(
+            'GOOGLE_MAIL_REDIRECT_URI',
+            env(
+                'GOOGLE_CALENDAR_REDIRECT_URI',
+                rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/calendar/integration/callback',
+            ),
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'GOOGLE_MAIL_SCOPES',
+            'openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
+        ))))),
+    ],
+
+    'microsoft_mail' => [
+        'client_id' => env('MICROSOFT_MAIL_CLIENT_ID'),
+        'client_secret' => env('MICROSOFT_MAIL_CLIENT_SECRET'),
+        'tenant' => env('MICROSOFT_MAIL_TENANT', 'common'),
+        'redirect_uri' => env(
+            'MICROSOFT_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/microsoft/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'MICROSOFT_MAIL_SCOPES',
+            'openid,email,profile,offline_access,https://graph.microsoft.com/Mail.ReadWrite,https://graph.microsoft.com/Mail.Send,https://graph.microsoft.com/User.Read',
+        ))))),
+    ],
+
+    'zoho_mail' => [
+        'client_id' => env('ZOHO_MAIL_CLIENT_ID'),
+        'client_secret' => env('ZOHO_MAIL_CLIENT_SECRET'),
+        'datacenter' => env('ZOHO_MAIL_DATACENTER', 'com'),
+        'redirect_uri' => env(
+            'ZOHO_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/zoho/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'ZOHO_MAIL_SCOPES',
+            'ZohoMail.messages.ALL,ZohoMail.accounts.READ',
+        ))))),
+    ],
+
+    // Custom IMAP/SMTP is disabled in production (hosting blocks outbound SMTP).
+    // Prefer Google / Microsoft OAuth for CRM mailbox connect.
+    'email_accounts' => [
+        'imap_smtp_enabled' => filter_var(
+            env(
+                'EMAIL_IMAP_SMTP_ENABLED',
+                env('APP_ENV', 'production') === 'local' || env('APP_ENV') === 'testing' ? 'true' : 'false',
+            ),
+            FILTER_VALIDATE_BOOL,
+        ),
     ],
 
     'mapbox' => [

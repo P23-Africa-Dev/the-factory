@@ -8,7 +8,9 @@ return [
     | Adaptive GPS client intervals
     |--------------------------------------------------------------------------
     */
-    'moving_interval_seconds' => (int) env('FIELD_ACTIVITY_MOVING_INTERVAL_SECONDS', 60),
+    // 30s while moving keeps the live map continuous (matches the client's
+    // 30s flush cadence); the persist gates below still cap trail density.
+    'moving_interval_seconds' => (int) env('FIELD_ACTIVITY_MOVING_INTERVAL_SECONDS', 30),
     'stationary_interval_seconds' => (int) env('FIELD_ACTIVITY_STATIONARY_INTERVAL_SECONDS', 300),
 
     /*
@@ -19,6 +21,10 @@ return [
     'persist_min_interval_seconds' => (int) env('FIELD_ACTIVITY_PERSIST_MIN_INTERVAL_SECONDS', 30),
     'persist_min_distance_meters' => (float) env('FIELD_ACTIVITY_PERSIST_MIN_DISTANCE_METERS', 20),
     'max_batch_points' => (int) env('FIELD_ACTIVITY_MAX_BATCH_POINTS', 50),
+
+    // Cap on the interval credited between two consecutive points. Gaps
+    // beyond this (device offline, app killed) are not counted as active time.
+    'max_active_interval_seconds' => (int) env('FIELD_ACTIVITY_MAX_ACTIVE_INTERVAL_SECONDS', 900),
 
     /*
     |--------------------------------------------------------------------------
@@ -35,7 +41,9 @@ return [
     |--------------------------------------------------------------------------
     */
     'stop_radius_meters' => (float) env('FIELD_ACTIVITY_STOP_RADIUS_METERS', 50),
-    'stop_dwell_seconds' => (int) env('FIELD_ACTIVITY_STOP_DWELL_SECONDS', 900),
+    'stop_dwell_seconds' => (int) env('FIELD_ACTIVITY_STOP_DWELL_SECONDS', 300),
+    // Do not bridge two same-place samples across a long GPS outage.
+    'stop_max_gap_seconds' => (int) env('FIELD_ACTIVITY_STOP_MAX_GAP_SECONDS', 900),
     'stop_reminder_seconds' => (int) env('FIELD_ACTIVITY_STOP_REMINDER_SECONDS', 1800),
 
     /*

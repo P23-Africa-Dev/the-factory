@@ -182,6 +182,74 @@ final class ReadToolArgsResolverTest extends TestCase
         );
     }
 
+    public function test_affirmative_after_map_offer_stays_on_map_not_older_leads(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+        $memory = $this->app->make(ConversationMemoryService::class);
+
+        $thread = $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            null,
+            'user',
+            'Show my leads',
+        );
+        $threadId = (string) $thread['thread_id'];
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'You have 24 leads. Would you like me to list all of them?',
+            ['crm.top_leads'],
+            'crm.top_leads',
+            [
+                'count' => 10,
+                'total' => 24,
+                'truncated' => true,
+                'remaining_count' => 14,
+                'offer_full_list' => true,
+            ],
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'user',
+            'how many locations are pinned',
+        );
+
+        $memory->appendMessage(
+            (int) $company->id,
+            (int) $admin->id,
+            $threadId,
+            'assistant',
+            'You have 9 active pinned locations on the map. Would you like me to list all of them?',
+            ['map.pinned_locations_count'],
+            'map.pinned_locations_count',
+            [
+                'count' => 8,
+                'total' => 9,
+                'total_pinned_locations' => 9,
+                'truncated' => true,
+                'remaining_count' => 1,
+                'offer_full_list' => true,
+            ],
+        );
+
+        $this->assertSame(
+            'map.pinned_locations_count',
+            $this->resolver->resolveTruncatedListToolFromThread(
+                'yes please!',
+                $threadId,
+                (int) $company->id,
+                (int) $admin->id,
+            )
+        );
+    }
+
     public function test_affirmative_does_not_expand_when_latest_turn_is_action_confirmation(): void
     {
         [$company, $admin] = $this->seedCompanyAdmin();
@@ -340,6 +408,22 @@ final class ReadToolArgsResolverTest extends TestCase
         );
 
         $this->assertSame([], $args);
+    }
+
+    public function test_extracts_taraji_from_tracking_and_journey_prompts(): void
+    {
+        $cases = [
+            "What's Taraji's tracking activities for today before clock out" => 'Taraji',
+            "What’s Taraji’s tracking activities for today before clock out" => 'Taraji',
+            "What's the Journey history for Taraji" => 'Taraji',
+            'Check for agent Taraji Henson' => 'Taraji Henson',
+            "John's tracking today" => 'John',
+        ];
+
+        foreach ($cases as $message => $expected) {
+            $args = $this->resolver->resolveCommonArgs($message);
+            $this->assertSame($expected, $args['agent_name'] ?? null, "Failed for: {$message}");
+        }
     }
 
     /**

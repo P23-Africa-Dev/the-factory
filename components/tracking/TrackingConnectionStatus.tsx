@@ -39,7 +39,7 @@ export function TrackingConnectionStatus({ className }: { className?: string }) 
                     <RefreshCcw size={14} strokeWidth={2.5} className="animate-spin" />
                 )}
                 {isError
-                    ? 'Live tracking unavailable — retrying...'
+                    ? 'Live tracking unavailable · retrying...'
                     : 'Reconnecting to live tracking...'}
             </div>
             {isConnecting ? (

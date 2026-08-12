@@ -49,7 +49,7 @@ describe("location-buffer", () => {
         vi.useRealTimers();
     });
 
-    it("queues location readings and flushes batched points every 30s", async () => {
+    it("queues location readings and flushes the first sample immediately", async () => {
         locationBuffer.start(55, 9, "token");
 
         expect(positionCallbackRef.current).not.toBeNull();
@@ -62,20 +62,8 @@ describe("location-buffer", () => {
             recordedAt: "2026-05-16T10:00:00.000Z",
         });
 
-        expect(sessionStorage.getItem(keyFor(9, 55))).toBe(
-            JSON.stringify([
-                {
-                    latitude: 6.5,
-                    longitude: 3.3,
-                    accuracyMeters: 5,
-                    speedMps: null,
-                    headingDegrees: null,
-                    recordedAt: "2026-05-16T10:00:00.000Z",
-                },
-            ])
-        );
-
-        await vi.advanceTimersByTimeAsync(30_000);
+        await Promise.resolve();
+        await Promise.resolve();
 
         expect(recordTaskLocationMock).toHaveBeenCalledTimes(1);
         expect(recordTaskLocationMock.mock.calls[0][1]).toMatchObject({
@@ -160,5 +148,31 @@ describe("location-buffer", () => {
                 },
             ],
         });
+    });
+
+    it("flushes when the agent has moved ~20m without waiting for the 30s heartbeat", async () => {
+        locationBuffer.start(55, 9, "token");
+        positionCallbackRef.current?.({
+            latitude: 6.5,
+            longitude: 3.3,
+            accuracyMeters: 5,
+            speedMps: 8,
+            headingDegrees: 90,
+            recordedAt: "2026-05-16T10:00:00.000Z",
+        });
+        await Promise.resolve();
+        recordTaskLocationMock.mockClear();
+
+        positionCallbackRef.current?.({
+            latitude: 6.5 + 30 / 111_320,
+            longitude: 3.3,
+            accuracyMeters: 5,
+            speedMps: 8,
+            headingDegrees: 90,
+            recordedAt: "2026-05-16T10:00:02.000Z",
+        });
+        await Promise.resolve();
+
+        expect(recordTaskLocationMock).toHaveBeenCalled();
     });
 });

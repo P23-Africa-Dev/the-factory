@@ -16,7 +16,8 @@ function buildSectionsForRole(role: string | null): SettingsSectionDef[] {
   const defs: SettingsSectionDef[] = [
     { id: "profile", label: "Profile", scope: "personal", description: "", canView: true, canEdit: true },
     { id: "notifications", label: "Notifications", scope: "personal", description: "", canView: true, canEdit: true },
-    { id: "calendar", label: "Google Account", scope: "personal", description: "", canView: true, canEdit: true },
+    { id: "calendar", label: "Calendar", scope: "personal", description: "", canView: true, canEdit: true },
+    { id: "email-accounts", label: "Email Accounts", scope: "personal", description: "", canView: true, canEdit: true },
     { id: "security", label: "Security", scope: "personal", description: "", canView: true, canEdit: false },
     { id: "organization", label: "Organization", scope: "organization", description: "", canView: isManagement || isAgent, canEdit: canEditOrg },
     { id: "crm", label: "CRM", scope: "organization", description: "", canView: isManagement, canEdit: canEditOrg },
@@ -33,7 +34,7 @@ function buildSectionsForRole(role: string | null): SettingsSectionDef[] {
 describe("settings access matrix", () => {
   it("shows only personal sections for agents", () => {
     const ids = visibleSectionIds(buildSectionsForRole("agent"));
-    expect(ids).toEqual(["profile", "notifications", "calendar", "security", "organization"]);
+    expect(ids).toEqual(["profile", "notifications", "calendar", "email-accounts", "security", "organization"]);
     expect(ids).not.toContain("billing");
     expect(ids).not.toContain("crm");
   });

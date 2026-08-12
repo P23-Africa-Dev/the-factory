@@ -11,7 +11,10 @@ use Illuminate\Validation\ValidationException;
 
 class GoogleTokenService
 {
-    public function resolveAccessToken(CompanyCalendarConnection|UserCalendarConnection $connection): string
+    /**
+     * @param  CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection  $connection
+     */
+    public function resolveAccessToken(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection): string
     {
         $expiresAt = $connection->token_expires_at;
 
@@ -22,10 +25,19 @@ class GoogleTokenService
         return $this->refreshAccessToken($connection);
     }
 
-    public function refreshAccessToken(CompanyCalendarConnection|UserCalendarConnection $connection): string
+    /**
+     * @param  CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection  $connection
+     */
+    public function refreshAccessToken(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection): string
     {
-        $clientId = trim((string) config('services.google_calendar.client_id'));
-        $clientSecret = trim((string) config('services.google_calendar.client_secret'));
+        $clientId = trim((string) (
+            config('services.google_mail.client_id')
+            ?: config('services.google_calendar.client_id')
+        ));
+        $clientSecret = trim((string) (
+            config('services.google_mail.client_secret')
+            ?: config('services.google_calendar.client_secret')
+        ));
 
         if ($clientId === '' || $clientSecret === '') {
             throw ValidationException::withMessages([

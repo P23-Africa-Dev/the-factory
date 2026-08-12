@@ -10,6 +10,7 @@ export type SettingsSectionId =
   | "profile"
   | "notifications"
   | "calendar"
+  | "email-accounts"
   | "security"
   | "organization"
   | "zones"
@@ -68,9 +69,17 @@ export function useSettingsAccess() {
       },
       {
         id: "calendar",
-        label: "Google Account",
+        label: "Calendar",
         scope: "personal",
-        description: "Connect Google for meetings and CRM email",
+        description: "Connect Google Calendar for meetings and scheduling",
+        canView: true,
+        canEdit: true,
+      },
+      {
+        id: "email-accounts",
+        label: "Email Accounts",
+        scope: "personal",
+        description: "Connect Google or Microsoft for CRM email",
         canView: true,
         canEdit: true,
       },
@@ -134,7 +143,7 @@ export function useSettingsAccess() {
         id: "meetings",
         label: "Meetings & Integrations",
         scope: "organization",
-        description: "Google Calendar and Gmail for the org",
+        description: "Organization Google Calendar and meeting defaults",
         canView: isManagement,
         canEdit: canEditOrg(role),
       },
