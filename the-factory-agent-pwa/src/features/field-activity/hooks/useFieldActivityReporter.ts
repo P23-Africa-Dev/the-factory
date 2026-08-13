@@ -5,11 +5,16 @@ import { getDb } from '@/lib/db/client';
 import { requestBackgroundSync } from '@/lib/offline/queue';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
-import { useGeolocation, type LocationObject } from '@/features/tracking/hooks/useGeolocation';
+import {
+  useGeolocation,
+  type LocationObject,
+  restartSharedGeolocationWatch,
+  probeSharedGeolocationFix,
+} from '@/features/tracking/hooks/useGeolocation';
 import {
   buildLiveTrackingMessage,
   buildLiveTrackingTitle,
-  isNativeBackgroundWatching,
+  forceRestartNativeBackgroundWatch,
   startNativeBackgroundWatch,
   stopNativeBackgroundWatch,
   updateNativeBackgroundNotification,
@@ -19,12 +24,24 @@ import {
   notifyFieldTrackingEnded,
   notifyFieldTrackingStarted,
 } from '@/lib/notifications/trackingAlerts';
+import {
+  createBackgroundTrackingWatchdog,
+  recordBackgroundLocationFix,
+  type BackgroundTrackingWatchdog,
+} from '@/lib/tracking/background-tracking-watchdog';
+import {
+  acquireTrackingWakeLock,
+  installTrackingWakeLockVisibilityHandler,
+  releaseTrackingWakeLock,
+} from '@/lib/tracking/tracking-wake-lock';
+import { maybePromptBatteryOptimizationOnTrackingStart } from '@/lib/tracking/battery-optimization-prompt';
 import { fieldActivityApi } from '../api';
 import type { FieldPointPayload } from '../types';
 
 const MAX_BATCH = 50;
 const MAX_QUEUE = 200;
-const WATCHDOG_INTERVAL_MS = 45_000;
+/** Cap client-side stationary sampling during active field sessions (server still dedupes). */
+const ACTIVE_STATIONARY_INTERVAL_SECONDS = 60;
 
 function speedKmh(loc: LocationObject): number | null {
   const speed = loc.coords.speed;
@@ -47,8 +64,8 @@ export function useFieldActivityReporter(options: {
   const {
     sessionId,
     active,
-    movingIntervalSeconds = 60,
-    stationaryIntervalSeconds = 300,
+    movingIntervalSeconds = 30,
+    stationaryIntervalSeconds = ACTIVE_STATIONARY_INTERVAL_SECONDS,
   } = options;
 
   const { startWatching, stopWatching } = useGeolocation();
@@ -59,8 +76,11 @@ export function useFieldActivityReporter(options: {
   const sessionIdRef = useRef(sessionId);
   const activeRef = useRef(active);
   const movingRef = useRef(movingIntervalSeconds);
-  const stationaryRef = useRef(stationaryIntervalSeconds);
-  const watchdogIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stationaryRef = useRef(
+    Math.min(stationaryIntervalSeconds, ACTIVE_STATIONARY_INTERVAL_SECONDS),
+  );
+  const watchdogRef = useRef<BackgroundTrackingWatchdog | null>(null);
+  const wakeLockVisibilityCleanupRef = useRef<(() => void) | null>(null);
   const lastWatchdogToastAt = useRef(0);
   const hadActiveSessionRef = useRef(false);
 
@@ -68,12 +88,17 @@ export function useFieldActivityReporter(options: {
     sessionIdRef.current = sessionId;
     activeRef.current = active;
     movingRef.current = movingIntervalSeconds;
-    stationaryRef.current = stationaryIntervalSeconds;
+    stationaryRef.current = Math.min(
+      stationaryIntervalSeconds,
+      ACTIVE_STATIONARY_INTERVAL_SECONDS,
+    );
   }, [sessionId, active, movingIntervalSeconds, stationaryIntervalSeconds]);
 
   const enqueue = useCallback(async (loc: LocationObject) => {
     const sid = sessionIdRef.current;
     if (!sid || !activeRef.current) return;
+
+    recordBackgroundLocationFix();
 
     const now = Date.now();
     const intervalMs = (isStationary(loc) ? stationaryRef.current : movingRef.current) * 1000;
@@ -127,30 +152,55 @@ export function useFieldActivityReporter(options: {
     }
   }, []);
 
-  const restartWatcher = useCallback(() => {
-    if (!isNativeAndroid()) return;
-    if (!activeRef.current || !sessionIdRef.current) return;
-    if (isNativeBackgroundWatching()) return;
+  const startLocationWatch = useCallback(async () => {
+    if (isNativeAndroid()) {
+      await startNativeBackgroundWatch(
+        (loc) => {
+          void enqueue(loc);
+        },
+        (message) => {
+          if (Date.now() - lastWatchdogToastAt.current > 60_000) {
+            lastWatchdogToastAt.current = Date.now();
+            toast.warning(
+              'Field tracking warning',
+              message || 'Background location paused. Recovering…',
+            );
+          }
+        },
+        {
+          title: buildLiveTrackingTitle('Field activity'),
+          message: buildLiveTrackingMessage(null),
+        },
+      );
+      return;
+    }
 
-    void startNativeBackgroundWatch(
-      (loc) => {
-        void enqueue(loc);
-      },
-      (message) => {
-        if (Date.now() - lastWatchdogToastAt.current > 60_000) {
-          lastWatchdogToastAt.current = Date.now();
-          toast.warning(
-            'Field tracking warning',
-            message || 'Background location watcher was lost and is restarting.',
-          );
-        }
-      },
-      {
-        title: buildLiveTrackingTitle('Field activity'),
-        message: buildLiveTrackingMessage(null),
-      },
-    );
-  }, [enqueue]);
+    if (!isNativeAndroid() && /Android/i.test(navigator.userAgent)) {
+      if (Date.now() - lastWatchdogToastAt.current > 300_000) {
+        lastWatchdogToastAt.current = Date.now();
+        toast.warning(
+          'Use the Android app for reliable tracking',
+          'Browser tracking may pause when the screen locks. Install the Factory 23 Agent APK for all-day background GPS.',
+        );
+      }
+    }
+
+    await startWatching((loc) => {
+      void enqueue(loc);
+    });
+  }, [enqueue, startWatching]);
+
+  const restartLocationWatch = useCallback(async () => {
+    if (!activeRef.current || !sessionIdRef.current) return;
+
+    if (isNativeAndroid()) {
+      await forceRestartNativeBackgroundWatch();
+      return;
+    }
+
+    await restartSharedGeolocationWatch();
+    await probeSharedGeolocationFix();
+  }, []);
 
   const flush = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -206,17 +256,18 @@ export function useFieldActivityReporter(options: {
   useEffect(() => {
     if (!active || !sessionId) {
       stopWatching();
-      if (isNativeAndroid() && isNativeBackgroundWatching()) {
+      if (isNativeAndroid()) {
         void stopNativeBackgroundWatch();
       }
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
       }
-      if (watchdogIntervalRef.current) {
-        clearInterval(watchdogIntervalRef.current);
-        watchdogIntervalRef.current = null;
-      }
+      watchdogRef.current?.stop();
+      watchdogRef.current = null;
+      wakeLockVisibilityCleanupRef.current?.();
+      wakeLockVisibilityCleanupRef.current = null;
+      void releaseTrackingWakeLock();
       if (hadActiveSessionRef.current) {
         hadActiveSessionRef.current = false;
         void notifyFieldTrackingEnded(true);
@@ -226,53 +277,31 @@ export function useFieldActivityReporter(options: {
 
     hadActiveSessionRef.current = true;
     void notifyFieldTrackingStarted();
+    void acquireTrackingWakeLock();
+    maybePromptBatteryOptimizationOnTrackingStart();
+    wakeLockVisibilityCleanupRef.current = installTrackingWakeLockVisibilityHandler();
 
     const companyId = getActiveCompanyId();
-    void (async () => {
-      if (isNativeAndroid()) {
-        await startNativeBackgroundWatch(
-          (loc) => {
-            void enqueue(loc);
-          },
-          (message) => {
-            if (Date.now() - lastWatchdogToastAt.current > 60_000) {
-              lastWatchdogToastAt.current = Date.now();
-              toast.warning(
-                'Field tracking degraded',
-                message || 'Background location paused. Re-open the app to resume.',
-              );
-            }
-          },
-          {
-            title: buildLiveTrackingTitle('Field activity'),
-            message: buildLiveTrackingMessage(null),
-          },
-        );
-      } else {
-        await startWatching((loc) => {
-          void enqueue(loc);
-        });
-      }
-    })();
+    void startLocationWatch();
 
     flushIntervalRef.current = setInterval(() => {
       void flushRef.current?.();
     }, 30_000);
 
-    watchdogIntervalRef.current = setInterval(() => {
-      restartWatcher();
-    }, WATCHDOG_INTERVAL_MS);
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        restartWatcher();
-      }
-    };
-    const handleOnline = () => {
-      restartWatcher();
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('online', handleOnline);
+    watchdogRef.current = createBackgroundTrackingWatchdog({
+      isActive: () => activeRef.current && sessionIdRef.current != null,
+      onRestart: restartLocationWatch,
+      onStaleDetected: () => {
+        if (Date.now() - lastWatchdogToastAt.current > 60_000) {
+          lastWatchdogToastAt.current = Date.now();
+          toast.warning(
+            'Recovering GPS',
+            'Location updates paused in the background. Restarting tracking automatically.',
+          );
+        }
+      },
+    });
+    watchdogRef.current.start();
 
     return () => {
       stopWatching();
@@ -283,16 +312,15 @@ export function useFieldActivityReporter(options: {
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
       }
-      if (watchdogIntervalRef.current) {
-        clearInterval(watchdogIntervalRef.current);
-        watchdogIntervalRef.current = null;
-      }
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('online', handleOnline);
+      watchdogRef.current?.stop();
+      watchdogRef.current = null;
+      wakeLockVisibilityCleanupRef.current?.();
+      wakeLockVisibilityCleanupRef.current = null;
+      void releaseTrackingWakeLock();
       void flushRef.current?.();
       void companyId;
     };
-  }, [active, sessionId, enqueue, restartWatcher, startWatching, stopWatching]);
+  }, [active, sessionId, restartLocationWatch, startLocationWatch, stopWatching]);
 
   return { flush };
 }

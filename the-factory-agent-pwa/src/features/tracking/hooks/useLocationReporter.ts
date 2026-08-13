@@ -5,17 +5,36 @@ import { getDb } from '@/lib/db/client';
 import { requestBackgroundSync } from '@/lib/offline/queue';
 import { useTrackingStore } from '@/store/tracking';
 import { trackingApi } from '../api';
-import { useGeolocation, type LocationObject } from './useGeolocation';
+import {
+  useGeolocation,
+  type LocationObject,
+  restartSharedGeolocationWatch,
+  probeSharedGeolocationFix,
+} from './useGeolocation';
 import type { LocationQueueItem } from '../types';
 import { toast } from '@/lib/toast';
 import { isDocumentHidden, notifyTrackingStopped } from '@/lib/notifications/trackingAlerts';
 import { isNativeAndroid } from '../native/capacitorPlatform';
-import { isNativeBackgroundWatching } from '../native/nativeBackgroundGeolocation';
+import {
+  forceRestartNativeBackgroundWatch,
+  isNativeBackgroundWatching,
+} from '../native/nativeBackgroundGeolocation';
 import { withLocationUploadLock } from '@/lib/sync/locationUploadLock';
 import {
   applyProximityFromSync,
   subscribeProximityFromSync,
 } from '../proximityFromSync';
+import {
+  createBackgroundTrackingWatchdog,
+  recordBackgroundLocationFix,
+  type BackgroundTrackingWatchdog,
+} from '@/lib/tracking/background-tracking-watchdog';
+import {
+  acquireTrackingWakeLock,
+  installTrackingWakeLockVisibilityHandler,
+  releaseTrackingWakeLock,
+} from '@/lib/tracking/tracking-wake-lock';
+import { maybePromptBatteryOptimizationOnTrackingStart } from '@/lib/tracking/battery-optimization-prompt';
 
 interface LocationReporterOptions {
   taskId: number;
@@ -67,6 +86,9 @@ export const useLocationReporter = ({
   const taskIdRef = useRef(taskId);
   const companyIdRef = useRef(companyId);
   const activeRef = useRef(active);
+  const watchdogRef = useRef<BackgroundTrackingWatchdog | null>(null);
+  const wakeLockVisibilityCleanupRef = useRef<(() => void) | null>(null);
+  const lastWatchdogToastAt = useRef(0);
 
   useEffect(() => {
     onArrivedRef.current = onArrived;
@@ -101,6 +123,8 @@ export const useLocationReporter = ({
 
   const enqueue = useCallback(
     async (loc: LocationObject) => {
+      recordBackgroundLocationFix();
+
       const item = buildQueueItem(loc);
       const point: [number, number] = [loc.coords.longitude, loc.coords.latitude];
 
@@ -334,6 +358,22 @@ export const useLocationReporter = ({
     flushRef.current = flush;
   }, [flush]);
 
+  const restartLocationWatch = useCallback(async () => {
+    if (!activeRef.current) return;
+
+    if (isNativeAndroid()) {
+      if (isNativeBackgroundWatching()) {
+        await forceRestartNativeBackgroundWatch();
+      } else {
+        await startWatchingRef.current((loc) => enqueueRef.current(loc));
+      }
+      return;
+    }
+
+    await restartSharedGeolocationWatch();
+    await probeSharedGeolocationFix();
+  }, []);
+
   // Watch lifecycle depends only on `active` so FGS is not torn down on flush/enqueue churn.
   useEffect(() => {
     if (!active) {
@@ -343,10 +383,19 @@ export const useLocationReporter = ({
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
       }
+      watchdogRef.current?.stop();
+      watchdogRef.current = null;
+      wakeLockVisibilityCleanupRef.current?.();
+      wakeLockVisibilityCleanupRef.current = null;
+      void releaseTrackingWakeLock();
       return;
     }
 
     needsImmediateFlushRef.current = true;
+    void acquireTrackingWakeLock();
+    maybePromptBatteryOptimizationOnTrackingStart();
+    wakeLockVisibilityCleanupRef.current = installTrackingWakeLockVisibilityHandler();
+
     void startWatchingRef.current((loc) => enqueueRef.current(loc)).catch((err) => {
       console.error('[tracking] failed to start location watch', err);
     });
@@ -365,9 +414,27 @@ export const useLocationReporter = ({
       void flushRef.current?.();
     }, HEARTBEAT_FLUSH_MS);
 
+    watchdogRef.current = createBackgroundTrackingWatchdog({
+      isActive: () => activeRef.current,
+      onRestart: restartLocationWatch,
+      onStaleDetected: () => {
+        if (Date.now() - lastWatchdogToastAt.current > 60_000) {
+          lastWatchdogToastAt.current = Date.now();
+          if (!isDocumentHidden()) {
+            toast.warning(
+              'Recovering GPS',
+              'Location updates paused in the background. Restarting tracking automatically.',
+            );
+          }
+        }
+      },
+    });
+    watchdogRef.current.start();
+
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return;
       void flushRef.current?.();
+      watchdogRef.current?.poke();
 
       // Re-arm FGS if tracking is still active but the native watcher was lost.
       if (
@@ -381,7 +448,10 @@ export const useLocationReporter = ({
         });
       }
     };
-    const handleOnline = () => void flushRef.current?.();
+    const handleOnline = () => {
+      void flushRef.current?.();
+      watchdogRef.current?.poke();
+    };
 
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('online', handleOnline);
@@ -394,11 +464,16 @@ export const useLocationReporter = ({
         clearInterval(flushIntervalRef.current);
         flushIntervalRef.current = null;
       }
+      watchdogRef.current?.stop();
+      watchdogRef.current = null;
+      wakeLockVisibilityCleanupRef.current?.();
+      wakeLockVisibilityCleanupRef.current = null;
+      void releaseTrackingWakeLock();
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('online', handleOnline);
       void flushRef.current?.();
     };
-  }, [active]);
+  }, [active, restartLocationWatch]);
 
   // True unmount of the reporter (tracking ended / provider cleared) — ensure FGS stops.
   useEffect(() => {

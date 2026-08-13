@@ -18,8 +18,8 @@ export function FieldActivityProvider({ children }: { children: React.ReactNode 
   const { flush } = useFieldActivityReporter({
     sessionId: isActive ? session!.id : null,
     active: Boolean(isActive),
-    movingIntervalSeconds: data?.config?.moving_interval_seconds ?? 60,
-    stationaryIntervalSeconds: data?.config?.stationary_interval_seconds ?? 300,
+    movingIntervalSeconds: data?.config?.moving_interval_seconds ?? 30,
+    stationaryIntervalSeconds: data?.config?.stationary_interval_seconds ?? 60,
   });
 
   useEffect(() => {

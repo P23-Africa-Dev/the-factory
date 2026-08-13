@@ -114,12 +114,12 @@ export function FieldActivityReporterProvider({
   const lastSampleAtRef = useRef(0);
   const flushingRef = useRef(false);
   const movingIntervalRef = useRef(60);
-  const stationaryIntervalRef = useRef(300);
+  const stationaryIntervalRef = useRef(60);
 
   companyIdRef.current = apiCompanyId ?? undefined;
   tokenRef.current = token;
   movingIntervalRef.current = data?.config?.moving_interval_seconds ?? 60;
-  stationaryIntervalRef.current = data?.config?.stationary_interval_seconds ?? 300;
+  stationaryIntervalRef.current = data?.config?.stationary_interval_seconds ?? 60;
 
   const flush = useCallback(async () => {
     const sid = sessionIdRef.current;

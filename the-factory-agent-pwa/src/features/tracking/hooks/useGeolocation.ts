@@ -5,6 +5,7 @@ import { isNativeAndroid } from '../native/capacitorPlatform';
 import {
   startNativeBackgroundWatch,
   stopNativeBackgroundWatch,
+  forceRestartNativeBackgroundWatch,
   buildLiveTrackingTitle,
   buildLiveTrackingMessage,
   isNativeBackgroundWatching,
@@ -15,6 +16,7 @@ import {
   buildMapTaskUrl,
   endLiveTrackingIndicator,
 } from '@/lib/notifications/trackingAlerts';
+import { recordBackgroundLocationFix } from '@/lib/tracking/background-tracking-watchdog';
 
 export type PermissionStatus = 'unknown' | 'prompt' | 'granted' | 'denied';
 
@@ -90,6 +92,7 @@ let sharedNativeOwned = false;
 let sharedLowAccuracy = false;
 
 function dispatchSharedLocation(loc: LocationObject): void {
+  recordBackgroundLocationFix();
   for (const sub of watchSubscribers.values()) {
     sub.rememberPosition(loc);
     sub.onUpdate(loc);
@@ -204,6 +207,48 @@ function readPosition(options: PositionOptions): Promise<LocationObject> {
 /** True when any hook instance holds an active shared watch. */
 export function isSharedGeolocationWatching(): boolean {
   return watchSubscribers.size > 0;
+}
+
+/**
+ * Restart the shared browser or native watch without dropping subscribers.
+ * Used by the background tracking watchdog when fixes go stale.
+ */
+export async function restartSharedGeolocationWatch(): Promise<void> {
+  if (watchSubscribers.size === 0) return;
+
+  if (isNativeAndroid()) {
+    if (isNativeBackgroundWatching()) {
+      await forceRestartNativeBackgroundWatch();
+    } else {
+      await ensureSharedNativeWatch();
+    }
+    return;
+  }
+
+  beginSharedBrowserWatch();
+}
+
+/**
+ * One-shot GPS read while the page is foregrounded — helps recover browser
+ * tracking when watchPosition stalls after a lock/unlock cycle.
+ */
+export async function probeSharedGeolocationFix(): Promise<void> {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  if (watchSubscribers.size === 0) return;
+
+  try {
+    const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
+    if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
+    dispatchSharedLocation(loc);
+  } catch {
+    try {
+      const loc = await readPosition(LOW_ACCURACY_OPTIONS);
+      if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
+      dispatchSharedLocation(loc);
+    } catch {
+      // Non-fatal — watchdog may force a full watcher restart next tick.
+    }
+  }
 }
 
 export const useGeolocation = (): GeolocationState & GeolocationActions => {
