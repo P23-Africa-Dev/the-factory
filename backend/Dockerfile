@@ -6,6 +6,9 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libxml2-dev \
     libzip-dev \
+    libc-client-dev \
+    libkrb5-dev \
+ && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
  && docker-php-ext-install \
     pdo_mysql \
     mbstring \
@@ -13,7 +16,8 @@ RUN apt-get update && apt-get install -y \
     pcntl \
     bcmath \
     gd \
-    zip
+    zip \
+    imap
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
