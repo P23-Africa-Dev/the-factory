@@ -17,10 +17,10 @@
  *   installed PWA / browser tabs.
  */
 
-const CACHE_NAME = "factory-agent-pwa-v9";
-const STATIC_CACHE = "factory-static-v9";
-const API_CACHE = "factory-api-v9";
-const PAGE_CACHE = "factory-pages-v9";
+const CACHE_NAME = "factory-agent-pwa-v10";
+const STATIC_CACHE = "factory-static-v10";
+const API_CACHE = "factory-api-v10";
+const PAGE_CACHE = "factory-pages-v10";
 const IDB_NAME = "factory-agent-pwa";
 const LOCATION_BATCH_SIZE = 50;
 
