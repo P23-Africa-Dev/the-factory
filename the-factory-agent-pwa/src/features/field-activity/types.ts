@@ -113,3 +113,40 @@ export interface FieldPointPayload {
   taskId?: number | null;
   taskTrackingSessionId?: number | null;
 }
+
+export interface JourneyCard {
+  id: number;
+  date: string | null;
+  status: string;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  distance_meters: number;
+  travel_seconds: number;
+  stationary_seconds: number;
+  active_seconds: number;
+  stop_count: number;
+  visit_count: number;
+  unknown_stop_count: number;
+  travel_efficiency: number | null;
+  narrative: string | null;
+}
+
+export interface JourneyHistoryResponse {
+  items: JourneyCard[];
+  summary: {
+    journey_count: number;
+    distance_meters: number;
+    stop_count: number;
+    visit_count: number;
+    unknown_stop_count: number;
+    travel_seconds: number;
+    from: string;
+    to: string;
+  };
+  pagination?: {
+    total: number;
+    per_page: number;
+    current_page: number;
+    last_page: number;
+  };
+}
