@@ -7,6 +7,7 @@ import type {
   PendingReviewPayload,
   FieldPointPayload,
   FieldStop,
+  JourneyHistoryResponse,
 } from './types';
 
 function unwrapData(raw: unknown): unknown {
@@ -116,28 +117,8 @@ export const fieldActivityApi = {
     to?: string;
     preset?: string;
     per_page?: number;
-  }): Promise<{
-    items: Array<{
-      id: number;
-      date: string | null;
-      status: string;
-      clock_in_at: string | null;
-      clock_out_at: string | null;
-      distance_meters: number;
-      stop_count: number;
-      visit_count: number;
-      unknown_stop_count: number;
-      active_seconds: number;
-      travel_efficiency: number | null;
-    }>;
-    summary: {
-      journey_count: number;
-      distance_meters: number;
-      visit_count: number;
-      from: string;
-      to: string;
-    };
-  }> => {
+    page?: number;
+  }): Promise<JourneyHistoryResponse> => {
     const companyId = getActiveCompanyId();
     const res = await client.get('/agent/field-activity/journeys', {
       params: {
@@ -146,30 +127,10 @@ export const fieldActivityApi = {
         from: params?.from,
         to: params?.to,
         per_page: params?.per_page ?? 30,
+        page: params?.page,
       },
     });
-    return unwrapData(res.data) as {
-      items: Array<{
-        id: number;
-        date: string | null;
-        status: string;
-        clock_in_at: string | null;
-        clock_out_at: string | null;
-        distance_meters: number;
-        stop_count: number;
-        visit_count: number;
-        unknown_stop_count: number;
-        active_seconds: number;
-        travel_efficiency: number | null;
-      }>;
-      summary: {
-        journey_count: number;
-        distance_meters: number;
-        visit_count: number;
-        from: string;
-        to: string;
-      };
-    };
+    return unwrapData(res.data) as JourneyHistoryResponse;
   },
 
   journeyDetail: async (sessionId: number): Promise<{

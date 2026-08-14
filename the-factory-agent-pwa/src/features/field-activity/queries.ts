@@ -6,7 +6,7 @@ export const FIELD_ACTIVITY_KEYS = {
   all: ['field-activity'] as const,
   today: ['field-activity', 'today'] as const,
   pendingReview: ['field-activity', 'pending-review'] as const,
-  journeys: (preset = 'last_30_days') => ['field-activity', 'journeys', preset] as const,
+  journeys: (params?: Record<string, any>) => ['field-activity', 'journeys', params] as const,
   journey: (id: number | string) => ['field-activity', 'journey', id] as const,
 };
 
@@ -19,10 +19,19 @@ export function useFieldActivityToday(enabled = true) {
   });
 }
 
-export function useMyJourneys(enabled = true) {
+export function useMyJourneys(
+  params?: {
+    preset?: string;
+    from?: string;
+    to?: string;
+    per_page?: number;
+    page?: number;
+  },
+  enabled = true,
+) {
   return useQuery({
-    queryKey: FIELD_ACTIVITY_KEYS.journeys(),
-    queryFn: () => fieldActivityApi.journeys({ preset: 'last_30_days' }),
+    queryKey: FIELD_ACTIVITY_KEYS.journeys(params),
+    queryFn: () => fieldActivityApi.journeys(params),
     enabled,
     staleTime: 60_000,
   });
