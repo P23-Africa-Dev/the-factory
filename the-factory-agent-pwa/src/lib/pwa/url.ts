@@ -1,5 +1,11 @@
+import {
+  CANONICAL_AGENT_APK_URL,
+  withAgentApkCacheBust,
+} from '@/constants/apk-version';
+
 const DEFAULT_PRODUCTION_URL = "https://app.thefactory23.com";
 const DEFAULT_APK_PATH = "/downloads/factory23-agent.apk";
+
 
 function inferFromHost(host: string, protocol: string): string {
   if (host.includes("localhost") || host.includes("127.0.0.1")) {
@@ -44,22 +50,22 @@ function normalizeApkDownloadUrl(url: string): string {
   return trimmed;
 }
 
-/** Absolute URL for Android APK download (optional). */
+/** Absolute URL for Android APK download. */
 export function getAgentApkDownloadUrl(): string | null {
   const configured = process.env.NEXT_PUBLIC_AGENT_APK_URL?.trim();
-  if (configured) return normalizeApkDownloadUrl(configured);
-
-  if (typeof window !== "undefined") {
-    // Prefer marketing-site default when browsing the agent origin in local/dev.
-    try {
-      const host = window.location.hostname;
-      if (host.includes("localhost") || host.includes("127.0.0.1")) {
-        return `http://localhost:3000${DEFAULT_APK_PATH}`;
-      }
-    } catch {
-      // fall through
+  if (configured) {
+    const normalized = normalizeApkDownloadUrl(configured);
+    if (!/drive\.google\.com|docs\.google\.com/i.test(normalized)) {
+      return withAgentApkCacheBust(normalized);
     }
   }
 
-  return `https://thefactory23.com${DEFAULT_APK_PATH}`;
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      return withAgentApkCacheBust(`${window.location.origin}${DEFAULT_APK_PATH}`);
+    }
+  }
+
+  return withAgentApkCacheBust(CANONICAL_AGENT_APK_URL);
 }

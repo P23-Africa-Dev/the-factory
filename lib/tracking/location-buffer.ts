@@ -2,9 +2,13 @@ import type { GeoReading } from "@/types/tracking";
 import { recordTaskLocation } from "@/lib/api/tracking";
 import { useTrackingStore } from "@/store/tracking";
 import { watchPosition, watchVisibilityAccuracy } from "./geolocation";
+import {
+  LIVE_FLUSH_HEARTBEAT_MS,
+  shouldFlushLiveLocation,
+  type LiveFlushCursor,
+} from "@/lib/tracking/live-flush";
 
 const MAX_QUEUE = 50;
-const FLUSH_INTERVAL_MS = 30_000;
 const SESSION_KEY_PREFIX = "factory_location_buffer";
 
 interface BufferCallbacks {
@@ -27,6 +31,7 @@ interface BufferState {
   lowAccuracy: boolean;
   active: boolean;
   needsImmediateFlush: boolean;
+  lastFlush: LiveFlushCursor | null;
 }
 
 let state: BufferState | null = null;
@@ -88,6 +93,15 @@ async function flushState(target: BufferState, options: { allowInactive?: boolea
       target.token
     );
 
+    const last = batch[batch.length - 1];
+    if (last) {
+      target.lastFlush = {
+        atMs: Date.now(),
+        lng: last.longitude,
+        lat: last.latitude,
+      };
+    }
+
     if (res.data.arrived) {
       target.callbacks.onArrived?.();
     }
@@ -144,6 +158,21 @@ function push(reading: GeoReading) {
   if (state.needsImmediateFlush) {
     state.needsImmediateFlush = false;
     void flush();
+    return;
+  }
+
+  if (
+    shouldFlushLiveLocation(
+      {
+        longitude: reading.longitude,
+        latitude: reading.latitude,
+        speedMps: reading.speedMps,
+      },
+      state.lastFlush,
+      Date.now(),
+    )
+  ) {
+    void flush();
   }
 }
 
@@ -181,6 +210,7 @@ export function start(
     lowAccuracy: false,
     active: true,
     needsImmediateFlush: true,
+    lastFlush: null,
   };
 
   startWatcher();
@@ -191,7 +221,7 @@ export function start(
     startWatcher(); // restart with new accuracy
   });
 
-  state.flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
+  state.flushTimer = setInterval(flush, LIVE_FLUSH_HEARTBEAT_MS);
 
   // Flush recovered points immediately
   if (recovered.length > 0) {

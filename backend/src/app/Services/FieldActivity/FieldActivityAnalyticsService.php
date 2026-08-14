@@ -51,8 +51,9 @@ class FieldActivityAnalyticsService
             ->filter(static fn (FieldStop $s): bool => $s->isVisit())
             ->sum('duration_seconds');
 
-        $byAgent = $summaries->groupBy('user_id')->map(function ($rows, $uid) {
+        $byAgent = $sessions->groupBy('user_id')->map(function ($rows, $uid) use ($summaries) {
             $user = User::query()->find($uid);
+            $summaryRows = $summaries->where('user_id', (int) $uid);
 
             return [
                 'user_id' => (int) $uid,
@@ -62,7 +63,7 @@ class FieldActivityAnalyticsService
                 'visit_count' => (int) $rows->sum('visit_count'),
                 'stop_count' => (int) $rows->sum('stop_count'),
                 'unknown_stop_count' => (int) $rows->sum('unknown_stop_count'),
-                'days' => $rows->count(),
+                'days' => max($rows->count(), $summaryRows->count()),
             ];
         })->values()->all();
 
@@ -74,9 +75,9 @@ class FieldActivityAnalyticsService
             'arrived_at' => $s->arrived_at?->toIso8601String(),
         ])->all();
 
-        $totalTravel = (int) $summaries->sum('travel_seconds');
-        $totalDistance = (int) $summaries->sum('distance_meters');
-        $totalVisits = (int) $summaries->sum('visit_count');
+        $totalTravel = (int) ($sessions->sum('travel_seconds') ?: $summaries->sum('travel_seconds'));
+        $totalDistance = (int) ($sessions->sum('distance_meters') ?: $summaries->sum('distance_meters'));
+        $totalVisits = (int) $sessions->sum('visit_count');
 
         return [
             'from' => $fromDate->toDateString(),
@@ -85,10 +86,10 @@ class FieldActivityAnalyticsService
                 'active_sessions' => $sessions->count(),
                 'distance_meters' => $totalDistance,
                 'travel_seconds' => $totalTravel,
-                'stationary_seconds' => (int) $summaries->sum('stationary_seconds'),
-                'stop_count' => (int) $summaries->sum('stop_count'),
-                'visit_count' => $totalVisits,
-                'unknown_stop_count' => (int) $summaries->sum('unknown_stop_count'),
+                'stationary_seconds' => (int) ($sessions->sum('stationary_seconds') ?: $summaries->sum('stationary_seconds')),
+                'stop_count' => (int) ($sessions->sum('stop_count') ?: $summaries->sum('stop_count')),
+                'visit_count' => (int) ($totalVisits ?: $summaries->sum('visit_count')),
+                'unknown_stop_count' => (int) ($sessions->sum('unknown_stop_count') ?: $summaries->sum('unknown_stop_count')),
                 'personal_seconds' => (int) $personalSeconds,
                 'productive_visit_seconds' => (int) $visitSeconds,
                 'travel_efficiency' => $totalTravel > 0

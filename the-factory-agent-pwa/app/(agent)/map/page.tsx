@@ -24,6 +24,10 @@ import { getSafeAvatarSrc } from '@/lib/avatar';
 import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
 import { NavigationRideSheet } from '@/features/tracking/components/NavigationRideSheet';
 import {
+  formatTripSummaryToast,
+  summarizeTaskRoute,
+} from '@/features/tracking/tripSummary';
+import {
   MAP_SHEET_COLLAPSED_SNAP_INDEX,
   MAP_SHEET_EXPANDED_SNAP_INDEX,
 } from '@/features/tracking/components/MapBottomSheet';
@@ -67,6 +71,7 @@ import { getCachedSearchProximity, setCachedSearchProximity, warmSearchProximity
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
 import { TrackingConnectionStatus } from '@/features/tracking/components/TrackingConnectionStatus';
+import { useOfflineSyncStatus } from '@/lib/offline/useOfflineSyncStatus';
 import { MapPin, Plus, Eye, EyeOff } from 'lucide-react';
 
 const MapBottomSheetDynamic = dynamic(
@@ -839,13 +844,14 @@ function MapContent() {
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching } = useGeolocation();
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching, isWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
   const { displayName, profile } = useAgentIdentity();
   const [isOnline, setIsOnline] = useState(true);
+  const { stats: offlineStats } = useOfflineSyncStatus(8_000);
   const currentAgentId = user?.id != null ? Number(user.id) : null;
 
   useEffect(() => {
@@ -1240,7 +1246,11 @@ function MapContent() {
     void bootLocation();
     return () => {
       mounted = false;
-      stopWatching();
+      // Never tear down the shared native FGS while an active ride owns the watch.
+      const activeId = useTrackingStore.getState().activeTrackingTaskId;
+      if (activeId == null && phase !== 'activity_started') {
+        stopWatching();
+      }
     };
   }, [checkPermission, getCurrentPosition, startWatching, stopWatching, phase, isFromTrackingScreen]);
 
@@ -1778,17 +1788,11 @@ function MapContent() {
 
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
-    if (liveTask?.lastUpdatedAt) {
+    if (liveTask?.lastUpdatedAt || isWatching) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- promote connecting to live when GPS resumes
       setTrackingStatus('live');
     }
-  }, [phase, trackingStatus, liveTask?.lastUpdatedAt]);
-
-  useEffect(() => {
-    if (phase !== 'activity_started' || trackingStatus !== 'connecting') return;
-    const timer = setTimeout(() => setTrackingStatus('live'), 3000);
-    return () => clearTimeout(timer);
-  }, [phase, trackingStatus]);
+  }, [phase, trackingStatus, liveTask?.lastUpdatedAt, isWatching]);
 
   // Success feedback when the agent reaches the destination (once per session).
   const arrivedToastShownRef = useRef(false);
@@ -1824,16 +1828,31 @@ function MapContent() {
   }, [hasArrived, phase, trackingTask]);
 
   const handleEndActivity = useCallback((): void => {
-    void stopTracking();
-    setTrackingStatus('idle');
     if (hasArrived) {
+      // Keep GPS/tracking alive while the completion sheet is open (matches auto-open path).
       setPhase('activity_ended');
       return;
     }
+    const pausedTaskId = trackingTaskId;
+    const company = companyId;
     // Not at destination — pause tracking, do not open completion workflow.
-    setPhase('destination_selected');
-    toast.info('Tracking paused', 'Your task is still in progress. Tap Start when you are ready to continue.');
-  }, [stopTracking, hasArrived]);
+    void (async () => {
+      await stopTracking({ reason: 'paused' });
+      setTrackingStatus('idle');
+      setPhase('destination_selected');
+      if (pausedTaskId && company) {
+        try {
+          const route = await trackingApi.getTaskRoute(pausedTaskId, company);
+          const summary = summarizeTaskRoute(route);
+          toast.info('Tracking paused', formatTripSummaryToast(summary, 'paused'));
+          return;
+        } catch {
+          // fall through to generic copy
+        }
+      }
+      toast.info('Tracking paused', 'Your task is still in progress. Tap Start when you are ready to continue.');
+    })();
+  }, [stopTracking, hasArrived, trackingTaskId, companyId]);
 
   const handleShareDestination = useCallback(() => {
     if (!selectedDestination) return;
@@ -2204,6 +2223,9 @@ function MapContent() {
               trackingStatus={rideTrackingStatus}
               lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
               hasArrived={hasArrived}
+              arrivedAt={liveTask?.arrivedAt ?? null}
+              isOffline={!isOnline}
+              queuedLocationCount={offlineStats.pendingLocations}
               onEnd={handleEndActivity}
               onOpenGoogleMaps={handleOpenGoogleMaps}
             />
@@ -2286,7 +2308,26 @@ function MapContent() {
           onDismiss={() => {
             if (hasArrived) {
               setPhase('activity_started');
-              setTrackingStatus('live');
+              // Only show Live when GPS is actually running / has a recent fix.
+              if (isWatching || liveTask?.lastUpdatedAt) {
+                setTrackingStatus('live');
+              } else if (activeTaskId != null) {
+                setTrackingStatus('connecting');
+              } else if (trackingTaskId && companyId) {
+                setTrackingStatus('connecting');
+                startTracking(trackingTaskId, companyId, {
+                  onArrived: () => setHasArrived(true),
+                  onNearDestination: () => {
+                    if (!nearAlertShownRef.current) {
+                      nearAlertShownRef.current = true;
+                      void notifyTrackingNearDestination(trackingTaskId);
+                    }
+                  },
+                  onDistanceRemaining: (m) => setDistanceRemainingM(m),
+                });
+              } else {
+                setTrackingStatus('idle');
+              }
             } else {
               setPhase('destination_selected');
             }

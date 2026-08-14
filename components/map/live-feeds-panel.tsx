@@ -8,7 +8,13 @@ import {
   OPERATIONAL_STATUS_META,
   resolveOperationalStatusFromTask,
 } from "@/lib/tracking/operational-status";
-import { splitLiveFeedTasks, taskMatchesSearch, TRACKING_STALE_MS } from "@/lib/tracking/live-feed-groups";
+import {
+  countLiveTasksByAgent,
+  formatRelativeLastSeen,
+  splitLiveFeedTasks,
+  taskMatchesSearch,
+  TRACKING_STALE_MS,
+} from "@/lib/tracking/live-feed-groups";
 import type { LiveTaskState } from "@/types/tracking";
 
 function formatMetricDistance(meters: number | null | undefined): string {
@@ -43,6 +49,8 @@ interface LiveFeedsPanelProps {
   onToggleHistory: () => void;
   onToggleFollowAll: () => void;
   onSelectTask: (taskId: number) => void;
+  /** Opens route history for a completed / stale feed task. */
+  onViewHistoryTask?: (task: LiveTaskState) => void;
 }
 
 function LoadingFeedCard() {
@@ -68,15 +76,18 @@ function FeedCard({
   task,
   isSelected,
   nowMs,
+  liveTaskCount = 1,
   onSelect,
 }: {
   task: LiveTaskState;
   isSelected: boolean;
   nowMs: number;
+  liveTaskCount?: number;
   onSelect: () => void;
 }) {
   const operationalStatus = resolveOperationalStatusFromTask(task, nowMs, TRACKING_STALE_MS);
   const statusMeta = OPERATIONAL_STATUS_META[operationalStatus];
+  const lastSeen = formatRelativeLastSeen(task.lastEventAt, nowMs);
 
   return (
     <button
@@ -86,12 +97,22 @@ function FeedCard({
         isSelected ? "bg-[#0A192F]" : "bg-[#F8FAFC] hover:bg-gray-100"
       }`}
     >
-      <AgentAvatar
-        key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
-        name={task.agentName}
-        avatarUrl={task.agentAvatarUrl}
-        sizeClassName="w-12 h-12"
-      />
+      <div className="relative shrink-0">
+        <AgentAvatar
+          key={`${task.taskId}-${task.agentAvatarUrl ?? ""}`}
+          name={task.agentName}
+          avatarUrl={task.agentAvatarUrl}
+          sizeClassName="w-12 h-12"
+        />
+        {liveTaskCount > 1 && (
+          <span
+            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-white"
+            title={`${liveTaskCount} live tasks`}
+          >
+            {liveTaskCount > 9 ? "9+" : liveTaskCount}
+          </span>
+        )}
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p
@@ -132,8 +153,8 @@ function FeedCard({
             isSelected ? "text-slate-300" : "text-slate-500"
           }`}
         >
-          ETA {formatEta(task.etaSeconds)} | Speed {formatSpeed(task.speedMps)} | Left{" "}
-          {formatMetricDistance(task.distanceRemainingMeters)}
+          Last seen {lastSeen} · ETA {formatEta(task.etaSeconds)} · Speed{" "}
+          {formatSpeed(task.speedMps)} · Left {formatMetricDistance(task.distanceRemainingMeters)}
         </p>
       </div>
       <MoreHorizontal size={20} className={isSelected ? "text-white/50" : "text-gray-400"} />
@@ -152,9 +173,16 @@ export function LiveFeedsPanel({
   onToggleHistory,
   onToggleFollowAll,
   onSelectTask,
+  onViewHistoryTask,
 }: LiveFeedsPanelProps) {
   const needle = searchQuery.trim();
   const { active, history } = splitLiveFeedTasks(tasks, nowMs, TRACKING_STALE_MS);
+  const agentTaskCounts = useMemo(() => countLiveTasksByAgent(tasks), [tasks]);
+
+  const selectHistoryTask = (task: LiveTaskState) => {
+    onSelectTask(task.taskId);
+    onViewHistoryTask?.(task);
+  };
 
   const searchResults = useMemo(() => {
     if (!needle) return [];
@@ -177,15 +205,21 @@ export function LiveFeedsPanel({
             <p className="text-[12px] text-gray-400">No matching agents</p>
           </div>
         ) : (
-          searchResults.map((task) => (
-            <FeedCard
-              key={task.taskId}
-              task={task}
-              isSelected={selectedTaskId === task.taskId}
-              nowMs={nowMs}
-              onSelect={() => onSelectTask(task.taskId)}
-            />
-          ))
+          searchResults.map((task) => {
+            const isHistory = history.some((h) => h.taskId === task.taskId);
+            return (
+              <FeedCard
+                key={task.taskId}
+                task={task}
+                isSelected={selectedTaskId === task.taskId}
+                nowMs={nowMs}
+                liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
+                onSelect={() =>
+                  isHistory ? selectHistoryTask(task) : onSelectTask(task.taskId)
+                }
+              />
+            );
+          })
         )}
       </div>
     );
@@ -230,6 +264,7 @@ export function LiveFeedsPanel({
             task={task}
             isSelected={selectedTaskId === task.taskId}
             nowMs={nowMs}
+            liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
             onSelect={() => onSelectTask(task.taskId)}
           />
         ))
@@ -256,7 +291,8 @@ export function LiveFeedsPanel({
                   task={task}
                   isSelected={selectedTaskId === task.taskId}
                   nowMs={nowMs}
-                  onSelect={() => onSelectTask(task.taskId)}
+                  liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
+                  onSelect={() => selectHistoryTask(task)}
                 />
               ))}
             </div>

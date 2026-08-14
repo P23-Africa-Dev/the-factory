@@ -76,6 +76,8 @@ export function useClockIn() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ATTENDANCE_KEYS.all });
       queryClient.invalidateQueries({ queryKey: ["attendance-map"] });
+      // Start journey tracking promptly instead of waiting for the next poll.
+      queryClient.invalidateQueries({ queryKey: ["field-activity"] });
       if (res.meta?.queued_offline) {
         toast.info("Clock in queued offline.");
       }
@@ -92,6 +94,10 @@ export function useClockOut() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ATTENDANCE_KEYS.all });
       queryClient.invalidateQueries({ queryKey: ["attendance-map"] });
+      // Stop journey tracking and refresh summaries/journey history.
+      queryClient.invalidateQueries({ queryKey: ["field-activity"] });
+      queryClient.invalidateQueries({ queryKey: ["field-journeys"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-field-activity"] });
       if (res.meta?.queued_offline) {
         toast.info("Clock out queued offline.");
       }

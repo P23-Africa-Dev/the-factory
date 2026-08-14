@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Connection problem — Factory 23 Agent</title>
+    <meta name="color-scheme" content="dark" />
+    <title>Factory 23 Agent</title>
     <style>
       :root {
         color-scheme: dark;
@@ -11,111 +12,200 @@
       * {
         box-sizing: border-box;
       }
+      html,
       body {
         margin: 0;
-        min-height: 100vh;
+        min-height: 100%;
+        height: 100%;
+      }
+      body {
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         padding: 24px;
         font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-        background: #0a1d25;
+        background: #0b1e26;
         color: #e8f1f2;
       }
-      .card {
-        width: 100%;
-        max-width: 360px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        background: #0b3343;
-        padding: 28px 24px;
-        text-align: center;
-      }
-      h1 {
-        margin: 0 0 10px;
-        font-size: 1.25rem;
+      .brand {
+        font-size: 1.125rem;
         font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #e8f1f2;
       }
-      p {
-        margin: 0 0 12px;
-        font-size: 0.875rem;
-        line-height: 1.5;
-        color: rgba(232, 241, 242, 0.72);
+      .hint {
+        margin: 10px 0 0;
+        font-size: 0.8125rem;
+        color: rgba(232, 241, 242, 0.55);
       }
-      code {
-        font-size: 0.75rem;
-        word-break: break-all;
-        color: #75adaf;
-      }
-      .actions {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        margin-top: 20px;
-      }
-      button {
-        appearance: none;
-        border: 0;
+      /* Tiny offline chip — corner only, never a blocking dialog */
+      .offline-chip {
+        position: fixed;
+        right: max(16px, env(safe-area-inset-right));
+        bottom: max(20px, env(safe-area-inset-bottom));
+        z-index: 10;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100vw - 32px);
+        padding: 8px 12px;
         border-radius: 999px;
-        height: 48px;
-        font-size: 0.875rem;
-        font-weight: 700;
+        border: 1px solid rgba(246, 196, 112, 0.35);
+        background: rgba(11, 35, 48, 0.92);
+        color: #fde68a;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
         cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        appearance: none;
       }
-      .primary {
-        background: #75adaf;
-        color: #0a1d25;
+      .offline-chip svg {
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
       }
-      .secondary {
-        background: transparent;
-        color: #e8f1f2;
-        border: 1px solid rgba(255, 255, 255, 0.35);
+      .offline-chip[hidden] {
+        display: none;
       }
-      ul {
-        margin: 16px 0 0;
-        padding-left: 18px;
-        text-align: left;
-        font-size: 0.8rem;
-        line-height: 1.45;
-        color: rgba(232, 241, 242, 0.65);
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <h1>Can’t reach Factory 23</h1>
-      <p>
-        The app needs internet to load. Your phone could not resolve
-        <code id="host">app.thefactory23.com</code>
-        (<span id="hint">DNS / network error</span>).
-      </p>
-      <ul>
-        <li>Turn on mobile data or Wi‑Fi with internet</li>
-        <li>Open the same URL in Chrome to confirm it loads</li>
-        <li>If Private DNS is on, set it to Off or Automatic, then retry</li>
-      </ul>
-      <div class="actions">
-        <button type="button" class="primary" id="retry">Try again</button>
-        <button type="button" class="secondary" id="open-browser">Open in Chrome</button>
-      </div>
-    </div>
+    <p class="brand">Factory 23</p>
+    <p class="hint" id="status">Opening your workspace…</p>
+
+    <button
+      type="button"
+      class="offline-chip"
+      id="offline-chip"
+      hidden
+      aria-label="Offline — tap to retry"
+      title="Offline — tap to retry"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M1 1l22 22" />
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9" />
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+        <line x1="12" y1="20" x2="12.01" y2="20" />
+      </svg>
+      <span>Offline</span>
+    </button>
+
+    <p class="sr-only" id="live" aria-live="polite"></p>
+
     <script>
       (function () {
         var DEFAULT_URL = 'https://app.thefactory23.com/';
+        var PROBE_MS = 2500;
         var params = new URLSearchParams(window.location.search || '');
         var target = params.get('url') || DEFAULT_URL;
         try {
-          document.getElementById('host').textContent = new URL(target).hostname;
+          var parsed = new URL(target);
+          if (!parsed.protocol || parsed.protocol.indexOf('http') !== 0) {
+            target = DEFAULT_URL;
+          }
         } catch (e) {
           target = DEFAULT_URL;
         }
-        document.getElementById('retry').addEventListener('click', function () {
-          window.location.href = target;
+
+        var statusEl = document.getElementById('status');
+        var chipEl = document.getElementById('offline-chip');
+        var liveEl = document.getElementById('live');
+        var probeTimer = null;
+        var navigating = false;
+
+        function setOfflineUi(offline) {
+          if (offline) {
+            chipEl.hidden = false;
+            statusEl.textContent = 'Restoring your last session…';
+            liveEl.textContent = 'You are offline. Retrying quietly.';
+          } else {
+            chipEl.hidden = true;
+            statusEl.textContent = 'Opening your workspace…';
+            liveEl.textContent = '';
+          }
+        }
+
+        function goToApp() {
+          if (navigating) return;
+          navigating = true;
+          // replace avoids stacking error pages when a load fails again.
+          window.location.replace(target);
+        }
+
+        function probeUrl() {
+          try {
+            var u = new URL(target);
+            // Lightweight same-origin probe; avoids downloading the full app shell.
+            return u.origin + '/manifest.json';
+          } catch (e) {
+            return target;
+          }
+        }
+
+        function probeThenOpen() {
+          if (navigating) return;
+
+          var offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+          setOfflineUi(offline);
+
+          // Still try when "online" is true — DNS / captive portals can lie.
+          fetch(probeUrl(), {
+            method: 'HEAD',
+            cache: 'no-store',
+            mode: 'no-cors',
+          })
+            .then(function () {
+              // no-cors opaque response still means the host was reachable.
+              setOfflineUi(false);
+              goToApp();
+            })
+            .catch(function () {
+              setOfflineUi(true);
+            });
+        }
+
+        function startProbing() {
+          if (probeTimer) clearInterval(probeTimer);
+          probeThenOpen();
+          probeTimer = setInterval(probeThenOpen, PROBE_MS);
+        }
+
+        chipEl.addEventListener('click', function () {
+          navigating = false;
+          probeThenOpen();
         });
-        document.getElementById('open-browser').addEventListener('click', function () {
-          window.open(target, '_system');
-          window.location.href = target;
+
+        window.addEventListener('online', function () {
+          setOfflineUi(false);
+          navigating = false;
+          goToApp();
         });
+
+        window.addEventListener('offline', function () {
+          setOfflineUi(true);
+        });
+
+        // Quiet splash only — never a blocking error dialog.
+        // Probe first so we do not thrash error.html ↔ remote on hard offline.
+        setOfflineUi(typeof navigator !== 'undefined' && navigator.onLine === false);
+        startProbing();
       })();
     </script>
   </body>

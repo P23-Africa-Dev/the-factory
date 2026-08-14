@@ -33,11 +33,14 @@ import {
     updateAgentMarkerHeading,
 } from '@/lib/tracking/map-visualization';
 import { fetchDirectionsRoute, clearDirectionsCache } from '@/lib/tracking/directions';
+import { resolveHeading } from '@/lib/tracking/dead-reckoning';
 import {
-    MAX_PREDICTION_MS,
-    projectPosition,
-    resolveHeading,
-} from '@/lib/tracking/dead-reckoning';
+    createMarkerMotion,
+    enqueueMarkerFix,
+    isMarkerMotionComplete,
+    sampleMarkerPosition,
+    type MarkerMotionState,
+} from '@/lib/tracking/marker-motion';
 import { useInitialMapViewport } from '@/hooks/use-initial-map-viewport';
 import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnectionStatus';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
@@ -52,7 +55,6 @@ import type { PoiResult } from '@/lib/map/overpass-search';
 import type { LocationContext } from '@/lib/map/location-search';
 import { resolvePoiForSearchSelection } from '@/lib/map/poi-display';
 
-const MARKER_ANIMATION_MS = 700;
 
 type GoogleLatLng = { lat: number; lng: number };
 
@@ -149,6 +151,8 @@ function MapboxAgentMapView({
     const destinationMarkerRef = useRef<mapboxgl.Marker | null>(null);
     const markerAnimationRef = useRef<number | null>(null);
     const markerPositionRef = useRef<[number, number] | null>(null);
+    const markerMotionRef = useRef<MarkerMotionState | null>(null);
+    const queuedTargetRef = useRef<string | null>(null);
     const forwardRouteCoordsRef = useRef<[number, number][] | null>(null);
     const hasInitialFitRef = useRef(false);
     const lastFitTaskIdRef = useRef<number | null>(null);
@@ -291,60 +295,33 @@ function MapboxAgentMapView({
     const animateAgentMarker = useCallback((
         marker: mapboxgl.Marker,
         target: [number, number],
-        motion?: { speedMps?: number | null; headingDegrees?: number | null },
+        recordedAtMs?: number,
     ) => {
+        const key = `${target[0].toFixed(6)},${target[1].toFixed(6)}`;
+        if (queuedTargetRef.current === key) return;
+        queuedTargetRef.current = key;
+
+        const now = performance.now();
         const from = markerPositionRef.current ?? [marker.getLngLat().lng, marker.getLngLat().lat] as [number, number];
+        const base = markerMotionRef.current ?? createMarkerMotion(from, now);
+        markerMotionRef.current = enqueueMarkerFix(base, target, now, recordedAtMs);
 
         if (markerAnimationRef.current) {
             cancelAnimationFrame(markerAnimationRef.current);
             markerAnimationRef.current = null;
         }
 
-        const skipCatchUp = areSamePoint(from, target);
-        const speedMps = motion?.speedMps ?? null;
-        const headingDegrees = motion?.headingDegrees ?? null;
-        const canPredict =
-            typeof speedMps === 'number' && speedMps > 0.5 &&
-            typeof headingDegrees === 'number' && Number.isFinite(headingDegrees);
-
-        if (skipCatchUp && !canPredict) {
-            marker.setLngLat(target);
-            markerPositionRef.current = target;
-            return;
-        }
-
-        const startedAt = performance.now();
-        // Ease to the new fix, then dead-reckon along speed/heading so the
-        // agent's own marker keeps moving until the next fix re-anchors it.
-        const step = (now: number) => {
-            const elapsed = now - startedAt;
-
-            if (!skipCatchUp && elapsed < MARKER_ANIMATION_MS) {
-                const progress = elapsed / MARKER_ANIMATION_MS;
-                const eased = progress < 0.5
-                    ? 2 * progress * progress
-                    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-
-                marker.setLngLat([
-                    from[0] + (target[0] - from[0]) * eased,
-                    from[1] + (target[1] - from[1]) * eased,
-                ]);
+        const step = (frameNow: number) => {
+            const state = markerMotionRef.current;
+            if (!state) return;
+            const pos = sampleMarkerPosition(state, frameNow);
+            marker.setLngLat(pos);
+            markerPositionRef.current = pos;
+            if (!isMarkerMotionComplete(state, frameNow)) {
                 markerAnimationRef.current = requestAnimationFrame(step);
                 return;
             }
-
-            if (!canPredict || elapsed > MAX_PREDICTION_MS) {
-                marker.setLngLat(target);
-                markerPositionRef.current = target;
-                markerAnimationRef.current = null;
-                return;
-            }
-
-            const predictSeconds = (elapsed - (skipCatchUp ? 0 : MARKER_ANIMATION_MS)) / 1000;
-            const predicted = projectPosition(target, speedMps, headingDegrees, predictSeconds);
-            marker.setLngLat(predicted);
-            markerPositionRef.current = predicted;
-            markerAnimationRef.current = requestAnimationFrame(step);
+            markerAnimationRef.current = null;
         };
 
         markerAnimationRef.current = requestAnimationFrame(step);
@@ -595,6 +572,8 @@ function MapboxAgentMapView({
                 .setLngLat(activeTask.lastPosition)
                 .addTo(map);
             markerPositionRef.current = activeTask.lastPosition;
+            markerMotionRef.current = createMarkerMotion(activeTask.lastPosition, performance.now());
+            queuedTargetRef.current = `${activeTask.lastPosition[0].toFixed(6)},${activeTask.lastPosition[1].toFixed(6)}`;
             updateAgentMarkerHeading(agentElement, agentHeading);
         } else {
             updateAgentMarkerElement(agentMarkerRef.current.getElement(), {
@@ -604,10 +583,11 @@ function MapboxAgentMapView({
                 stale: false,
             });
             updateAgentMarkerHeading(agentMarkerRef.current.getElement(), agentHeading);
-            animateAgentMarker(agentMarkerRef.current, activeTask.lastPosition, {
-                speedMps: activeTask.speedMps,
-                headingDegrees: agentHeading,
-            });
+            animateAgentMarker(
+                agentMarkerRef.current,
+                activeTask.lastPosition,
+                new Date(activeTask.lastEventAt).getTime(),
+            );
         }
 
         if (activeTask.destination) {

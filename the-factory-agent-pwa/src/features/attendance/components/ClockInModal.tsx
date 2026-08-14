@@ -6,6 +6,8 @@ import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { toast } from '@/lib/toast';
 import { flattenApiError } from '@/lib/api/errors';
 import { useTodayAttendance, useClockIn, useClockOut } from '../queries';
+import { useFieldActivityReviewUi } from '@/features/field-activity/reviewUiStore';
+import { flushFieldActivityPoints } from '@/features/field-activity/flushRegistry';
 
 type ClockInModalProps = {
   visible: boolean;
@@ -19,6 +21,7 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
   const { location, error: locationError, isLoading: isLocating, refresh } = useCurrentLocation();
   const { mutateAsync: clockIn, isPending: isClockingIn } = useClockIn();
   const { mutateAsync: clockOut, isPending: isClockingOut } = useClockOut();
+  const openDayReview = useFieldActivityReviewUi((s) => s.openDayReview);
 
   const isClockedIn = today?.isClockedIn ?? false;
   const isSubmitting = isClockingIn || isClockingOut;
@@ -57,11 +60,18 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
     const wasClockIn = !isClockedIn;
 
     try {
+      if (isClockedIn) {
+        // Push buffered journey points first — once the session completes,
+        // late points are rejected and the final leg of the route is lost.
+        await flushFieldActivityPoints().catch(() => {});
+      }
       await actionFn(payload);
       toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your location has been recorded.');
       onClose();
       if (wasClockIn) {
         router.push('/map?highlight=clock-in');
+      } else {
+        openDayReview();
       }
     } catch (err: unknown) {
       toast.error(flattenApiError(err) || 'Something went wrong. Please try again.');

@@ -251,6 +251,12 @@ function buildFromEnvelope(
       payload.data?.location?.route_deviation_meters ??
       prev?.routeDeviationMeters ??
       null,
+    accuracyMeters:
+      (coordsAreFresh
+        ? payload.data?.location?.accuracy_meters ?? payload.data?.accuracy_meters
+        : undefined) ??
+      prev?.accuracyMeters ??
+      null,
     operationalStatus:
       taskStatus === "completed"
         ? "completed"
@@ -577,6 +583,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
               ? {
                 lat: item.task.destination_latitude,
                 lng: item.task.destination_longitude,
+                radiusM: prev?.destination?.radiusM,
               }
               : prev?.destination,
           lastPosition,
@@ -591,7 +598,8 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.updated_at ??
             undefined,
           lastEventAt: newerIso(snapshotAt, prev?.lastEventAt),
-          lastReceivedAt: prev?.lastReceivedAt,
+          // Stamp receive time so map/feed staleness match WS-driven freshness.
+          lastReceivedAt: Date.now(),
           nearDetectedAt:
             item.status.proximity_state === "near_destination" && !item.location.arrived
               ? prev?.nearDetectedAt ?? item.location.recorded_at ?? item.updated_at ?? undefined
@@ -617,6 +625,9 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
           etaSeconds: item.location.eta_seconds ?? prev?.etaSeconds ?? null,
           routeDeviationMeters:
             item.location.route_deviation_meters ?? prev?.routeDeviationMeters ?? null,
+          accuracyMeters: positionIsFresh
+            ? item.location.accuracy_meters ?? prev?.accuracyMeters ?? null
+            : prev?.accuracyMeters ?? null,
           operationalStatus:
             nextStatus === "completed"
               ? "completed"
@@ -693,6 +704,7 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             lastPosition: point,
             // Keep staleness detection happy while WS echo is in flight.
             lastEventAt: new Date().toISOString(),
+            lastReceivedAt: Date.now(),
           },
         },
       };

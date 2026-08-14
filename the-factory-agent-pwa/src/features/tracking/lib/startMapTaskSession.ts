@@ -31,7 +31,7 @@ export type StartMapTaskSessionParams = {
     startPoint: [number, number];
   }) => void;
   markTrackingLive: () => void;
-  stopTracking: () => Promise<void>;
+  stopTracking: (options?: { reason?: 'completed' | 'paused' | 'stopped' | 'silent'; taskTitle?: string | null }) => Promise<void>;
   onRollback: () => void;
   onRouteHydrated?: (arrived: boolean) => void;
   /** When set, use these coords instead of waiting for device GPS (demo accounts). */

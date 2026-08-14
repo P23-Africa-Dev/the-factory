@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\FieldActivity;
 
+use App\Http\Requests\Concerns\NormalizesQueryBooleans;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class FieldJourneyListRequest extends FormRequest
 {
+    use NormalizesQueryBooleans;
     use ResolvesCompanyContextId;
 
     public function authorize(): bool
@@ -19,6 +21,7 @@ class FieldJourneyListRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $this->normalizeBooleanInputs(['include_route', 'include_timeline']);
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             'preset' => $this->input('preset') !== null

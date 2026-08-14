@@ -32,4 +32,19 @@ return [
     'redis_channel_prefix' => (string) env('TASK_TRACKING_REDIS_CHANNEL_PREFIX', 'factory23.tracking'),
     'retention_days' => (int) env('TASK_TRACKING_RETENTION_DAYS', 90),
     'prune_chunk_size' => (int) env('TASK_TRACKING_PRUNE_CHUNK_SIZE', 1000),
+
+    // Auto-close abandoned open sessions that have gone silent (mirrors field activity).
+    'abandoned_session_after_seconds' => (int) env('TASK_TRACKING_ABANDONED_SESSION_AFTER_SECONDS', 21600), // 6h
+
+    // Ops alert: tracking:health --fail-on-alert exits 1 when abandoned open sessions exceed this.
+    'health_abandoned_alert_threshold' => (int) env('TASK_TRACKING_HEALTH_ABANDONED_ALERT_THRESHOLD', 50),
+
+    // Anti-spoof / clock-skew guards for client-supplied recorded_at values.
+    'max_recorded_at_future_skew_seconds' => (int) env('TASK_TRACKING_MAX_RECORDED_AT_FUTURE_SKEW_SECONDS', 120),
+    'max_recorded_at_past_skew_seconds' => (int) env('TASK_TRACKING_MAX_RECORDED_AT_PAST_SKEW_SECONDS', 86400),
+    'max_plausible_speed_mps' => (float) env('TASK_TRACKING_MAX_PLAUSIBLE_SPEED_MPS', 70),
+    'teleport_grace_meters' => (float) env('TASK_TRACKING_TELEPORT_GRACE_METERS', 75),
+
+    // Roles that can view the full company fleet on the live map / location APIs.
+    'fleet_viewer_roles' => ['owner', 'admin', 'supervisor'],
 ];

@@ -87,6 +87,12 @@ const profileOrganizationSchema = z.object({
   country: z.string().nullable().optional(),
   purpose: z.string().nullable().optional(),
   joined_at: z.string().nullable().optional(),
+  company: z.object({
+    id: z.union([z.string(), z.number()]).transform(v => Number(v)).optional(),
+  }).passthrough().nullable().optional(),
+  assigned_company: z.object({
+    id: z.union([z.string(), z.number()]).transform(v => Number(v)).optional(),
+  }).passthrough().nullable().optional(),
 }).passthrough();
 
 const profileAccountSchema = z.object({

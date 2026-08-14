@@ -59,7 +59,7 @@ function createTodayPayload() {
     config: {
       moving_interval_seconds: 60,
       stationary_interval_seconds: 300,
-      stop_dwell_seconds: 900,
+      stop_dwell_seconds: 300,
     },
   };
 }

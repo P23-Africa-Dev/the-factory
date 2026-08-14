@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, MapPin, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { AddAgentModal } from '@/components/operations/add-agent-modal';
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from '@/components/operations/ops-table';
@@ -40,6 +40,8 @@ type Agent = {
   location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  activeTaskId?: number | null;
+  lastSeenAt?: string | null;
 };
 
 const PAGE_SIZE = 5;
@@ -76,14 +78,30 @@ function mapAgent(user: InternalUserListItem): Agent {
     latitude: presence.latitude ?? undefined,
     longitude: presence.longitude ?? undefined,
     location: presence.activeTaskTitle ?? null,
+    activeTaskId: presence.activeTaskId ?? null,
+    lastSeenAt: presence.lastSeenAt ?? null,
   };
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function AgentDetailSidebar({ agent }: { agent: Agent }) {
-  const hasLocation = Boolean(
-    agent.isMapActive && (agent.location || agent.latitude || agent.longitude),
-  );
+  const mapHref = (() => {
+    const params = new URLSearchParams({ agent: String(agent.id) });
+    if (agent.activeTaskId != null && Number.isFinite(agent.activeTaskId) && agent.activeTaskId > 0) {
+      params.set('taskId', String(agent.activeTaskId));
+    }
+    return `/agent/map?${params.toString()}`;
+  })();
+
+  const hasCoords =
+    typeof agent.latitude === 'number' &&
+    typeof agent.longitude === 'number' &&
+    Number.isFinite(agent.latitude) &&
+    Number.isFinite(agent.longitude);
+
+  const lastSeenLabel = agent.lastSeenAt
+    ? new Date(agent.lastSeenAt).toLocaleString()
+    : agent.time || null;
 
   return (
     <div className="flex flex-col gap-5 w-full xl:w-90 xl:shrink-0">
@@ -150,61 +168,41 @@ function AgentDetailSidebar({ agent }: { agent: Agent }) {
       {/* Live Details */}
       <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
         <h3 className="text-[16px] font-bold text-white mb-4">Live Details</h3>
-        <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
-          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
-            <defs>
-              <pattern id="agpage-grid" width="36" height="36" patternUnits="userSpaceOnUse">
-                <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#agpage-grid)" />
-          </svg>
-          <div className="absolute left-[28%] top-0 bottom-0 w-10 bg-white/60 pointer-events-none" />
-          <div className="absolute top-[45%] left-0 right-0 h-8 bg-white/60 pointer-events-none" />
-          <div className="absolute right-0 top-[30%] w-12 h-16 bg-[#A8D5B5]/60 pointer-events-none" />
-          <div className="absolute pointer-events-none" style={{ left: '26%', top: 8 }}>
-            <span className="text-[9px] font-semibold text-gray-600 block leading-tight">Dresd</span>
-            <span className="text-[9px] font-semibold text-gray-600 block leading-tight">Street</span>
-          </div>
-          <div className="absolute right-2 top-[18%] pointer-events-none">
-            <span className="text-[8px] font-semibold text-gray-500 block leading-tight">McDo</span>
-            <span className="text-[8px] font-semibold text-gray-500 block leading-tight">ell Str</span>
-          </div>
-          <div className="absolute" style={{ left: '30%', top: '28%' }}>
-            <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
-          </div>
-          <div className="absolute flex flex-col items-center" style={{ left: 'calc(30% - 14px)', top: '50%' }}>
-            <div className="w-7 h-7 rounded-full border-2 border-white shadow-md overflow-hidden">
-              <img src={agent.avatar} className="w-full h-full object-cover" alt="Agent" />
+        <div className="relative w-full rounded-[18px] bg-[#122632] border border-white/10 px-4 py-5">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-white/10 shrink-0">
+              <img src={agent.avatar} className="w-full h-full object-cover" alt={agent.name} />
             </div>
-            <div className="bg-white px-2 py-0.5 rounded-lg mt-1 whitespace-nowrap shadow-md">
-              <p className="text-[8px] font-bold text-dash-dark">{agent.name}</p>
-              <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-bold text-white truncate">{agent.name}</p>
+              <p className="text-[11px] text-white/55 mt-1">
+                {agent.isMapActive ? 'Live on map' : 'Not actively sharing location'}
+              </p>
+              {agent.location && (
+                <p className="text-[11px] text-white/70 mt-2 truncate">{agent.location}</p>
+              )}
+              {hasCoords && (
+                <p className="text-[10px] text-white/40 mt-2 font-mono">
+                  {agent.latitude!.toFixed(5)}, {agent.longitude!.toFixed(5)}
+                </p>
+              )}
+              {lastSeenLabel && (
+                <p className="text-[10px] text-white/40 mt-1">{lastSeenLabel}</p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Progress bars - commented out per user request */}
-        {/*
         <div className="mt-4">
-          <div className="flex rounded-full overflow-hidden h-3">
-            <div className="w-[38%] bg-dash-teal" />
-            <div className="w-[62%] bg-[#EF5350]" />
-          </div>
-          <div className="flex justify-between mt-1.5">
-            <p className="text-[11px] text-gray-400">Completed</p>
-            <p className="text-[11px] text-gray-400">Pending</p>
-          </div>
-        </div>
-        */}
-
-        <div className="mt-4">
-          {hasLocation && (
-            <button className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${agent.isMapActive ? 'bg-[#9D4EDD] text-white' : 'bg-gray-600 text-white'}`}>
-              {agent.isMapActive ? 'Active (View on Map)' : 'Offline'}
-              {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-            </button>
-          )}
+          <Link
+            href={mapHref}
+            className={`px-5 py-2.5 rounded-full text-[12px] font-bold hover:opacity-90 transition-all inline-flex items-center gap-2 ${
+              agent.isMapActive ? 'bg-[#9D4EDD] text-white' : 'bg-white/10 text-white'
+            }`}
+          >
+            {agent.isMapActive ? 'Active (View on Map)' : 'Open live map'}
+            {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+          </Link>
           <p className="text-[11px] text-gray-500 mt-2">{agent.time}</p>
         </div>
       </div>

@@ -11,6 +11,7 @@ use App\Models\TaskTrackingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -114,6 +115,11 @@ class TaskTrackingTest extends TestCase
 
         $token = $agent->createToken('agent-token', ['*'])->plainTextToken;
 
+        // Freeze time and advance it between requests so device timestamps
+        // are realistic (never in the future, which would be skew-clamped).
+        $startedAt = Carbon::parse('2026-07-29 10:00:00');
+        Carbon::setTestNow($startedAt);
+
         $startResponse = $this->withToken($token)
             ->postJson('/api/v1/tasks/' . $task->id . '/start', [
                 'company_id' => $company->id,
@@ -134,6 +140,8 @@ class TaskTrackingTest extends TestCase
             'started_by_user_id' => $agent->id,
         ]);
 
+        Carbon::setTestNow($startedAt->copy()->addMinutes(2));
+
         $nearResponse = $this->withToken($token)
             ->postJson('/api/v1/tasks/' . $task->id . '/location', [
                 'company_id' => $company->id,
@@ -141,12 +149,12 @@ class TaskTrackingTest extends TestCase
                     [
                         'latitude' => 6.4100,
                         'longitude' => 3.4000,
-                        'recorded_at' => now()->addMinute()->toISOString(),
+                        'recorded_at' => $startedAt->copy()->addMinute()->toISOString(),
                     ],
                     [
                         'latitude' => 6.4301,
                         'longitude' => 3.4201,
-                        'recorded_at' => now()->addMinutes(2)->toISOString(),
+                        'recorded_at' => $startedAt->copy()->addMinutes(2)->toISOString(),
                     ],
                 ],
             ]);
@@ -157,6 +165,8 @@ class TaskTrackingTest extends TestCase
             ->assertJsonPath('data.proximity_state', 'near_destination')
             ->assertJsonPath('data.received_points', 2);
 
+        Carbon::setTestNow($startedAt->copy()->addMinutes(3));
+
         $arrivalResponse = $this->withToken($token)
             ->postJson('/api/v1/tasks/' . $task->id . '/location', [
                 'company_id' => $company->id,
@@ -164,7 +174,7 @@ class TaskTrackingTest extends TestCase
                     [
                         'latitude' => 6.4302,
                         'longitude' => 3.4202,
-                        'recorded_at' => now()->addMinutes(3)->toISOString(),
+                        'recorded_at' => $startedAt->copy()->addMinutes(3)->toISOString(),
                     ],
                 ],
             ]);

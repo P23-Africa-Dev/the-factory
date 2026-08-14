@@ -23,6 +23,15 @@ class ReadToolArgsResolver
         'tracking.active_agents',
         'projects.at_risk_summary',
         'drive.files',
+        'map.pinned_locations_count',
+        'attendance.today_summary',
+        'crm.calls_count',
+        'crm.leads_analytics',
+        'kpi.list',
+        'field.daily_summary',
+        'field.agent_visits',
+        'field.journey_history',
+        'tracking.agent_history',
     ];
 
     public function __construct(
@@ -41,8 +50,10 @@ class ReadToolArgsResolver
         ?int $companyId = null,
         ?int $userId = null,
     ): array {
+        $common = $this->resolveCommonArgs($message);
+
         if (! in_array($tool, self::LIST_TOOLS, true)) {
-            return [];
+            return $common;
         }
 
         $expandFullList = $this->wantsExplicitFullList($message)
@@ -52,10 +63,10 @@ class ReadToolArgsResolver
             ? $this->readListPresenter->maxExpandedLimit($tool)
             : $this->readListPresenter->previewLimit();
 
-        $args = [
+        $args = array_merge($common, [
             'limit' => $limit,
             'expand_full_list' => $expandFullList,
-        ];
+        ]);
 
         if ($this->isCountOnlyQuestion($message)) {
             $args['count_only'] = true;
@@ -66,6 +77,113 @@ class ReadToolArgsResolver
         }
 
         return $args;
+    }
+
+    /**
+     * Shared date / agent extraction for attendance, field, map, CRM, and tracking tools.
+     *
+     * @return array<string, mixed>
+     */
+    public function resolveCommonArgs(string $message): array
+    {
+        $args = [];
+        $normalized = strtolower(trim($message));
+        // Normalize curly/smart apostrophes so "Taraji's" extracts reliably.
+        $messageForNames = str_replace(["\u{2018}", "\u{2019}", "\u{02BC}", '`'], "'", $message);
+
+        if (preg_match('/\byesterday\b/i', $normalized) === 1) {
+            $args['date'] = now()->subDay()->toDateString();
+            $args['from'] = now()->subDay()->toDateString();
+            $args['to'] = now()->subDay()->toDateString();
+        } elseif (preg_match('/\btoday\b/i', $normalized) === 1) {
+            $args['date'] = now()->toDateString();
+            $args['from'] = now()->toDateString();
+            $args['to'] = now()->toDateString();
+        } elseif (preg_match('/\bthis\s+week\b/i', $normalized) === 1) {
+            $args['from'] = now()->startOfWeek()->toDateString();
+            $args['to'] = now()->toDateString();
+            $args['date'] = now()->toDateString();
+        } elseif (preg_match('/\b(all\s+days|all\s+time|overall\s+tracking|tracking\s+for\s+all)\b/i', $normalized) === 1) {
+            $args['from'] = now()->subDays(30)->toDateString();
+            $args['to'] = now()->toDateString();
+            $args['date'] = now()->toDateString();
+        } elseif (preg_match('/\bnext\s+week\b/i', $normalized) === 1) {
+            $args['from'] = now()->addWeek()->startOfWeek()->toDateString();
+            $args['to'] = now()->addWeek()->endOfWeek()->toDateString();
+        }
+
+        $agentName = $this->extractAgentNameFromMessage($messageForNames);
+        if ($agentName !== null) {
+            $args['agent_name'] = $agentName;
+        }
+
+        return $args;
+    }
+
+    /**
+     * Extract a mentioned field agent from natural-language prompts.
+     */
+    public function extractAgentNameFromMessage(string $message): ?string
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return null;
+        }
+
+        $patterns = [
+            // "Taraji's tracking activities" / "John's journey" (avoid matching What's/who's)
+            '/\b([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})\s*\'s\s+(?:tracking(?:\s+activit(?:y|ies))?|field\s+activit(?:y|ies)|journey|location\s+history|attendance|clock)\b/i',
+            // "journey history for Taraji" / "tracking for Taraji" / "check for agent Taraji Henson"
+            '/\b(?:journey\s+history\s+for|history\s+for|tracking\s+(?:activities\s+)?(?:for|of)|visits?\s+(?:by|for)|kpi\s+assigned\s+to|assigned\s+to|where\s+did|which\s+businesses?\s+did|check(?:\s+on)?(?:\s+for)?(?:\s+agent)?|did)\s+([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})(?:\s+(?:go|visit|complete|clock|in|the|field|yesterday|today|this|week|most|tracking|before|after|activit(?:y|ies))\b|\?|$)/i',
+            // "for agent Taraji Henson" / "for Taraji"
+            '/\b(?:for|by)\s+(?:agent\s+)?([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})(?:\s+(?:yesterday|today|this\s+week|before|after)\b|\?|$)/i',
+            // "agent Taraji Henson"
+            '/\bagent\s+([A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){0,3})(?:\s+(?:yesterday|today|this\s+week|before|after|tracking|journey)\b|\?|$)/i',
+        ];
+
+        $blocked = ['me', 'my', 'our', 'the', 'all', 'team', 'today', 'yesterday', 'what', 'whats', 'who', 'whom', 'this', 'that', 'before', 'after'];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $message, $matches) !== 1) {
+                continue;
+            }
+
+            $candidate = trim((string) ($matches[1] ?? ''));
+            $candidate = trim(preg_replace(
+                '/\b(agent|yesterday|today|clock|in|out|field|businesses?|visits?|tracking|activit(?:y|ies)|journey|history|before|after)\b/i',
+                '',
+                $candidate,
+            ) ?? $candidate);
+            $candidate = trim(preg_replace('/\s+/', ' ', $candidate) ?? $candidate);
+
+            if ($candidate === '' || in_array(strtolower($candidate), $blocked, true)) {
+                continue;
+            }
+
+            return $candidate;
+        }
+
+        return null;
+    }
+
+    public function latestAttendanceDateFromThread(
+        ?string $threadId,
+        ?int $companyId,
+        ?int $userId,
+    ): ?string {
+        $latest = $this->latestAssistantMessage($threadId, $companyId, $userId);
+        if ($latest === null) {
+            return null;
+        }
+
+        if ((string) ($latest['tool'] ?? '') !== 'attendance.today_summary') {
+            return null;
+        }
+
+        $payload = is_array($latest['payload'] ?? null) ? $latest['payload'] : [];
+        $date = $payload['date'] ?? null;
+
+        return is_string($date) && trim($date) !== '' ? trim($date) : null;
     }
 
     /**
@@ -176,17 +294,20 @@ class ReadToolArgsResolver
         }
 
         $content = strtolower(trim((string) ($latest['content'] ?? '')));
-        if ($content === '' || ! $this->contentOffersListExpansion($content)) {
+        $offersExpansion = $this->contentOffersListExpansion($content)
+            || $this->payloadLooksTruncated($payload);
+
+        if (! $offersExpansion) {
             return null;
         }
 
-        $tool = (string) ($latest['tool'] ?? '');
-        if ($this->isListTool($tool)) {
+        $tool = trim((string) ($latest['tool'] ?? ''));
+        if ($tool !== '') {
+            // Always honor the tool that just offered the list — never swap to an older thread tool.
             return $tool;
         }
 
-        return $this->inferListToolFromContent($content)
-            ?? $this->findRecentListToolFromThread($threadId, $companyId, $userId);
+        return $this->inferListToolFromContent($content);
     }
 
     private function contentOffersListExpansion(string $normalizedContent): bool
@@ -196,11 +317,28 @@ class ReadToolArgsResolver
             || preg_match('/\blist\s+them(\s+all)?(\s+for\s+you)?\b/i', $normalizedContent) === 1
             || preg_match('/\b(shall|should)\s+i\s+(list|show)\b/i', $normalizedContent) === 1
             || preg_match('/\b(want|like)\s+me\s+to\s+(list|show)\b/i', $normalizedContent) === 1
-            || preg_match('/\boffer_full_list\b/i', $normalizedContent) === 1;
+            || preg_match('/\boffer_full_list\b/i', $normalizedContent) === 1
+            || preg_match('/\bwould\s+you\s+like\s+(me\s+to\s+)?(see|get|have)\s+(the\s+)?(full\s+)?list\b/i', $normalizedContent) === 1;
     }
 
     private function inferListToolFromContent(string $normalizedContent): ?string
     {
+        if (preg_match('/\b(pinned\s+locations?|locations?\s+on\s+the\s+map|map\s+pins?|businesses?\s+(added|pinned))\b/i', $normalizedContent) === 1) {
+            return 'map.pinned_locations_count';
+        }
+
+        if (preg_match('/\b(attendance|present|absent|late)\b/i', $normalizedContent) === 1) {
+            return 'attendance.today_summary';
+        }
+
+        if (preg_match('/\bcalls?\b/i', $normalizedContent) === 1) {
+            return 'crm.calls_count';
+        }
+
+        if (preg_match('/\b(leads?\s+added|conversion\s+rate)\b/i', $normalizedContent) === 1) {
+            return 'crm.leads_analytics';
+        }
+
         if (preg_match('/\b(leads?|crm)\b/i', $normalizedContent) === 1) {
             return 'crm.top_leads';
         }
@@ -221,12 +359,20 @@ class ReadToolArgsResolver
             return 'meetings.today';
         }
 
+        if (preg_match('/\bvisits?\b/i', $normalizedContent) === 1) {
+            return 'field.agent_visits';
+        }
+
         if (preg_match('/\bagents?\b/i', $normalizedContent) === 1) {
             return 'tracking.active_agents';
         }
 
         if (preg_match('/\bprojects?\b/i', $normalizedContent) === 1) {
             return 'projects.at_risk_summary';
+        }
+
+        if (preg_match('/\bkpi\b/i', $normalizedContent) === 1) {
+            return 'kpi.list';
         }
 
         return null;
@@ -369,10 +515,11 @@ class ReadToolArgsResolver
         $normalized = strtolower(trim($message));
 
         return preg_match('/\b(list|show|display|print)\s+(all|every|the\s+full|complete|entire)\b/i', $normalized) === 1
-            || preg_match('/\b(all|every|full|complete|entire)\b.{0,20}\b(list|leads?|tasks?|users?|meetings?|agents?|projects?)\b/i', $normalized) === 1
+            || preg_match('/\b(all|every|full|complete|entire)\b.{0,30}\b(list|leads?|tasks?|users?|meetings?|agents?|projects?|locations?|pins?|businesses?)\b/i', $normalized) === 1
             || preg_match('/\blist\s+(them\s+)?all\b/i', $normalized) === 1
             || preg_match('/\bshow\s+(me\s+)?(the\s+)?full\s+list\b/i', $normalized) === 1
-            || preg_match('/\blist\s+every\s+(one|lead|task|user|meeting|agent)\b/i', $normalized) === 1;
+            || preg_match('/\blist\s+every\s+(one|lead|task|user|meeting|agent|location|pin|business)\b/i', $normalized) === 1
+            || preg_match('/\bgive\s+me\s+(the\s+)?(entire|full|complete)\s+list\b/i', $normalized) === 1;
     }
 
     private function wantsThreadExpansion(

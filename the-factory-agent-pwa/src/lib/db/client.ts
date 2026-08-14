@@ -16,13 +16,14 @@ import type {
   OfflineConflictEntry,
   ProofQueueEntry,
   SavedLocationCacheEntry,
+  SyncMetaEntry,
   TaskDetailCacheEntry,
   TaskDestinationCacheEntry,
   TasksListCacheEntry,
 } from './schema';
 
 const DB_NAME = 'factory-agent-pwa';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export type FactoryDB = IDBPDatabase<{
   locationQueue: {
@@ -127,6 +128,10 @@ export type FactoryDB = IDBPDatabase<{
     indexes: {
       'by-company': number;
     };
+  };
+  syncMeta: {
+    key: string;
+    value: SyncMetaEntry;
   };
 }>;
 
@@ -243,6 +248,13 @@ export async function getDb(): Promise<FactoryDB> {
         if (!db.objectStoreNames.contains('crmMetaCache')) {
           const store = db.createObjectStore('crmMetaCache', { keyPath: 'id' });
           store.createIndex('by-company', 'companyId');
+        }
+      }
+
+      // SW-readable auth mirror + optional locationQueue fields (companyId / inFlight).
+      if (oldVersion < 5) {
+        if (!db.objectStoreNames.contains('syncMeta')) {
+          db.createObjectStore('syncMeta', { keyPath: 'id' });
         }
       }
     },

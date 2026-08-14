@@ -12,7 +12,7 @@ import {
     useSendLeadEmail,
     useUploadEmailAttachment,
 } from "@/hooks/use-crm-emails";
-import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
+import { useEmailAccounts } from "@/hooks/use-email-accounts";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
 import { ComposeEmailPanel } from "./compose-email-panel";
 import { EmailConnectionBanner } from "./email-connection-banner";
@@ -49,7 +49,7 @@ export function EmailPanel({
         companyId,
         basePath,
     );
-    const statusQuery = useCalendarIntegrationStatus(companyId);
+    const emailAccountsQuery = useEmailAccounts(companyId);
     const sendMutation = useSendLeadEmail(leadId, companyId, basePath, {
         onSuccess: () => {
             toast.success("Email queued for sending.");
@@ -162,10 +162,16 @@ export function EmailPanel({
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {view === "compose" ? (
                     <ComposeEmailPanel
+                        leadId={leadId}
                         leadName={leadName}
                         leadEmail={resolvedLeadEmail}
                         companyId={companyId}
-                        connectedAccountEmail={statusQuery.data?.organizer_email}
+                        connectedAccountEmail={
+                            emailAccountsQuery.data?.find((a) => a.is_default && a.status === "active")?.email
+                            ?? emailAccountsQuery.data?.find((a) => a.status === "active")?.email
+                            ?? null
+                        }
+                        emailAccounts={emailAccountsQuery.data}
                         replyTo={replyTo}
                         isSending={sendMutation.isPending}
                         onSend={handleSend}
@@ -224,7 +230,7 @@ export function EmailPanel({
                                 });
                             }}
                             title="Delete Email"
-                            description="This will move the email to trash in Gmail and remove it from this lead."
+                            description="This will move the email to trash in your connected mailbox and remove it from this lead."
                             confirmLabel={deleteMutation.isPending ? "Deleting..." : "Delete"}
                             closeOnConfirm={false}
                             confirmDisabled={deleteMutation.isPending}

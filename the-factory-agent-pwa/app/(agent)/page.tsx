@@ -8,6 +8,13 @@ import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
+import {
+  FieldActivitySummaryCard,
+  DayReviewSheet,
+  PileInboxBadge,
+  PileInboxSheet,
+  PendingReviewSoftBanner,
+} from '@/features/field-activity';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
 import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
@@ -594,6 +601,9 @@ export default function AgentDashboardPage() {
 
             {/* Attendance card */}
             <AttendanceCard />
+            <PendingReviewSoftBanner />
+            <PileInboxBadge />
+            <FieldActivitySummaryCard />
           </div>
 
           {/* Meetings Calendar Widget */}
@@ -813,6 +823,8 @@ export default function AgentDashboardPage() {
           </div>
         </div>
       )}
+      <DayReviewSheet />
+      <PileInboxSheet />
     </ScreenErrorBoundary>
   );
 }

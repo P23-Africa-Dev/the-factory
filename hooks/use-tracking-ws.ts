@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useTrackingStore } from "@/store/tracking";
 import { useAttendanceMapStore } from "@/store/attendance-map";
+import { useFieldActivityLiveStore } from "@/store/field-activity-live";
 import type { AttendanceMapSnapshotItem } from "@/lib/api/attendance";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -15,8 +16,18 @@ const BACKOFF_STEPS = [1000, 2000, 4000, 8000, 16000, 30000];
 const POLL_INTERVAL_MS = 25_000;
 const FAST_POLL_INTERVAL_MS = 8_000;
 const STALE_THRESHOLD_MS = 15_000;
+/** After this many consecutive close/reconnect failures, surface `wsStatus: 'error'`. */
+const MAX_CONSECUTIVE_FAILURES = 5;
 
 const LOG = "[tracking-ws]";
+
+/**
+ * Auth strategy: connect without putting the bearer token in the URL query
+ * string (avoids token leakage via logs/proxies/Referer). The realtime relay
+ * accepts either `?token=` on connect OR a post-open `authenticate` message —
+ * we use only the message path. `company_id` / `task_ids` remain in the URL
+ * as non-secret subscription hints.
+ */
 
 /** Ref-count so layout + agent map can share one connection lifecycle. */
 let sharedMountCount = 0;
@@ -85,6 +96,7 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
   const mountedRef = useRef(true);
   const authenticatedRef = useRef(false);
   const connectionAttemptRef = useRef(0);
+  const consecutiveFailuresRef = useRef(0);
   const connectRef = useRef<() => void>(() => { });
   const subscribedTaskIdsRef = useRef<number[]>([]);
   const hydrateRef = useRef<(options?: { markInitial?: boolean }) => Promise<void>>(
@@ -221,7 +233,6 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
     store.setWsStatus("connecting");
 
     const params = new URLSearchParams({
-      token,
       company_id: String(companyId),
     });
     if (subscribedTaskIds.length > 0) {
@@ -239,12 +250,14 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
       }
 
       backoffRef.current = 0;
+      consecutiveFailuresRef.current = 0;
       disconnectedAtRef.current = null;
       authenticatedRef.current = false;
       subscribedTaskIdsRef.current = subscribedTaskIds;
       store.setWsStatus("connected");
       stopPolling();
 
+      // Token is sent only here — not duplicated in the WebSocket URL.
       ws.send(JSON.stringify({
         type: "authenticate",
         token,
@@ -314,7 +327,71 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         }
 
         if (msg.type === "attendance.clocked_out" && msg.payload?.user_id) {
-          attendanceStore.removeSnapshot(Number(msg.payload.user_id));
+          const userId = Number(msg.payload.user_id);
+          attendanceStore.removeSnapshot(userId);
+          useFieldActivityLiveStore.getState().removeAgent(userId);
+        }
+        return;
+      }
+
+      if (msg.type === "field_activity.location") {
+        const payload = msg.payload as {
+          user_id?: number;
+          field_activity_session_id?: number;
+          latitude?: number;
+          longitude?: number;
+          movement_state?: string | null;
+          recorded_at?: string | null;
+        } | undefined;
+        if (
+          payload?.user_id != null &&
+          payload.latitude != null &&
+          payload.longitude != null &&
+          Number.isFinite(payload.latitude) &&
+          Number.isFinite(payload.longitude)
+        ) {
+          useFieldActivityLiveStore.getState().appendPoint(
+            Number(payload.user_id),
+            [Number(payload.longitude), Number(payload.latitude)],
+            {
+              sessionId: payload.field_activity_session_id
+                ? Number(payload.field_activity_session_id)
+                : undefined,
+              movementState: payload.movement_state ?? null,
+              recordedAt: payload.recorded_at ?? null,
+            },
+          );
+        }
+        return;
+      }
+
+      if (msg.type === "field_activity.stop_created") {
+        const payload = msg.payload as {
+          user_id?: number;
+          stop?: {
+            id: number;
+            field_activity_session_id: number;
+            latitude: number;
+            longitude: number;
+            address?: string | null;
+            duration_seconds?: number;
+            classification?: string | null;
+            arrived_at?: string | null;
+            departed_at?: string | null;
+          };
+        } | undefined;
+        if (payload?.user_id != null && payload.stop?.id != null) {
+          useFieldActivityLiveStore.getState().upsertStop(Number(payload.user_id), {
+            id: payload.stop.id,
+            field_activity_session_id: payload.stop.field_activity_session_id,
+            latitude: payload.stop.latitude,
+            longitude: payload.stop.longitude,
+            address: payload.stop.address,
+            duration_seconds: payload.stop.duration_seconds,
+            classification: payload.stop.classification,
+            arrived_at: payload.stop.arrived_at,
+            departed_at: payload.stop.departed_at,
+          });
         }
       }
     };
@@ -327,7 +404,12 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
       if (!mountedRef.current) return;
 
       authenticatedRef.current = false;
-      store.setWsStatus("reconnecting");
+      consecutiveFailuresRef.current += 1;
+      if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+        store.setWsStatus("error");
+      } else {
+        store.setWsStatus("reconnecting");
+      }
       disconnectedAtRef.current = disconnectedAtRef.current ?? Date.now();
 
       const elapsed = Date.now() - disconnectedAtRef.current;

@@ -3,7 +3,10 @@
 import React, { useMemo } from 'react';
 import { Compass, ShieldAlert, X } from 'lucide-react';
 import { isNativeAndroid } from '../native/capacitorPlatform';
-import { openNativeLocationSettings } from '../native/nativeBackgroundGeolocation';
+import {
+  openNativeBatteryOptimizationSettings,
+  openNativeLocationSettings,
+} from '../native/nativeBackgroundGeolocation';
 
 type Platform = 'ios' | 'android' | 'android-native' | 'chrome-desktop' | 'pwa' | 'other';
 
@@ -138,13 +141,26 @@ export function LocationPermissionGate({
           {isBusy ? 'Checking…' : 'Try Again'}
         </button>
         {platform === 'android-native' && (
-          <button
-            type="button"
-            onClick={() => void openNativeLocationSettings()}
-            className="mt-2 h-11 w-full max-w-xs rounded-full border border-white/15 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 active:scale-95"
-          >
-            Open App Settings
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => void openNativeLocationSettings()}
+              className="mt-2 h-11 w-full max-w-xs rounded-full border border-white/15 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 active:scale-95"
+            >
+              Open App Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => void openNativeBatteryOptimizationSettings()}
+              className="mt-2 h-11 w-full max-w-xs rounded-full border border-amber-400/30 bg-amber-400/10 text-xs font-semibold text-amber-100 hover:bg-amber-400/15 active:scale-95"
+            >
+              Allow unrestricted battery
+            </button>
+            <p className="mt-2 max-w-xs text-[10px] leading-relaxed text-[#8F9098]">
+              Android may pause GPS in the background. Set this app to Unrestricted / no battery
+              optimization so live tracking stays reliable.
+            </p>
+          </>
         )}
         {onDismiss && (
           <button
@@ -193,6 +209,16 @@ export function LocationPermissionGate({
             ? 'Resume Tracking'
             : 'Allow Location Access'}
       </button>
+      {platform === 'android-native' && (
+        <button
+          type="button"
+          onClick={() => void openNativeBatteryOptimizationSettings()}
+          disabled={isBusy}
+          className="mb-3 h-11 w-full max-w-xs rounded-full border border-white/15 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 active:scale-95 disabled:opacity-60"
+        >
+          Battery optimization settings
+        </button>
+      )}
       {onDismiss && (
         <button
           onClick={onDismiss}

@@ -1,5 +1,29 @@
 import type { LiveTaskState, OperationalTrackingStatus } from "@/types/tracking";
 
+/**
+ * Milliseconds since we last heard from this agent. Prefers the client-stamped
+ * `lastReceivedAt` (set the moment a WS event / snapshot arrives) because the
+ * server/device `lastEventAt` can carry a skewed timezone offset that makes a
+ * live agent look ~1h stale. Falls back to `lastEventAt` when no receive stamp.
+ */
+export function taskAgeMs(task: LiveTaskState, nowMs: number): number {
+  if (typeof task.lastReceivedAt === "number" && task.lastReceivedAt > 0) {
+    return nowMs - task.lastReceivedAt;
+  }
+  if (!task.lastEventAt) return 0;
+  return nowMs - new Date(task.lastEventAt).getTime();
+}
+
+/** True when the task has gone longer than `staleMs` without a fresh receive. */
+export function isLiveTaskStale(
+  task: LiveTaskState,
+  nowMs: number,
+  staleMs: number,
+): boolean {
+  if (!nowMs) return false;
+  return taskAgeMs(task, nowMs) > staleMs;
+}
+
 export const OPERATIONAL_STATUS_META: Record<
   OperationalTrackingStatus,
   {
@@ -50,18 +74,12 @@ export function resolveOperationalStatusFromTask(
   nowMs: number,
   staleMs: number,
 ): OperationalTrackingStatus {
-  // Freshness is decided by the client's own clock against the event time,
+  // Freshness is decided by the client's own clock against receive/event time,
   // which is internally consistent. The backend `operational_status` "offline"
   // (and `is_online`) are derived from server-vs-device time and misfire under
   // clock skew — a live, actively-reporting agent then shows as offline. So we
   // only declare "offline" when the client itself sees the task as stale.
-  const lastSeenAge =
-    typeof task.lastReceivedAt === "number" && task.lastReceivedAt > 0
-      ? nowMs - task.lastReceivedAt
-      : nowMs - new Date(task.lastEventAt).getTime();
-  const clientStale = Number.isFinite(lastSeenAge) && lastSeenAge > staleMs;
-
-  if (clientStale) {
+  if (isLiveTaskStale(task, nowMs, staleMs)) {
     return "offline";
   }
 

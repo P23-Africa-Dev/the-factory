@@ -1,5 +1,10 @@
+import {
+  CANONICAL_AGENT_APK_URL,
+  withAgentApkCacheBust,
+} from '@/lib/agent-apk-version';
+
 const DEFAULT_PRODUCTION_URL = "https://app.thefactory23.com";
-const DEFAULT_APK_PATH = "/downloads/factory23-agent.apk";
+
 
 function inferAgentUrlFromHost(host: string, protocol: string): string {
   if (host.includes("localhost") || host.includes("127.0.0.1")) {
@@ -40,27 +45,30 @@ export function getAgentInstallUrl(origin?: string): string {
 
 /**
  * Absolute URL for the Android APK download (QR → direct download).
- * Prefer NEXT_PUBLIC_AGENT_APK_URL (supports Google Drive share links — normalized
- * to a direct-download URL). Otherwise same-origin /downloads/factory23-agent.apk.
+ *
+ * Homepage QR codes always encode the canonical Vercel-hosted APK with a
+ * cache-bust query. Google Drive URLs are ignored — Drive is not updated by
+ * git push / Vercel deploy, which is why scans kept opening an old package.
  */
-export function getAgentApkUrl(origin?: string): string {
+export function getAgentApkUrl(_origin?: string): string {
   const configured = process.env.NEXT_PUBLIC_AGENT_APK_URL?.trim();
-  if (configured) return normalizeAgentApkDownloadUrl(configured);
-
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}${DEFAULT_APK_PATH}`;
-  }
-
-  if (origin) {
-    try {
-      const parsed = new URL(origin);
-      return `${parsed.origin}${DEFAULT_APK_PATH}`;
-    } catch {
-      // fall through
+  if (configured) {
+    const normalized = normalizeAgentApkDownloadUrl(configured);
+    if (!isGoogleDriveDownloadUrl(normalized)) {
+      return withAgentApkCacheBust(normalized);
     }
   }
 
-  return `https://thefactory23.com${DEFAULT_APK_PATH}`;
+  return withAgentApkCacheBust(CANONICAL_AGENT_APK_URL);
+}
+
+function isGoogleDriveDownloadUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return host === 'drive.google.com' || host === 'docs.google.com';
+  } catch {
+    return /drive\.google\.com|docs\.google\.com/i.test(url);
+  }
 }
 
 /**

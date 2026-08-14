@@ -14,14 +14,20 @@ class ToolPolicyService
         'crm.email_threads',
         'crm.unread_emails',
         'crm.draft_email',
+        'crm.leads_analytics',
+        'crm.calls_count',
         'tasks.overdue',
         'tasks.list',
         'projects.at_risk_summary',
         'attendance.today_summary',
+        'attendance.duration_summary',
         'meetings.today',
         'dashboard.overview',
         'planning.daily',
+        'kpi.list',
         'drive.files',
+        'map.pinned_locations_count',
+        'tracking.agent_history',
         'field.daily_summary',
         'field.agent_visits',
         'field.travel_vs_visit_time',
@@ -37,17 +43,23 @@ class ToolPolicyService
         'crm.email_threads',
         'crm.unread_emails',
         'crm.draft_email',
+        'crm.leads_analytics',
+        'crm.calls_count',
         'tasks.overdue',
         'tasks.list',
         'projects.at_risk_summary',
         'attendance.today_summary',
+        'attendance.duration_summary',
         'meetings.today',
         'tracking.active_agents',
+        'tracking.agent_history',
         'dashboard.overview',
         'planning.daily',
         'kpi.team_performance',
+        'kpi.list',
         'org.users',
         'drive.files',
+        'map.pinned_locations_count',
         'field.daily_summary',
         'field.agent_visits',
         'field.unvisited_customers',
@@ -67,6 +79,7 @@ class ToolPolicyService
         'crm.create_lead',
         'crm.send_email',
         'kpis.create',
+        'kpis.update',
         'org.users.create',
     ];
 
@@ -81,6 +94,37 @@ class ToolPolicyService
         return in_array($tool, $this->allowedToolsForRole($role), true);
     }
 
+    public function isReadTool(string $tool): bool
+    {
+        return in_array($tool, $this->allReadTools(), true);
+    }
+
+    public function isActionTool(string $tool): bool
+    {
+        return in_array($tool, $this->allActionTools(), true);
+    }
+
+    /**
+     * LLM routers sometimes label read tools (e.g. planning.daily) as "action"
+     * because of verbs like "plan". Coerce type to match the tool catalog.
+     */
+    public function normalizeIntentType(string $type, ?string $tool): string
+    {
+        if (! is_string($tool) || $tool === '') {
+            return $type === 'action' ? 'action' : ($type === 'tool' ? 'tool' : $type);
+        }
+
+        if ($this->isReadTool($tool)) {
+            return 'tool';
+        }
+
+        if ($this->isActionTool($tool)) {
+            return 'action';
+        }
+
+        return $type;
+    }
+
     public function allowedToolsForRole(string $role): array
     {
         if ($role === 'agent') {
@@ -92,5 +136,27 @@ class ToolPolicyService
         }
 
         return [...self::READ_TOOLS_AGENT, ...self::ACTION_TOOLS_AGENT];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allReadTools(): array
+    {
+        return array_values(array_unique([
+            ...self::READ_TOOLS_AGENT,
+            ...self::READ_TOOLS_MANAGEMENT,
+        ]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allActionTools(): array
+    {
+        return array_values(array_unique([
+            ...self::ACTION_TOOLS_AGENT,
+            ...self::ACTION_TOOLS_MANAGEMENT,
+        ]));
     }
 }

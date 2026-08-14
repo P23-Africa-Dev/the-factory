@@ -42,6 +42,8 @@ export interface LiveTaskState {
   headingDegrees?: number | null;
   etaSeconds?: number | null;
   routeDeviationMeters?: number | null;
+  /** GPS accuracy from last location point (meters). */
+  accuracyMeters?: number | null;
   /** From snapshot API / WS — authoritative online signal from backend. */
   isOnline?: boolean;
 }
