@@ -1,4 +1,8 @@
-FROM php:8.3-fpm
+# Pinned to Debian Bookworm: the default php:8.3-fpm tag moved to Debian Trixie,
+# which removed libc-client-dev (the UW IMAP c-client lib) needed to build the
+# imap PHP extension. Bookworm still ships it. Revisit if migrating off the imap
+# extension (e.g. to webklex/php-imap).
+FROM php:8.3-fpm-bookworm
 
 RUN apt-get update && apt-get install -y \
     git curl unzip zip \
