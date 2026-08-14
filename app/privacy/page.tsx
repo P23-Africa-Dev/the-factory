@@ -21,7 +21,7 @@ export default function PrivacyPolicyPage() {
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-10 sm:px-10 sm:py-14">
-        <p className="text-sm font-medium text-[#4A5F64]">Last updated: July 2026</p>
+        <p className="text-sm font-medium text-[#4A5F64]">Last updated: August 2026</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Privacy Policy</h1>
         <p className="mt-4 text-sm leading-7 text-[#4A5F64] sm:text-base">
           This Privacy Policy explains how P23 Africa Ltd, trading as <strong>Factory 23</strong> (&quot;we&quot;, &quot;us&quot;, or
@@ -78,6 +78,30 @@ export default function PrivacyPolicyPage() {
           <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
             Google user data is used only to provide Factory 23 features you request. We do not sell Google user data and
             we do not use it for advertising.
+          </p>
+        </section>
+
+        <section className="mt-10 space-y-4">
+          <h2 className="text-xl font-bold">Microsoft 365 account data (Outlook mail)</h2>
+          <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
+            If you choose to connect your Microsoft 365 or Outlook account, Factory 23 may access your mailbox through
+            the Microsoft Graph API only after you explicitly authorize the connection through Microsoft OAuth. This is
+            used to:
+          </p>
+          <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#4A5F64] sm:text-base">
+            <li>Send CRM follow-up emails from your connected mailbox.</li>
+            <li>Read and sync CRM-related email threads linked to leads and customers.</li>
+            <li>Mark messages as read or move messages to trash when you take those actions in Factory 23.</li>
+            <li>Read your basic Microsoft profile so we can identify and display the connected mailbox.</li>
+          </ul>
+          <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
+            We do not access your Microsoft account unless you connect it. You can disconnect it at any time from your
+            Factory 23 settings. When disconnected, we stop using your Microsoft access tokens and revoke the connection
+            where supported.
+          </p>
+          <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
+            Microsoft user data is used only to provide Factory 23 features you request. We do not sell Microsoft user
+            data, we do not use it for advertising, and we do not use it to train AI models.
           </p>
         </section>
 
