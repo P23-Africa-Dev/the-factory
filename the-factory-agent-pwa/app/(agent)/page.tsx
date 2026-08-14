@@ -9,11 +9,8 @@ import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
 import {
-  FieldActivitySummaryCard,
   DayReviewSheet,
-  PileInboxBadge,
   PileInboxSheet,
-  PendingReviewSoftBanner,
 } from '@/features/field-activity';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
@@ -601,9 +598,6 @@ export default function AgentDashboardPage() {
 
             {/* Attendance card */}
             <AttendanceCard />
-            <PendingReviewSoftBanner />
-            <PileInboxBadge />
-            <FieldActivitySummaryCard />
           </div>
 
           {/* Meetings Calendar Widget */}
