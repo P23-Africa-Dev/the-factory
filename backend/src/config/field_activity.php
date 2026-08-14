@@ -11,7 +11,7 @@ return [
     // 30s while moving keeps the live map continuous (matches the client's
     // 30s flush cadence); the persist gates below still cap trail density.
     'moving_interval_seconds' => (int) env('FIELD_ACTIVITY_MOVING_INTERVAL_SECONDS', 30),
-    'stationary_interval_seconds' => (int) env('FIELD_ACTIVITY_STATIONARY_INTERVAL_SECONDS', 300),
+    'stationary_interval_seconds' => (int) env('FIELD_ACTIVITY_STATIONARY_INTERVAL_SECONDS', 60),
 
     /*
     |--------------------------------------------------------------------------

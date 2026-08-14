@@ -579,7 +579,7 @@ class FieldActivitySessionService
             ),
             'config' => [
                 'moving_interval_seconds' => (int) config('field_activity.moving_interval_seconds', 60),
-                'stationary_interval_seconds' => (int) config('field_activity.stationary_interval_seconds', 300),
+                'stationary_interval_seconds' => (int) config('field_activity.stationary_interval_seconds', 60),
                 'stop_dwell_seconds' => (int) config('field_activity.stop_dwell_seconds', 300),
             ],
         ];

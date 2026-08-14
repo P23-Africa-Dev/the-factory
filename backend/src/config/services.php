@@ -101,14 +101,12 @@ return [
         ))))),
     ],
 
-    // Custom IMAP/SMTP is disabled in production (hosting blocks outbound SMTP).
-    // Prefer Google / Microsoft OAuth for CRM mailbox connect.
+    // Custom IMAP/SMTP availability. Outbound SMTP is open on the production cluster
+    // (verified 2026-08-14); the live value is driven by EMAIL_IMAP_SMTP_ENABLED in the
+    // configmap. Flip that env to "false" if the hosting provider blocks SMTP again.
     'email_accounts' => [
         'imap_smtp_enabled' => filter_var(
-            env(
-                'EMAIL_IMAP_SMTP_ENABLED',
-                env('APP_ENV', 'production') === 'local' || env('APP_ENV') === 'testing' ? 'true' : 'false',
-            ),
+            env('EMAIL_IMAP_SMTP_ENABLED', 'true'),
             FILTER_VALIDATE_BOOL,
         ),
     ],
