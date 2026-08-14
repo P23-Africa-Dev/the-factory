@@ -8,7 +8,6 @@ import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
-import { FieldActivitySummaryCard } from '@/features/field-activity';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
 import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
@@ -455,6 +454,17 @@ export default function AgentDashboardPage() {
                   <button
                     onClick={() => {
                       setIsProfileMenuOpen(false);
+                      router.push('/field-activity/journeys');
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] text-white text-sm text-left focus:outline-none"
+                  >
+                    <span>🧭</span>
+                    <span>Journey history</span>
+                  </button>
+                  <div className="h-px bg-white/5 mx-3" />
+                  <button
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
                       setIsLogoutModalOpen(true);
                     }}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] text-[#FD6046] text-sm text-left focus:outline-none font-semibold"
@@ -584,7 +594,6 @@ export default function AgentDashboardPage() {
 
             {/* Attendance card */}
             <AttendanceCard />
-            <FieldActivitySummaryCard />
           </div>
 
           {/* Meetings Calendar Widget */}
