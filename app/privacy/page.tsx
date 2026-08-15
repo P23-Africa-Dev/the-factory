@@ -40,8 +40,8 @@ export default function PrivacyPolicyPage() {
             <strong>Registered address:</strong> 185 Tower Bridge Rd, London SE1 2UF, United Kingdom
             <br />
             <strong>Privacy contact:</strong>{" "}
-            <a href="mailto:hello@p23africa.com" className="font-semibold text-[#0B252C] underline">
-              hello@p23africa.com
+            <a href="mailto:contact@p23africa.com" className="font-semibold text-[#0B252C] underline">
+              contact@p23africa.com
             </a>
           </p>
         </section>
