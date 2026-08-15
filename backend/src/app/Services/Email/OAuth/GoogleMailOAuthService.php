@@ -50,7 +50,9 @@ class GoogleMailOAuthService
             'response_type' => 'code',
             'scope' => implode(' ', $this->scopes()),
             'access_type' => 'offline',
-            'include_granted_scopes' => 'true',
+            // Keep Gmail consent isolated from any Calendar grant made with the
+            // same Google OAuth client.
+            'include_granted_scopes' => 'false',
             'prompt' => $forceAccountPicker ? 'select_account consent' : 'consent',
             'state' => $state,
         ], '', '&', PHP_QUERY_RFC3986);
@@ -260,13 +262,7 @@ class GoogleMailOAuthService
 
     private function redirectUri(): string
     {
-        $dedicated = trim((string) config('services.google_mail.redirect_uri'));
-        if ($dedicated !== '') {
-            return $dedicated;
-        }
-
-        // Fall back to the calendar callback URI (already registered in Google Cloud Console).
-        return trim((string) config('services.google_calendar.redirect_uri'));
+        return trim((string) config('services.google_mail.redirect_uri'));
     }
 
     private function nonceCacheKey(string $nonce): string

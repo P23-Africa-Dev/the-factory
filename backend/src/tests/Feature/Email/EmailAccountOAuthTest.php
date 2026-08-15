@@ -22,7 +22,7 @@ class EmailAccountOAuthTest extends TestCase
     {
         Config::set('services.google_mail.client_id', 'google-client-id');
         Config::set('services.google_mail.client_secret', 'google-client-secret');
-        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/calendar/integration/callback');
+        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/email-accounts/oauth/google/callback');
         Config::set('services.google_calendar.redirect_uri', 'https://api.test/api/v1/calendar/integration/callback');
 
         [$company, $admin] = $this->seedCompanyWithAdmin();
@@ -37,10 +37,17 @@ class EmailAccountOAuthTest extends TestCase
         $this->assertStringContainsString('accounts.google.com', $url);
         $this->assertStringContainsString('client_id=google-client-id', $url);
         $this->assertStringContainsString('gmail.send', urldecode($url));
+        $this->assertStringContainsString('gmail.modify', urldecode($url));
         $this->assertStringContainsString(
+            rawurlencode('https://api.test/api/v1/email-accounts/oauth/google/callback'),
+            $url,
+        );
+        $this->assertStringContainsString('include_granted_scopes=false', $url);
+        $this->assertStringNotContainsString(
             rawurlencode('https://api.test/api/v1/calendar/integration/callback'),
             $url,
         );
+        $this->assertStringNotContainsString('calendar', urldecode($url));
         $this->assertStringNotContainsString('calendar.events', urldecode($url));
     }
 
@@ -48,7 +55,7 @@ class EmailAccountOAuthTest extends TestCase
     {
         Config::set('services.google_mail.client_id', 'google-client-id');
         Config::set('services.google_mail.client_secret', 'google-client-secret');
-        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/calendar/integration/callback');
+        Config::set('services.google_mail.redirect_uri', 'https://api.test/api/v1/email-accounts/oauth/google/callback');
 
         [$company, $admin] = $this->seedCompanyWithAdmin();
 
@@ -73,8 +80,7 @@ class EmailAccountOAuthTest extends TestCase
             ], 200),
         ]);
 
-        // Email Accounts Google OAuth reuses the registered calendar redirect URI.
-        $response = $this->get('/api/v1/calendar/integration/callback?' . http_build_query([
+        $response = $this->get('/api/v1/email-accounts/oauth/google/callback?' . http_build_query([
             'code' => 'auth-code',
             'state' => $state,
         ]));
