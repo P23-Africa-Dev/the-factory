@@ -106,6 +106,34 @@ export default function PrivacyPolicyPage() {
         </section>
 
         <section className="mt-10 space-y-4">
+          <h2 className="text-xl font-bold">AI features and Limited Use of Google user data</h2>
+          <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
+            Factory 23 includes an in-product AI assistant (ELY) and AI-assisted CRM features such as drafting email
+            replies and summarizing customer activity. These features are powered by third-party AI providers that
+            process data on our behalf solely to generate the response you requested inside Factory 23.
+          </p>
+          <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
+            Factory 23&apos;s use of information received from Google APIs will adhere to the{" "}
+            <a
+              href="https://developers.google.com/terms/api-services-user-data-policy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-[#0B252C] underline"
+            >
+              Google API Services User Data Policy
+            </a>
+            , including the Limited Use requirements.
+          </p>
+          <p className="text-sm leading-7 text-[#4A5F64] sm:text-base">
+            Specifically, we do not use, transfer, or sell Google Workspace user data — whether raw, aggregated, derived,
+            or anonymized — to develop, train, or improve any foundational or generalized artificial intelligence or
+            machine learning models. Our AI providers are engaged under terms that prohibit them from training their
+            models on data submitted through their APIs. Human beings do not read your Google user data except with your
+            affirmative consent, to investigate security issues or abuse, or where required by law.
+          </p>
+        </section>
+
+        <section className="mt-10 space-y-4">
           <h2 className="text-xl font-bold">How we use personal data</h2>
           <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#4A5F64] sm:text-base">
             <li>To provide and operate the Factory 23 platform and its features.</li>
