@@ -552,6 +552,256 @@ class CrmEmailService
         $this->invalidateLeadCache($resolvedCompanyId, (int) $lead->id);
     }
 
+    public function markAsUnread(User $user, Lead $lead, CrmEmailMessage $message, ?int $companyId = null): CrmEmailMessage
+    {
+        $context = $this->authorizeLeadAccess($user, $lead, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
+
+        $providerMessageId = (string) $message->gmail_message_id;
+        if ($providerMessageId !== '' && ! str_starts_with($providerMessageId, 'pending-')) {
+            $google = $this->requireGoogleProviderForMessage($resolvedCompanyId, (int) $user->id, $message);
+            $google['provider']->markAsUnread($google['account']->toDTO(), $providerMessageId);
+        }
+
+        $message->update(['is_read' => false]);
+        $message->thread?->increment('unread_count');
+
+        $this->logActivity($resolvedCompanyId, (int) $user->id, 'mark_unread', [
+            'message_id' => $message->id,
+            'provider_message_id' => $providerMessageId,
+            'subject' => $message->subject,
+            'thread_id' => (int) $message->thread_id,
+            'lead_id' => (int) $lead->id,
+        ], $message->id, (int) $message->thread_id, (int) $lead->id);
+
+        return $message->fresh();
+    }
+
+    public function moveMessageToInbox(User $user, Lead $lead, CrmEmailMessage $message, ?int $companyId = null): CrmEmailMessage
+    {
+        return $this->applyMailboxMove($user, $lead, $message, 'inbox', $companyId);
+    }
+
+    public function moveMessageToSpam(User $user, Lead $lead, CrmEmailMessage $message, ?int $companyId = null): CrmEmailMessage
+    {
+        return $this->applyMailboxMove($user, $lead, $message, 'spam', $companyId);
+    }
+
+    /**
+     * @param  list<string>  $addLabelIds
+     * @param  list<string>  $removeLabelIds
+     * @return array{message:CrmEmailMessage,label_ids:list<string>}
+     */
+    public function modifyMessageLabels(
+        User $user,
+        Lead $lead,
+        CrmEmailMessage $message,
+        array $addLabelIds = [],
+        array $removeLabelIds = [],
+        ?int $companyId = null,
+    ): array {
+        $context = $this->authorizeLeadAccess($user, $lead, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
+
+        $providerMessageId = (string) $message->gmail_message_id;
+        if ($providerMessageId === '' || str_starts_with($providerMessageId, 'pending-')) {
+            throw ValidationException::withMessages([
+                'message' => ['This email is not yet synced with Gmail.'],
+            ]);
+        }
+
+        $addLabelIds = $this->normalizeLabelIds($addLabelIds);
+        $removeLabelIds = $this->normalizeLabelIds($removeLabelIds);
+        if ($addLabelIds === [] && $removeLabelIds === []) {
+            throw ValidationException::withMessages([
+                'labels' => ['Provide at least one label to add or remove.'],
+            ]);
+        }
+
+        $google = $this->requireGoogleProviderForMessage($resolvedCompanyId, (int) $user->id, $message);
+        $payload = $google['provider']->modifyMessageLabels(
+            $google['account']->toDTO(),
+            $providerMessageId,
+            $addLabelIds,
+            $removeLabelIds,
+        );
+
+        $labelIds = [];
+        if (is_array($payload['labelIds'] ?? null)) {
+            $labelIds = array_values(array_filter(array_map(
+                static fn (mixed $id): string => trim((string) $id),
+                $payload['labelIds'],
+            )));
+        }
+
+        if (in_array('UNREAD', $addLabelIds, true)) {
+            $message->update(['is_read' => false]);
+        }
+        if (in_array('UNREAD', $removeLabelIds, true)) {
+            $message->update(['is_read' => true]);
+        }
+
+        $this->logActivity($resolvedCompanyId, (int) $user->id, 'modify_labels', [
+            'message_id' => $message->id,
+            'provider_message_id' => $providerMessageId,
+            'add_label_ids' => $addLabelIds,
+            'remove_label_ids' => $removeLabelIds,
+            'lead_id' => (int) $lead->id,
+        ], $message->id, (int) $message->thread_id, (int) $lead->id);
+
+        return [
+            'message' => $message->fresh(),
+            'label_ids' => $labelIds,
+        ];
+    }
+
+    /**
+     * @return list<array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}>
+     */
+    public function listGmailLabels(User $user, ?int $companyId = null): array
+    {
+        $google = $this->requireGoogleProviderForUser($user, $companyId);
+
+        return $google['provider']->listLabels($google['account']->toDTO());
+    }
+
+    /**
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    public function createGmailLabel(User $user, string $name, ?int $companyId = null): array
+    {
+        $google = $this->requireGoogleProviderForUser($user, $companyId);
+        $label = $google['provider']->createLabel($google['account']->toDTO(), $name);
+
+        $this->logActivity((int) $google['account']->company_id, (int) $user->id, 'create_label', [
+            'label_id' => $label['id'],
+            'label_name' => $label['name'],
+        ]);
+
+        return $label;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    public function updateGmailLabel(User $user, string $labelId, string $name, ?int $companyId = null): array
+    {
+        $google = $this->requireGoogleProviderForUser($user, $companyId);
+        $label = $google['provider']->updateLabel($google['account']->toDTO(), $labelId, $name);
+
+        $this->logActivity((int) $google['account']->company_id, (int) $user->id, 'update_label', [
+            'label_id' => $label['id'],
+            'label_name' => $label['name'],
+        ]);
+
+        return $label;
+    }
+
+    public function deleteGmailLabel(User $user, string $labelId, ?int $companyId = null): void
+    {
+        $google = $this->requireGoogleProviderForUser($user, $companyId);
+        $google['provider']->deleteLabel($google['account']->toDTO(), $labelId);
+
+        $this->logActivity((int) $google['account']->company_id, (int) $user->id, 'delete_label', [
+            'label_id' => $labelId,
+        ]);
+    }
+
+    /**
+     * @return array{provider:\App\Services\Email\Providers\GoogleProvider,account:EmailAccount}
+     */
+    private function requireGoogleProviderForUser(User $user, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $emailAccount = $this->requireUserEmailAccount($resolvedCompanyId, (int) $user->id);
+
+        return $this->requireGoogleProviderFromAccount($emailAccount);
+    }
+
+    /**
+     * @return array{provider:\App\Services\Email\Providers\GoogleProvider,account:EmailAccount}
+     */
+    private function requireGoogleProviderForMessage(int $companyId, int $userId, CrmEmailMessage $message): array
+    {
+        $emailAccount = $this->resolveEmailAccountForMessage($companyId, $userId, $message);
+
+        return $this->requireGoogleProviderFromAccount($emailAccount);
+    }
+
+    /**
+     * @return array{provider:\App\Services\Email\Providers\GoogleProvider,account:EmailAccount}
+     */
+    private function requireGoogleProviderFromAccount(EmailAccount $emailAccount): array
+    {
+        if ($emailAccount->provider !== 'google') {
+            throw ValidationException::withMessages([
+                'provider' => ['Gmail mailbox actions require a connected Google account.'],
+            ]);
+        }
+
+        $provider = $this->emailAccountService->resolveProvider($emailAccount);
+        if (! $provider instanceof \App\Services\Email\Providers\GoogleProvider) {
+            throw ValidationException::withMessages([
+                'provider' => ['Gmail mailbox actions require a connected Google account.'],
+            ]);
+        }
+
+        return [
+            'provider' => $provider,
+            'account' => $emailAccount,
+        ];
+    }
+
+    private function applyMailboxMove(
+        User $user,
+        Lead $lead,
+        CrmEmailMessage $message,
+        string $destination,
+        ?int $companyId = null,
+    ): CrmEmailMessage {
+        $context = $this->authorizeLeadAccess($user, $lead, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->assertMessageBelongsToLead($message, $resolvedCompanyId, (int) $lead->id);
+
+        $providerMessageId = (string) $message->gmail_message_id;
+        if ($providerMessageId === '' || str_starts_with($providerMessageId, 'pending-')) {
+            throw ValidationException::withMessages([
+                'message' => ['This email is not yet synced with Gmail.'],
+            ]);
+        }
+
+        $google = $this->requireGoogleProviderForMessage($resolvedCompanyId, (int) $user->id, $message);
+        if ($destination === 'spam') {
+            $google['provider']->moveMessageToSpam($google['account']->toDTO(), $providerMessageId);
+        } else {
+            $google['provider']->moveMessageToInbox($google['account']->toDTO(), $providerMessageId);
+        }
+
+        $this->logActivity($resolvedCompanyId, (int) $user->id, 'move_' . $destination, [
+            'message_id' => $message->id,
+            'provider_message_id' => $providerMessageId,
+            'subject' => $message->subject,
+            'lead_id' => (int) $lead->id,
+        ], $message->id, (int) $message->thread_id, (int) $lead->id);
+
+        return $message->fresh();
+    }
+
+    /**
+     * @param  list<mixed>  $labelIds
+     * @return list<string>
+     */
+    private function normalizeLabelIds(array $labelIds): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            static fn (mixed $id): string => trim((string) $id),
+            $labelIds,
+        ), static fn (string $id): bool => $id !== '')));
+    }
+
     public function uploadAttachment(User $user, Lead $lead, UploadedFile $file, ?int $companyId = null): CrmEmailAttachment
     {
         $context = $this->authorizeLeadAccess($user, $lead, $companyId);

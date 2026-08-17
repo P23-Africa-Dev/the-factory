@@ -110,6 +110,102 @@ class GoogleProvider implements EmailProviderInterface
         );
     }
 
+    public function markAsUnread(EmailAccountDTO $account, string $messageId): void
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        $this->gmailApiService->markAsUnread(
+            connection: $this->toConnection($account),
+            messageId: $messageId,
+        );
+    }
+
+    /**
+     * @param  list<string>  $addLabelIds
+     * @param  list<string>  $removeLabelIds
+     * @return array<string,mixed>
+     */
+    public function modifyMessageLabels(
+        EmailAccountDTO $account,
+        string $messageId,
+        array $addLabelIds = [],
+        array $removeLabelIds = [],
+    ): array {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        return $this->gmailApiService->modifyMessageLabels(
+            connection: $this->toConnection($account),
+            messageId: $messageId,
+            addLabelIds: $addLabelIds,
+            removeLabelIds: $removeLabelIds,
+        );
+    }
+
+    public function moveMessageToInbox(EmailAccountDTO $account, string $messageId): void
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        $this->gmailApiService->moveMessageToInbox(
+            connection: $this->toConnection($account),
+            messageId: $messageId,
+        );
+    }
+
+    public function moveMessageToSpam(EmailAccountDTO $account, string $messageId): void
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        $this->gmailApiService->moveMessageToSpam(
+            connection: $this->toConnection($account),
+            messageId: $messageId,
+        );
+    }
+
+    /**
+     * @return list<array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}>
+     */
+    public function listLabels(EmailAccountDTO $account): array
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        return $this->gmailApiService->listLabels($this->toConnection($account));
+    }
+
+    /**
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    public function createLabel(EmailAccountDTO $account, string $name): array
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        return $this->gmailApiService->createLabel($this->toConnection($account), $name);
+    }
+
+    /**
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    public function updateLabel(EmailAccountDTO $account, string $labelId, string $name): array
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        return $this->gmailApiService->updateLabel($this->toConnection($account), $labelId, $name);
+    }
+
+    public function deleteLabel(EmailAccountDTO $account, string $labelId): void
+    {
+        $this->assertProvider($account, 'google');
+        $this->assertActive($account);
+
+        $this->gmailApiService->deleteLabel($this->toConnection($account), $labelId);
+    }
+
     public function trashMessage(EmailAccountDTO $account, string $messageId): void
     {
         $this->assertProvider($account, 'google');

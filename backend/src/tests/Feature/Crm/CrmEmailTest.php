@@ -175,6 +175,145 @@ class CrmEmailTest extends TestCase
             ->assertJsonPath('data.requires_gmail_reconnect', false);
     }
 
+    public function test_admin_can_manage_gmail_mailbox_actions_for_lead_email(): void
+    {
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response([
+                'access_token' => 'fresh-access-token',
+                'expires_in' => 3600,
+                'token_type' => 'Bearer',
+            ], 200),
+            'https://www.googleapis.com/gmail/v1/users/me/labels' => Http::sequence()
+                ->push([
+                    'labels' => [
+                        ['id' => 'INBOX', 'name' => 'INBOX', 'type' => 'system'],
+                        ['id' => 'Label_1', 'name' => 'Follow Up', 'type' => 'user'],
+                    ],
+                ], 200)
+                ->push([
+                    'id' => 'Label_2',
+                    'name' => 'Hot Lead',
+                    'type' => 'user',
+                    'labelListVisibility' => 'labelShow',
+                    'messageListVisibility' => 'show',
+                ], 200),
+            'https://www.googleapis.com/gmail/v1/users/me/labels/*' => Http::sequence()
+                ->push([
+                    'id' => 'Label_2',
+                    'name' => 'Hot Lead Updated',
+                    'type' => 'user',
+                ], 200)
+                ->push([], 204),
+            'https://www.googleapis.com/gmail/v1/users/me/messages/*/modify' => Http::response([
+                'id' => 'gmail-msg-2',
+                'labelIds' => ['INBOX', 'UNREAD', 'Label_1'],
+            ], 200),
+            'https://www.googleapis.com/gmail/v1/users/me/messages/*/untrash' => Http::response([
+                'id' => 'gmail-msg-2',
+                'labelIds' => ['INBOX'],
+            ], 200),
+        ]);
+
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+        $this->seedEmailAccount($company, $admin, 'admin@gmail.com');
+
+        $lead = Lead::create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Acme Ltd',
+            'email' => 'client@example.com',
+            'status' => 'new',
+            'priority' => 'medium',
+        ]);
+
+        $thread = \App\Models\CrmEmailThread::query()->create([
+            'company_id' => $company->id,
+            'lead_id' => $lead->id,
+            'gmail_thread_id' => 'thread-2',
+            'subject' => 'Proposal',
+            'snippet' => 'Hello',
+            'last_message_at' => now(),
+            'unread_count' => 0,
+            'message_count' => 1,
+            'participant_emails' => ['client@example.com', 'admin@gmail.com'],
+        ]);
+
+        $message = CrmEmailMessage::query()->create([
+            'company_id' => $company->id,
+            'thread_id' => $thread->id,
+            'lead_id' => $lead->id,
+            'gmail_message_id' => 'gmail-msg-2',
+            'gmail_thread_id' => 'thread-2',
+            'direction' => \App\Enums\CrmEmailDirection::Received,
+            'status' => CrmEmailStatus::Delivered,
+            'from_email' => 'client@example.com',
+            'to_recipients' => [['email' => 'admin@gmail.com']],
+            'subject' => 'Proposal',
+            'body_text' => 'Hello',
+            'is_read' => true,
+            'is_starred' => false,
+            'gmail_account_email' => 'admin@gmail.com',
+            'received_at' => now(),
+        ]);
+
+        $token = $admin->createToken('admin-token', ['*'])->plainTextToken;
+
+        $this->withToken($token)
+            ->getJson('/api/v1/admin/crm/emails/gmail/labels?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.items.1.id', 'Label_1');
+
+        $this->withToken($token)
+            ->postJson('/api/v1/admin/crm/emails/gmail/labels', [
+                'company_id' => $company->id,
+                'name' => 'Hot Lead',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.label.id', 'Label_2');
+
+        $this->withToken($token)
+            ->patchJson('/api/v1/admin/crm/emails/gmail/labels/Label_2', [
+                'company_id' => $company->id,
+                'name' => 'Hot Lead Updated',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.label.name', 'Hot Lead Updated');
+
+        $this->withToken($token)
+            ->deleteJson('/api/v1/admin/crm/emails/gmail/labels/Label_2?company_id=' . $company->id)
+            ->assertOk();
+
+        $this->withToken($token)
+            ->patchJson('/api/v1/admin/crm/leads/' . $lead->id . '/emails/messages/' . $message->id . '/unread', [
+                'company_id' => $company->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.message.is_read', false);
+
+        $this->withToken($token)
+            ->postJson('/api/v1/admin/crm/leads/' . $lead->id . '/emails/messages/' . $message->id . '/move', [
+                'company_id' => $company->id,
+                'destination' => 'inbox',
+            ])
+            ->assertOk();
+
+        $this->withToken($token)
+            ->postJson('/api/v1/admin/crm/leads/' . $lead->id . '/emails/messages/' . $message->id . '/move', [
+                'company_id' => $company->id,
+                'destination' => 'spam',
+            ])
+            ->assertOk();
+
+        $this->withToken($token)
+            ->postJson('/api/v1/admin/crm/leads/' . $lead->id . '/emails/messages/' . $message->id . '/labels', [
+                'company_id' => $company->id,
+                'add' => ['Label_1'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.label_ids.2', 'Label_1');
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([
