@@ -80,7 +80,15 @@ jobs:
           restore-keys: composer-
 
       - name: Install dependencies
-        run: composer install --optimize-autoloader --prefer-dist --no-interaction
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"}}'
+        run: |
+          for attempt in 1 2 3; do
+            composer install --optimize-autoloader --prefer-dist --no-interaction && exit 0
+            echo "composer install attempt ${attempt} failed; retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+          exit 1
 
       - name: Copy .env for testing
         run: cp .env.example .env
@@ -150,6 +158,8 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
           platforms: linux/amd64
+          secrets: |
+            composer_auth={"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"}}
 
   # ── Job 3: Deploy to Production ───────────────────────────────────────────
   deploy:
