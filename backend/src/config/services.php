@@ -36,6 +36,13 @@ return [
     ],
 
     'fcm' => [
+        // Firebase project id (from google-services.json → project_info.project_id).
+        'project_id' => env('FCM_PROJECT_ID', 'fcatory23-apk'),
+        // Raw JSON or base64(JSON) for the Firebase Admin SDK service-account key.
+        'service_account_json' => env('FCM_SERVICE_ACCOUNT_JSON'),
+        // Optional absolute path to the service-account JSON file (preferred in k8s mounts).
+        'service_account_path' => env('FCM_SERVICE_ACCOUNT_PATH'),
+        // Deprecated: legacy HTTP API server key (Cloud Messaging API Legacy). Prefer HTTP v1.
         'server_key' => env('FCM_SERVER_KEY'),
         'legacy_send_endpoint' => env('FCM_LEGACY_SEND_ENDPOINT', 'https://fcm.googleapis.com/fcm/send'),
     ],
