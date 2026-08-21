@@ -1,18 +1,37 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   FieldActivitySummaryCard,
   DayReviewSheet,
   PileInboxBadge,
   PileInboxSheet,
   PendingReviewSoftBanner,
+  useFieldActivityReviewUi,
 } from '@/features/field-activity';
+
+function FieldActivityInboxBootstrap(): null {
+  const searchParams = useSearchParams();
+  const openPileInbox = useFieldActivityReviewUi((s) => s.openPileInbox);
+
+  useEffect(() => {
+    const inbox = searchParams.get('inbox');
+    if (inbox === '1' || inbox === 'true') {
+      openPileInbox();
+    }
+  }, [searchParams, openPileInbox]);
+
+  return null;
+}
 
 export default function FieldActivityPage(): React.ReactElement {
   return (
     <main className="min-h-screen bg-[#0A1D25] pb-8 pt-6">
+      <Suspense fallback={null}>
+        <FieldActivityInboxBootstrap />
+      </Suspense>
       <header className="px-5 mb-2 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Field activity</h1>

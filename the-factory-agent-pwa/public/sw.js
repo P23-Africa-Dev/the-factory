@@ -17,12 +17,118 @@
  *   installed PWA / browser tabs.
  */
 
-const CACHE_NAME = "factory-agent-pwa-v10";
-const STATIC_CACHE = "factory-static-v10";
-const API_CACHE = "factory-api-v10";
-const PAGE_CACHE = "factory-pages-v10";
+const CACHE_NAME = "factory-agent-pwa-v11";
+const STATIC_CACHE = "factory-static-v11";
+const API_CACHE = "factory-api-v11";
+const PAGE_CACHE = "factory-pages-v11";
 const IDB_NAME = "factory-agent-pwa";
 const LOCATION_BATCH_SIZE = 50;
+
+/**
+ * Keep in sync with src/lib/notifications/resolveAgentDeepLink.ts
+ * (service workers cannot import the TS module).
+ */
+function resolveAgentDeepLink(rawUrl) {
+  const input = typeof rawUrl === "string" ? rawUrl.trim() : "";
+  if (!input) return "/";
+
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const parsed = new URL(input);
+      if (parsed.origin === self.location.origin) {
+        return resolveAgentDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+      }
+      return input;
+    } catch {
+      // fall through
+    }
+  }
+
+  let path = input;
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      const parsed = new URL(path);
+      path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      // keep
+    }
+  }
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+
+  const parts = path.split("?");
+  let pathname = parts[0] || "/";
+  const search = parts[1] ? `?${parts[1]}` : "";
+
+  if (pathname === "/agent") {
+    pathname = "/";
+  } else if (pathname.startsWith("/agent/")) {
+    pathname = pathname.slice("/agent".length);
+  }
+
+  const taskDetail = pathname.match(/^\/tasks\/(\d+)(?:\/.*)?$/);
+  if (taskDetail) return `/task/${taskDetail[1]}${search}`;
+  if (pathname.startsWith("/tasks/reassignments")) return `/tasks${search}`;
+  if (pathname === "/tasks") return `/tasks${search}`;
+
+  const meetingDetail = pathname.match(/^\/meetings\/(\d+)/);
+  if (meetingDetail) return `/meetings/${meetingDetail[1]}${search}`;
+  if (pathname.startsWith("/meetings")) return `${pathname}${search}`;
+
+  const leadDetail = pathname.match(/^\/crm\/leads\/(\d+)/);
+  if (leadDetail) return `/crm/leads/${leadDetail[1]}${search}`;
+  if (pathname.startsWith("/crm")) return `${pathname}${search}`;
+
+  if (pathname.startsWith("/field-activity")) return `${pathname}${search}`;
+  if (pathname === "/map" || pathname.startsWith("/map/")) return `/map${search}`;
+
+  if (
+    pathname.startsWith("/operations/attendance") ||
+    pathname === "/operations" ||
+    pathname.startsWith("/operations/")
+  ) {
+    return "/";
+  }
+
+  if (pathname === "/user/profile" || pathname === "/profile") return "/profile";
+  if (pathname === "/assistant" || pathname.startsWith("/assistant/")) return "/assistant";
+
+  if (
+    pathname === "/" ||
+    pathname === "/dashboard" ||
+    pathname === "/home" ||
+    pathname === "/notifications" ||
+    pathname === "/insight" ||
+    pathname === "/payroll" ||
+    pathname.startsWith("/projects/") ||
+    pathname === "/subscribe" ||
+    pathname.startsWith("/enterprise/") ||
+    pathname.startsWith("/internal") ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/drive")
+  ) {
+    return "/";
+  }
+
+  const knownPrefixes = [
+    "/task/",
+    "/tasks",
+    "/map",
+    "/meetings",
+    "/crm",
+    "/field-activity",
+    "/profile",
+    "/assistant",
+    "/sync",
+    "/login",
+  ];
+  if (knownPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) {
+    return `${pathname}${search}`;
+  }
+
+  return "/";
+}
+
 
 const STATIC_ASSETS = [
   "/",
@@ -374,7 +480,7 @@ self.addEventListener("push", (event) => {
 
       const title = data.title || "Factory 23 Agent";
       const body = data.message || data.body || "";
-      const url = data.action_url || data.url || "/";
+      const url = resolveAgentDeepLink(data.action_url || data.url || "/");
       const tag = data.tag || `factory-notification-${data.notification_id || Date.now()}`;
 
       await self.registration.showNotification(title, {
@@ -407,7 +513,7 @@ self.addEventListener("message", (event) => {
       badge: "/icons/icon-72x72.png",
       tag: data.tag || "factory-notification",
       data: {
-        url: data.url || "/",
+        url: resolveAgentDeepLink(data.url || "/"),
       },
     };
 
@@ -429,9 +535,10 @@ self.addEventListener("message", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const rawUrl = event.notification.data?.url || "/";
-  const targetUrl = rawUrl.startsWith("http")
-    ? rawUrl
-    : new URL(rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`, self.location.origin).href;
+  const resolvedPath = resolveAgentDeepLink(rawUrl);
+  const targetUrl = /^https?:\/\//i.test(resolvedPath)
+    ? resolvedPath
+    : new URL(resolvedPath, self.location.origin).href;
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {

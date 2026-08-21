@@ -7,6 +7,7 @@ namespace App\Services\Notification\PushProviders;
 use App\Models\AppNotification;
 use App\Models\PushSubscription;
 use App\Services\Notification\Contracts\PushProvider;
+use App\Support\AgentNotificationDeepLink;
 use Illuminate\Support\Facades\Http;
 
 class FcmPushProvider implements PushProvider
@@ -23,7 +24,9 @@ class FcmPushProvider implements PushProvider
             ];
         }
 
-        $actionUrl = $notification->action_url ?: ($notification->action_route ?: '/');
+        $actionUrl = AgentNotificationDeepLink::resolve(
+            $notification->action_url ?: ($notification->action_route ?: '/'),
+        );
         $title = (string) $notification->title;
         $body = (string) $notification->message;
 

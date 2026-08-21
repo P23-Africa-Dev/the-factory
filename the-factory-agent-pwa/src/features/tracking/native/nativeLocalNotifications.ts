@@ -1,4 +1,5 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
 import { isNativeAndroid } from './capacitorPlatform';
 
 const ALERTS_CHANNEL_ID = 'tracking_alerts';
@@ -81,7 +82,7 @@ export function attachNativeNotificationClickHandler(): void {
     if (!path) return;
     try {
       if (typeof window !== 'undefined') {
-        const url = path.startsWith('http') ? path : path.startsWith('/') ? path : `/${path}`;
+        const url = resolveAgentDeepLink(path);
         window.location.assign(url.startsWith('http') ? url : url);
       }
     } catch {
@@ -121,7 +122,7 @@ export async function notifyNative(payload: NativeAlertPayload): Promise<boolean
             : `Factory 23 Agent · ${payload.title}`,
           body: payload.body,
           channelId: ALERTS_CHANNEL_ID,
-          extra: { url: payload.url, tag: payload.tag },
+          extra: { url: resolveAgentDeepLink(payload.url), tag: payload.tag },
           schedule: { at: new Date(Date.now() + 250) },
           autoCancel: true,
         },
@@ -176,7 +177,7 @@ export async function showOngoingTrackingNotification(
           channelId: LIVE_CHANNEL_ID,
           ongoing: true,
           autoCancel: false,
-          extra: { url: payload.url, tag: 'live-tracking-active' },
+          extra: { url: resolveAgentDeepLink(payload.url), tag: 'live-tracking-active' },
           // Immediate (or near-immediate) display
           schedule: { at: new Date(Date.now() + 100) },
         },
