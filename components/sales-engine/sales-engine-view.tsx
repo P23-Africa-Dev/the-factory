@@ -322,8 +322,8 @@ function ChatWorkspace({
 
   return (
     <section
-      className={`relative flex flex-col overflow-hidden rounded-[35px] bg-white shadow-[0_8px_6px_rgba(0,0,0,0.15),0_4px_2px_rgba(0,0,0,0.3)] ${
-        expanded ? "h-[620px]" : "h-[600px]"
+      className={`relative flex flex-col overflow-hidden rounded-[35px] bg-white shadow-[0_8px_6px_rgba(0,0,0,0.15),0_4px_2px_rgba(0,0,0,0.3)] transition-[height] duration-300 ${
+        expanded ? "h-[calc(100vh-112px)] min-h-[720px]" : "h-[600px]"
       }`}
     >
       <header className="mx-6 mt-5 flex h-[48px] shrink-0 items-center justify-between rounded-[24px] bg-[#09232d] px-6 text-white shadow-[0_6px_6px_rgba(0,0,0,0.18)] max-sm:mx-4">
@@ -344,7 +344,9 @@ function ChatWorkspace({
 
       <div
         ref={transcriptRef}
-        className="mx-auto mt-5 min-h-0 w-full max-w-[824px] flex-1 overflow-y-auto scroll-smooth px-6 pb-4 text-[#09232d] max-sm:px-4"
+        className={`mx-auto mt-5 min-h-0 w-full flex-1 overflow-y-auto scroll-smooth px-6 pb-4 text-[#09232d] max-sm:px-4 ${
+          expanded ? "max-w-[1100px]" : "max-w-[824px]"
+        }`}
       >
         <div className="space-y-4">
           {messages.map((message, index) => (
@@ -375,7 +377,11 @@ function ChatWorkspace({
         </div>
       </div>
 
-      <div className="mx-auto mb-5 w-[calc(100%-88px)] max-w-[824px] shrink-0 rounded-[22px] border border-[#d7d7d7] bg-white shadow-sm max-sm:mb-4 max-sm:w-[calc(100%-32px)]">
+      <div
+        className={`mx-auto mb-5 w-[calc(100%-88px)] shrink-0 rounded-[22px] border border-[#d7d7d7] bg-white shadow-sm max-sm:mb-4 max-sm:w-[calc(100%-32px)] ${
+          expanded ? "max-w-[1100px]" : "max-w-[824px]"
+        }`}
+      >
         <div className="flex h-[43px] items-center gap-3 rounded-t-[22px] border-b border-[#ececec] px-5">
           <Plus size={21} className="text-[#09232d]" />
           <input
@@ -483,27 +489,29 @@ export function SalesEngineView() {
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
-        <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-          <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
-          <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
-          <TrendChart />
-          <div className="flex items-center gap-[17px] pt-[11px] max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
-            <button
-              type="button"
-              className="flex h-8 items-center gap-2.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
-            >
-              <FolderInput size={18} />
-              Import
-            </button>
-            <Link
-              href="/crm"
-              className="flex h-8 items-center gap-2.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white"
-            >
-              <Sparkles size={18} />
-              View CRM Pipeline
-            </Link>
+        {!chatExpanded && (
+          <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
+            <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
+            <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
+            <TrendChart />
+            <div className="flex items-center gap-[17px] pt-[11px] max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
+              <button
+                type="button"
+                className="flex h-8 items-center gap-2.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+              >
+                <FolderInput size={18} />
+                Import
+              </button>
+              <Link
+                href="/crm"
+                className="flex h-8 items-center gap-2.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white"
+              >
+                <Sparkles size={18} />
+                View CRM Pipeline
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
 
         <div
           className={
