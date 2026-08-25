@@ -2,6 +2,7 @@ import { registerPlugin } from '@capacitor/core';
 import type { BackgroundGeolocationPlugin } from '@capacitor-community/background-geolocation';
 import type { LocationObject } from '../hooks/useGeolocation';
 import { isNativeAndroid } from './capacitorPlatform';
+import { recordBackgroundLocationFix } from '@/lib/tracking/background-tracking-watchdog';
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
@@ -18,9 +19,14 @@ export type NativeWatchOptions = {
 const DEFAULT_TITLE = 'Factory 23 · Tracking active';
 const DEFAULT_MESSAGE = 'Location sharing is on · Tap to return to the map';
 
+/** Native FGS delivers ~1s interval; 0m filter keeps fixes while stationary (stops). */
+const NATIVE_DISTANCE_FILTER_METERS = 0;
+
 let watcherId: string | null = null;
 let onUpdateCb: LocationCallback | null = null;
 let onErrorCb: ErrorCallback | null = null;
+let lastWatchTitle = DEFAULT_TITLE;
+let lastWatchMessage = DEFAULT_MESSAGE;
 
 function normalizeNativeLocationError(error: { message?: string; code?: string | number }): string {
   const code = String(error.code ?? '').toUpperCase();
@@ -110,7 +116,7 @@ async function addWatcherInternal(title: string, message: string): Promise<void>
       backgroundTitle: title,
       requestPermissions: true,
       stale: false,
-      distanceFilter: 15,
+      distanceFilter: NATIVE_DISTANCE_FILTER_METERS,
     },
     (location, error) => {
       if (error) {
@@ -119,6 +125,7 @@ async function addWatcherInternal(title: string, message: string): Promise<void>
       }
       if (!location) return;
       if (location.latitude === 0 && location.longitude === 0) return;
+      recordBackgroundLocationFix();
       onUpdateCb?.(toLocationObject(location));
     },
   );
@@ -149,6 +156,8 @@ export async function startNativeBackgroundWatch(
   const title = options?.title?.trim() || DEFAULT_TITLE;
   // Freeze body at start — never restart the FGS just to refresh distance copy.
   const message = options?.message?.trim() || DEFAULT_MESSAGE;
+  lastWatchTitle = title;
+  lastWatchMessage = message;
   await addWatcherInternal(title, message);
 
   // Mirror a controllable sticky LocalNotification for clearer UX copy.
@@ -162,6 +171,20 @@ export async function startNativeBackgroundWatch(
   } catch {
     // Non-fatal — FGS notification still indicates tracking.
   }
+}
+
+/**
+ * Force-remove and re-add the native watcher while preserving callbacks.
+ * Used when GPS goes silent but the FGS notification is still showing.
+ */
+export async function forceRestartNativeBackgroundWatch(): Promise<void> {
+  if (!isNativeAndroid()) return;
+  if (!onUpdateCb) return;
+
+  if (watcherId) {
+    await stopNativeBackgroundWatch({ keepCallbacks: true });
+  }
+  await addWatcherInternal(lastWatchTitle, lastWatchMessage);
 }
 
 /**

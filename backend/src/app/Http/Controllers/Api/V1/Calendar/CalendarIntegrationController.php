@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Api\V1\Calendar;
 
 use App\Http\Controllers\Concerns\ResolvesCompanyContextId;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Services\Calendar\CompanyCalendarConnectionService;
 use App\Services\Calendar\UserCalendarConnectionService;
 use Illuminate\Http\JsonResponse;
@@ -94,13 +93,6 @@ class CalendarIntegrationController extends Controller
         $error = trim((string) $request->query('error', ''));
         $errorDescription = trim((string) $request->query('error_description', ''));
 
-        // Email Accounts Google OAuth reuses this registered redirect URI.
-        // Detect by state.flow === email_account (or legacy provider without connection_type).
-        $stateRaw = trim((string) $request->query('state', ''));
-        if ($stateRaw !== '' && $this->isEmailAccountOAuthState($stateRaw)) {
-            return app(EmailAccountOAuthController::class)->callback($request, 'google');
-        }
-
         if ($error !== '') {
             if ($authenticated) {
                 throw ValidationException::withMessages([
@@ -174,27 +166,6 @@ class CalendarIntegrationController extends Controller
             status: 200,
             connectionType: $connectionType,
         );
-    }
-
-    private function isEmailAccountOAuthState(string $state): bool
-    {
-        try {
-            /** @var array<string,mixed> $payload */
-            $payload = decrypt($state);
-        } catch (\Throwable) {
-            return false;
-        }
-
-        $flow = trim((string) ($payload['flow'] ?? ''));
-        if ($flow === 'email_account') {
-            return true;
-        }
-
-        // Legacy email-account states set provider but not connection_type.
-        $provider = trim((string) ($payload['provider'] ?? ''));
-        $connectionType = trim((string) ($payload['connection_type'] ?? ''));
-
-        return $provider === 'google' && $connectionType === '';
     }
 
     private function browserCallbackResponse(

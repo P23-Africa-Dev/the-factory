@@ -273,7 +273,6 @@ class GoogleCalendarOAuthService
 
         if (! is_array($scopes) || $scopes === []) {
             return [
-                'https://www.googleapis.com/auth/calendar',
                 'https://www.googleapis.com/auth/calendar.events',
             ];
         }

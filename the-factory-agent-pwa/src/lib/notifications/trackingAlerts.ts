@@ -5,6 +5,7 @@ import {
   ensureNativeLocalNotificationPermission,
   notifyNative,
 } from '@/features/tracking/native/nativeLocalNotifications';
+import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
 
 export type TrackingAlertPayload = {
   title: string;
@@ -115,8 +116,13 @@ async function clearPwaLiveTrackingNotification(): Promise<void> {
  * - PWA/browser: only when document is hidden (Maps handoff, etc.).
  */
 export async function showTrackingAlert(payload: TrackingAlertPayload): Promise<void> {
+  const normalized: TrackingAlertPayload = {
+    ...payload,
+    url: resolveAgentDeepLink(payload.url),
+  };
+
   if (isNativeAndroid()) {
-    await notifyNative(payload);
+    await notifyNative(normalized);
     return;
   }
 
@@ -124,22 +130,27 @@ export async function showTrackingAlert(payload: TrackingAlertPayload): Promise<
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
 
-  const shown = await showViaServiceWorker(payload);
+  const shown = await showViaServiceWorker(normalized);
   if (!shown) {
-    showViaNotificationApi(payload);
+    showViaNotificationApi(normalized);
   }
 }
 
 /** Force a device alert even if the document is visible (native always; web if permitted). */
 export async function showDeviceAlert(payload: TrackingAlertPayload): Promise<void> {
+  const normalized: TrackingAlertPayload = {
+    ...payload,
+    url: resolveAgentDeepLink(payload.url),
+  };
+
   if (isNativeAndroid()) {
-    await notifyNative(payload);
+    await notifyNative(normalized);
     return;
   }
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
-  const shown = await showViaServiceWorker(payload);
-  if (!shown) showViaNotificationApi(payload);
+  const shown = await showViaServiceWorker(normalized);
+  if (!shown) showViaNotificationApi(normalized);
 }
 
 /**

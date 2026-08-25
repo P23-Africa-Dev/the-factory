@@ -124,12 +124,11 @@ data:
   # ── Google Calendar OAuth (meetings only) ───────────────────────────────────
   # Client ID + secret live in factory23-secret. Redirect URI must match Google Cloud Console.
   GOOGLE_CALENDAR_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
-  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events"
+  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar.events"
 
   # ── Email Accounts OAuth (mailbox connect) ──────────────────────────────────
-  # Google Mail reuses the calendar OAuth client + the SAME registered redirect URI.
-  # CalendarIntegrationController multiplexes email-account vs calendar state.
-  GOOGLE_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
+  # Google Mail has a dedicated callback so consent never merges Calendar scopes.
+  GOOGLE_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/google/callback"
   GOOGLE_MAIL_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
   MICROSOFT_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/microsoft/callback"
   MICROSOFT_MAIL_TENANT: "common"
@@ -137,8 +136,9 @@ data:
   ZOHO_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/zoho/callback"
   ZOHO_MAIL_DATACENTER: "com"
   ZOHO_MAIL_SCOPES: "ZohoMail.messages.ALL,ZohoMail.accounts.READ"
-  # Custom IMAP/SMTP disabled until an off-cluster mail relay exists (DOKS blocks outbound SMTP).
-  EMAIL_IMAP_SMTP_ENABLED: "false"
+  # Custom IMAP/SMTP enabled: DigitalOcean outbound SMTP (465/587/25) is open on this cluster
+  # (verified 2026-08-14 from the backend pod). Set to "false" again if DO reinstates the block.
+  EMAIL_IMAP_SMTP_ENABLED: "true"
 
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"

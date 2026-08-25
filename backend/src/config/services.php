@@ -36,6 +36,13 @@ return [
     ],
 
     'fcm' => [
+        // Firebase project id (from google-services.json → project_info.project_id).
+        'project_id' => env('FCM_PROJECT_ID', 'fcatory23-apk'),
+        // Raw JSON or base64(JSON) for the Firebase Admin SDK service-account key.
+        'service_account_json' => env('FCM_SERVICE_ACCOUNT_JSON'),
+        // Optional absolute path to the service-account JSON file (preferred in k8s mounts).
+        'service_account_path' => env('FCM_SERVICE_ACCOUNT_PATH'),
+        // Deprecated: legacy HTTP API server key (Cloud Messaging API Legacy). Prefer HTTP v1.
         'server_key' => env('FCM_SERVER_KEY'),
         'legacy_send_endpoint' => env('FCM_LEGACY_SEND_ENDPOINT', 'https://fcm.googleapis.com/fcm/send'),
     ],
@@ -50,22 +57,18 @@ return [
         // Calendar meetings only — Gmail/CRM mailbox uses google_mail scopes via Email Accounts.
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_CALENDAR_SCOPES',
-            'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events',
+            'openid,email,profile,https://www.googleapis.com/auth/calendar.events',
         ))))),
     ],
 
-    // Email Accounts OAuth — reuses Google client credentials by default.
-    // IMPORTANT: redirect_uri must be registered in Google Cloud Console. Defaults to the
-    // already-registered calendar callback so Email Accounts works without a second URI.
+    // Email Accounts OAuth may reuse Google client credentials, but always uses
+    // its own callback so Gmail and Calendar consent flows remain isolated.
     'google_mail' => [
         'client_id' => env('GOOGLE_MAIL_CLIENT_ID', env('GOOGLE_CALENDAR_CLIENT_ID')),
         'client_secret' => env('GOOGLE_MAIL_CLIENT_SECRET', env('GOOGLE_CALENDAR_CLIENT_SECRET')),
         'redirect_uri' => env(
             'GOOGLE_MAIL_REDIRECT_URI',
-            env(
-                'GOOGLE_CALENDAR_REDIRECT_URI',
-                rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/calendar/integration/callback',
-            ),
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/google/callback',
         ),
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_MAIL_SCOPES',
@@ -101,14 +104,12 @@ return [
         ))))),
     ],
 
-    // Custom IMAP/SMTP is disabled in production (hosting blocks outbound SMTP).
-    // Prefer Google / Microsoft OAuth for CRM mailbox connect.
+    // Custom IMAP/SMTP availability. Outbound SMTP is open on the production cluster
+    // (verified 2026-08-14); the live value is driven by EMAIL_IMAP_SMTP_ENABLED in the
+    // configmap. Flip that env to "false" if the hosting provider blocks SMTP again.
     'email_accounts' => [
         'imap_smtp_enabled' => filter_var(
-            env(
-                'EMAIL_IMAP_SMTP_ENABLED',
-                env('APP_ENV', 'production') === 'local' || env('APP_ENV') === 'testing' ? 'true' : 'false',
-            ),
+            env('EMAIL_IMAP_SMTP_ENABLED', 'true'),
             FILTER_VALIDATE_BOOL,
         ),
     ],

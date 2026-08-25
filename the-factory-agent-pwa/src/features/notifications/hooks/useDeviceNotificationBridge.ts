@@ -8,6 +8,7 @@ import {
   attachNativeNotificationClickHandler,
   ensureNativeLocalNotificationPermission,
 } from '@/features/tracking/native/nativeLocalNotifications';
+import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
 import {
   isDocumentHidden,
   notifyTrackingArrived,
@@ -38,11 +39,7 @@ export function useDeviceNotificationBridge(): void {
 
   useEffect(() => {
     if (!pending) return;
-    const url = pending.action_url?.startsWith('/')
-      ? pending.action_url
-      : pending.action_url
-        ? `/${pending.action_url}`
-        : '/notifications';
+    const url = resolveAgentDeepLink(pending.action_url);
 
     const payload = {
       title: pending.title || 'New notification',

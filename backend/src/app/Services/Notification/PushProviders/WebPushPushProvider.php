@@ -7,6 +7,7 @@ namespace App\Services\Notification\PushProviders;
 use App\Models\AppNotification;
 use App\Models\PushSubscription;
 use App\Services\Notification\Contracts\PushProvider;
+use App\Support\AgentNotificationDeepLink;
 use Minishlink\WebPush\WebPush;
 use Minishlink\WebPush\Subscription;
 
@@ -59,7 +60,9 @@ class WebPushPushProvider implements PushProvider
                 'authToken' => $keys['auth'],
             ]);
 
-            $actionUrl = $notification->action_url ?: ($notification->action_route ?: '/');
+            $actionUrl = AgentNotificationDeepLink::resolve(
+                $notification->action_url ?: ($notification->action_route ?: '/'),
+            );
 
             $report = $webPush->sendOneNotification($webPushSub, json_encode([
                 'title' => $notification->title,

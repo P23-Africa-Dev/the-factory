@@ -652,6 +652,16 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->name('leads.activities.store');
                 Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
                 Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+                Route::get('/emails/gmail/labels', [CrmEmailController::class, 'listLabels'])->name('emails.gmail.labels.index');
+                Route::post('/emails/gmail/labels', [CrmEmailController::class, 'createLabel'])
+                    ->middleware('throttle:api')
+                    ->name('emails.gmail.labels.store');
+                Route::patch('/emails/gmail/labels/{label}', [CrmEmailController::class, 'updateLabel'])
+                    ->middleware('throttle:api')
+                    ->name('emails.gmail.labels.update');
+                Route::delete('/emails/gmail/labels/{label}', [CrmEmailController::class, 'destroyLabel'])
+                    ->middleware('throttle:api')
+                    ->name('emails.gmail.labels.destroy');
                 Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
                 Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
                 Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
@@ -661,6 +671,13 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('leads.emails.reply');
                 Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+                Route::patch('/leads/{lead}/emails/messages/{message}/unread', [CrmEmailController::class, 'markUnread'])->name('leads.emails.messages.unread');
+                Route::post('/leads/{lead}/emails/messages/{message}/move', [CrmEmailController::class, 'moveMessage'])
+                    ->middleware('throttle:api')
+                    ->name('leads.emails.messages.move');
+                Route::post('/leads/{lead}/emails/messages/{message}/labels', [CrmEmailController::class, 'modifyLabels'])
+                    ->middleware('throttle:api')
+                    ->name('leads.emails.messages.labels');
                 Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
                 Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
                     ->middleware('throttle:api')
@@ -815,6 +832,16 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->name('leads.activities.store');
                 Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
                 Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+                Route::get('/emails/gmail/labels', [CrmEmailController::class, 'listLabels'])->name('emails.gmail.labels.index');
+                Route::post('/emails/gmail/labels', [CrmEmailController::class, 'createLabel'])
+                    ->middleware('throttle:api')
+                    ->name('emails.gmail.labels.store');
+                Route::patch('/emails/gmail/labels/{label}', [CrmEmailController::class, 'updateLabel'])
+                    ->middleware('throttle:api')
+                    ->name('emails.gmail.labels.update');
+                Route::delete('/emails/gmail/labels/{label}', [CrmEmailController::class, 'destroyLabel'])
+                    ->middleware('throttle:api')
+                    ->name('emails.gmail.labels.destroy');
                 Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
                 Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
                 Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
@@ -824,6 +851,13 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('leads.emails.reply');
                 Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+                Route::patch('/leads/{lead}/emails/messages/{message}/unread', [CrmEmailController::class, 'markUnread'])->name('leads.emails.messages.unread');
+                Route::post('/leads/{lead}/emails/messages/{message}/move', [CrmEmailController::class, 'moveMessage'])
+                    ->middleware('throttle:api')
+                    ->name('leads.emails.messages.move');
+                Route::post('/leads/{lead}/emails/messages/{message}/labels', [CrmEmailController::class, 'modifyLabels'])
+                    ->middleware('throttle:api')
+                    ->name('leads.emails.messages.labels');
                 Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
                 Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
                     ->middleware('throttle:api')
@@ -1239,6 +1273,16 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->name('leads.activities.store');
         Route::get('/emails/activity', [CrmEmailController::class, 'activity'])->name('emails.activity');
         Route::get('/emails/attachments/{attachment}', [CrmEmailController::class, 'downloadAttachment'])->name('emails.attachments.download');
+        Route::get('/emails/gmail/labels', [CrmEmailController::class, 'listLabels'])->name('emails.gmail.labels.index');
+        Route::post('/emails/gmail/labels', [CrmEmailController::class, 'createLabel'])
+            ->middleware('throttle:api')
+            ->name('emails.gmail.labels.store');
+        Route::patch('/emails/gmail/labels/{label}', [CrmEmailController::class, 'updateLabel'])
+            ->middleware('throttle:api')
+            ->name('emails.gmail.labels.update');
+        Route::delete('/emails/gmail/labels/{label}', [CrmEmailController::class, 'destroyLabel'])
+            ->middleware('throttle:api')
+            ->name('emails.gmail.labels.destroy');
         Route::get('/leads/{lead}/emails', [CrmEmailController::class, 'index'])->name('leads.emails.index');
         Route::get('/leads/{lead}/emails/threads/{thread}', [CrmEmailController::class, 'showThread'])->name('leads.emails.threads.show');
         Route::post('/leads/{lead}/emails/send', [CrmEmailController::class, 'send'])
@@ -1248,6 +1292,13 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('leads.emails.reply');
         Route::patch('/leads/{lead}/emails/messages/{message}/read', [CrmEmailController::class, 'markRead'])->name('leads.emails.messages.read');
+        Route::patch('/leads/{lead}/emails/messages/{message}/unread', [CrmEmailController::class, 'markUnread'])->name('leads.emails.messages.unread');
+        Route::post('/leads/{lead}/emails/messages/{message}/move', [CrmEmailController::class, 'moveMessage'])
+            ->middleware('throttle:api')
+            ->name('leads.emails.messages.move');
+        Route::post('/leads/{lead}/emails/messages/{message}/labels', [CrmEmailController::class, 'modifyLabels'])
+            ->middleware('throttle:api')
+            ->name('leads.emails.messages.labels');
         Route::delete('/leads/{lead}/emails/messages/{message}', [CrmEmailController::class, 'destroy'])->name('leads.emails.messages.destroy');
         Route::post('/leads/{lead}/emails/attachments', [CrmEmailController::class, 'uploadAttachment'])
             ->middleware('throttle:api')

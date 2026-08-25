@@ -11,7 +11,7 @@ import {
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 
-async function registerWebPushSubscription(): Promise<PushSubscription | null> {
+async function registerWebPushSubscription(platform: 'web' | 'android' = 'web'): Promise<PushSubscription | null> {
   if (!VAPID_PUBLIC_KEY || typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     if (!VAPID_PUBLIC_KEY) {
       console.warn('[Push] NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set — Web Push disabled');
@@ -21,7 +21,7 @@ async function registerWebPushSubscription(): Promise<PushSubscription | null> {
 
   const registration = await navigator.serviceWorker.ready;
   if (!registration.pushManager) {
-    console.warn('[Push] PushManager not supported by this browser');
+    console.warn('[Push] PushManager not supported by this browser/WebView');
     return null;
   }
 
@@ -48,11 +48,12 @@ async function registerWebPushSubscription(): Promise<PushSubscription | null> {
 
   await client.post('/notifications/push-subscriptions', {
     provider: 'web-push',
-    platform: 'web',
+    platform,
     device_token: subscription.endpoint,
     endpoint: subscription.endpoint,
     subscription_payload: {
       keys: { p256dh, auth },
+      source: platform === 'android' ? 'capacitor-webview-web-push' : 'pwa-web-push',
     },
   });
 
@@ -61,7 +62,7 @@ async function registerWebPushSubscription(): Promise<PushSubscription | null> {
 
 /**
  * Registers device push for the signed-in agent:
- * - Android APK → FCM via Capacitor PushNotifications
+ * - Android APK → FCM when Firebase is ready, else Web Push fallback (if WebView supports it)
  * - Installed PWA / browser → Web Push (VAPID)
  */
 export function usePushSubscription(userId?: string | number) {
@@ -82,12 +83,18 @@ export function usePushSubscription(userId?: string | number) {
     async function registerPush() {
       try {
         if (isNativeAndroid()) {
-          await registerNativePush();
+          const fcmStarted = await registerNativePush();
+          if (cancelled) return;
+          // Always attempt Web Push as well — Capacitor remote WebViews that expose
+          // PushManager can receive VAPID pushes even when FCM is not configured.
+          if (!fcmStarted) {
+            await registerWebPushSubscription('android');
+          }
           return;
         }
 
         if (cancelled) return;
-        await registerWebPushSubscription();
+        await registerWebPushSubscription('web');
       } catch (error) {
         console.error('[Push] Failed to register push subscription:', error);
       }

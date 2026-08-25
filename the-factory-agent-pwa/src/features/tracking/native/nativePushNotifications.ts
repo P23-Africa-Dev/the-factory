@@ -1,31 +1,48 @@
 /**
  * Capacitor FCM push for the Android APK shell.
  *
- * IMPORTANT: Calling PushNotifications.register() without
- * android/app/google-services.json crashes the native process
- * ("Default FirebaseApp is not initialized"). FCM stays opt-in until
- * Firebase is configured and NEXT_PUBLIC_ENABLE_FCM_PUSH=true.
+ * Calling PushNotifications.register() without google-services.json crashes
+ * the native process. We probe Firebase readiness from MainActivity before
+ * registering. When FCM is unavailable, the caller should fall back to Web Push.
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications, type Token, type ActionPerformed, type PushNotificationSchema } from '@capacitor/push-notifications';
 import { client } from '@/lib/api/client';
+import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
 import { isNativeAndroid } from './capacitorPlatform';
 import { ensureNativeLocalNotificationPermission, notifyNative } from './nativeLocalNotifications';
+
+type FactoryPushBridgePlugin = {
+  isFirebaseReady: () => Promise<{ ready: boolean; reason?: string }>;
+};
+
+const FactoryPushBridge = registerPlugin<FactoryPushBridgePlugin>('FactoryPushBridge');
 
 let listenersAttached = false;
 let lastRegisteredToken: string | null = null;
 
-/** FCM requires google-services.json + this flag. Default off to avoid launch crashes. */
-function isFcmPushEnabled(): boolean {
+/** Explicit opt-in still supported; auto-enable when Firebase is present on device. */
+function isFcmPushEnvEnabled(): boolean {
   return process.env.NEXT_PUBLIC_ENABLE_FCM_PUSH === 'true';
+}
+
+async function isFirebaseReadyOnDevice(): Promise<boolean> {
+  try {
+    if (!Capacitor.isPluginAvailable('FactoryPushBridge')) {
+      // Older APKs without the bridge: only trust the env flag.
+      return isFcmPushEnvEnabled();
+    }
+    const result = await FactoryPushBridge.isFirebaseReady();
+    return Boolean(result?.ready);
+  } catch {
+    return false;
+  }
 }
 
 function resolveActionUrl(data: Record<string, unknown> | undefined): string {
   const raw = data?.action_url ?? data?.action_route ?? data?.url;
   if (typeof raw !== 'string' || raw.trim() === '') return '/';
-  const path = raw.trim();
-  if (path.startsWith('http')) return path;
-  return path.startsWith('/') ? path : `/${path}`;
+  return resolveAgentDeepLink(raw.trim());
 }
 
 async function registerTokenWithApi(token: string): Promise<void> {
@@ -93,8 +110,8 @@ function attachListeners(): void {
 
 /**
  * Request notification permission on Android.
- * Registers FCM only when explicitly enabled — otherwise uses LocalNotifications only
- * (avoids fatal Firebase init crash when google-services.json is missing).
+ * Registers FCM only when Firebase is initialized on the device (or env forces it).
+ * Returns true when an FCM token registration was started.
  */
 export async function registerNativePush(): Promise<boolean> {
   if (!isNativeAndroid()) return false;
@@ -103,9 +120,17 @@ export async function registerNativePush(): Promise<boolean> {
     // Always ensure local notification permission for tracking/inbox alerts.
     await ensureNativeLocalNotificationPermission();
 
-    if (!isFcmPushEnabled()) {
+    const firebaseReady = await isFirebaseReadyOnDevice();
+    if (!firebaseReady && !isFcmPushEnvEnabled()) {
       console.info(
-        '[Push][FCM] Skipped — set NEXT_PUBLIC_ENABLE_FCM_PUSH=true and add android/app/google-services.json',
+        '[Push][FCM] Skipped — Firebase is not initialized. Add android/app/google-services.json, rebuild the APK, set backend FCM_SERVER_KEY, and redeploy the PWA.',
+      );
+      return false;
+    }
+
+    if (!firebaseReady) {
+      console.warn(
+        '[Push][FCM] NEXT_PUBLIC_ENABLE_FCM_PUSH=true but Firebase is not ready — refusing register() to avoid a native crash.',
       );
       return false;
     }

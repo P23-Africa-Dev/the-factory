@@ -20,18 +20,23 @@ RUN apk add --no-cache \
         git \
         freetype-dev \
         icu-dev \
+        imap-dev \
+        krb5-dev \
         libjpeg-turbo-dev \
         libpng-dev \
         libzip-dev \
         oniguruma-dev \
+        openssl-dev \
         unzip \
         autoconf \
         g++ \
         make \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
     && docker-php-ext-install -j$(nproc) \
         bcmath \
         gd \
+        imap \
         intl \
         pcntl \
         zip \

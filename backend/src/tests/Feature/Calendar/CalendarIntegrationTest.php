@@ -29,7 +29,6 @@ class CalendarIntegrationTest extends TestCase
             'openid',
             'email',
             'profile',
-            'https://www.googleapis.com/auth/calendar',
             'https://www.googleapis.com/auth/calendar.events',
         ]);
     }
@@ -59,6 +58,10 @@ class CalendarIntegrationTest extends TestCase
         $this->assertStringContainsString('email', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('profile', (string) $response->json('data.authorization_url'));
         $this->assertStringContainsString('calendar.events', urldecode((string) $response->json('data.authorization_url')));
+        parse_str((string) parse_url((string) $response->json('data.authorization_url'), PHP_URL_QUERY), $query);
+        $requestedScopes = preg_split('/\s+/', trim((string) ($query['scope'] ?? ''))) ?: [];
+        $this->assertContains('https://www.googleapis.com/auth/calendar.events', $requestedScopes);
+        $this->assertNotContains('https://www.googleapis.com/auth/calendar', $requestedScopes);
         $this->assertStringNotContainsString('gmail.send', (string) $response->json('data.authorization_url'));
         $this->assertStringNotContainsString('gmail.modify', (string) $response->json('data.authorization_url'));
     }

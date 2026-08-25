@@ -180,6 +180,128 @@ export function markLeadEmailRead(
     });
 }
 
+export function markLeadEmailUnread(
+    basePath: ApiRoleBasePath,
+    leadId: number | string,
+    messageId: number | string,
+    params: { company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<{ message: CrmEmailMessage }>> {
+    const qs = new URLSearchParams();
+    if (params.company_id != null) qs.set("company_id", String(params.company_id));
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+
+    return apiRequest({
+        method: "PATCH",
+        path: crmPath(basePath, `/leads/${leadId}/emails/messages/${messageId}/unread${query}`),
+        token,
+    });
+}
+
+export function moveLeadEmail(
+    basePath: ApiRoleBasePath,
+    leadId: number | string,
+    messageId: number | string,
+    destination: "inbox" | "spam",
+    params: { company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<{ message: CrmEmailMessage }>> {
+    return apiRequest({
+        method: "POST",
+        path: crmPath(basePath, `/leads/${leadId}/emails/messages/${messageId}/move`),
+        body: {
+            destination,
+            company_id: params.company_id,
+        },
+        token,
+    });
+}
+
+export type GmailLabel = {
+    id: string;
+    name: string;
+    type: string;
+    messageListVisibility?: string | null;
+    labelListVisibility?: string | null;
+};
+
+export function listGmailLabels(
+    basePath: ApiRoleBasePath,
+    params: { company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<{ items: GmailLabel[] }>> {
+    const qs = new URLSearchParams();
+    if (params.company_id != null) qs.set("company_id", String(params.company_id));
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+
+    return apiRequest({
+        method: "GET",
+        path: crmPath(basePath, `/emails/gmail/labels${query}`),
+        token,
+    });
+}
+
+export function createGmailLabel(
+    basePath: ApiRoleBasePath,
+    name: string,
+    params: { company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<{ label: GmailLabel }>> {
+    return apiRequest({
+        method: "POST",
+        path: crmPath(basePath, `/emails/gmail/labels`),
+        body: { name, company_id: params.company_id },
+        token,
+    });
+}
+
+export function updateGmailLabel(
+    basePath: ApiRoleBasePath,
+    labelId: string,
+    name: string,
+    params: { company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<{ label: GmailLabel }>> {
+    return apiRequest({
+        method: "PATCH",
+        path: crmPath(basePath, `/emails/gmail/labels/${encodeURIComponent(labelId)}`),
+        body: { name, company_id: params.company_id },
+        token,
+    });
+}
+
+export function deleteGmailLabel(
+    basePath: ApiRoleBasePath,
+    labelId: string,
+    params: { company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<null>> {
+    const qs = new URLSearchParams();
+    if (params.company_id != null) qs.set("company_id", String(params.company_id));
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+
+    return apiRequest({
+        method: "DELETE",
+        path: crmPath(basePath, `/emails/gmail/labels/${encodeURIComponent(labelId)}${query}`),
+        token,
+    });
+}
+
+export function modifyLeadEmailLabels(
+    basePath: ApiRoleBasePath,
+    leadId: number | string,
+    messageId: number | string,
+    payload: { add?: string[]; remove?: string[]; company_id?: number | string },
+    token: string,
+): Promise<ApiEnvelope<{ message: CrmEmailMessage; label_ids: string[] }>> {
+    return apiRequest({
+        method: "POST",
+        path: crmPath(basePath, `/leads/${leadId}/emails/messages/${messageId}/labels`),
+        body: payload,
+        token,
+    });
+}
+
 export function deleteLeadEmail(
     basePath: ApiRoleBasePath,
     leadId: number | string,
