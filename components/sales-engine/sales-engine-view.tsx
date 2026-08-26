@@ -4,6 +4,11 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  IcpBuilderModal,
+  INITIAL_ICP_PROFILES,
+  type IcpProfile,
+} from "./icp-builder-modal";
+import {
   ChevronDown,
   Copy,
   Expand,
@@ -526,6 +531,10 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
 
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
+  const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
+  const [profiles, setProfiles] = useState<IcpProfile[]>(INITIAL_ICP_PROFILES);
+
+  const activeProfile = profiles.find((p) => p.isActive) ?? profiles[0];
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
@@ -535,21 +544,33 @@ export function SalesEngineView() {
             <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
             <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
             <TrendChart />
-            <div className="flex items-center gap-3 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
-              <Link
-                href="/crm"
-                className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
-              >
-                <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
-                View CRM Pipeline
-              </Link>
-              <button
-                type="button"
-                className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b]"
-              >
-                <IcpBuilderIcon className="h-5 w-5 text-white" />
-                ICP Builder
-              </button>
+            <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/crm"
+                  className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
+                >
+                  <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
+                  View CRM Pipeline
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsIcpModalOpen(true)}
+                  className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b] cursor-pointer"
+                >
+                  <IcpBuilderIcon className="h-5 w-5 text-white" />
+                  ICP Builder
+                </button>
+              </div>
+              {activeProfile && (
+                <div className="flex items-center gap-1.5 px-1 text-[11px] text-gray-500">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-medium text-gray-400">Active ICP:</span>
+                  <span className="font-semibold text-[#09232d] truncate max-w-[240px]">
+                    {activeProfile.name}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -568,6 +589,18 @@ export function SalesEngineView() {
           {!chatExpanded && <OutreachPanel />}
         </div>
       </div>
+
+      <IcpBuilderModal
+        isOpen={isIcpModalOpen}
+        onClose={() => setIsIcpModalOpen(false)}
+        profiles={profiles}
+        onProfilesChange={setProfiles}
+        onSelectActiveProfile={(selected) => {
+          setProfiles((prev) =>
+            prev.map((p) => ({ ...p, isActive: p.id === selected.id }))
+          );
+        }}
+      />
     </div>
   );
 }
