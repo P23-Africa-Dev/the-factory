@@ -7,7 +7,6 @@ import {
   ChevronDown,
   Copy,
   Expand,
-  FolderInput,
   Globe2,
   Lightbulb,
   MessageCircle,
@@ -483,6 +482,48 @@ function OutreachPanel() {
   );
 }
 
+function PipelineGaugeIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="3" y="3" width="18" height="18" rx="5" />
+      <path d="M7 16a5.5 5.5 0 1 1 10 0" />
+      <path d="M12 12.5l-2.5-2.5" />
+      <circle cx="12" cy="12.5" r="0.75" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M13.5 3.5H7.5A4 4 0 0 0 3.5 7.5v9A4 4 0 0 0 7.5 20.5h9a4 4 0 0 0 4-4v-6" />
+      <circle cx="10.5" cy="10" r="2.5" />
+      <path d="M6.5 17.5c0-2.2 1.8-4 4-4s4 1.8 4 4" />
+      <path
+        d="M18.5 2.5c0 1.6 1.4 2.8 3 2.8-1.6 0-3 1.2-3 2.8 0-1.6-1.4-2.8-3-2.8 1.6 0 3-1.2 3-2.8z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  );
+}
+
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
 
@@ -494,21 +535,21 @@ export function SalesEngineView() {
             <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
             <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
             <TrendChart />
-            <div className="flex items-center gap-[17px] pt-[11px] max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
-              <button
-                type="button"
-                className="flex h-8 items-center gap-2.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
-              >
-                <FolderInput size={18} />
-                Import
-              </button>
+            <div className="flex items-center gap-3 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <Link
                 href="/crm"
-                className="flex h-8 items-center gap-2.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white"
+                className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
               >
-                <Sparkles size={18} />
+                <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
                 View CRM Pipeline
               </Link>
+              <button
+                type="button"
+                className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b]"
+              >
+                <IcpBuilderIcon className="h-5 w-5 text-white" />
+                ICP Builder
+              </button>
             </div>
           </div>
         )}
