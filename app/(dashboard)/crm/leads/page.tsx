@@ -11,10 +11,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
@@ -126,7 +127,35 @@ export default function AllLeadsPage() {
   );
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/admin");
+  const { data: preferences } = useCrmPreferences(companyId ?? undefined, "/admin");
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, "/admin");
+
+  const [hasInitializedPipeline, setHasInitializedPipeline] = useState(false);
+
+  const prevDefaultPipelineIdRef = useRef<number | null>(null);
+
+  const defaultPipelineId = useMemo(
+    () =>
+      resolveCrmPipelineId(
+        pipelines,
+        preferences?.preferred_pipeline_id,
+        preferences?.company_default_pipeline_id
+      ),
+    [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
+  );
+
+  useEffect(() => {
+    if (defaultPipelineId == null) return;
+    if (!hasInitializedPipeline) {
+      setSelectedPipelineId(defaultPipelineId);
+      setHasInitializedPipeline(true);
+      prevDefaultPipelineIdRef.current = defaultPipelineId;
+    } else if (prevDefaultPipelineIdRef.current !== defaultPipelineId) {
+      setSelectedPipelineId(defaultPipelineId);
+      prevDefaultPipelineIdRef.current = defaultPipelineId;
+      resetPageSelection();
+    }
+  }, [defaultPipelineId, hasInitializedPipeline]);
 
   const { data, isFetching, refetch } = useLeads({
     company_id: companyId ?? undefined,
@@ -339,7 +368,7 @@ export default function AllLeadsPage() {
               resetPageSelection();
             }}
             onClear={() => {
-              setSelectedPipelineId(null);
+              setSelectedPipelineId(defaultPipelineId);
               setSelectedLabel("all");
               resetPageSelection();
             }}
@@ -595,7 +624,6 @@ export default function AllLeadsPage() {
           onSelectPipeline={(pipelineId) => {
             setSelectedPipelineId(pipelineId);
             resetPageSelection();
-            setShowPipelineModal(false);
           }}
           onClose={() => setShowPipelineModal(false)}
         />

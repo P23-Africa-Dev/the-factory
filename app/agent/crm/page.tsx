@@ -6,7 +6,8 @@ import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm"
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
-import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
+import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
@@ -749,13 +750,39 @@ export default function CRMPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [hasInitializedPipeline, setHasInitializedPipeline] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
+  const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
   const { data: agentUploadsOverview } = useAgentUploadsOverview(companyId ?? undefined, apiBasePath);
+
+  const prevDefaultPipelineIdRef = useRef<number | null>(null);
+
+  const defaultPipelineId = useMemo(
+    () =>
+      resolveCrmPipelineId(
+        pipelines,
+        preferences?.preferred_pipeline_id,
+        preferences?.company_default_pipeline_id
+      ),
+    [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
+  );
+
+  useEffect(() => {
+    if (defaultPipelineId == null) return;
+    if (!hasInitializedPipeline) {
+      setSelectedPipelineId(defaultPipelineId);
+      setHasInitializedPipeline(true);
+      prevDefaultPipelineIdRef.current = defaultPipelineId;
+    } else if (prevDefaultPipelineIdRef.current !== defaultPipelineId) {
+      setSelectedPipelineId(defaultPipelineId);
+      prevDefaultPipelineIdRef.current = defaultPipelineId;
+    }
+  }, [defaultPipelineId, hasInitializedPipeline]);
 
   const stages = useMemo(() => {
     if (!labels.length) return DEFAULT_STAGES;
@@ -923,7 +950,7 @@ export default function CRMPage() {
             selectedLabel={selectedLabel}
             onLabelChange={setSelectedLabel}
             onClear={() => {
-              setSelectedPipelineId(null);
+              setSelectedPipelineId(defaultPipelineId);
               setSelectedLabel("all");
             }}
           />
@@ -983,7 +1010,6 @@ export default function CRMPage() {
           mode="prefer"
           onSelectPipeline={(pipelineId) => {
             setSelectedPipelineId(pipelineId);
-            setShowPipelineModal(false);
           }}
           onClose={() => setShowPipelineModal(false)}
         />

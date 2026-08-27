@@ -223,6 +223,7 @@ export function PipelineManagerModal({
         company_id: companyId,
         pipeline_id: pipelineId,
       });
+      onSelectPipeline(pipelineId);
       toast.success("Personal default pipeline updated");
     } catch (err) {
       toast.error(
@@ -237,6 +238,7 @@ export function PipelineManagerModal({
         pipelineId,
         payload: { company_id: companyId },
       });
+      onSelectPipeline(pipelineId);
       toast.success("Company default pipeline updated");
     } catch (err) {
       toast.error(
@@ -258,7 +260,13 @@ export function PipelineManagerModal({
             return (
               <div
                 key={pipeline.id}
-                className={`group/row relative rounded-xl border-2 p-3 transition-colors ${isActive ? "border-dotted border-dash-dark bg-gray-50" : "border-solid border-gray-200 hover:border-gray-300"}`}
+                onClick={() => {
+                  if (!isEditing) {
+                    onSelectPipeline(pipeline.id);
+                    onClose();
+                  }
+                }}
+                className={`group/row relative rounded-xl border-2 p-3 transition-colors ${isActive ? "border-dotted border-dash-dark bg-gray-50 ring-1 ring-dash-dark/20" : "border-solid border-gray-200 hover:border-gray-300"} ${!isEditing ? "cursor-pointer" : ""}`}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <input
@@ -278,16 +286,20 @@ export function PipelineManagerModal({
                     className={`flex-1 min-w-0 rounded-lg px-3 py-2 text-[13px] transition-colors ${
                       canManage && isEditing
                         ? "border border-gray-200 bg-white"
-                        : "border border-transparent bg-transparent cursor-default"
+                        : "border border-transparent bg-transparent cursor-pointer pointer-events-none"
                     }`}
                   />
                   <div
+                    onClick={(e) => e.stopPropagation()}
                     className={`flex items-center gap-1 transition-opacity shrink-0 max-md:opacity-100 group-hover/row:opacity-100 focus-within:opacity-100 ${isEditing || isPreferred || isCompanyDefault ? "opacity-100" : "opacity-0"}`}
                   >
                     <IconAction
                       icon={<Eye size={15} />}
                       label="View pipeline"
-                      onClick={() => onSelectPipeline(pipeline.id)}
+                      onClick={() => {
+                        onSelectPipeline(pipeline.id);
+                        onClose();
+                      }}
                       active={isActive}
                     />
                     <IconAction
