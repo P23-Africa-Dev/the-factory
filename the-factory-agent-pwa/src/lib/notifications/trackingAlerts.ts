@@ -6,6 +6,10 @@ import {
   notifyNative,
 } from '@/features/tracking/native/nativeLocalNotifications';
 import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
+import {
+  PWA_NOTIFICATION_BADGE,
+  PWA_NOTIFICATION_ICON,
+} from '@/lib/notifications/pwaNotificationIcons';
 
 export type TrackingAlertPayload = {
   title: string;
@@ -64,8 +68,8 @@ async function showViaServiceWorker(
     // `renotify` is supported by browsers for SW notifications but missing from TS DOM types.
     const options: NotificationOptions & { renotify?: boolean } = {
       body: payload.body,
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/icon-72x72.png',
+      icon: PWA_NOTIFICATION_ICON,
+      badge: PWA_NOTIFICATION_BADGE,
       tag: payload.tag,
       renotify: !opts?.silent,
       requireInteraction: opts?.requireInteraction ?? false,
@@ -87,7 +91,8 @@ function showViaNotificationApi(payload: TrackingAlertPayload): boolean {
   try {
     new Notification(payload.title, {
       body: payload.body,
-      icon: '/icons/icon-192x192.png',
+      icon: PWA_NOTIFICATION_ICON,
+      badge: PWA_NOTIFICATION_BADGE,
       tag: payload.tag,
       data: { url: payload.url },
     });
