@@ -820,7 +820,7 @@ export function SavedLocationsLayer({
             <Crosshair size={15} className="text-[#094B5C]" />
             Save current location
           </button>
-          <button
+          {/* <button
             onClick={() => onPinModeChange(!pinMode)}
             className={`px-8 py-3.5 rounded-full font-bold text-[14px] shadow-xl shadow-purple-500/30 transition-all flex items-center gap-2 text-white ${pinMode
               ? "bg-gradient-to-r from-[#0A7E8C] to-[#094B5C]"
@@ -828,7 +828,7 @@ export function SavedLocationsLayer({
               }`}
           >
             {pinMode ? "Cancel Pin" : "Location Pinning"}
-          </button>
+          </button> */}
           {pinMode && (
             <span className="rounded-full bg-[#094B5C] px-4 py-2 text-[12px] font-semibold text-white shadow-lg animate-pulse">
               Tap the map to drop a pin
