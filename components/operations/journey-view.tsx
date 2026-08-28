@@ -489,9 +489,12 @@ export function JourneyView({
   const navigation = data?.navigation;
   const coordinates = (route?.coordinates ?? []) as [number, number][];
 
-  useEffect(() => {
+  const [prevJourneyKey, setPrevJourneyKey] = useState(`${sessionId}:${coordinates.length}`);
+  const journeyKey = `${sessionId}:${coordinates.length}`;
+  if (journeyKey !== prevJourneyKey) {
+    setPrevJourneyKey(journeyKey);
     setPlaybackIndex(0);
-  }, [sessionId, coordinates.length]);
+  }
 
   const selectedEvent = timeline.find((e) => e.id === selectedId) ?? null;
 

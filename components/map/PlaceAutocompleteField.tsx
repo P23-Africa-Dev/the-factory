@@ -77,7 +77,9 @@ export function PlaceAutocompleteField({
   const proximityLat = proximity?.[1];
   const creditBlocked = useMapCreditStore((s) => s.lastMeta?.blocked ?? false);
   const creditBlockedRef = useRef(creditBlocked);
-  creditBlockedRef.current = creditBlocked;
+  useEffect(() => {
+    creditBlockedRef.current = creditBlocked;
+  }, [creditBlocked]);
 
   const showRecentsPanel = open && value.trim().length < 2 && recents.length > 0;
 

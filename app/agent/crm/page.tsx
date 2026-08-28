@@ -750,7 +750,7 @@ export default function CRMPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
-  const [hasInitializedPipeline, setHasInitializedPipeline] = useState(false);
+  const [prevDefaultPipelineId, setPrevDefaultPipelineId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
@@ -759,8 +759,6 @@ export default function CRMPage() {
   const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
   const { data: agentUploadsOverview } = useAgentUploadsOverview(companyId ?? undefined, apiBasePath);
-
-  const prevDefaultPipelineIdRef = useRef<number | null>(null);
 
   const defaultPipelineId = useMemo(
     () =>
@@ -772,17 +770,10 @@ export default function CRMPage() {
     [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
   );
 
-  useEffect(() => {
-    if (defaultPipelineId == null) return;
-    if (!hasInitializedPipeline) {
-      setSelectedPipelineId(defaultPipelineId);
-      setHasInitializedPipeline(true);
-      prevDefaultPipelineIdRef.current = defaultPipelineId;
-    } else if (prevDefaultPipelineIdRef.current !== defaultPipelineId) {
-      setSelectedPipelineId(defaultPipelineId);
-      prevDefaultPipelineIdRef.current = defaultPipelineId;
-    }
-  }, [defaultPipelineId, hasInitializedPipeline]);
+  if (defaultPipelineId != null && defaultPipelineId !== prevDefaultPipelineId) {
+    setPrevDefaultPipelineId(defaultPipelineId);
+    setSelectedPipelineId(defaultPipelineId);
+  }
 
   const stages = useMemo(() => {
     if (!labels.length) return DEFAULT_STAGES;
