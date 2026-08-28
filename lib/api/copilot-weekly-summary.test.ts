@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeWeeklySummaryStatus } from "@/lib/api/copilot";
+import { normalizeWeeklySummaryStatus } from "./copilot";
 
 describe("normalizeWeeklySummaryStatus", () => {
     it("maps backend download_ready to available when completed", () => {
@@ -17,6 +17,7 @@ describe("normalizeWeeklySummaryStatus", () => {
             progress: 100,
             error: null,
             available: true,
+            drive_file_id: null,
         });
     });
 

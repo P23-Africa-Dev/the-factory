@@ -305,7 +305,13 @@ export function useSetPreferredCrmPipeline(basePath: ApiRoleBasePath = "/admin")
     return useMutation({
         mutationFn: (payload: { company_id: number | string; pipeline_id: number | string }) =>
             setPreferredCrmPipeline(payload, token, basePath),
-        onSuccess: () => {
+        onSuccess: (res, variables) => {
+            if (res.data) {
+                queryClient.setQueryData(
+                    CRM_KEYS.preferences(variables.company_id, basePath),
+                    res.data
+                );
+            }
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
         },
     });
@@ -323,7 +329,26 @@ export function useSetCompanyDefaultCrmPipeline(basePath: ApiRoleBasePath = "/ad
             pipelineId: number | string;
             payload: { company_id?: number | string };
         }) => setCompanyDefaultCrmPipeline(pipelineId, payload, token, basePath),
-        onSuccess: () => {
+        onSuccess: (_res, variables) => {
+            if (variables.payload.company_id) {
+                queryClient.setQueryData(
+                    CRM_KEYS.preferences(variables.payload.company_id, basePath),
+                    (old: CrmPreferences | undefined) => ({
+                        preferred_pipeline_id: old?.preferred_pipeline_id ?? null,
+                        company_default_pipeline_id: Number(variables.pipelineId),
+                    })
+                );
+                queryClient.setQueryData(
+                    CRM_KEYS.pipelines(variables.payload.company_id, basePath),
+                    (old: CrmPipeline[] | undefined) => {
+                        if (!old) return old;
+                        return old.map((p) => ({
+                            ...p,
+                            is_default: p.id === Number(variables.pipelineId),
+                        }));
+                    }
+                );
+            }
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
         },
     });

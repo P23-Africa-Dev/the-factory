@@ -2,7 +2,7 @@ import { render } from "@testing-library/react";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useTrackingWebSocket } from "@/hooks/use-tracking-ws";
+import { useTrackingWebSocket } from "./use-tracking-ws";
 
 const {
     listAgentLocationsMock,
@@ -22,6 +22,7 @@ const {
         upsertFromWs: vi.fn(),
         hydrateFromRoute: vi.fn(),
         hydrateFromSnapshots: vi.fn(),
+        setInitialHydrating: vi.fn(),
     };
 
     const storeMock = Object.assign(vi.fn(() => state), {

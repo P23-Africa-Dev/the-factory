@@ -539,7 +539,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const task = liveTasks[deepLinkTaskId];
     if (!task || !hasUsableTaskPosition(task)) return;
     if (selectedTaskId === deepLinkTaskId) return;
-    handleSelectTask(deepLinkTaskId);
+    const timer = setTimeout(() => {
+      handleSelectTask(deepLinkTaskId);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
 
   // Deep-link by agent: /map?agent=123 — select that agent's live task when no taskId.
@@ -551,12 +554,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     );
     if (!match) return;
     if (selectedTaskId === match.taskId) return;
-    handleSelectTask(match.taskId);
+    const timer = setTimeout(() => {
+      handleSelectTask(match.taskId);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialAgentId, deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
     setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
-  }, []);
+  }, [setHistoryTask]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -715,7 +721,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     setSearchQuery('');
     setPlaceResults([]);
     setSearchPanelOpen(false);
-  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery]);
+  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchPanelOpen, setSearchQuery]);
 
   const handleRecentPlaceSelect = useCallback((recent: RecentPlace) => {
     void handlePlaceResultSelect(recentToSuggestionLike(recent, searchSessionTokenRef.current));
@@ -2466,7 +2472,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     const task = liveTasks[deepLinkTaskIdGoogle];
     if (!task || !hasUsableTaskPosition(task)) return;
     if (selectedTaskId === deepLinkTaskIdGoogle) return;
-    handleSelectTask(deepLinkTaskIdGoogle);
+    const timer = setTimeout(() => {
+      handleSelectTask(deepLinkTaskIdGoogle);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
 
   useEffect(() => {
@@ -2477,12 +2486,15 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     );
     if (!match) return;
     if (selectedTaskId === match.taskId) return;
-    handleSelectTask(match.taskId);
+    const timer = setTimeout(() => {
+      handleSelectTask(match.taskId);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialAgentId, deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
     setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
-  }, []);
+  }, [setHistoryTask]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {

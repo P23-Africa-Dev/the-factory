@@ -353,6 +353,12 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
 
   const polyline = (route?.polyline ?? []) as [number, number][];
   const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [prevRouteKey, setPrevRouteKey] = useState(`${taskId}:${polyline.length}`);
+  const routeKey = `${taskId}:${polyline.length}`;
+  if (routeKey !== prevRouteKey) {
+    setPrevRouteKey(routeKey);
+    setPlaybackIndex(0);
+  }
   const start = route?.start
     ? { lat: route.start.latitude, lng: route.start.longitude }
     : null;
@@ -368,10 +374,6 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
   const destination = route?.destination
     ? { lat: route.destination.latitude, lng: route.destination.longitude }
     : null;
-
-  useEffect(() => {
-    setPlaybackIndex(0);
-  }, [taskId, polyline.length]);
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 w-full max-w-sm bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">

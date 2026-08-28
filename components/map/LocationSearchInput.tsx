@@ -112,12 +112,6 @@ export function LocationSearchInput({
   }, [query, search]);
 
   useEffect(() => {
-    if (savedSuggestions.length > 0 && query.trim().length >= 2) {
-      setOpen(true);
-    }
-  }, [savedSuggestions, query]);
-
-  useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);

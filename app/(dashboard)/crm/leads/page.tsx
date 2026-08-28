@@ -11,10 +11,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
@@ -101,6 +102,7 @@ export default function AllLeadsPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [prevDefaultPipelineId, setPrevDefaultPipelineId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
@@ -126,7 +128,25 @@ export default function AllLeadsPage() {
   );
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/admin");
+  const { data: preferences } = useCrmPreferences(companyId ?? undefined, "/admin");
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, "/admin");
+
+  const defaultPipelineId = useMemo(
+    () =>
+      resolveCrmPipelineId(
+        pipelines,
+        preferences?.preferred_pipeline_id,
+        preferences?.company_default_pipeline_id
+      ),
+    [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
+  );
+
+  if (defaultPipelineId != null && defaultPipelineId !== prevDefaultPipelineId) {
+    setPrevDefaultPipelineId(defaultPipelineId);
+    setSelectedPipelineId(defaultPipelineId);
+    setPage(1);
+    setSelected(new Set());
+  }
 
   const { data, isFetching, refetch } = useLeads({
     company_id: companyId ?? undefined,
@@ -339,7 +359,7 @@ export default function AllLeadsPage() {
               resetPageSelection();
             }}
             onClear={() => {
-              setSelectedPipelineId(null);
+              setSelectedPipelineId(defaultPipelineId);
               setSelectedLabel("all");
               resetPageSelection();
             }}
@@ -595,7 +615,6 @@ export default function AllLeadsPage() {
           onSelectPipeline={(pipelineId) => {
             setSelectedPipelineId(pipelineId);
             resetPageSelection();
-            setShowPipelineModal(false);
           }}
           onClose={() => setShowPipelineModal(false)}
         />
