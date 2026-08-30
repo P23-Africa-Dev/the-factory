@@ -17,10 +17,14 @@
  *   installed PWA / browser tabs.
  */
 
-const CACHE_NAME = "factory-agent-pwa-v11";
-const STATIC_CACHE = "factory-static-v11";
-const API_CACHE = "factory-api-v11";
-const PAGE_CACHE = "factory-pages-v11";
+const CACHE_NAME = "factory-agent-pwa-v13";
+const STATIC_CACHE = "factory-static-v13";
+const API_CACHE = "factory-api-v13";
+const PAGE_CACHE = "factory-pages-v13";
+
+/** Keep in sync with src/lib/notifications/pwaNotificationIcons.ts */
+const PWA_NOTIFICATION_ICON = "/icons/icon-192x192.png";
+const PWA_NOTIFICATION_BADGE = "/icons/notification-badge.png";
 const IDB_NAME = "factory-agent-pwa";
 const LOCATION_BATCH_SIZE = 50;
 
@@ -485,8 +489,8 @@ self.addEventListener("push", (event) => {
 
       await self.registration.showNotification(title, {
         body,
-        icon: "/icons/icon-192x192.png",
-        badge: "/icons/icon-72x72.png",
+        icon: PWA_NOTIFICATION_ICON,
+        badge: PWA_NOTIFICATION_BADGE,
         tag,
         renotify: true,
         requireInteraction: false,
@@ -509,8 +513,8 @@ self.addEventListener("message", (event) => {
   if (data.type === "SHOW_NOTIFICATION") {
     const options = {
       body: data.body || "",
-      icon: "/icons/icon-192x192.png",
-      badge: "/icons/icon-72x72.png",
+      icon: PWA_NOTIFICATION_ICON,
+      badge: PWA_NOTIFICATION_BADGE,
       tag: data.tag || "factory-notification",
       data: {
         url: resolveAgentDeepLink(data.url || "/"),
