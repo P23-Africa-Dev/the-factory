@@ -3,11 +3,8 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  IcpBuilderModal,
-  INITIAL_ICP_PROFILES,
-  type IcpProfile,
-} from "./icp-builder-modal";
+import { IcpBuilderModal } from "./icp-builder-modal";
+import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
 import {
   ChevronDown,
   Copy,
@@ -532,9 +529,7 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
-  const [profiles, setProfiles] = useState<IcpProfile[]>(INITIAL_ICP_PROFILES);
-
-  const activeProfile = profiles.find((p) => p.isActive) ?? profiles[0];
+  const { data: activeProfile } = useActiveIcpProfile();
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
@@ -590,17 +585,7 @@ export function SalesEngineView() {
         </div>
       </div>
 
-      <IcpBuilderModal
-        isOpen={isIcpModalOpen}
-        onClose={() => setIsIcpModalOpen(false)}
-        profiles={profiles}
-        onProfilesChange={setProfiles}
-        onSelectActiveProfile={(selected) => {
-          setProfiles((prev) =>
-            prev.map((p) => ({ ...p, isActive: p.id === selected.id }))
-          );
-        }}
-      />
+      <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
     </div>
   );
 }
