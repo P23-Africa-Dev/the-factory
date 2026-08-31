@@ -201,4 +201,10 @@ return [
         'subject' => env('VAPID_SUBJECT', 'mailto:info@thefactory23.com'),
     ],
 
+    'sales_engine' => [
+        'api_url' => env('SALES_ENGINE_API_URL', 'https://api.salesengine.thefactory23.com'),
+        // Must match Sales Engine FACTORY23_JWT_SECRET
+        'jwt_secret' => env('SALES_ENGINE_JWT_SECRET', env('FACTORY23_JWT_SECRET')),
+    ],
+
 ];

@@ -22,6 +22,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toggle } from "@/components/ui/toggle";
+import {
+  activateIcpProfile,
+  createIcpProfile,
+  deleteIcpProfile,
+  duplicateIcpProfile,
+  refreshSalesEngineProfiles,
+  updateIcpProfile,
+} from "@/lib/api/sales-engine";
 
 export type IcpConfig = {
   profileName: string;
@@ -195,6 +203,8 @@ interface IcpBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
   profiles: IcpProfile[];
+  profilesLoading?: boolean;
+  useRemoteApi?: boolean;
   onProfilesChange: (profiles: IcpProfile[]) => void;
   onSelectActiveProfile: (profile: IcpProfile) => void;
 }
@@ -203,6 +213,8 @@ export function IcpBuilderModal({
   isOpen,
   onClose,
   profiles,
+  profilesLoading = false,
+  useRemoteApi = false,
   onProfilesChange,
   onSelectActiveProfile,
 }: IcpBuilderModalProps) {

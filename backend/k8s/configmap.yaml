@@ -181,3 +181,7 @@ data:
   PLACES_FOURSQUARE_PREMIUM_FIELDS: "false"
   PLACES_MAX_RESULTS_AUTOCOMPLETE: "12"
   PLACES_MAX_RESULTS_SEARCH: "15"
+
+  # ── Sales Engine (Continue-with-Factory23) ───────────────────────────────────
+  # JWT secret lives in factory23-secret as SALES_ENGINE_JWT_SECRET (must match SE FACTORY23_JWT_SECRET).
+  SALES_ENGINE_API_URL: "https://api.salesengine.thefactory23.com"

@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   IcpBuilderModal,
-  INITIAL_ICP_PROFILES,
   type IcpProfile,
 } from "./icp-builder-modal";
+import { refreshSalesEngineProfiles } from "@/lib/api/sales-engine";
+import { useSalesEngineSession } from "@/hooks/use-sales-engine-session";
 import {
   ChevronDown,
   Copy,
@@ -532,13 +533,53 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
-  const [profiles, setProfiles] = useState<IcpProfile[]>(INITIAL_ICP_PROFILES);
+  const [profiles, setProfiles] = useState<IcpProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const { ready: seSessionReady, loading: seSessionLoading, error: seSessionError, bootstrap: bootstrapSeSession } =
+    useSalesEngineSession();
+
+  useEffect(() => {
+    if (!seSessionReady) {
+      setProfilesLoading(seSessionLoading);
+      return;
+    }
+
+    let cancelled = false;
+    setProfilesLoading(true);
+
+    refreshSalesEngineProfiles()
+      .then((loaded) => {
+        if (!cancelled) setProfiles(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setProfiles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setProfilesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [seSessionReady, seSessionLoading]);
 
   const activeProfile = profiles.find((p) => p.isActive) ?? profiles[0];
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
+        {seSessionError && (
+          <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p>{seSessionError}</p>
+            <button
+              type="button"
+              onClick={() => bootstrapSeSession()}
+              className="mt-2 font-medium text-amber-950 underline underline-offset-2"
+            >
+              Retry connection
+            </button>
+          </div>
+        )}
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
             <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
@@ -594,6 +635,8 @@ export function SalesEngineView() {
         isOpen={isIcpModalOpen}
         onClose={() => setIsIcpModalOpen(false)}
         profiles={profiles}
+        profilesLoading={profilesLoading}
+        useRemoteApi={seSessionReady}
         onProfilesChange={setProfiles}
         onSelectActiveProfile={(selected) => {
           setProfiles((prev) =>
