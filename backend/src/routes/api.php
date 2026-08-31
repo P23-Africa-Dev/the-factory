@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\V1\Crm\LeadController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Drive\DriveController;
+use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAssertionController;
 use App\Http\Controllers\Api\V1\EmailAccountController;
 use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -746,6 +747,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('destroy');
             });
+
+            Route::post('/sales-engine/assertion', [SalesEngineAssertionController::class, 'store'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.assertion');
         });
 
     // Canonical agent endpoints.
@@ -753,6 +758,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         ->name('agent-api.')
         ->middleware('access.role:agent')
         ->group(function (): void {
+            Route::post('/sales-engine/assertion', [SalesEngineAssertionController::class, 'store'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.assertion');
+
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'agentIndex'])->name('index');
                 Route::get('/{project}', [ProjectController::class, 'agentShow'])->name('show');
