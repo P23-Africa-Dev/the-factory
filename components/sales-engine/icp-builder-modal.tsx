@@ -22,6 +22,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toggle } from "@/components/ui/toggle";
+import { getApiErrorMessage } from "@/lib/api/errors";
+import {
+  useActivateIcpProfile,
+  useCreateIcpProfile,
+  useDeleteIcpProfile,
+  useDuplicateIcpProfile,
+  useIcpProfiles,
+  useUpdateIcpProfile,
+} from "@/hooks/use-sales-engine-icp";
 
 export type IcpConfig = {
   profileName: string;
@@ -46,88 +55,6 @@ export type IcpProfile = {
   lastUpdated: string;
   config: IcpConfig;
 };
-
-export const INITIAL_ICP_PROFILES: IcpProfile[] = [
-  {
-    id: "icp-1",
-    name: "Tier-1 FMCG & Commercial Distributors",
-    description: "High-volume consumer goods distributors with physical depot infrastructure and regional fleets.",
-    isActive: true,
-    leadCount: 175,
-    lastUpdated: "Today",
-    config: {
-      profileName: "Tier-1 FMCG & Commercial Distributors",
-      description: "High-volume consumer goods distributors with physical depot infrastructure and regional fleets.",
-      industries: ["FMCG & Retail", "Logistics & Fleet", "Agro & Commodities"],
-      companySizes: ["51-200", "201-500", "500+"],
-      revenueRanges: ["$1M - $10M", "$10M - $50M"],
-      territories: ["Lagos, NG", "Abuja, NG", "Port Harcourt, NG", "Nairobi, KE"],
-      decisionMakers: [
-        "Head of Sales",
-        "Chief Commercial Officer",
-        "Supply Chain Director",
-        "Procurement Manager",
-      ],
-      minMatchScore: 75,
-      autoSyncCrm: true,
-      enrichContactDetails: true,
-      customPrompt:
-        "Prioritize distributors with physical depot infrastructure, active regional distribution fleets, and recent commercial hiring signals across West & East Africa.",
-    },
-  },
-  {
-    id: "icp-2",
-    name: "Emerging B2B Fintechs & Payment Aggregators",
-    description: "Fintech startups and agency banking platforms expanding retail agent networks.",
-    isActive: false,
-    leadCount: 84,
-    lastUpdated: "2 days ago",
-    config: {
-      profileName: "Emerging B2B Fintechs & Payment Aggregators",
-      description: "Fintech startups and agency banking platforms expanding retail agent networks.",
-      industries: ["Fintech & Payments"],
-      companySizes: ["11-50", "51-200"],
-      revenueRanges: ["$500K - $1M", "$1M - $10M"],
-      territories: ["Lagos, NG", "Nairobi, KE", "Accra, GH", "Kigali, RW"],
-      decisionMakers: [
-        "Chief Commercial Officer",
-        "Head of Growth",
-        "Managing Director / CEO",
-      ],
-      minMatchScore: 80,
-      autoSyncCrm: true,
-      enrichContactDetails: true,
-      customPrompt:
-        "Target payment facilitators and switch operators onboarding merchant terminals or agent kiosks.",
-    },
-  },
-  {
-    id: "icp-3",
-    name: "Agro-allied Supply Chain & Export Clusters",
-    description: "Agricultural aggregators, grain processors, and commodity exporters with depot hubs.",
-    isActive: false,
-    leadCount: 120,
-    lastUpdated: "Last week",
-    config: {
-      profileName: "Agro-allied Supply Chain & Export Clusters",
-      description: "Agricultural aggregators, grain processors, and commodity exporters with depot hubs.",
-      industries: ["Agro & Commodities", "Manufacturing"],
-      companySizes: ["51-200", "500+"],
-      revenueRanges: ["$1M - $10M", "$10M - $50M", "$50M+"],
-      territories: ["Kano, NG", "Abuja, NG", "Nairobi, KE", "Johannesburg, SA"],
-      decisionMakers: [
-        "Operations Director",
-        "Supply Chain Director",
-        "Procurement Manager",
-      ],
-      minMatchScore: 70,
-      autoSyncCrm: false,
-      enrichContactDetails: true,
-      customPrompt:
-        "Focus on commodities aggregators with processing facilities and rural-to-urban supply routes.",
-    },
-  },
-];
 
 const BLANK_ICP_CONFIG: IcpConfig = {
   profileName: "",
@@ -194,18 +121,9 @@ const AVAILABLE_DECISION_MAKERS = [
 interface IcpBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  profiles: IcpProfile[];
-  onProfilesChange: (profiles: IcpProfile[]) => void;
-  onSelectActiveProfile: (profile: IcpProfile) => void;
 }
 
-export function IcpBuilderModal({
-  isOpen,
-  onClose,
-  profiles,
-  onProfilesChange,
-  onSelectActiveProfile,
-}: IcpBuilderModalProps) {
+export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   // If user has existing profiles, default to "list" view; otherwise immediately open "form" view
   const [viewMode, setViewMode] = useState<"list" | "form">("list");
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -217,10 +135,46 @@ export function IcpBuilderModal({
   const [customRoleInput, setCustomRoleInput] = useState("");
   const [customTerritoryInput, setCustomTerritoryInput] = useState("");
 
+  const {
+    data: profiles = [],
+    isLoading: isLoadingProfiles,
+    isAuthLoading,
+    authError,
+    error: profilesError,
+  } = useIcpProfiles();
+  const isConnecting = isAuthLoading || isLoadingProfiles;
+  const connectionError = authError ?? profilesError;
+
+  const createProfile = useCreateIcpProfile({
+    onSuccess: (profile) => {
+      toast.success(`Created & Activated "${profile.name}"`);
+      setViewMode("list");
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to create ICP build.")),
+  });
+  const updateProfile = useUpdateIcpProfile({
+    onSuccess: (profile) => {
+      toast.success(`Updated "${profile.name}"`);
+      setViewMode("list");
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update ICP build.")),
+  });
+  const deleteProfile = useDeleteIcpProfile({
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to remove ICP build.")),
+  });
+  const activateProfile = useActivateIcpProfile({
+    onSuccess: (profile) => toast.success(`Switched active ICP to "${profile.name}"`),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to activate ICP build.")),
+  });
+  const duplicateProfile = useDuplicateIcpProfile({
+    onSuccess: (profile) => toast.success(`Duplicated "${profile.name}"`),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to duplicate ICP build.")),
+  });
+
   if (!isOpen) return null;
 
-  // Determine initial display if profiles is empty
-  const isFormOnly = profiles.length === 0;
+  // Determine initial display if profiles is empty (wait for the first load to settle first)
+  const isFormOnly = !isConnecting && !connectionError && profiles.length === 0;
   const currentMode = isFormOnly ? "form" : viewMode;
 
   const handleStartCreateNew = () => {
@@ -242,41 +196,16 @@ export function IcpBuilderModal({
   };
 
   const handleDuplicate = (profile: IcpProfile) => {
-    const newProfile: IcpProfile = {
-      id: `icp-${Date.now()}`,
-      name: `${profile.name} (Copy)`,
-      description: profile.description,
-      isActive: false,
-      leadCount: profile.leadCount,
-      lastUpdated: "Just now",
-      config: {
-        ...profile.config,
-        profileName: `${profile.config.profileName} (Copy)`,
-      },
-    };
-    const updated = [...profiles, newProfile];
-    onProfilesChange(updated);
-    toast.success(`Duplicated "${profile.name}"`);
+    duplicateProfile.mutate(profile.id);
   };
 
   const handleDelete = (id: string, name: string) => {
-    const updated = profiles.filter((p) => p.id !== id);
-    if (updated.length > 0 && profiles.find((p) => p.id === id)?.isActive) {
-      updated[0].isActive = true;
-      onSelectActiveProfile(updated[0]);
-    }
-    onProfilesChange(updated);
-    toast.success(`Removed "${name}"`);
+    deleteProfile.mutate(id, { onSuccess: () => toast.success(`Removed "${name}"`) });
   };
 
   const handleActivateProfile = (profile: IcpProfile) => {
-    const updated = profiles.map((p) => ({
-      ...p,
-      isActive: p.id === profile.id,
-    }));
-    onProfilesChange(updated);
-    onSelectActiveProfile(profile);
-    toast.success(`Switched active ICP to "${profile.name}"`);
+    if (profile.isActive) return;
+    activateProfile.mutate(profile.id);
   };
 
   const toggleArrayItem = (key: keyof IcpConfig, item: string) => {
@@ -331,50 +260,23 @@ export function IcpBuilderModal({
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
     const profileTitle = formConfig.profileName.trim() || "Untitled ICP Build";
+    const config = { ...formConfig, profileName: profileTitle };
 
     if (editingProfileId) {
-      // Update existing
-      const updated = profiles.map((p) => {
-        if (p.id === editingProfileId) {
-          return {
-            ...p,
-            name: profileTitle,
-            description: formConfig.description || p.description,
-            lastUpdated: "Just now",
-            config: { ...formConfig, profileName: profileTitle },
-          };
-        }
-        return p;
+      updateProfile.mutate({
+        id: editingProfileId,
+        payload: { name: profileTitle, description: formConfig.description, config },
       });
-      onProfilesChange(updated);
-      const edited = updated.find((p) => p.id === editingProfileId);
-      if (edited && edited.isActive) {
-        onSelectActiveProfile(edited);
-      }
-      toast.success(`Updated "${profileTitle}"`);
     } else {
-      // Create new & make it active
-      const newProfile: IcpProfile = {
-        id: `icp-${Date.now()}`,
+      createProfile.mutate({
         name: profileTitle,
         description: formConfig.description || "Custom configured target ICP profile.",
-        isActive: true,
-        leadCount: Math.floor(Math.random() * 80) + 40,
-        lastUpdated: "Just now",
-        config: { ...formConfig, profileName: profileTitle },
-      };
-      const updated = profiles.map((p) => ({ ...p, isActive: false })).concat(newProfile);
-      onProfilesChange(updated);
-      onSelectActiveProfile(newProfile);
-      toast.success(`Created & Activated "${profileTitle}"`);
-    }
-
-    if (profiles.length > 0) {
-      setViewMode("list");
-    } else {
-      onClose();
+        config,
+      });
     }
   };
+
+  const isSavingForm = createProfile.isPending || updateProfile.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
@@ -473,6 +375,21 @@ export function IcpBuilderModal({
 
             {/* Scrollable Profiles List */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3.5">
+              {isConnecting && !connectionError && (
+                <p className="py-8 text-center text-[12px] text-gray-400">
+                  {isAuthLoading ? "Connecting to Sales Engine…" : "Loading ICP builds…"}
+                </p>
+              )}
+              {connectionError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-center">
+                  <p className="text-[12px] font-semibold text-red-700">
+                    Couldn&apos;t connect to Sales Engine
+                  </p>
+                  <p className="mt-1 text-[11px] text-red-500">
+                    {getApiErrorMessage(connectionError, "Please try again.")}
+                  </p>
+                </div>
+              )}
               {profiles.map((prof) => {
                 const isActive = prof.isActive;
                 return (
@@ -721,6 +638,20 @@ export function IcpBuilderModal({
                           </button>
                         );
                       })}
+                      {formConfig.industries
+                        .filter((ind) => !AVAILABLE_INDUSTRIES.includes(ind))
+                        .map((ind) => (
+                          <button
+                            key={ind}
+                            type="button"
+                            onClick={() => toggleArrayItem("industries", ind)}
+                            className="flex items-center gap-1.5 rounded-full bg-[#09232D] px-3 py-1.5 text-[12px] font-medium text-white shadow-xs cursor-pointer"
+                          >
+                            <Check size={12} className="stroke-[3]" />
+                            {ind}
+                            <X size={12} className="text-white/60" />
+                          </button>
+                        ))}
                     </div>
 
                     {/* Custom Industry Input */}
@@ -832,6 +763,20 @@ export function IcpBuilderModal({
                           </button>
                         );
                       })}
+                      {formConfig.territories
+                        .filter((terr) => !AVAILABLE_TERRITORIES.includes(terr))
+                        .map((terr) => (
+                          <button
+                            key={terr}
+                            type="button"
+                            onClick={() => toggleArrayItem("territories", terr)}
+                            className="flex items-center gap-1 rounded-full bg-[#09232D] px-3 py-1.5 text-[12px] font-medium text-white cursor-pointer"
+                          >
+                            <Check size={12} />
+                            {terr}
+                            <X size={12} className="text-white/60" />
+                          </button>
+                        ))}
                     </div>
                     <div className="flex gap-2 pt-1">
                       <input
@@ -875,6 +820,19 @@ export function IcpBuilderModal({
                           </button>
                         );
                       })}
+                      {formConfig.decisionMakers
+                        .filter((role) => !AVAILABLE_DECISION_MAKERS.includes(role))
+                        .map((role) => (
+                          <button
+                            key={role}
+                            type="button"
+                            onClick={() => toggleArrayItem("decisionMakers", role)}
+                            className="flex items-center gap-1.5 rounded-full bg-[#09232D] px-3 py-1.5 text-[12px] font-medium text-white cursor-pointer"
+                          >
+                            {role}
+                            <X size={12} className="text-white/60" />
+                          </button>
+                        ))}
                     </div>
                     <div className="flex gap-2 pt-1">
                       <input
@@ -1033,10 +991,11 @@ export function IcpBuilderModal({
                 <button
                   type="submit"
                   form="icp-builder-form"
-                  className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#09232D] via-[#0E3D4E] to-[#0A2632] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-110 cursor-pointer"
+                  disabled={isSavingForm}
+                  className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#09232D] via-[#0E3D4E] to-[#0A2632] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-110 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Sparkles size={15} className="text-[#38BDF8] group-hover:rotate-12 transition-transform" />
-                  {editingProfileId ? "Save Changes" : "Save & Activate ICP"}
+                  {isSavingForm ? "Saving…" : editingProfileId ? "Save Changes" : "Save & Activate ICP"}
                 </button>
               </div>
             </div>
