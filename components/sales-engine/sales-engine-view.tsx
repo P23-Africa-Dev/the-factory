@@ -1,16 +1,26 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
+import { toast } from "sonner";
 import { IcpBuilderModal } from "./icp-builder-modal";
-import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
+import { ChatMessageBody } from "./chat-message-body";
+import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
+import { isMissingActiveIcp, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
+import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
+import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
+import { getApiErrorMessage } from "@/lib/api/errors";
+import { formatRelativeTime, type ChatIntent, type ChatLead } from "@/lib/api/sales-engine";
 import {
+  Check,
   ChevronDown,
   Copy,
   Expand,
   Globe2,
   Lightbulb,
+  Loader2,
   MessageCircle,
   Minimize2,
   MoreVertical,
@@ -22,49 +32,14 @@ import {
   UsersRound,
 } from "lucide-react";
 
-type MockLead = {
-  name: string;
-  source: string;
-  score: number;
-  summary: string;
-};
-
 type ChatMessage = {
   id: number;
   role: "assistant" | "user";
   body: string;
-  leads?: MockLead[];
+  leads?: ChatLead[];
 };
 
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
-
-const mockLeads: MockLead[] = [
-  {
-    name: "Verde Foods Distribution",
-    source: "Company web",
-    score: 175,
-    summary: "Strong ICP fit, depot expansion signal, hiring field sales roles.",
-  },
-  {
-    name: "KoboCare Clinics",
-    source: "LinkedIn index",
-    score: 162,
-    summary: "Public expansion activity and operations hiring signal.",
-  },
-  {
-    name: "Northline Agro Inputs",
-    source: "Registry",
-    score: 149,
-    summary: "Offline-first distributor with weak online footprint.",
-  },
-];
-
-const outreachItems = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]", name: "Smith Williams", channel: "Email sequence", time: "2 hrs ago" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]", name: "KoboCare Clinics", channel: "Lead research", time: "2 hrs ago" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]", name: "Northline Agro", channel: "Registry match", time: "2 hrs ago" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]", name: "MobiMart Retail", channel: "WhatsApp opt-in", time: "2 hrs ago" },
-];
 
 const initialMessages: ChatMessage[] = [
   {
@@ -233,11 +208,11 @@ function ThinkingBubble({ stage }: { stage: string }) {
   );
 }
 
-function LeadInlineResults({ leads }: { leads: MockLead[] }) {
+function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
   return (
     <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
       {leads.map((lead) => (
-        <div key={lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
+        <div key={lead.id ?? lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
             <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
@@ -255,20 +230,87 @@ function LeadInlineResults({ leads }: { leads: MockLead[] }) {
 function ChatWorkspace({
   expanded,
   onToggleExpanded,
+  onOpenIcpBuilder,
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
+  onOpenIcpBuilder: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
   const [thinkingStage, setThinkingStage] = useState<string>(thinkingStages[0]);
+  const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
+  const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
+    null
+  );
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const timersRef = useRef<number[]>([]);
+  const thinkingIntervalRef = useRef<number | null>(null);
+  // Local React keys for messages — independent of the API's session-scoped message
+  // ids, which restart from 1 per session and would collide with the hardcoded
+  // welcome message (id: 1).
+  const nextMessageIdRef = useRef(2);
+  function nextMessageId() {
+    return nextMessageIdRef.current++;
+  }
+  const icpMenuRef = useRef<HTMLDivElement>(null);
+  const icpTriggerRef = useRef<HTMLButtonElement>(null);
 
-  function clearTimers() {
-    timersRef.current.forEach((timer) => window.clearTimeout(timer));
-    timersRef.current = [];
+  const { data: icpProfiles = [], isLoading: isIcpProfilesLoading } = useIcpProfiles();
+  const activateIcpProfile = useActivateIcpProfile({
+    onSuccess: (profile) => toast.success(`Switched active ICP to "${profile.name}"`),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Failed to switch ICP build.")),
+  });
+
+  useLayoutEffect(() => {
+    if (!isIcpMenuOpen || !icpTriggerRef.current) return;
+    const rect = icpTriggerRef.current.getBoundingClientRect();
+    setIcpMenuPosition({ top: rect.bottom + 8, left: rect.left, width: Math.max(rect.width, 260) });
+  }, [isIcpMenuOpen]);
+
+  useEffect(() => {
+    if (!isIcpMenuOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        icpMenuRef.current &&
+        !icpMenuRef.current.contains(target) &&
+        icpTriggerRef.current &&
+        !icpTriggerRef.current.contains(target)
+      ) {
+        setIsIcpMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isIcpMenuOpen]);
+
+  const sendMessage = useSendChatMessage({
+    onSuccess: ({ assistant_message }) => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: nextMessageId(),
+          role: "assistant",
+          body: assistant_message.body,
+          leads: assistant_message.leads ?? undefined,
+        },
+      ]);
+    },
+    onError: (error) => {
+      toast.error(
+        isMissingActiveIcp(error)
+          ? "Select an active ICP profile first — open ICP Builder to create or activate one."
+          : getApiErrorMessage(error, "Sales Engine couldn't process that request.")
+      );
+    },
+  });
+  const isThinking = sendMessage.isPending;
+
+  function stopThinkingCycle() {
+    if (thinkingIntervalRef.current != null) {
+      window.clearInterval(thinkingIntervalRef.current);
+      thinkingIntervalRef.current = null;
+    }
   }
 
   function scrollTranscriptToBottom() {
@@ -285,40 +327,27 @@ function ChatWorkspace({
     return () => window.cancelAnimationFrame(frame);
   }, [messages, isThinking, thinkingStage]);
 
-  useEffect(() => () => clearTimers(), []);
+  useEffect(() => () => stopThinkingCycle(), []);
 
-  function runMockSearch(prompt: string) {
+  function sendPrompt(prompt: string, intent: ChatIntent) {
     const trimmed = prompt.trim();
     if (!trimmed || isThinking) return;
 
-    clearTimers();
-    setMessages((current) => [...current, { id: Date.now(), role: "user", body: trimmed }]);
+    setMessages((current) => [...current, { id: nextMessageId(), role: "user", body: trimmed }]);
     setDraft("");
-    setIsThinking(true);
+
+    let stageIndex = 0;
     setThinkingStage(thinkingStages[0]);
+    stopThinkingCycle();
+    thinkingIntervalRef.current = window.setInterval(() => {
+      stageIndex = (stageIndex + 1) % thinkingStages.length;
+      setThinkingStage(thinkingStages[stageIndex]);
+    }, 1200);
 
-    thinkingStages.forEach((stage, index) => {
-      if (index === 0) return;
-      const timer = window.setTimeout(() => {
-        setThinkingStage(stage);
-      }, index * 750);
-      timersRef.current.push(timer);
-    });
-
-    const settleTimer = window.setTimeout(() => {
-      setMessages((current) => [
-        ...current,
-        {
-          id: Date.now() + 1,
-          role: "assistant",
-          body:
-            "I checked the internal cache, simulated web and social discovery, extracted buying signals, and ranked these mock leads by ICP fit and intent.",
-          leads: mockLeads,
-        },
-      ]);
-      setIsThinking(false);
-    }, 3000);
-    timersRef.current.push(settleTimer);
+    sendMessage.mutate(
+      { body: trimmed, intent },
+      { onSettled: () => stopThinkingCycle() }
+    );
   }
 
   return (
@@ -328,11 +357,23 @@ function ChatWorkspace({
       }`}
     >
       <header className="mx-6 mt-5 flex h-[48px] shrink-0 items-center justify-between rounded-[24px] bg-[#09232d] px-6 text-white shadow-[0_6px_6px_rgba(0,0,0,0.18)] max-sm:mx-4">
-        <div className="flex items-center gap-3">
-          <Sparkles size={18} />
-          <span className="text-[21px] font-semibold">Sales Engine</span>
-          <ChevronDown size={14} className="text-white/50" />
-        </div>
+        <button
+          ref={icpTriggerRef}
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={isIcpMenuOpen}
+          onClick={() => setIsIcpMenuOpen((current) => !current)}
+          className="flex items-center gap-3 rounded-full px-2 py-1 transition hover:bg-white/10"
+        >
+          <Sparkles size={18} className="shrink-0" />
+          <span className="max-w-[220px] truncate text-[21px] font-semibold">
+            {icpProfiles.find((profile) => profile.isActive)?.name ?? "Sales Engine"}
+          </span>
+          <ChevronDown
+            size={14}
+            className={`text-white/50 transition-transform ${isIcpMenuOpen ? "rotate-180" : ""}`}
+          />
+        </button>
         <button
           type="button"
           aria-label={expanded ? "Minimize Sales Engine" : "Expand Sales Engine"}
@@ -342,6 +383,70 @@ function ChatWorkspace({
           {expanded ? <Minimize2 size={18} /> : <Expand size={18} />}
         </button>
       </header>
+
+      {isIcpMenuOpen &&
+        icpMenuPosition &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={icpMenuRef}
+            role="menu"
+            style={{ top: icpMenuPosition.top, left: icpMenuPosition.left, width: icpMenuPosition.width }}
+            className="fixed z-50 max-h-[320px] overflow-y-auto rounded-[16px] border border-black/5 bg-white p-1.5 text-[#09232d] shadow-[0_16px_32px_rgba(9,35,45,0.18)]"
+          >
+            <p className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              ICP Builds
+            </p>
+            {isIcpProfilesLoading && (
+              <p className="px-2.5 py-2 text-[12px] text-gray-400">Loading…</p>
+            )}
+            {!isIcpProfilesLoading && icpProfiles.length === 0 && (
+              <p className="px-2.5 py-2 text-[12px] text-gray-400">No ICP builds yet.</p>
+            )}
+            {icpProfiles.map((profile) => {
+              const isSwitchingToThis = activateIcpProfile.isPending && activateIcpProfile.variables === profile.id;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={profile.isActive}
+                  disabled={activateIcpProfile.isPending}
+                  onClick={() => {
+                    if (profile.isActive) {
+                      setIsIcpMenuOpen(false);
+                      return;
+                    }
+                    activateIcpProfile.mutate(profile.id, { onSuccess: () => setIsIcpMenuOpen(false) });
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-left text-[12px] font-medium transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 ${
+                    profile.isActive ? "bg-gray-100" : ""
+                  }`}
+                >
+                  <span className="truncate">{profile.name}</span>
+                  {isSwitchingToThis ? (
+                    <Loader2 size={14} className="shrink-0 animate-spin text-gray-400" />
+                  ) : (
+                    profile.isActive && <Check size={14} className="shrink-0 text-[#16b37d]" />
+                  )}
+                </button>
+              );
+            })}
+            <div className="mt-1 border-t border-gray-100 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsIcpMenuOpen(false);
+                  onOpenIcpBuilder();
+                }}
+                className="w-full rounded-[10px] px-2.5 py-2 text-left text-[12px] font-semibold text-[#09232d] transition hover:bg-gray-100"
+              >
+                Manage ICP Builds
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
       <div
         ref={transcriptRef}
@@ -357,11 +462,14 @@ function ChatWorkspace({
                   message.role === "user"
                     ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
                     : index === 0
-                      ? "whitespace-pre-line text-[12px] leading-[15px] text-[#09232d]"
+                      ? "text-[12px] leading-[15px] text-[#09232d]"
                       : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
                 }
               >
-                {message.body}
+                <ChatMessageBody
+                  content={message.body}
+                  variant={message.role === "user" ? "user" : index === 0 ? "welcome" : "assistant"}
+                />
               </div>
               {message.leads && <LeadInlineResults leads={message.leads} />}
               {index === 0 && (
@@ -390,7 +498,7 @@ function ChatWorkspace({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") runMockSearch(draft);
+              if (event.key === "Enter") sendPrompt(draft, "freeform");
             }}
             className="h-full min-w-0 flex-1 bg-transparent text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
             placeholder="Ask or search anything"
@@ -398,7 +506,7 @@ function ChatWorkspace({
           <button
             type="button"
             aria-label="Send message"
-            onClick={() => runMockSearch(draft)}
+            onClick={() => sendPrompt(draft, "freeform")}
             disabled={isThinking}
             className="grid size-[30px] place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
           >
@@ -409,21 +517,26 @@ function ChatWorkspace({
           <PromptButton
             icon={<Globe2 size={17} />}
             label="Quick Research"
-            onClick={() => runMockSearch("Find FMCG distributors in Lagos with expansion signals")}
+            onClick={() => sendPrompt("Find FMCG distributors in Lagos with expansion signals", "quick_research")}
             tint="bg-[#fffbdc]"
             disabled={isThinking}
           />
           <PromptButton
             icon={<UsersRound size={17} />}
             label="Generate New Leads"
-            onClick={() => runMockSearch("Generate qualified leads from web, LinkedIn index, Meta pages, and registries")}
+            onClick={() =>
+              sendPrompt(
+                "Generate qualified leads from web, LinkedIn index, Meta pages, and registries",
+                "generate_leads"
+              )
+            }
             tint="bg-[#e4faff]"
             disabled={isThinking}
           />
           <PromptButton
             icon={<Lightbulb size={17} />}
             label="Create Outreach Message"
-            onClick={() => runMockSearch("Create a compliant email and WhatsApp-safe follow-up plan")}
+            onClick={() => sendPrompt("Create a compliant email and WhatsApp-safe follow-up plan", "create_outreach")}
             tint="bg-[#f2ffe9]"
             disabled={isThinking}
           />
@@ -436,27 +549,39 @@ function ChatWorkspace({
 function OutreachCard({
   color,
   icon,
+  iconColor,
   name,
   channel,
+  preview,
   time,
 }: {
   color: string;
   icon: string;
+  iconColor?: string;
   name: string;
   channel: string;
+  preview: string;
   time: string;
 }) {
   return (
-    <article className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}>
+    <article
+      className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      style={color.startsWith("#") ? { backgroundColor: color } : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
-            <MessageCircle size={21} className={icon} fill="currentColor" />
+            <MessageCircle
+              size={21}
+              className={icon}
+              style={iconColor ? { color: iconColor } : undefined}
+              fill="currentColor"
+            />
           </div>
           <div className="min-w-0 text-[#09232d]">
             <p className="text-[14px] font-bold leading-[18px]">{name}</p>
             <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
-              {channel}: Hi {name}, I&apos;ve been following your brand and I believe there are a few ways we can support your field growth...
+              {channel}: {preview}
             </p>
           </div>
         </div>
@@ -467,7 +592,16 @@ function OutreachCard({
   );
 }
 
+const OUTREACH_FALLBACK_COLORS = [
+  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
+  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
+  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
+  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
+] as const;
+
 function OutreachPanel() {
+  const { data: items = [] } = useSalesEngineOutreach();
+
   return (
     <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
       <header className="mb-8 flex items-center justify-center gap-2">
@@ -476,9 +610,22 @@ function OutreachPanel() {
       </header>
       <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
       <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
-        {outreachItems.map((item) => (
-          <OutreachCard key={item.name} {...item} />
-        ))}
+        {items.map((item, index) => {
+          const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
+          const useApiColors = item.accentBg?.startsWith("#");
+          return (
+            <OutreachCard
+              key={item.id}
+              color={useApiColors ? item.accentBg : fallback.color}
+              icon={useApiColors ? "" : fallback.icon}
+              iconColor={useApiColors ? item.accentIcon : undefined}
+              name={item.name}
+              channel={item.channel}
+              preview={item.preview}
+              time={formatRelativeTime(item.occurred_at)}
+            />
+          );
+        })}
       </div>
     </aside>
   );
@@ -530,14 +677,19 @@ export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
   const { data: activeProfile } = useActiveIcpProfile();
+  const { data: metrics } = useSalesEngineMetrics();
+
+  const leadsDiscovered = metrics?.leads_discovered ?? 0;
+  const qualifiedLeads = metrics?.qualified_leads ?? 0;
+  const formatMetric = (value: number) => value.toLocaleString();
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
-            <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
+            <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
+            <MetricCard title="Qualified Lead Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">
@@ -580,6 +732,7 @@ export function SalesEngineView() {
           <ChatWorkspace
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
+            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
           />
           {!chatExpanded && <OutreachPanel />}
         </div>

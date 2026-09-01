@@ -1,179 +1,106 @@
-# Sales Engine: Chat API Integration Plan
+# Sales Engine: Chat API Integration
 
 ## Status
 
-Not yet implemented. This documents how the Sales Engine chat panel will be wired to the
-real backend, following the same pattern already shipped for the [ICP Builder](../components/sales-engine/icp-builder-modal.tsx)
-(see `lib/api/sales-engine.ts`, `hooks/use-sales-engine-auth.ts`, `hooks/use-sales-engine-icp.ts`).
+Implemented (September 2026). `ChatWorkspace` in `components/sales-engine/sales-engine-view.tsx`
+sends real messages through the Sales Engine API — no mock data remains. Metrics and the
+outreach sidebar are wired to live endpoints too.
 
-## Where this lives today
+## What was changed
 
-`components/sales-engine/sales-engine-view.tsx` — the `ChatWorkspace` component. Currently
-100% mocked:
+### 1. `lib/api/sales-engine.ts`
 
-- `initialMessages` — hardcoded welcome message
-- `mockLeads` — 3 hardcoded lead cards
-- `runMockSearch()` — on submit, fakes a 3s "thinking" delay (cycling through
-  `thinkingStages`), then appends a canned assistant reply with `mockLeads`
-- The three prompt buttons ("Quick Research", "Generate New Leads", "Create Outreach
-  Message") just call `runMockSearch()` with a canned prompt string
+Chat, metrics, and outreach functions alongside the existing ICP profile ones, all through
+the same `seRequest` + `withSessionRetry` plumbing (SE token from `lib/sales-engine/session.ts`,
+`X-Organization-Id` header, automatic assertion → exchange retry on a 401):
 
-None of this touches the network. The goal is to replace `runMockSearch` and the mock
-data with real calls, without changing the visual design.
+- `createChatSession(title?)`, `listChatMessages(sessionId)`, `sendChatMessage(sessionId, { body, intent })`
+- `sendChatMessage` sets a 60s request timeout specifically for `generate_leads` /
+  `quick_research` (the intents that run discovery synchronously — see below) via a
+  `timeoutMs` option added to `seRequest`, which aborts the fetch and throws a `408`
+  `SalesEngineApiError` on timeout.
+- `fetchMetrics()` → `/metrics`, `fetchRecentOutreach()` → `/outreach/recent`, plus a
+  `formatRelativeTime()` helper for outreach timestamps.
+- Types: `ChatIntent`, `ChatLead`, `ChatMessageApi` (`intent`/`meta`/nullable `leads` match
+  the real backend payload), `SendChatMessageResult`, `SalesEngineMetrics`, `OutreachActivity`.
 
-## Backend contract (source: `sales-engine/docs/FRONTEND_INTEGRATION.md` §5–6)
+`generate_leads` / `quick_research` require an **active ICP profile** and run discovery
+**synchronously** — the POST call blocks until results are ready, then returns them inline
+on `assistant_message`. There's no separate polling step, and the Discovery API
+(`POST /discovery/runs`, `GET /discovery/runs/{id}`, staged progress) documented in
+`sales-engine/docs/FRONTEND_INTEGRATION.md` §6 is **not used here** — it's a lower-level
+pair for a possible future live-progress UI, not needed for chat.
 
-### Auth
+### 2. `hooks/use-sales-engine-chat.ts`
 
-Same as ICP profiles — Sales Engine Bearer token from the existing
-`useSalesEngineAuth()` handshake (F23 session → assertion → exchange). No new auth work
-needed here; reuse it.
+- `useChatSession()` — creates (or reuses) a chat session id, gated on `useSalesEngineAuth()`.
+- `useSendChatMessage()` — wraps it in a mutation. On success, invalidates the metrics and
+  ICP caches for `generate_leads`/`quick_research` (a discovery run can create leads and
+  bump the active ICP's `leadCount`), and the outreach cache for `create_outreach`, so the
+  metric cards and outreach sidebar refresh automatically after a chat action. On a 401 it
+  resets the SE auth session via `useResetSalesEngineAuth()`.
+- `isMissingActiveIcp(error)` — helper for the 422 the backend returns when no ICP is active.
 
-### Endpoints
+### 3. `hooks/use-sales-engine-metrics.ts` / `hooks/use-sales-engine-outreach.ts` (new)
 
-| Method | Path                                | Purpose                              |
-| ------ | ------------------------------------ | ------------------------------------- |
-| POST   | `/chat/sessions`                    | Start a chat session (`{ title? }`)   |
-| GET    | `/chat/sessions/{id}/messages`      | Load a session's message history      |
-| POST   | `/chat/sessions/{id}/messages`      | Send a message, get the assistant reply |
+Thin `useQuery` wrappers around `fetchMetrics()` / `fetchRecentOutreach()`, following the
+same `useSalesEngineAuth()` gating and 401-reset pattern as every other Sales Engine hook.
 
-Message intents: `freeform` \| `quick_research` \| `generate_leads` \| `create_outreach`
+### 4. `components/sales-engine/chat-message-body.tsx` (new)
 
-Send-message request:
+Renders assistant replies as Markdown (`react-markdown` + `remark-gfm`), with a
+`normalizeAssistantMarkdown()` pass first — GLM sometimes returns numbered/bulleted lists
+without line breaks, which breaks Markdown parsing without it. Three variants: `"user"`
+(plain text), `"welcome"` (the hardcoded onboarding message, `whitespace-pre-line`), and
+`"assistant"` (full Markdown with custom-styled headings/lists/links/code/blockquotes).
 
-```json
-{ "body": "Find distributors in Lagos", "intent": "generate_leads" }
-```
+### 5. `ChatWorkspace` (`sales-engine-view.tsx`)
 
-Assistant response may include inline leads:
+- `runMockSearch()` is gone; `sendPrompt(prompt, intent)` calls `useSendChatMessage()`.
+- The header ("Sales Engine" ▾) is a working dropdown: shows the active ICP build's name
+  (falls back to "Sales Engine" when none is active), lists every build with the active
+  one checked, switches on click (with an inline spinner + success/error toast), and has a
+  "Manage ICP Builds" row that opens the full `IcpBuilderModal`. Rendered through a portal
+  since the chat panel's `overflow-hidden` would otherwise clip it.
+- Local message ids come from a `nextMessageIdRef` counter, not the API's own message id
+  or `Date.now()` — the API's ids are session-scoped and restart from `1`, which collided
+  with the hardcoded welcome message (also `id: 1`) and produced duplicate React keys.
+- The "thinking" bubble cycles its stage text on an interval for as long as the mutation
+  is actually pending, instead of a fixed timeout — there's no real progress signal from
+  the backend for a synchronous call, so this stays cosmetic, but it no longer looks stuck
+  or finishes early relative to the real request.
+- Errors surface as a toast: "Select an active ICP profile first" for a 422 (via
+  `isMissingActiveIcp`), the backend's own message otherwise. The user's message stays in
+  the transcript either way — nothing is rolled back on failure.
+- The three prompt buttons and the free-text input send real `intent` values
+  (`quick_research`, `generate_leads`, `create_outreach`, `freeform`).
+- Assistant/user/welcome message bodies render through `<ChatMessageBody>` instead of raw
+  text, so Markdown from the backend (headings, lists, bold, links) displays correctly.
+- Mock lead data, the mock metric numbers, and the hardcoded `outreachItems` array are all
+  gone — lead cards, metric cards, and the outreach sidebar render live API data.
 
-```json
-{
-  "role": "assistant",
-  "body": "...",
-  "leads": [{ "id": 1, "name": "...", "source": "serper", "score": 82, "summary": "..." }]
-}
-```
+### Not in scope
 
-**Constraint:** `generate_leads` and `quick_research` require an **active ICP profile**
-and run discovery **synchronously** — the POST call blocks until results are ready, then
-returns them inline. There is no separate "poll for progress" step for chat messages.
-If no ICP is active, expect a **422**.
-
-### Discovery API (§6) — not needed for this feature
-
-`POST /discovery/runs` + `GET /discovery/runs/{id}` (staged: `analyzing_brief` →
-`searching_sources` → `extracting` → `compiling_results`) is a separate, lower-level
-endpoint pair for a dedicated discovery-progress UI. Chat does **not** call these
-directly — it gets the same result synchronously through the chat message endpoint.
-Documented here only so we don't accidentally build against the wrong endpoint.
-Revisit if we ever want a live, real progress bar instead of the cosmetic one below.
-
-## Implementation plan
-
-### 1. `lib/api/sales-engine.ts` — add chat functions
-
-```ts
-export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
-
-export type ChatLead = {
-  id: number;
-  name: string;
-  source: string;
-  score: number;
-  summary: string;
-};
-
-export type ChatMessage = {
-  id: number;
-  role: "user" | "assistant";
-  body: string;
-  leads?: ChatLead[];
-  created_at?: string;
-};
-
-export function createChatSession(token: string, title?: string): Promise<{ id: number }>;
-export function listChatMessages(sessionId: number, token: string): Promise<ChatMessage[]>;
-export function sendChatMessage(
-  sessionId: number,
-  payload: { body: string; intent: ChatIntent },
-  token: string
-): Promise<ChatMessage>;
-```
-
-All three go through the existing `seRequest` wrapper (resource endpoints, `{ data }`
-wrapped) — no new auth or error-handling plumbing needed.
-
-### 2. `hooks/use-sales-engine-chat.ts` — new hook
-
-Mirrors `use-sales-engine-icp.ts`:
-
-- `useChatSession()` — creates (or reuses) a session id. Session id is created lazily on
-  first message send, kept in component state for the lifetime of the page (not
-  persisted across reloads for v1 — reopening the panel starts a fresh session, matching
-  current mock behavior where `initialMessages` always resets on mount).
-- `useSendChatMessage()` — `useMutation` wrapping `sendChatMessage`, with the same
-  401 → `resetSalesEngineAuth()` handling already used for ICP mutations.
-- Both read the SE token from `useSalesEngineAuth()`, same as ICP hooks — no token
-  plumbing duplicated.
-
-### 3. `ChatWorkspace` changes
-
-- Replace `useState<ChatMessage[]>(initialMessages)` seed with the same welcome message
-  (kept client-side — it's onboarding copy, not from the API) plus real messages appended
-  as they come in.
-- Replace `runMockSearch(prompt)` body:
-  1. Append the user's message to local state immediately (optimistic).
-  2. Ensure a session exists (create one on first call).
-  3. Call `sendChatMessage(sessionId, { body: prompt, intent }, token)`.
-  4. On success, append the returned assistant message (with `leads` if present) to
-     local state.
-  5. On error:
-     - **422** (no active ICP, only relevant for `quick_research`/`generate_leads`) →
-       toast "Select an active ICP profile first" and optionally open the ICP Builder
-       modal directly.
-     - **401** → handled by the shared reset-and-retry path.
-     - anything else → toast the error message, keep the user's message in the
-       transcript so nothing is lost.
-- The `isThinking` / `thinkingStage` cycling animation **stays exactly as-is** — it's
-  cosmetic, driven by `mutation.isPending`, not real backend progress (see Discovery API
-  note above). No behavior change needed there beyond swapping the fake `setTimeout`
-  chain for `sendChatMessage`'s pending state.
-- Map the three prompt buttons to real intents instead of canned prompt strings:
-  - "Quick Research" → `intent: "quick_research"`
-  - "Generate New Leads" → `intent: "generate_leads"`
-  - "Create Outreach Message" → `intent: "create_outreach"`
-  - Free-typed messages in the input box → `intent: "freeform"`
-- Delete `mockLeads` and `LeadInlineResults`' dependency on the `MockLead` type; use the
-  `leads` array returned inline on the assistant message instead (shape is compatible —
-  `name`, `source`, `score`, `summary` already match).
-
-### 4. Not in scope for this pass
-
-- Loading historical messages via `GET /chat/sessions/{id}/messages` (only matters once
-  sessions persist across reloads — not needed while sessions are page-lifetime only).
-- The Discovery API (§6) and its staged progress — only needed if we later want a real
-  (not cosmetic) progress indicator.
-- Outreach draft endpoints (§8) — `create_outreach` intent returns a draft inline via
-  chat for now; the dedicated `POST /outreach/draft` endpoint is a separate feature.
-
-## Open questions for the backend team
-
-1. Session lifetime — do sessions expire, and is there a limit on sessions per org/user
-   we should be aware of before creating one per page load?
-2. Timeout — "runs discovery synchronously" for `generate_leads`/`quick_research`: what's
-   the expected/max response time, so we can set a sane client-side request timeout and
-   avoid the "thinking" animation looking stuck on a slow query?
+- Loading historical messages (`GET /chat/sessions/{id}/messages` — `listChatMessages` is
+  implemented but unused) — only matters once sessions persist across reloads, which they
+  don't yet (one session per page load).
+- The Discovery API's staged progress (§6) — see note above.
+- The dedicated `POST /outreach/draft` endpoint (§8) — `create_outreach` returns a draft
+  inline via chat for now; that's a separate feature.
 
 ## Related files
 
 | File | Role |
 | ---- | ---- |
-| `components/sales-engine/sales-engine-view.tsx` | `ChatWorkspace` — UI to wire up |
-| `lib/api/sales-engine.ts` | Add chat API functions here |
-| `hooks/use-sales-engine-auth.ts` | Existing SE token bootstrap — reuse, no changes |
-| `hooks/use-sales-engine-chat.ts` | New — chat session + send-message hooks |
+| `components/sales-engine/sales-engine-view.tsx` | `ChatWorkspace`, metric cards, outreach panel |
+| `components/sales-engine/chat-message-body.tsx` | Markdown rendering for chat messages |
+| `lib/api/sales-engine.ts` | Chat + ICP + metrics + outreach API functions, shared SE request/auth plumbing |
+| `hooks/use-sales-engine-chat.ts` | Chat session + send-message hook, cross-cache invalidation |
+| `hooks/use-sales-engine-metrics.ts` | Metrics query hook |
+| `hooks/use-sales-engine-outreach.ts` | Recent outreach query hook |
+| `hooks/use-sales-engine-auth.ts` | SE token bootstrap (assertion → exchange), reused as-is |
 | `sales-engine/docs/FRONTEND_INTEGRATION.md` | Source of truth for the API contract |
+| `docs/SALES_ENGINE_FRONTEND.md` | Canonical F23-side integration guide (auth flow, troubleshooting) |
 
 ## Date
 
