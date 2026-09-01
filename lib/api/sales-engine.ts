@@ -1,72 +1,227 @@
 "use client";
 
-import { apiRequest, ApiRequestError, type ApiEnvelope } from "./onboarding";
-import type { ApiRoleBasePath } from "./crm";
-import { clearSalesEngineSession } from "@/lib/auth/sales-engine-session";
+import { apiRequest } from "@/lib/api/onboarding";
+import { getAuthTokenFromDocument, getCompanyId } from "@/lib/auth/session";
+import {
+  clearSalesEngineSession,
+  getSalesEngineOrgId,
+  getSalesEngineToken,
+  setSalesEngineSession,
+} from "@/lib/sales-engine/session";
+import { useAuthStore } from "@/store/auth";
 import type { IcpConfig, IcpProfile } from "@/components/sales-engine/icp-builder-modal";
 
 export const SALES_ENGINE_API_BASE_URL =
-  process.env.NEXT_PUBLIC_SALES_ENGINE_API_URL ?? "https://api.salesengine.thefactory23.com/api/v1";
+  process.env.NEXT_PUBLIC_SALES_ENGINE_API_URL ??
+  "https://api.salesengine.thefactory23.com/api/v1";
 
-type SeRequestOptions = {
+export class SalesEngineApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+type SeAssertionData = {
+  assertion: string;
+  expires_in: number;
+  exchange_url: string;
+};
+
+type SeExchangeResponse = {
+  token: string;
+  token_type: "Bearer";
+  organization: { id: number };
+};
+
+const DEFAULT_ICP_CONFIG: IcpConfig = {
+  profileName: "",
+  description: "",
+  industries: [],
+  companySizes: [],
+  revenueRanges: [],
+  territories: [],
+  decisionMakers: [],
+  minMatchScore: 60,
+  autoSyncCrm: false,
+  enrichContactDetails: true,
+  customPrompt: "",
+};
+
+// The API returns `lastUpdated` as an ISO timestamp; the UI wants a friendly relative string.
+function formatLastUpdated(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor(
+    (startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString();
+}
+
+// Backfills any config fields the API omitted so the form never breaks on a partial profile.
+export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
+  const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
+  return {
+    id: raw.id,
+    name: raw.name,
+    description: raw.description ?? "",
+    isActive: raw.isActive,
+    leadCount: raw.leadCount ?? 0,
+    lastUpdated: formatLastUpdated(raw.lastUpdated),
+    config: {
+      ...config,
+      profileName: config.profileName || raw.name,
+    },
+  };
+}
+
+function resolveAssertionPath(accessRole: string | undefined): string {
+  return accessRole === "agent"
+    ? "/agent/sales-engine/assertion"
+    : "/admin/sales-engine/assertion";
+}
+
+function resolveCompanyId(): number | undefined {
+  const fromStorage = getCompanyId();
+  if (fromStorage) {
+    const parsed = Number(fromStorage);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+
+  const activeCompany = useAuthStore.getState().user?.active_company;
+  if (activeCompany?.id) return activeCompany.id;
+
+  return undefined;
+}
+
+async function seRequest<T>({
+  method,
+  path,
+  body,
+  token,
+  orgId,
+}: {
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   body?: unknown;
   token?: string;
-};
-
-async function fetchSalesEngine(options: SeRequestOptions): Promise<unknown> {
-  const { method, path, body, token } = options;
-  let response: Response;
-
-  try {
-    response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
-      method,
-      headers: {
-        Accept: "application/json",
-        ...(body ? { "Content-Type": "application/json" } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiRequestError("Network error. Please check your connection.", 0, null);
+  orgId?: string | null;
+}): Promise<T> {
+  const authToken = token ?? getSalesEngineToken();
+  if (!authToken) {
+    throw new SalesEngineApiError("Sales Engine session is not ready.", 401);
   }
 
-  let payload: { data?: unknown; message?: string; errors?: Record<string, string[]> | null };
+  const organizationId = orgId ?? getSalesEngineOrgId();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    Authorization: `Bearer ${authToken}`,
+  };
 
-  try {
-    payload = await response.json();
-  } catch {
-    throw new ApiRequestError(
-      response.status >= 500 ? "Server error. Please try again shortly." : "Request failed.",
-      response.status,
-      null
-    );
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
   }
+  if (organizationId) {
+    headers["X-Organization-Id"] = organizationId;
+  }
+
+  const response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { message?: string; data?: T }
+    | T
+    | null;
 
   if (!response.ok) {
-    // A 401 from Sales Engine means the cached SE token is dead (expired/revoked) or a
-    // Factory23 token was sent by mistake — SE never accepts F23 Sanctum tokens directly.
-    // Drop the cache so the next bootstrap re-runs the assertion → exchange flow.
-    if (response.status === 401) {
-      clearSalesEngineSession();
-    }
-    throw new ApiRequestError(payload.message || "Request failed.", response.status, payload.errors ?? null);
+    const message =
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : `Sales Engine request failed (${response.status})`;
+    throw new SalesEngineApiError(message, response.status);
   }
 
-  return payload;
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return payload.data as T;
+  }
+
+  return payload as T;
 }
 
-/** Resource endpoints (icp-profiles, etc.) — Laravel wraps the resource in `{ data }`. */
-async function seRequest<TData>(options: SeRequestOptions): Promise<TData> {
-  const payload = (await fetchSalesEngine(options)) as { data?: TData };
-  return payload.data as TData;
+export async function ensureSalesEngineSession(): Promise<void> {
+  const f23Token = getAuthTokenFromDocument();
+  if (!f23Token) {
+    throw new SalesEngineApiError("Factory23 session is not available.", 401);
+  }
+
+  const accessRole = useAuthStore.getState().user?.access_role;
+  const companyId = resolveCompanyId();
+
+  const assertionRes = await apiRequest<SeAssertionData>({
+    method: "POST",
+    path: resolveAssertionPath(accessRole),
+    token: f23Token,
+    body: companyId ? { company_id: companyId } : undefined,
+  });
+
+  const exchangeResponse = await fetch(`${SALES_ENGINE_API_BASE_URL}/auth/factory23/exchange`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ assertion: assertionRes.data.assertion }),
+  });
+
+  const exchangePayload = (await exchangeResponse.json().catch(() => null)) as
+    | SeExchangeResponse
+    | { message?: string }
+    | null;
+
+  if (!exchangeResponse.ok) {
+    const message =
+      exchangePayload &&
+      typeof exchangePayload === "object" &&
+      "message" in exchangePayload &&
+      typeof exchangePayload.message === "string"
+        ? exchangePayload.message
+        : `Sales Engine token exchange failed (${exchangeResponse.status})`;
+    throw new SalesEngineApiError(message, exchangeResponse.status);
+  }
+
+  const exchange = exchangePayload as SeExchangeResponse;
+  setSalesEngineSession(exchange.token, exchange.organization.id);
 }
 
-/** Auth endpoints (register/login/exchange) — return the flat payload, not wrapped in `data`. */
-async function seRequestRaw<TData>(options: SeRequestOptions): Promise<TData> {
-  return (await fetchSalesEngine(options)) as TData;
+/** Runs `fn`; on a dead/expired SE token (401), re-runs the assertion → exchange handshake once and retries. */
+async function withSessionRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (error instanceof SalesEngineApiError && error.status === 401) {
+      clearSalesEngineSession();
+      await ensureSalesEngineSession();
+      return await fn();
+    }
+    throw error;
+  }
 }
 
 export type IcpProfilePayload = {
@@ -75,83 +230,51 @@ export type IcpProfilePayload = {
   config: IcpConfig;
 };
 
-export function listIcpProfiles(token: string): Promise<IcpProfile[]> {
-  return seRequest<IcpProfile[]>({ method: "GET", path: "/icp-profiles", token });
-}
-
-export function getActiveIcpProfile(token: string): Promise<IcpProfile | null> {
-  return seRequest<IcpProfile | null>({ method: "GET", path: "/icp-profiles/active", token });
-}
-
-export function getIcpProfile(id: string, token: string): Promise<IcpProfile> {
-  return seRequest<IcpProfile>({ method: "GET", path: `/icp-profiles/${id}`, token });
-}
-
-export function createIcpProfile(payload: IcpProfilePayload, token: string): Promise<IcpProfile> {
-  return seRequest<IcpProfile>({ method: "POST", path: "/icp-profiles", body: payload, token });
-}
-
-export function updateIcpProfile(
-  id: string,
-  payload: Partial<IcpProfilePayload>,
-  token: string
-): Promise<IcpProfile> {
-  return seRequest<IcpProfile>({ method: "PATCH", path: `/icp-profiles/${id}`, body: payload, token });
-}
-
-export function deleteIcpProfile(id: string, token: string): Promise<null> {
-  return seRequest<null>({ method: "DELETE", path: `/icp-profiles/${id}`, token });
-}
-
-export function activateIcpProfile(id: string, token: string): Promise<IcpProfile> {
-  return seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/activate`, token });
-}
-
-export function duplicateIcpProfile(id: string, token: string): Promise<IcpProfile> {
-  return seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/duplicate`, token });
-}
-
-// ── Factory23 ↔ Sales Engine token bridge ────────────────────────────────────
-// SE never accepts F23 tokens. The frontend must: (1) ask F23 for a short-lived
-// JWT assertion, then (2) exchange that assertion for a real SE Sanctum token.
-
-export type Factory23AssertionResponse = {
-  assertion: string;
-  expires_in: number;
-  exchange_url: string;
-};
-
-/** Step 1 — calls Factory23's OWN backend (api.thefactory23.com), not Sales Engine. */
-export function requestFactory23SalesEngineAssertion(
-  f23Token: string,
-  basePath: ApiRoleBasePath = "/admin",
-  companyId?: number | string | null
-): Promise<ApiEnvelope<Factory23AssertionResponse>> {
-  return apiRequest<Factory23AssertionResponse>({
-    method: "POST",
-    path: `${basePath}/sales-engine/assertion`,
-    body: companyId != null ? { company_id: companyId } : undefined,
-    token: f23Token,
+export function fetchIcpProfiles(): Promise<IcpProfile[]> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile[]>({ method: "GET", path: "/icp-profiles" });
+    return (data ?? []).map(mapApiIcpProfile);
   });
 }
 
-export type SalesEngineOrganization = {
-  id: string | number;
-  name: string;
-};
+/** @deprecated kept for compatibility — same as {@link fetchIcpProfiles}, which now retries on 401 itself. */
+export const refreshSalesEngineProfiles = fetchIcpProfiles;
 
-export type SalesEngineAuthResponse = {
-  token: string;
-  token_type: string;
-  user: { id: number; name: string; email: string };
-  organization: SalesEngineOrganization;
-};
+export function createIcpProfile(payload: IcpProfilePayload): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: "/icp-profiles", body: payload });
+    return mapApiIcpProfile(data);
+  });
+}
 
-/** Step 2 — calls Sales Engine with the assertion (no F23 token on this call). */
-export function exchangeFactory23Assertion(assertion: string): Promise<SalesEngineAuthResponse> {
-  return seRequestRaw<SalesEngineAuthResponse>({
-    method: "POST",
-    path: "/auth/factory23/exchange",
-    body: { assertion },
+export function updateIcpProfile(id: string, payload: Partial<IcpProfilePayload>): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({
+      method: "PATCH",
+      path: `/icp-profiles/${id}`,
+      body: payload,
+    });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function deleteIcpProfile(id: string): Promise<null> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: `/icp-profiles/${id}` });
+    return null;
+  });
+}
+
+export function activateIcpProfile(id: string): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/activate` });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/duplicate` });
+    return mapApiIcpProfile(data);
   });
 }

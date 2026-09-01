@@ -1,15 +1,15 @@
 "use client";
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiRequestError } from "@/lib/api/onboarding";
+import { SalesEngineApiError } from "@/lib/api/sales-engine";
 import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
 import {
   activateIcpProfile,
   createIcpProfile,
   deleteIcpProfile,
   duplicateIcpProfile,
-  getActiveIcpProfile,
-  listIcpProfiles,
+  fetchIcpProfiles,
   updateIcpProfile,
   type IcpProfilePayload,
 } from "@/lib/api/sales-engine";
@@ -18,11 +18,10 @@ import type { IcpProfile } from "@/components/sales-engine/icp-builder-modal";
 export const SALES_ENGINE_ICP_KEYS = {
   all: ["sales-engine", "icp-profiles"] as const,
   list: () => ["sales-engine", "icp-profiles", "list"] as const,
-  active: () => ["sales-engine", "icp-profiles", "active"] as const,
 };
 
 function isUnauthorized(error: unknown) {
-  return error instanceof ApiRequestError && error.status === 401;
+  return error instanceof SalesEngineApiError && error.status === 401;
 }
 
 export function useIcpProfiles() {
@@ -33,7 +32,7 @@ export function useIcpProfiles() {
     queryKey: SALES_ENGINE_ICP_KEYS.list(),
     queryFn: async (): Promise<IcpProfile[]> => {
       try {
-        return await listIcpProfiles(token as string);
+        return await fetchIcpProfiles();
       } catch (error) {
         if (isUnauthorized(error)) resetAuth();
         throw error;
@@ -46,25 +45,11 @@ export function useIcpProfiles() {
   return { ...query, isAuthLoading, authError };
 }
 
+/** Derives the active profile from the already-fetched list — no extra network call. */
 export function useActiveIcpProfile() {
-  const { data: token, isLoading: isAuthLoading, error: authError } = useSalesEngineAuth();
-  const resetAuth = useResetSalesEngineAuth();
-
-  const query = useQuery({
-    queryKey: SALES_ENGINE_ICP_KEYS.active(),
-    queryFn: async (): Promise<IcpProfile | null> => {
-      try {
-        return await getActiveIcpProfile(token as string);
-      } catch (error) {
-        if (isUnauthorized(error)) resetAuth();
-        throw error;
-      }
-    },
-    enabled: Boolean(token) && !isAuthLoading,
-    staleTime: 1000 * 60,
-  });
-
-  return { ...query, isAuthLoading, authError };
+  const { data: profiles, isLoading, isAuthLoading, authError } = useIcpProfiles();
+  const data = useMemo(() => profiles?.find((p) => p.isActive) ?? null, [profiles]);
+  return { data, isLoading, isAuthLoading, authError };
 }
 
 type MutationOptions<TData> = {
@@ -73,20 +58,14 @@ type MutationOptions<TData> = {
 };
 
 function useIcpMutation<TVariables, TData>(
-  mutationFn: (variables: TVariables, token: string) => Promise<TData>,
+  mutationFn: (variables: TVariables) => Promise<TData>,
   options?: MutationOptions<TData>
 ) {
   const queryClient = useQueryClient();
-  const { data: token } = useSalesEngineAuth();
   const resetAuth = useResetSalesEngineAuth();
 
   return useMutation({
-    mutationFn: (variables: TVariables) => {
-      if (!token) {
-        return Promise.reject(new Error("Sales Engine session isn't ready yet. Please retry in a moment."));
-      }
-      return mutationFn(variables, token);
-    },
+    mutationFn,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_ICP_KEYS.all });
       options?.onSuccess?.(data);
@@ -99,27 +78,24 @@ function useIcpMutation<TVariables, TData>(
 }
 
 export function useCreateIcpProfile(options?: MutationOptions<IcpProfile>) {
-  return useIcpMutation<IcpProfilePayload, IcpProfile>(
-    (payload, token) => createIcpProfile(payload, token),
-    options
-  );
+  return useIcpMutation<IcpProfilePayload, IcpProfile>((payload) => createIcpProfile(payload), options);
 }
 
 export function useUpdateIcpProfile(options?: MutationOptions<IcpProfile>) {
   return useIcpMutation<{ id: string; payload: Partial<IcpProfilePayload> }, IcpProfile>(
-    ({ id, payload }, token) => updateIcpProfile(id, payload, token),
+    ({ id, payload }) => updateIcpProfile(id, payload),
     options
   );
 }
 
 export function useDeleteIcpProfile(options?: MutationOptions<null>) {
-  return useIcpMutation<string, null>((id, token) => deleteIcpProfile(id, token), options);
+  return useIcpMutation<string, null>((id) => deleteIcpProfile(id), options);
 }
 
 export function useActivateIcpProfile(options?: MutationOptions<IcpProfile>) {
-  return useIcpMutation<string, IcpProfile>((id, token) => activateIcpProfile(id, token), options);
+  return useIcpMutation<string, IcpProfile>((id) => activateIcpProfile(id), options);
 }
 
 export function useDuplicateIcpProfile(options?: MutationOptions<IcpProfile>) {
-  return useIcpMutation<string, IcpProfile>((id, token) => duplicateIcpProfile(id, token), options);
+  return useIcpMutation<string, IcpProfile>((id) => duplicateIcpProfile(id), options);
 }
