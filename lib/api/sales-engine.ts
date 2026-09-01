@@ -50,6 +50,7 @@ const DEFAULT_ICP_CONFIG: IcpConfig = {
   customPrompt: "",
 };
 
+// The API returns `lastUpdated` as an ISO timestamp; the UI wants a friendly relative string.
 function formatLastUpdated(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
@@ -68,6 +69,7 @@ function formatLastUpdated(iso: string | null | undefined): string {
   return date.toLocaleDateString();
 }
 
+// Backfills any config fields the API omitted so the form never breaks on a partial profile.
 export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
   const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
   return {
@@ -109,12 +111,14 @@ async function seRequest<T>({
   body,
   token,
   orgId,
+  timeoutMs,
 }: {
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   body?: unknown;
   token?: string;
   orgId?: string | null;
+  timeoutMs?: number;
 }): Promise<T> {
   const authToken = token ?? getSalesEngineToken();
   if (!authToken) {
@@ -134,11 +138,28 @@ async function seRequest<T>({
     headers["X-Organization-Id"] = organizationId;
   }
 
-  const response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = timeoutMs ? new AbortController() : undefined;
+  const timeoutId =
+    controller && timeoutMs
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+
+  let response: Response;
+  try {
+    response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new SalesEngineApiError("Sales Engine request timed out.", 408);
+    }
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
 
   const payload = (await response.json().catch(() => null)) as
     | { message?: string; data?: T }
@@ -179,17 +200,14 @@ export async function ensureSalesEngineSession(): Promise<void> {
     body: companyId ? { company_id: companyId } : undefined,
   });
 
-  const exchangeResponse = await fetch(
-    `${SALES_ENGINE_API_BASE_URL}/auth/factory23/exchange`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ assertion: assertionRes.data.assertion }),
-    }
-  );
+  const exchangeResponse = await fetch(`${SALES_ENGINE_API_BASE_URL}/auth/factory23/exchange`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ assertion: assertionRes.data.assertion }),
+  });
 
   const exchangePayload = (await exchangeResponse.json().catch(() => null)) as
     | SeExchangeResponse
@@ -211,83 +229,186 @@ export async function ensureSalesEngineSession(): Promise<void> {
   setSalesEngineSession(exchange.token, exchange.organization.id);
 }
 
-export async function fetchIcpProfiles(): Promise<IcpProfile[]> {
-  const data = await seRequest<IcpProfile[]>({
-    method: "GET",
-    path: "/icp-profiles",
-  });
-  return (data ?? []).map(mapApiIcpProfile);
-}
-
-export async function createIcpProfile(payload: {
-  name: string;
-  description?: string;
-  config: IcpConfig;
-}): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "POST",
-    path: "/icp-profiles",
-    body: {
-      name: payload.name,
-      description: payload.description,
-      config: payload.config,
-    },
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function updateIcpProfile(
-  id: string,
-  payload: {
-    name: string;
-    description?: string;
-    config: IcpConfig;
-  }
-): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "PATCH",
-    path: `/icp-profiles/${id}`,
-    body: {
-      name: payload.name,
-      description: payload.description,
-      config: payload.config,
-    },
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function deleteIcpProfile(id: string): Promise<void> {
-  await seRequest({
-    method: "DELETE",
-    path: `/icp-profiles/${id}`,
-  });
-}
-
-export async function duplicateIcpProfile(id: string): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "POST",
-    path: `/icp-profiles/${id}/duplicate`,
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function activateIcpProfile(id: string): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "POST",
-    path: `/icp-profiles/${id}/activate`,
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function refreshSalesEngineProfiles(): Promise<IcpProfile[]> {
+/** Runs `fn`; on a dead/expired SE token (401), re-runs the assertion → exchange handshake once and retries. */
+async function withSessionRetry<T>(fn: () => Promise<T>): Promise<T> {
   try {
-    return await fetchIcpProfiles();
+    return await fn();
   } catch (error) {
     if (error instanceof SalesEngineApiError && error.status === 401) {
       clearSalesEngineSession();
       await ensureSalesEngineSession();
-      return await fetchIcpProfiles();
+      return await fn();
     }
     throw error;
   }
+}
+
+export type IcpProfilePayload = {
+  name: string;
+  description?: string;
+  config: IcpConfig;
+};
+
+export function fetchIcpProfiles(): Promise<IcpProfile[]> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile[]>({ method: "GET", path: "/icp-profiles" });
+    return (data ?? []).map(mapApiIcpProfile);
+  });
+}
+
+/** @deprecated kept for compatibility — same as {@link fetchIcpProfiles}, which now retries on 401 itself. */
+export const refreshSalesEngineProfiles = fetchIcpProfiles;
+
+export function createIcpProfile(payload: IcpProfilePayload): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: "/icp-profiles", body: payload });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function updateIcpProfile(id: string, payload: Partial<IcpProfilePayload>): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({
+      method: "PATCH",
+      path: `/icp-profiles/${id}`,
+      body: payload,
+    });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function deleteIcpProfile(id: string): Promise<null> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: `/icp-profiles/${id}` });
+    return null;
+  });
+}
+
+export function activateIcpProfile(id: string): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/activate` });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/duplicate` });
+    return mapApiIcpProfile(data);
+  });
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+
+export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
+
+export type ChatLead = {
+  id: number;
+  name: string;
+  source: string;
+  score: number;
+  summary: string;
+};
+
+export type ChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  body: string;
+  leads?: ChatLead[];
+  created_at?: string;
+};
+
+export type SendChatMessageResult = {
+  user_message: ChatMessage;
+  assistant_message: ChatMessage;
+  discovery_run_id?: number | null;
+};
+
+const DISCOVERY_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
+const CHAT_DISCOVERY_TIMEOUT_MS = 60_000;
+
+export function createChatSession(title?: string): Promise<{ id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number }>({
+      method: "POST",
+      path: "/chat/sessions",
+      body: title ? { title } : {},
+    })
+  );
+}
+
+export function listChatMessages(sessionId: number): Promise<ChatMessage[]> {
+  return withSessionRetry(async () =>
+    seRequest<ChatMessage[]>({
+      method: "GET",
+      path: `/chat/sessions/${sessionId}/messages`,
+    })
+  );
+}
+
+export function sendChatMessage(
+  sessionId: number,
+  payload: { body: string; intent: ChatIntent }
+): Promise<SendChatMessageResult> {
+  return withSessionRetry(async () =>
+    seRequest<SendChatMessageResult>({
+      method: "POST",
+      path: `/chat/sessions/${sessionId}/messages`,
+      body: payload,
+      timeoutMs: DISCOVERY_INTENTS.includes(payload.intent) ? CHAT_DISCOVERY_TIMEOUT_MS : undefined,
+    })
+  );
+}
+
+// ── Metrics ─────────────────────────────────────────────────────────────────
+
+export type SalesEngineMetrics = {
+  leads_discovered: number;
+  qualified_leads: number;
+  companies_cached: number;
+  outreach_drafts: number;
+  pipeline: Record<string, number>;
+};
+
+export function fetchMetrics(): Promise<SalesEngineMetrics> {
+  return withSessionRetry(async () =>
+    seRequest<SalesEngineMetrics>({ method: "GET", path: "/metrics" })
+  );
+}
+
+// ── Outreach ────────────────────────────────────────────────────────────────
+
+export type OutreachActivity = {
+  id: number;
+  name: string;
+  channel: string;
+  preview: string;
+  accentBg: string;
+  accentIcon: string;
+  occurred_at: string;
+};
+
+export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachActivity[]>({ method: "GET", path: "/outreach/recent" })
+  );
+}
+
+export function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString();
 }

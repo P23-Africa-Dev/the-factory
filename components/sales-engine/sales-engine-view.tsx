@@ -3,12 +3,18 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
+import { IcpBuilderModal } from "./icp-builder-modal";
+import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
+import { useSendChatMessage } from "@/hooks/use-sales-engine-chat";
+import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
+import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import {
-  IcpBuilderModal,
-  type IcpProfile,
-} from "./icp-builder-modal";
-import { refreshSalesEngineProfiles } from "@/lib/api/sales-engine";
-import { useSalesEngineSession } from "@/hooks/use-sales-engine-session";
+  SalesEngineApiError,
+  formatRelativeTime,
+  type ChatIntent,
+  type ChatLead,
+} from "@/lib/api/sales-engine";
 import {
   ChevronDown,
   Copy,
@@ -26,49 +32,14 @@ import {
   UsersRound,
 } from "lucide-react";
 
-type MockLead = {
-  name: string;
-  source: string;
-  score: number;
-  summary: string;
-};
-
 type ChatMessage = {
   id: number;
   role: "assistant" | "user";
   body: string;
-  leads?: MockLead[];
+  leads?: ChatLead[];
 };
 
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
-
-const mockLeads: MockLead[] = [
-  {
-    name: "Verde Foods Distribution",
-    source: "Company web",
-    score: 175,
-    summary: "Strong ICP fit, depot expansion signal, hiring field sales roles.",
-  },
-  {
-    name: "KoboCare Clinics",
-    source: "LinkedIn index",
-    score: 162,
-    summary: "Public expansion activity and operations hiring signal.",
-  },
-  {
-    name: "Northline Agro Inputs",
-    source: "Registry",
-    score: 149,
-    summary: "Offline-first distributor with weak online footprint.",
-  },
-];
-
-const outreachItems = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]", name: "Smith Williams", channel: "Email sequence", time: "2 hrs ago" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]", name: "KoboCare Clinics", channel: "Lead research", time: "2 hrs ago" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]", name: "Northline Agro", channel: "Registry match", time: "2 hrs ago" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]", name: "MobiMart Retail", channel: "WhatsApp opt-in", time: "2 hrs ago" },
-];
 
 const initialMessages: ChatMessage[] = [
   {
@@ -237,11 +208,11 @@ function ThinkingBubble({ stage }: { stage: string }) {
   );
 }
 
-function LeadInlineResults({ leads }: { leads: MockLead[] }) {
+function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
   return (
     <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
       {leads.map((lead) => (
-        <div key={lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
+        <div key={lead.id ?? lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
             <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
@@ -259,16 +230,20 @@ function LeadInlineResults({ leads }: { leads: MockLead[] }) {
 function ChatWorkspace({
   expanded,
   onToggleExpanded,
+  onOpenIcpBuilder,
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
+  onOpenIcpBuilder: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
   const [thinkingStage, setThinkingStage] = useState<string>(thinkingStages[0]);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const timersRef = useRef<number[]>([]);
+  const sendMessage = useSendChatMessage();
+
+  const isThinking = sendMessage.isPending;
 
   function clearTimers() {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -291,16 +266,14 @@ function ChatWorkspace({
 
   useEffect(() => () => clearTimers(), []);
 
-  function runMockSearch(prompt: string) {
-    const trimmed = prompt.trim();
-    if (!trimmed || isThinking) return;
+  useEffect(() => {
+    if (!isThinking) {
+      clearTimers();
+      setThinkingStage(thinkingStages[0]);
+      return;
+    }
 
-    clearTimers();
-    setMessages((current) => [...current, { id: Date.now(), role: "user", body: trimmed }]);
-    setDraft("");
-    setIsThinking(true);
     setThinkingStage(thinkingStages[0]);
-
     thinkingStages.forEach((stage, index) => {
       if (index === 0) return;
       const timer = window.setTimeout(() => {
@@ -308,21 +281,42 @@ function ChatWorkspace({
       }, index * 750);
       timersRef.current.push(timer);
     });
+  }, [isThinking]);
 
-    const settleTimer = window.setTimeout(() => {
+  async function handleSend(prompt: string, intent: ChatIntent) {
+    const trimmed = prompt.trim();
+    if (!trimmed || isThinking) return;
+
+    const userMessageId = Date.now();
+    setMessages((current) => [...current, { id: userMessageId, role: "user", body: trimmed }]);
+    setDraft("");
+
+    try {
+      const result = await sendMessage.mutateAsync({ body: trimmed, intent });
+      const assistant = result.assistant_message;
       setMessages((current) => [
         ...current,
         {
-          id: Date.now() + 1,
+          id: assistant.id ?? Date.now() + 1,
           role: "assistant",
-          body:
-            "I checked the internal cache, simulated web and social discovery, extracted buying signals, and ranked these mock leads by ICP fit and intent.",
-          leads: mockLeads,
+          body: assistant.body,
+          leads: assistant.leads,
         },
       ]);
-      setIsThinking(false);
-    }, 3000);
-    timersRef.current.push(settleTimer);
+    } catch (error) {
+      if (error instanceof SalesEngineApiError && error.status === 422) {
+        toast.error("Select an active ICP profile first.");
+        onOpenIcpBuilder();
+        return;
+      }
+      const message =
+        error instanceof SalesEngineApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Could not reach Sales Engine.";
+      toast.error(message);
+    }
   }
 
   return (
@@ -394,7 +388,7 @@ function ChatWorkspace({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") runMockSearch(draft);
+              if (event.key === "Enter") handleSend(draft, "freeform");
             }}
             className="h-full min-w-0 flex-1 bg-transparent text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
             placeholder="Ask or search anything"
@@ -402,7 +396,7 @@ function ChatWorkspace({
           <button
             type="button"
             aria-label="Send message"
-            onClick={() => runMockSearch(draft)}
+            onClick={() => handleSend(draft, "freeform")}
             disabled={isThinking}
             className="grid size-[30px] place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
           >
@@ -413,21 +407,30 @@ function ChatWorkspace({
           <PromptButton
             icon={<Globe2 size={17} />}
             label="Quick Research"
-            onClick={() => runMockSearch("Find FMCG distributors in Lagos with expansion signals")}
+            onClick={() =>
+              handleSend("Find FMCG distributors in Lagos with expansion signals", "quick_research")
+            }
             tint="bg-[#fffbdc]"
             disabled={isThinking}
           />
           <PromptButton
             icon={<UsersRound size={17} />}
             label="Generate New Leads"
-            onClick={() => runMockSearch("Generate qualified leads from web, LinkedIn index, Meta pages, and registries")}
+            onClick={() =>
+              handleSend(
+                "Generate qualified leads from web, LinkedIn index, Meta pages, and registries",
+                "generate_leads"
+              )
+            }
             tint="bg-[#e4faff]"
             disabled={isThinking}
           />
           <PromptButton
             icon={<Lightbulb size={17} />}
             label="Create Outreach Message"
-            onClick={() => runMockSearch("Create a compliant email and WhatsApp-safe follow-up plan")}
+            onClick={() =>
+              handleSend("Create a compliant email and WhatsApp-safe follow-up plan", "create_outreach")
+            }
             tint="bg-[#f2ffe9]"
             disabled={isThinking}
           />
@@ -440,27 +443,39 @@ function ChatWorkspace({
 function OutreachCard({
   color,
   icon,
+  iconColor,
   name,
   channel,
+  preview,
   time,
 }: {
   color: string;
   icon: string;
+  iconColor?: string;
   name: string;
   channel: string;
+  preview: string;
   time: string;
 }) {
   return (
-    <article className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}>
+    <article
+      className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      style={color.startsWith("#") ? { backgroundColor: color } : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
-            <MessageCircle size={21} className={icon} fill="currentColor" />
+            <MessageCircle
+              size={21}
+              className={icon}
+              style={iconColor ? { color: iconColor } : undefined}
+              fill="currentColor"
+            />
           </div>
           <div className="min-w-0 text-[#09232d]">
             <p className="text-[14px] font-bold leading-[18px]">{name}</p>
             <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
-              {channel}: Hi {name}, I&apos;ve been following your brand and I believe there are a few ways we can support your field growth...
+              {channel}: {preview}
             </p>
           </div>
         </div>
@@ -471,7 +486,16 @@ function OutreachCard({
   );
 }
 
+const OUTREACH_FALLBACK_COLORS = [
+  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
+  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
+  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
+  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
+] as const;
+
 function OutreachPanel() {
+  const { data: items = [] } = useSalesEngineOutreach();
+
   return (
     <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
       <header className="mb-8 flex items-center justify-center gap-2">
@@ -480,9 +504,22 @@ function OutreachPanel() {
       </header>
       <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
       <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
-        {outreachItems.map((item) => (
-          <OutreachCard key={item.name} {...item} />
-        ))}
+        {items.map((item, index) => {
+          const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
+          const useApiColors = item.accentBg?.startsWith("#");
+          return (
+            <OutreachCard
+              key={item.id}
+              color={useApiColors ? item.accentBg : fallback.color}
+              icon={useApiColors ? "" : fallback.icon}
+              iconColor={useApiColors ? item.accentIcon : undefined}
+              name={item.name}
+              channel={item.channel}
+              preview={item.preview}
+              time={formatRelativeTime(item.occurred_at)}
+            />
+          );
+        })}
       </div>
     </aside>
   );
@@ -533,57 +570,20 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
-  const [profiles, setProfiles] = useState<IcpProfile[]>([]);
-  const [profilesLoading, setProfilesLoading] = useState(true);
-  const { ready: seSessionReady, loading: seSessionLoading, error: seSessionError, bootstrap: bootstrapSeSession } =
-    useSalesEngineSession();
+  const { data: activeProfile } = useActiveIcpProfile();
+  const { data: metrics } = useSalesEngineMetrics();
 
-  useEffect(() => {
-    if (!seSessionReady) {
-      setProfilesLoading(seSessionLoading);
-      return;
-    }
-
-    let cancelled = false;
-    setProfilesLoading(true);
-
-    refreshSalesEngineProfiles()
-      .then((loaded) => {
-        if (!cancelled) setProfiles(loaded);
-      })
-      .catch(() => {
-        if (!cancelled) setProfiles([]);
-      })
-      .finally(() => {
-        if (!cancelled) setProfilesLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [seSessionReady, seSessionLoading]);
-
-  const activeProfile = profiles.find((p) => p.isActive) ?? profiles[0];
+  const leadsDiscovered = metrics?.leads_discovered ?? 0;
+  const qualifiedLeads = metrics?.qualified_leads ?? 0;
+  const formatMetric = (value: number) => value.toLocaleString();
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
-        {seSessionError && (
-          <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p>{seSessionError}</p>
-            <button
-              type="button"
-              onClick={() => bootstrapSeSession()}
-              className="mt-2 font-medium text-amber-950 underline underline-offset-2"
-            >
-              Retry connection
-            </button>
-          </div>
-        )}
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
-            <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
+            <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
+            <MetricCard title="Qualified Lead Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">
@@ -626,24 +626,13 @@ export function SalesEngineView() {
           <ChatWorkspace
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
+            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
           />
           {!chatExpanded && <OutreachPanel />}
         </div>
       </div>
 
-      <IcpBuilderModal
-        isOpen={isIcpModalOpen}
-        onClose={() => setIsIcpModalOpen(false)}
-        profiles={profiles}
-        profilesLoading={profilesLoading}
-        useRemoteApi={seSessionReady}
-        onProfilesChange={setProfiles}
-        onSelectActiveProfile={(selected) => {
-          setProfiles((prev) =>
-            prev.map((p) => ({ ...p, isActive: p.id === selected.id }))
-          );
-        }}
-      />
+      <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
     </div>
   );
 }
