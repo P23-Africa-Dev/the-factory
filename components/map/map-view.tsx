@@ -152,6 +152,12 @@ type GoogleMarkerLike = {
   addListener: (event: string, handler: () => void) => void;
 };
 
+type GoogleOverlayLike = {
+  setMap: (map: GoogleMapLike | null) => void;
+};
+
+type GoogleMarkerClustererOptions = ConstructorParameters<typeof MarkerClusterer>[0];
+
 type GoogleMapsNamespaceLike = {
   maps: {
     Map: new (container: HTMLElement, options: Record<string, unknown>) => GoogleMapLike;
@@ -561,7 +567,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   }, [initialAgentId, deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
-    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+    // Route history slide-in disabled — see docs/map-route-history-panel.md
+    // setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
   }, [setHistoryTask]);
 
   const handleToggleFollowAll = useCallback(() => {
@@ -2223,6 +2230,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         );
       })()}
 
+      {/* Route history slide-in disabled — see docs/map-route-history-panel.md
       {historyTask && (
         <RouteHistoryPanel
           taskId={historyTask.id}
@@ -2230,6 +2238,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           onClose={() => setHistoryTask(null)}
         />
       )}
+      */}
 
       {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
         <div className="absolute bottom-3 left-3 right-3 md:left-8 md:right-auto md:w-[420px] z-20 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
@@ -2493,7 +2502,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   }, [initialAgentId, deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
-    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+    // Route history slide-in disabled — see docs/map-route-history-panel.md
+    // setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
   }, [setHistoryTask]);
 
   const handleToggleFollowAll = useCallback(() => {
@@ -3094,16 +3104,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (agentMarkerList.length >= LIVE_AGENT_CLUSTER_MIN) {
       if (!agentClustererRef.current) {
         agentClustererRef.current = new MarkerClusterer({
-          map: map as unknown as google.maps.Map,
-          markers: agentMarkerList as unknown as google.maps.Marker[],
-        });
+          map,
+          markers: agentMarkerList,
+        } as unknown as GoogleMarkerClustererOptions);
       } else {
         agentClustererRef.current.clearMarkers();
-        agentClustererRef.current.addMarkers(agentMarkerList as unknown as google.maps.Marker[]);
+        agentClustererRef.current.addMarkers(
+          agentMarkerList as unknown as NonNullable<GoogleMarkerClustererOptions['markers']>,
+        );
       }
     } else if (agentClustererRef.current) {
       agentClustererRef.current.clearMarkers();
-      agentClustererRef.current.setMap(null);
+      (agentClustererRef.current as unknown as GoogleOverlayLike).setMap(null);
       agentClustererRef.current = null;
       agentMarkerList.forEach((marker) => marker.setMap(map));
     }
@@ -3458,6 +3470,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
       />
 
+      {/* Route history slide-in disabled — see docs/map-route-history-panel.md
       {historyTask && (
         <RouteHistoryPanel
           taskId={historyTask.id}
@@ -3465,6 +3478,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           onClose={() => setHistoryTask(null)}
         />
       )}
+      */}
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">

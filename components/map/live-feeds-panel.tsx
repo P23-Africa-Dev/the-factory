@@ -181,7 +181,8 @@ export function LiveFeedsPanel({
 
   const selectHistoryTask = (task: LiveTaskState) => {
     onSelectTask(task.taskId);
-    onViewHistoryTask?.(task);
+    // Route history slide-in disabled — see docs/map-route-history-panel.md
+    // onViewHistoryTask?.(task);
   };
 
   const searchResults = useMemo(() => {
@@ -205,21 +206,16 @@ export function LiveFeedsPanel({
             <p className="text-[12px] text-gray-400">No matching agents</p>
           </div>
         ) : (
-          searchResults.map((task) => {
-            const isHistory = history.some((h) => h.taskId === task.taskId);
-            return (
-              <FeedCard
-                key={task.taskId}
-                task={task}
-                isSelected={selectedTaskId === task.taskId}
-                nowMs={nowMs}
-                liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
-                onSelect={() =>
-                  isHistory ? selectHistoryTask(task) : onSelectTask(task.taskId)
-                }
-              />
-            );
-          })
+          searchResults.map((task) => (
+            <FeedCard
+              key={task.taskId}
+              task={task}
+              isSelected={selectedTaskId === task.taskId}
+              nowMs={nowMs}
+              liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
+              onSelect={() => onSelectTask(task.taskId)}
+            />
+          ))
         )}
       </div>
     );
@@ -292,7 +288,7 @@ export function LiveFeedsPanel({
                   isSelected={selectedTaskId === task.taskId}
                   nowMs={nowMs}
                   liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
-                  onSelect={() => selectHistoryTask(task)}
+                  onSelect={() => onSelectTask(task.taskId)}
                 />
               ))}
             </div>
