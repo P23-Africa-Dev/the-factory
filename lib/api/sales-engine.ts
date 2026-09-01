@@ -278,3 +278,54 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
     return mapApiIcpProfile(data);
   });
 }
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
+
+export type ChatLead = {
+  id: number;
+  name: string;
+  source: string;
+  score: number;
+  summary: string;
+};
+
+export type ChatMessageApi = {
+  id: number;
+  role: "user" | "assistant";
+  body: string;
+  intent?: ChatIntent;
+  leads?: ChatLead[] | null;
+  meta?: Record<string, unknown> | null;
+  created_at?: string;
+};
+
+export type SendChatMessageResult = {
+  user_message: ChatMessageApi;
+  assistant_message: ChatMessageApi;
+  discovery_run_id?: number | null;
+};
+
+export function createChatSession(title?: string): Promise<{ id: number }> {
+  return withSessionRetry(() =>
+    seRequest<{ id: number }>({
+      method: "POST",
+      path: "/chat/sessions",
+      body: title ? { title } : {},
+    })
+  );
+}
+
+export function sendChatMessage(
+  sessionId: number,
+  payload: { body: string; intent: ChatIntent }
+): Promise<SendChatMessageResult> {
+  return withSessionRetry(() =>
+    seRequest<SendChatMessageResult>({
+      method: "POST",
+      path: `/chat/sessions/${sessionId}/messages`,
+      body: payload,
+    })
+  );
+}
