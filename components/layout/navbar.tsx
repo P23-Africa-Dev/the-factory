@@ -25,15 +25,16 @@ import MapIconAsset from "@/assets/nav-icons/map.svg";
 import ProjectsIcon from "@/assets/nav-icons/projects.svg";
 import WorkforceIcon from "@/assets/nav-icons/workforce.svg";
 import CRMIcon from "@/assets/nav-icons/crm.svg";
+import SalesEngineIcon from "@/assets/nav-icons/sales-engine.svg";
 
-import FinanceIcon from "@/assets/nav-icons/finance.svg";
+// import FinanceIcon from "@/assets/nav-icons/finance.svg";
 import NotificationIcon from "@/assets/nav-icons/notification.svg";
+
 import SettingsIcon from "@/assets/nav-icons/settings.svg";
 import Logo from "@/assets/images/logo.png";
 
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: DashboardIcon },
-  // { name: 'Sales Engine', href: '/sales-engine', icon: SalesEngineIcon },
   { name: "Map", href: "/map", icon: MapIconAsset },
   {
     name: "Projects",
@@ -48,8 +49,10 @@ const navItems = [
     hasDropdown: true,
   },
   { name: "CRM", href: "/crm", icon: CRMIcon },
-  { name: "Payroll", href: "/payroll", icon: FinanceIcon, hasDropdown: true },
+  // { name: "Payroll", href: "/payroll", icon: FinanceIcon, hasDropdown: true },
+  { name: "Sales Engine", href: "/sales-engine", icon: SalesEngineIcon },
 ];
+
 
 export function Navbar() {
   const pathname = usePathname();
@@ -128,7 +131,7 @@ export function Navbar() {
         </Link>
 
         {/* Desktop Navigation Links */}
-        <div className="hidden lg:flex items-center gap-8 xl:gap-10 ml-17">
+        <div className="hidden lg:flex items-center gap-4 xl:gap-7 2xl:gap-10 ml-8 xl:ml-12 2xl:ml-17">
           {navItems.map((item) => {
             const itemHref = basePath + item.href;
             const isActive = pathname.startsWith(itemHref);

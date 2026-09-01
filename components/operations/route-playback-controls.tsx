@@ -25,13 +25,18 @@ export function RoutePlaybackControls({
 }: RoutePlaybackControlsProps) {
   const [playing, setPlaying] = useState(false);
   const indexRef = useRef(index);
-  indexRef.current = index;
+  useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
+
+  const isPlayable = !disabled && pointCount >= 2;
+  const isPlaying = playing && isPlayable;
 
   const maxIndex = Math.max(0, pointCount - 1);
   const progress = maxIndex <= 0 ? 0 : index / maxIndex;
 
   useEffect(() => {
-    if (!playing || disabled || maxIndex <= 0) return;
+    if (!isPlaying || maxIndex <= 0) return;
 
     const id = window.setInterval(() => {
       const next = indexRef.current + 1;
@@ -44,11 +49,7 @@ export function RoutePlaybackControls({
     }, 120);
 
     return () => window.clearInterval(id);
-  }, [playing, disabled, maxIndex, onIndexChange]);
-
-  useEffect(() => {
-    if (disabled || pointCount < 2) setPlaying(false);
-  }, [disabled, pointCount]);
+  }, [isPlaying, maxIndex, onIndexChange]);
 
   const label = useMemo(() => {
     if (pointCount < 2) return "No route points";
@@ -69,9 +70,9 @@ export function RoutePlaybackControls({
           setPlaying((p) => !p);
         }}
         className="w-8 h-8 rounded-full bg-[#0B1215] text-white flex items-center justify-center disabled:opacity-40 shrink-0"
-        aria-label={playing ? "Pause playback" : "Play route"}
+        aria-label={isPlaying ? "Pause playback" : "Play route"}
       >
-        {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+        {isPlaying ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
       </button>
       <input
         type="range"

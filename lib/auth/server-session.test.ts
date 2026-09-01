@@ -19,6 +19,7 @@ describe("server-session", () => {
       isAuthenticated: false,
       onboardingCompleted: false,
       hasActiveSubscription: false,
+      hasPaidSubscription: false,
       billingEnforced: true,
       role: null,
     });
@@ -50,6 +51,7 @@ describe("server-session", () => {
       isAuthenticated: true,
       onboardingCompleted: true,
       hasActiveSubscription: true,
+      hasPaidSubscription: false,
       billingEnforced: false,
       role: "owner",
     });

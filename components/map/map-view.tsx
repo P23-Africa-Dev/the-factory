@@ -152,6 +152,12 @@ type GoogleMarkerLike = {
   addListener: (event: string, handler: () => void) => void;
 };
 
+type GoogleOverlayLike = {
+  setMap: (map: GoogleMapLike | null) => void;
+};
+
+type GoogleMarkerClustererOptions = ConstructorParameters<typeof MarkerClusterer>[0];
+
 type GoogleMapsNamespaceLike = {
   maps: {
     Map: new (container: HTMLElement, options: Record<string, unknown>) => GoogleMapLike;
@@ -539,7 +545,10 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     const task = liveTasks[deepLinkTaskId];
     if (!task || !hasUsableTaskPosition(task)) return;
     if (selectedTaskId === deepLinkTaskId) return;
-    handleSelectTask(deepLinkTaskId);
+    const timer = setTimeout(() => {
+      handleSelectTask(deepLinkTaskId);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
 
   // Deep-link by agent: /map?agent=123 — select that agent's live task when no taskId.
@@ -551,12 +560,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     );
     if (!match) return;
     if (selectedTaskId === match.taskId) return;
-    handleSelectTask(match.taskId);
+    const timer = setTimeout(() => {
+      handleSelectTask(match.taskId);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialAgentId, deepLinkTaskId, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
-    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
-  }, []);
+    // Route history slide-in disabled — see docs/map-route-history-panel.md
+    // setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+  }, [setHistoryTask]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -715,7 +728,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     setSearchQuery('');
     setPlaceResults([]);
     setSearchPanelOpen(false);
-  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchQuery]);
+  }, [handleLocationSelect, setPlaceResolving, setPlaceResults, setSearchPanelOpen, setSearchQuery]);
 
   const handleRecentPlaceSelect = useCallback((recent: RecentPlace) => {
     void handlePlaceResultSelect(recentToSuggestionLike(recent, searchSessionTokenRef.current));
@@ -2217,6 +2230,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         );
       })()}
 
+      {/* Route history slide-in disabled — see docs/map-route-history-panel.md
       {historyTask && (
         <RouteHistoryPanel
           taskId={historyTask.id}
@@ -2224,6 +2238,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           onClose={() => setHistoryTask(null)}
         />
       )}
+      */}
 
       {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
         <div className="absolute bottom-3 left-3 right-3 md:left-8 md:right-auto md:w-[420px] z-20 rounded-md bg-black/75 px-3 py-2 text-[11px] font-medium text-white">
@@ -2466,7 +2481,10 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     const task = liveTasks[deepLinkTaskIdGoogle];
     if (!task || !hasUsableTaskPosition(task)) return;
     if (selectedTaskId === deepLinkTaskIdGoogle) return;
-    handleSelectTask(deepLinkTaskIdGoogle);
+    const timer = setTimeout(() => {
+      handleSelectTask(deepLinkTaskIdGoogle);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
 
   useEffect(() => {
@@ -2477,12 +2495,16 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     );
     if (!match) return;
     if (selectedTaskId === match.taskId) return;
-    handleSelectTask(match.taskId);
+    const timer = setTimeout(() => {
+      handleSelectTask(match.taskId);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialAgentId, deepLinkTaskIdGoogle, liveTasks, selectedTaskId, handleSelectTask]);
 
   const handleViewHistoryTask = useCallback((task: LiveTaskState) => {
-    setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
-  }, []);
+    // Route history slide-in disabled — see docs/map-route-history-panel.md
+    // setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
+  }, [setHistoryTask]);
 
   const handleToggleFollowAll = useCallback(() => {
     setFollowAllActive((prev) => {
@@ -3082,16 +3104,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     if (agentMarkerList.length >= LIVE_AGENT_CLUSTER_MIN) {
       if (!agentClustererRef.current) {
         agentClustererRef.current = new MarkerClusterer({
-          map: map as unknown as google.maps.Map,
-          markers: agentMarkerList as unknown as google.maps.Marker[],
-        });
+          map,
+          markers: agentMarkerList,
+        } as unknown as GoogleMarkerClustererOptions);
       } else {
         agentClustererRef.current.clearMarkers();
-        agentClustererRef.current.addMarkers(agentMarkerList as unknown as google.maps.Marker[]);
+        agentClustererRef.current.addMarkers(
+          agentMarkerList as unknown as NonNullable<GoogleMarkerClustererOptions['markers']>,
+        );
       }
     } else if (agentClustererRef.current) {
       agentClustererRef.current.clearMarkers();
-      agentClustererRef.current.setMap(null);
+      (agentClustererRef.current as unknown as GoogleOverlayLike).setMap(null);
       agentClustererRef.current = null;
       agentMarkerList.forEach((marker) => marker.setMap(map));
     }
@@ -3446,6 +3470,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
       />
 
+      {/* Route history slide-in disabled — see docs/map-route-history-panel.md
       {historyTask && (
         <RouteHistoryPanel
           taskId={historyTask.id}
@@ -3453,6 +3478,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           onClose={() => setHistoryTask(null)}
         />
       )}
+      */}
 
       {/* Map controls — bottom-center, clear of the AI FAB at bottom-right */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">

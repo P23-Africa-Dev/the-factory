@@ -50,6 +50,7 @@ const DEFAULT_ICP_CONFIG: IcpConfig = {
   customPrompt: "",
 };
 
+// The API returns `lastUpdated` as an ISO timestamp; the UI wants a friendly relative string.
 function formatLastUpdated(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
@@ -68,6 +69,7 @@ function formatLastUpdated(iso: string | null | undefined): string {
   return date.toLocaleDateString();
 }
 
+// Backfills any config fields the API omitted so the form never breaks on a partial profile.
 export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
   const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
   return {
@@ -179,17 +181,14 @@ export async function ensureSalesEngineSession(): Promise<void> {
     body: companyId ? { company_id: companyId } : undefined,
   });
 
-  const exchangeResponse = await fetch(
-    `${SALES_ENGINE_API_BASE_URL}/auth/factory23/exchange`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ assertion: assertionRes.data.assertion }),
-    }
-  );
+  const exchangeResponse = await fetch(`${SALES_ENGINE_API_BASE_URL}/auth/factory23/exchange`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ assertion: assertionRes.data.assertion }),
+  });
 
   const exchangePayload = (await exchangeResponse.json().catch(() => null)) as
     | SeExchangeResponse
@@ -211,83 +210,71 @@ export async function ensureSalesEngineSession(): Promise<void> {
   setSalesEngineSession(exchange.token, exchange.organization.id);
 }
 
-export async function fetchIcpProfiles(): Promise<IcpProfile[]> {
-  const data = await seRequest<IcpProfile[]>({
-    method: "GET",
-    path: "/icp-profiles",
-  });
-  return (data ?? []).map(mapApiIcpProfile);
-}
-
-export async function createIcpProfile(payload: {
-  name: string;
-  description?: string;
-  config: IcpConfig;
-}): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "POST",
-    path: "/icp-profiles",
-    body: {
-      name: payload.name,
-      description: payload.description,
-      config: payload.config,
-    },
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function updateIcpProfile(
-  id: string,
-  payload: {
-    name: string;
-    description?: string;
-    config: IcpConfig;
-  }
-): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "PATCH",
-    path: `/icp-profiles/${id}`,
-    body: {
-      name: payload.name,
-      description: payload.description,
-      config: payload.config,
-    },
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function deleteIcpProfile(id: string): Promise<void> {
-  await seRequest({
-    method: "DELETE",
-    path: `/icp-profiles/${id}`,
-  });
-}
-
-export async function duplicateIcpProfile(id: string): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "POST",
-    path: `/icp-profiles/${id}/duplicate`,
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function activateIcpProfile(id: string): Promise<IcpProfile> {
-  const data = await seRequest<IcpProfile>({
-    method: "POST",
-    path: `/icp-profiles/${id}/activate`,
-  });
-  return mapApiIcpProfile(data);
-}
-
-export async function refreshSalesEngineProfiles(): Promise<IcpProfile[]> {
+/** Runs `fn`; on a dead/expired SE token (401), re-runs the assertion → exchange handshake once and retries. */
+async function withSessionRetry<T>(fn: () => Promise<T>): Promise<T> {
   try {
-    return await fetchIcpProfiles();
+    return await fn();
   } catch (error) {
     if (error instanceof SalesEngineApiError && error.status === 401) {
       clearSalesEngineSession();
       await ensureSalesEngineSession();
-      return await fetchIcpProfiles();
+      return await fn();
     }
     throw error;
   }
+}
+
+export type IcpProfilePayload = {
+  name: string;
+  description?: string;
+  config: IcpConfig;
+};
+
+export function fetchIcpProfiles(): Promise<IcpProfile[]> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile[]>({ method: "GET", path: "/icp-profiles" });
+    return (data ?? []).map(mapApiIcpProfile);
+  });
+}
+
+/** @deprecated kept for compatibility — same as {@link fetchIcpProfiles}, which now retries on 401 itself. */
+export const refreshSalesEngineProfiles = fetchIcpProfiles;
+
+export function createIcpProfile(payload: IcpProfilePayload): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: "/icp-profiles", body: payload });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function updateIcpProfile(id: string, payload: Partial<IcpProfilePayload>): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({
+      method: "PATCH",
+      path: `/icp-profiles/${id}`,
+      body: payload,
+    });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function deleteIcpProfile(id: string): Promise<null> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: `/icp-profiles/${id}` });
+    return null;
+  });
+}
+
+export function activateIcpProfile(id: string): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/activate` });
+    return mapApiIcpProfile(data);
+  });
+}
+
+export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile>({ method: "POST", path: `/icp-profiles/${id}/duplicate` });
+    return mapApiIcpProfile(data);
+  });
 }

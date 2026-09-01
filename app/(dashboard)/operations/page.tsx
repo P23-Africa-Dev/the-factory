@@ -4,12 +4,14 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { AgentView } from "@/components/operations/agent-view";
 import { AttendanceView } from "@/components/operations/attendance-view";
+import { PayrollView } from "@/components/payroll/payroll-view";
 
-type WorkforceTab = "agent" | "attendance";
+type WorkforceTab = "agent" | "attendance" | "payroll";
 
 const TABS: { value: WorkforceTab; label: string }[] = [
   { value: "agent", label: "Agents" },
   { value: "attendance", label: "Attendance" },
+  { value: "payroll", label: "Payroll" },
 ];
 
 // ─── Page content ─────────────────────────────────────────────────────────────
@@ -22,9 +24,14 @@ function OperationsContent() {
 
   const handleTabChange = (tab: WorkforceTab) => {
     const params = new URLSearchParams(searchParams.toString());
-    tab === "agent" ? params.delete("tab") : params.set("tab", tab);
+    if (tab === "agent") {
+      params.delete("tab");
+    } else {
+      params.set("tab", tab);
+    }
     router.push(`${pathname}?${params.toString()}`);
   };
+
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
@@ -49,11 +56,18 @@ function OperationsContent() {
         </div>
 
         {/* ── View ── */}
-        {activeTab === "agent" ? <AgentView basePath="" /> : <AttendanceView basePath="" />}
+        {activeTab === "agent" ? (
+          <AgentView basePath="" />
+        ) : activeTab === "attendance" ? (
+          <AttendanceView basePath="" />
+        ) : (
+          <PayrollView />
+        )}
       </div>
     </div>
   );
 }
+
 
 export default function OperationsPage() {
   return (
