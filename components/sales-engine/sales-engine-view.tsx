@@ -30,13 +30,69 @@ import {
   ThumbsDown,
   ThumbsUp,
   UsersRound,
+  X,
 } from "lucide-react";
 
 type ChatMessage = {
   id: number;
   role: "assistant" | "user";
   body: string;
+  intent?: ChatIntent;
   leads?: ChatLead[];
+};
+
+type ActionIntent = Exclude<ChatIntent, "freeform">;
+
+const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
+  freeform: "Ask or search anything",
+  quick_research: "Research market trends, competitors, or industry signals…",
+  generate_leads: "Who are the top business prospects in your target market?",
+  create_outreach: "Draft a follow-up email or WhatsApp message for…",
+};
+
+const INTENT_MODE_CONFIG: Record<
+  ActionIntent,
+  { label: string; tint: string; chipTint: string; icon: ReactNode }
+> = {
+  quick_research: {
+    label: "Quick Research",
+    tint: "bg-[#fffbdc]",
+    chipTint: "bg-[#fff4a8] text-[#09232d]",
+    icon: <Globe2 size={12} className="shrink-0" />,
+  },
+  generate_leads: {
+    label: "Generate New Leads",
+    tint: "bg-[#e4faff]",
+    chipTint: "bg-[#c8f0ff] text-[#09232d]",
+    icon: <UsersRound size={12} className="shrink-0" />,
+  },
+  create_outreach: {
+    label: "Create Outreach",
+    tint: "bg-[#f2ffe9]",
+    chipTint: "bg-[#dfffc8] text-[#09232d]",
+    icon: <Lightbulb size={12} className="shrink-0" />,
+  },
+};
+
+const thinkingStagesByIntent: Record<ChatIntent, readonly string[]> = {
+  freeform: ["Thinking…"],
+  quick_research: [
+    "Decomposing your research question…",
+    "Scanning web & registries…",
+    "Cross-referencing signals…",
+    "Synthesizing insights…",
+  ],
+  generate_leads: [
+    "Analyzing your brief…",
+    "Scanning web & social signals…",
+    "Extracting buying intent…",
+    "Compiling ranked results…",
+  ],
+  create_outreach: [
+    "Reviewing target context…",
+    "Drafting message…",
+    "Checking compliance tone…",
+  ],
 };
 
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
@@ -152,38 +208,77 @@ function TrendChart() {
   );
 }
 
+function IntentModeChip({
+  intent,
+  onClear,
+  compact = false,
+}: {
+  intent: ActionIntent;
+  onClear?: () => void;
+  compact?: boolean;
+}) {
+  const mode = INTENT_MODE_CONFIG[intent];
+
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1 rounded-full font-semibold ${mode.chipTint} ${
+        compact ? "px-2 py-0.5 text-[8px]" : "px-2.5 py-1 text-[9px]"
+      }`}
+    >
+      {mode.icon}
+      <span className="truncate">{mode.label}</span>
+      {onClear && (
+        <button
+          type="button"
+          aria-label={`Clear ${mode.label} mode`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onClear();
+          }}
+          className="ml-0.5 grid size-4 shrink-0 place-items-center rounded-full transition hover:bg-black/10"
+        >
+          <X size={10} />
+        </button>
+      )}
+    </span>
+  );
+}
+
 function PromptButton({
   icon,
   label,
   tint,
-  onClick,
+  active = false,
+  onSelect,
   disabled = false,
 }: {
   icon: ReactNode;
   label: string;
   tint: string;
-  onClick: () => void;
+  active?: boolean;
+  onSelect: () => void;
   disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect();
+      }}
       disabled={disabled}
-      className={`flex h-[32px] items-center gap-2 rounded-[18px] border border-black/10 px-4 text-[9px] font-medium text-[#09232d] shadow-[0_1px_2px_rgba(0,0,0,0.18)] disabled:cursor-not-allowed disabled:opacity-50 ${tint}`}
+      aria-pressed={active}
+      className={`flex h-[32px] items-center gap-2 rounded-[18px] border px-4 text-[9px] font-medium text-[#09232d] shadow-[0_1px_2px_rgba(0,0,0,0.18)] disabled:cursor-not-allowed disabled:opacity-50 ${tint} ${
+        active ? "border-[#09232d] ring-2 ring-[#09232d]/20" : "border-black/10"
+      }`}
     >
       {icon}
       {label}
     </button>
   );
 }
-
-const thinkingStages = [
-  "Analyzing your brief...",
-  "Scanning web & social signals...",
-  "Extracting buying intent...",
-  "Compiling ranked results...",
-] as const;
 
 function ThinkingBubble({ stage }: { stage: string }) {
   return (
@@ -238,13 +333,16 @@ function ChatWorkspace({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
-  const [thinkingStage, setThinkingStage] = useState<string>(thinkingStages[0]);
+  const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
+  const [thinkingStage, setThinkingStage] = useState<string>(thinkingStagesByIntent.freeform[0]);
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
   const transcriptRef = useRef<HTMLDivElement>(null);
   const thinkingIntervalRef = useRef<number | null>(null);
+  const timersRef = useRef<number[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
   // Local React keys for messages — independent of the API's session-scoped message
   // ids, which restart from 1 per session and would collide with the hardcoded
   // welcome message (id: 1).
@@ -311,6 +409,46 @@ function ChatWorkspace({
       window.clearInterval(thinkingIntervalRef.current);
       thinkingIntervalRef.current = null;
     }
+    timersRef.current.forEach((timer) => window.clearTimeout(timer));
+    timersRef.current = [];
+  }
+
+  function startThinkingCycle(intent: ChatIntent) {
+    const stages = thinkingStagesByIntent[intent];
+    let stageIndex = 0;
+    setThinkingStage(stages[0]);
+    stopThinkingCycle();
+    thinkingIntervalRef.current = window.setInterval(() => {
+      stageIndex = (stageIndex + 1) % stages.length;
+      setThinkingStage(stages[stageIndex]);
+    }, 1200);
+  }
+
+  function selectIntent(intent: ActionIntent) {
+    setSelectedIntent((current) => (current === intent ? "freeform" : intent));
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function clearIntent() {
+    setSelectedIntent("freeform");
+    inputRef.current?.focus();
+  }
+
+  function handleSend(prompt: string, intent: ChatIntent = selectedIntent) {
+    const trimmed = prompt.trim();
+    if (!trimmed || isThinking) return;
+
+    setMessages((current) => [
+      ...current,
+      { id: nextMessageId(), role: "user", body: trimmed, intent },
+    ]);
+    setDraft("");
+    startThinkingCycle(intent);
+
+    sendMessage.mutate(
+      { body: trimmed, intent },
+      { onSettled: () => stopThinkingCycle() }
+    );
   }
 
   function scrollTranscriptToBottom() {
@@ -328,27 +466,6 @@ function ChatWorkspace({
   }, [messages, isThinking, thinkingStage]);
 
   useEffect(() => () => stopThinkingCycle(), []);
-
-  function sendPrompt(prompt: string, intent: ChatIntent) {
-    const trimmed = prompt.trim();
-    if (!trimmed || isThinking) return;
-
-    setMessages((current) => [...current, { id: nextMessageId(), role: "user", body: trimmed }]);
-    setDraft("");
-
-    let stageIndex = 0;
-    setThinkingStage(thinkingStages[0]);
-    stopThinkingCycle();
-    thinkingIntervalRef.current = window.setInterval(() => {
-      stageIndex = (stageIndex + 1) % thinkingStages.length;
-      setThinkingStage(thinkingStages[stageIndex]);
-    }, 1200);
-
-    sendMessage.mutate(
-      { body: trimmed, intent },
-      { onSettled: () => stopThinkingCycle() }
-    );
-  }
 
   return (
     <section
@@ -457,6 +574,11 @@ function ChatWorkspace({
         <div className="space-y-4">
           {messages.map((message, index) => (
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[78%]" : "max-w-full"}>
+              {message.role === "user" && message.intent && message.intent !== "freeform" && (
+                <div className="mb-1.5 flex justify-end">
+                  <IntentModeChip intent={message.intent} compact />
+                </div>
+              )}
               <div
                 className={
                   message.role === "user"
@@ -491,24 +613,30 @@ function ChatWorkspace({
           expanded ? "max-w-[1100px]" : "max-w-[824px]"
         }`}
       >
-        <div className="flex h-[43px] items-center gap-3 rounded-t-[22px] border-b border-[#ececec] px-5">
-          <Plus size={21} className="text-[#09232d]" />
+        <div className="flex min-h-[43px] flex-wrap items-center gap-2 rounded-t-[22px] border-b border-[#ececec] px-5 py-1.5">
+          <Plus size={21} className="shrink-0 text-[#09232d]" />
+          {selectedIntent !== "freeform" && (
+            <IntentModeChip intent={selectedIntent} onClear={clearIntent} />
+          )}
           <input
+            ref={inputRef}
             aria-label="Ask Sales Engine"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") sendPrompt(draft, "freeform");
+              if (event.key !== "Enter" || event.shiftKey) return;
+              event.preventDefault();
+              if (draft.trim()) handleSend(draft, selectedIntent);
             }}
-            className="h-full min-w-0 flex-1 bg-transparent text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
-            placeholder="Ask or search anything"
+            className="h-8 min-w-[120px] flex-1 bg-transparent text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
+            placeholder={INTENT_PLACEHOLDERS[selectedIntent]}
           />
           <button
             type="button"
             aria-label="Send message"
-            onClick={() => sendPrompt(draft, "freeform")}
-            disabled={isThinking}
-            className="grid size-[30px] place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
+            onClick={() => handleSend(draft, selectedIntent)}
+            disabled={isThinking || !draft.trim()}
+            className="grid size-[30px] shrink-0 place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
           >
             <Send size={15} fill="currentColor" />
           </button>
@@ -517,27 +645,25 @@ function ChatWorkspace({
           <PromptButton
             icon={<Globe2 size={17} />}
             label="Quick Research"
-            onClick={() => sendPrompt("Find FMCG distributors in Lagos with expansion signals", "quick_research")}
-            tint="bg-[#fffbdc]"
+            active={selectedIntent === "quick_research"}
+            onSelect={() => selectIntent("quick_research")}
+            tint={INTENT_MODE_CONFIG.quick_research.tint}
             disabled={isThinking}
           />
           <PromptButton
             icon={<UsersRound size={17} />}
             label="Generate New Leads"
-            onClick={() =>
-              sendPrompt(
-                "Generate qualified leads from web, LinkedIn index, Meta pages, and registries",
-                "generate_leads"
-              )
-            }
-            tint="bg-[#e4faff]"
+            active={selectedIntent === "generate_leads"}
+            onSelect={() => selectIntent("generate_leads")}
+            tint={INTENT_MODE_CONFIG.generate_leads.tint}
             disabled={isThinking}
           />
           <PromptButton
             icon={<Lightbulb size={17} />}
             label="Create Outreach Message"
-            onClick={() => sendPrompt("Create a compliant email and WhatsApp-safe follow-up plan", "create_outreach")}
-            tint="bg-[#f2ffe9]"
+            active={selectedIntent === "create_outreach"}
+            onSelect={() => selectIntent("create_outreach")}
+            tint={INTENT_MODE_CONFIG.create_outreach.tint}
             disabled={isThinking}
           />
         </div>
