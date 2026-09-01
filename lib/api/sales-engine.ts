@@ -111,12 +111,14 @@ async function seRequest<T>({
   body,
   token,
   orgId,
+  timeoutMs,
 }: {
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   body?: unknown;
   token?: string;
   orgId?: string | null;
+  timeoutMs?: number;
 }): Promise<T> {
   const authToken = token ?? getSalesEngineToken();
   if (!authToken) {
@@ -136,11 +138,28 @@ async function seRequest<T>({
     headers["X-Organization-Id"] = organizationId;
   }
 
-  const response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = timeoutMs ? new AbortController() : undefined;
+  const timeoutId =
+    controller && timeoutMs
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+
+  let response: Response;
+  try {
+    response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new SalesEngineApiError("Sales Engine request timed out.", 408);
+    }
+    throw error;
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
 
   const payload = (await response.json().catch(() => null)) as
     | { message?: string; data?: T }
@@ -279,7 +298,7 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
   });
 }
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
+// ── Chat ─────────────────────────────────────────────────────────────────────
 
 export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
 
@@ -307,8 +326,11 @@ export type SendChatMessageResult = {
   discovery_run_id?: number | null;
 };
 
+const DISCOVERY_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
+const CHAT_DISCOVERY_TIMEOUT_MS = 60_000;
+
 export function createChatSession(title?: string): Promise<{ id: number }> {
-  return withSessionRetry(() =>
+  return withSessionRetry(async () =>
     seRequest<{ id: number }>({
       method: "POST",
       path: "/chat/sessions",
@@ -317,15 +339,78 @@ export function createChatSession(title?: string): Promise<{ id: number }> {
   );
 }
 
+export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
+  return withSessionRetry(async () =>
+    seRequest<ChatMessageApi[]>({
+      method: "GET",
+      path: `/chat/sessions/${sessionId}/messages`,
+    })
+  );
+}
+
 export function sendChatMessage(
   sessionId: number,
   payload: { body: string; intent: ChatIntent }
 ): Promise<SendChatMessageResult> {
-  return withSessionRetry(() =>
+  return withSessionRetry(async () =>
     seRequest<SendChatMessageResult>({
       method: "POST",
       path: `/chat/sessions/${sessionId}/messages`,
       body: payload,
+      timeoutMs: DISCOVERY_INTENTS.includes(payload.intent) ? CHAT_DISCOVERY_TIMEOUT_MS : undefined,
     })
   );
+}
+
+// ── Metrics ─────────────────────────────────────────────────────────────────
+
+export type SalesEngineMetrics = {
+  leads_discovered: number;
+  qualified_leads: number;
+  companies_cached: number;
+  outreach_drafts: number;
+  pipeline: Record<string, number>;
+};
+
+export function fetchMetrics(): Promise<SalesEngineMetrics> {
+  return withSessionRetry(async () =>
+    seRequest<SalesEngineMetrics>({ method: "GET", path: "/metrics" })
+  );
+}
+
+// ── Outreach ────────────────────────────────────────────────────────────────
+
+export type OutreachActivity = {
+  id: number;
+  name: string;
+  channel: string;
+  preview: string;
+  accentBg: string;
+  accentIcon: string;
+  occurred_at: string;
+};
+
+export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachActivity[]>({ method: "GET", path: "/outreach/recent" })
+  );
+}
+
+export function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString();
 }

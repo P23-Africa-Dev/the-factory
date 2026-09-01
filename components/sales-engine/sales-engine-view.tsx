@@ -6,10 +6,13 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
 import { IcpBuilderModal } from "./icp-builder-modal";
+import { ChatMessageBody } from "./chat-message-body";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
 import { isMissingActiveIcp, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
+import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
+import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import type { ChatIntent, ChatLead } from "@/lib/api/sales-engine";
+import { formatRelativeTime, type ChatIntent, type ChatLead } from "@/lib/api/sales-engine";
 import {
   Check,
   ChevronDown,
@@ -37,13 +40,6 @@ type ChatMessage = {
 };
 
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
-
-const outreachItems = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]", name: "Smith Williams", channel: "Email sequence", time: "2 hrs ago" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]", name: "KoboCare Clinics", channel: "Lead research", time: "2 hrs ago" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]", name: "Northline Agro", channel: "Registry match", time: "2 hrs ago" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]", name: "MobiMart Retail", channel: "WhatsApp opt-in", time: "2 hrs ago" },
-];
 
 const initialMessages: ChatMessage[] = [
   {
@@ -216,7 +212,7 @@ function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
   return (
     <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
       {leads.map((lead) => (
-        <div key={lead.id} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
+        <div key={lead.id ?? lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
             <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
@@ -466,11 +462,14 @@ function ChatWorkspace({
                   message.role === "user"
                     ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
                     : index === 0
-                      ? "whitespace-pre-line text-[12px] leading-[15px] text-[#09232d]"
+                      ? "text-[12px] leading-[15px] text-[#09232d]"
                       : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
                 }
               >
-                {message.body}
+                <ChatMessageBody
+                  content={message.body}
+                  variant={message.role === "user" ? "user" : index === 0 ? "welcome" : "assistant"}
+                />
               </div>
               {message.leads && <LeadInlineResults leads={message.leads} />}
               {index === 0 && (
@@ -550,27 +549,39 @@ function ChatWorkspace({
 function OutreachCard({
   color,
   icon,
+  iconColor,
   name,
   channel,
+  preview,
   time,
 }: {
   color: string;
   icon: string;
+  iconColor?: string;
   name: string;
   channel: string;
+  preview: string;
   time: string;
 }) {
   return (
-    <article className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}>
+    <article
+      className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      style={color.startsWith("#") ? { backgroundColor: color } : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
-            <MessageCircle size={21} className={icon} fill="currentColor" />
+            <MessageCircle
+              size={21}
+              className={icon}
+              style={iconColor ? { color: iconColor } : undefined}
+              fill="currentColor"
+            />
           </div>
           <div className="min-w-0 text-[#09232d]">
             <p className="text-[14px] font-bold leading-[18px]">{name}</p>
             <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
-              {channel}: Hi {name}, I&apos;ve been following your brand and I believe there are a few ways we can support your field growth...
+              {channel}: {preview}
             </p>
           </div>
         </div>
@@ -581,7 +592,16 @@ function OutreachCard({
   );
 }
 
+const OUTREACH_FALLBACK_COLORS = [
+  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
+  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
+  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
+  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
+] as const;
+
 function OutreachPanel() {
+  const { data: items = [] } = useSalesEngineOutreach();
+
   return (
     <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
       <header className="mb-8 flex items-center justify-center gap-2">
@@ -590,9 +610,22 @@ function OutreachPanel() {
       </header>
       <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
       <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
-        {outreachItems.map((item) => (
-          <OutreachCard key={item.name} {...item} />
-        ))}
+        {items.map((item, index) => {
+          const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
+          const useApiColors = item.accentBg?.startsWith("#");
+          return (
+            <OutreachCard
+              key={item.id}
+              color={useApiColors ? item.accentBg : fallback.color}
+              icon={useApiColors ? "" : fallback.icon}
+              iconColor={useApiColors ? item.accentIcon : undefined}
+              name={item.name}
+              channel={item.channel}
+              preview={item.preview}
+              time={formatRelativeTime(item.occurred_at)}
+            />
+          );
+        })}
       </div>
     </aside>
   );
@@ -644,14 +677,19 @@ export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
   const { data: activeProfile } = useActiveIcpProfile();
+  const { data: metrics } = useSalesEngineMetrics();
+
+  const leadsDiscovered = metrics?.leads_discovered ?? 0;
+  const qualifiedLeads = metrics?.qualified_leads ?? 0;
+  const formatMetric = (value: number) => value.toLocaleString();
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Lead Metrics" value="4,100" percent="73" active />
-            <MetricCard title="Qualified Lead Metrics" value="1,100" percent="43" />
+            <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
+            <MetricCard title="Qualified Lead Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">

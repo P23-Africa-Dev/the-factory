@@ -1,15 +1,18 @@
 "use client";
 
-import { useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { useResetSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
+import { useCallback, useRef } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  SalesEngineApiError,
   createChatSession,
   sendChatMessage,
+  SalesEngineApiError,
   type ChatIntent,
   type SendChatMessageResult,
 } from "@/lib/api/sales-engine";
+import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
+import { SALES_ENGINE_ICP_KEYS } from "@/hooks/use-sales-engine-icp";
+import { SALES_ENGINE_METRICS_KEYS } from "@/hooks/use-sales-engine-metrics";
+import { SALES_ENGINE_OUTREACH_KEYS } from "@/hooks/use-sales-engine-outreach";
 
 function isUnauthorized(error: unknown) {
   return error instanceof SalesEngineApiError && error.status === 401;
@@ -20,28 +23,55 @@ export function isMissingActiveIcp(error: unknown): boolean {
   return error instanceof SalesEngineApiError && error.status === 422;
 }
 
+export function useChatSession() {
+  const sessionIdRef = useRef<number | null>(null);
+  const { data: token, isLoading: isAuthLoading } = useSalesEngineAuth();
+
+  const ensureSession = useCallback(async (): Promise<number> => {
+    if (sessionIdRef.current !== null) {
+      return sessionIdRef.current;
+    }
+    if (!token) {
+      throw new SalesEngineApiError("Sales Engine session is not ready.", 401);
+    }
+    const session = await createChatSession();
+    sessionIdRef.current = session.id;
+    return session.id;
+  }, [token]);
+
+  return { ensureSession, isAuthLoading, hasToken: Boolean(token) };
+}
+
+type SendMessageVariables = {
+  body: string;
+  intent: ChatIntent;
+};
+
 type SendMessageOptions = {
   onSuccess?: (result: SendChatMessageResult) => void;
   onError?: (error: unknown) => void;
 };
 
-/**
- * Sends a chat message, creating the session lazily on first use (one session per
- * page load — history isn't persisted or reloaded across visits).
- */
 export function useSendChatMessage(options?: SendMessageOptions) {
+  const queryClient = useQueryClient();
   const resetAuth = useResetSalesEngineAuth();
-  const sessionIdRef = useRef<number | null>(null);
+  const { ensureSession } = useChatSession();
 
   return useMutation({
-    mutationFn: async ({ body, intent }: { body: string; intent: ChatIntent }) => {
-      if (sessionIdRef.current == null) {
-        const session = await createChatSession();
-        sessionIdRef.current = session.id;
-      }
-      return sendChatMessage(sessionIdRef.current, { body, intent });
+    mutationFn: async ({ body, intent }: SendMessageVariables) => {
+      const sessionId = await ensureSession();
+      return sendChatMessage(sessionId, { body, intent });
     },
-    onSuccess: (result) => options?.onSuccess?.(result),
+    onSuccess: (result, variables) => {
+      if (variables.intent === "generate_leads" || variables.intent === "quick_research") {
+        queryClient.invalidateQueries({ queryKey: SALES_ENGINE_METRICS_KEYS.all });
+        queryClient.invalidateQueries({ queryKey: SALES_ENGINE_ICP_KEYS.all });
+      }
+      if (variables.intent === "create_outreach") {
+        queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });
+      }
+      options?.onSuccess?.(result);
+    },
     onError: (error) => {
       if (isUnauthorized(error)) resetAuth();
       options?.onError?.(error);
