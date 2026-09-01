@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { IcpBuilderModal } from "./icp-builder-modal";
+import { ChatMessageBody } from "./chat-message-body";
 import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
 import { useSendChatMessage } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
@@ -355,11 +356,20 @@ function ChatWorkspace({
                   message.role === "user"
                     ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
                     : index === 0
-                      ? "whitespace-pre-line text-[12px] leading-[15px] text-[#09232d]"
+                      ? "text-[12px] leading-[15px] text-[#09232d]"
                       : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
                 }
               >
-                {message.body}
+                <ChatMessageBody
+                  content={message.body}
+                  variant={
+                    message.role === "user"
+                      ? "user"
+                      : index === 0
+                        ? "welcome"
+                        : "assistant"
+                  }
+                />
               </div>
               {message.leads && <LeadInlineResults leads={message.leads} />}
               {index === 0 && (
