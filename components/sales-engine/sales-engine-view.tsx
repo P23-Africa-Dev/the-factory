@@ -473,6 +473,19 @@ function LeadInlineResults({
                   {[lead.title, lead.company].filter(Boolean).join(" at ")}
                 </p>
               )}
+              {lead.location && (
+                <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
+              )}
+              {lead.profile_urls && lead.profile_urls.length > 0 && (
+                <a
+                  href={lead.profile_urls[0]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                >
+                  View profile
+                </a>
+              )}
               <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
               {lead.low_confidence && (
                 <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
@@ -2126,7 +2139,7 @@ export function SalesEngineView() {
                   className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
                 >
                   <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
-                  View CRM Pipeline{leadsInCrm > 0 ? ` (${formatMetric(leadsInCrm)})` : ""}
+                  View CRM Pipeline
                 </Link>
                 <button
                   type="button"

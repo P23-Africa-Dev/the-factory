@@ -310,6 +310,10 @@ export type ChatLead = {
   summary: string;
   title?: string | null;
   company?: string | null;
+  location?: string | null;
+  website?: string | null;
+  profile_urls?: string[] | null;
+  next_action?: string | null;
   source_url?: string | null;
   save_status?: "draft" | "saved";
   crm_synced?: boolean;
