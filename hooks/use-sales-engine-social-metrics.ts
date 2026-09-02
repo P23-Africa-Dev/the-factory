@@ -1,7 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { fetchSocialListeningMetrics, SalesEngineApiError } from "@/lib/api/sales-engine";
+import {
+  fetchSocialListeningMetrics,
+  SalesEngineApiError,
+  type SocialListeningMetrics,
+} from "@/lib/api/sales-engine";
 import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
 import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
 
@@ -15,7 +19,9 @@ function isUnauthorized(error: unknown) {
   return error instanceof SalesEngineApiError && error.status === 401;
 }
 
-export function useSocialListeningMetrics() {
+export function useSocialListeningMetrics(options?: {
+  refetchInterval?: number | false | ((data: SocialListeningMetrics | undefined) => number | false);
+}) {
   const { data: token, isLoading: isAuthLoading } = useSalesEngineAuth();
   const { data: activeIcp } = useActiveIcpProfile();
   const resetAuth = useResetSalesEngineAuth();
@@ -31,6 +37,12 @@ export function useSocialListeningMetrics() {
       }
     },
     enabled: Boolean(token) && !isAuthLoading && Boolean(activeIcp?.id),
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 30,
+    refetchInterval: (query) => {
+      if (typeof options?.refetchInterval === "function") {
+        return options.refetchInterval(query.state.data);
+      }
+      return options?.refetchInterval ?? false;
+    },
   });
 }

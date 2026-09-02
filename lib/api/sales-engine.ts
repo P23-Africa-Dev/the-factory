@@ -567,11 +567,24 @@ export type SocialSignalApi = {
   f23_lead_id?: number | null;
 };
 
+export type SocialListeningRunStatus = {
+  id: number;
+  status: string;
+  stages?: string[] | null;
+  signals_created?: number | null;
+  result_summary?: string | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
 export type SocialListeningMetrics = {
   signals_detected: number;
   high_opportunities: number;
   added_to_crm: number;
   percent_change: number;
+  last_run_at?: string | null;
+  latest_run?: SocialListeningRunStatus | null;
 };
 
 export type SocialListeningSettings = {
@@ -735,6 +748,32 @@ export function triggerSocialListeningRun(force = false): Promise<{ id: number; 
       path: "/social-listening/runs",
       body: force ? { force: true } : {},
     })
+  );
+}
+
+export function bootstrapSocialListeningRun(force = false): Promise<{
+  id: number;
+  status: string;
+  bootstrapped: boolean;
+  latest_run?: SocialListeningRunStatus | null;
+}> {
+  return withSessionRetry(async () =>
+    seRequest<{
+      id: number;
+      status: string;
+      bootstrapped: boolean;
+      latest_run?: SocialListeningRunStatus | null;
+    }>({
+      method: "POST",
+      path: "/social-listening/runs/bootstrap",
+      body: force ? { force: true } : {},
+    })
+  );
+}
+
+export function fetchSocialListeningRun(id: number): Promise<SocialListeningRunStatus> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningRunStatus>({ method: "GET", path: `/social-listening/runs/${id}` })
   );
 }
 

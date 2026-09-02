@@ -16,12 +16,13 @@ import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import {
   useCreateSignalOutreach,
+  getSocialListeningEmptyMessage,
   useSetSignalReminder,
+  useSocialListeningBootstrap,
   useSocialListeningSignals,
   useSyncSignalToCrm,
   useTriggerSocialListeningRun,
 } from "@/hooks/use-sales-engine-social-listening";
-import { useSocialListeningMetrics } from "@/hooks/use-sales-engine-social-metrics";
 import {
   useSocialListeningSettings,
   useUpdateSocialListeningSettings,
@@ -1070,6 +1071,7 @@ function SocialSignalsTable({
   perPage,
   onPageChange,
   isLoading,
+  emptyStateMessage,
 }: {
   signals: SocialSignal[];
   onHoverSignal: (signal: SocialSignal) => void;
@@ -1079,6 +1081,7 @@ function SocialSignalsTable({
   perPage: number;
   onPageChange: (page: number) => void;
   isLoading?: boolean;
+  emptyStateMessage?: string;
 }) {
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(page * perPage, total);
@@ -1113,8 +1116,11 @@ function SocialSignalsTable({
         </table>
         )}
         {!isLoading && signals.length === 0 && (
-          <div className="flex h-[220px] items-center justify-center text-[12px] font-medium text-[#616263]">
-            No matching signals found.
+          <div className="flex h-[220px] flex-col items-center justify-center gap-2 px-6 text-center text-[12px] font-medium text-[#616263]">
+            {emptyStateMessage?.includes("Scanning") && (
+              <Loader2 size={18} className="animate-spin text-[#09232d]" />
+            )}
+            <span>{emptyStateMessage ?? "No matching signals found."}</span>
           </div>
         )}
       </div>
@@ -1179,6 +1185,9 @@ function SocialListeningFilters({
   onSignalTypeChange,
   onIntentChange,
   onOpenSettings,
+  onScanNow,
+  isScanning,
+  isScanPending,
 }: {
   search: string;
   source: string;
@@ -1189,6 +1198,9 @@ function SocialListeningFilters({
   onSignalTypeChange: (value: string) => void;
   onIntentChange: (value: string) => void;
   onOpenSettings: () => void;
+  onScanNow: () => void;
+  isScanning?: boolean;
+  isScanPending?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-[17px]">
@@ -1225,10 +1237,23 @@ function SocialListeningFilters({
       </button>
       <button
         type="button"
+        onClick={onScanNow}
+        disabled={isScanning || isScanPending}
+        className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {isScanning || isScanPending ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Sparkles size={14} />
+        )}
+        Scan now
+      </button>
+      <button
+        type="button"
         onClick={onOpenSettings}
         className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340]"
       >
-        <Sparkles size={14} />
+        <SlidersHorizontal size={14} />
         Listen Settings
       </button>
     </div>
@@ -1672,19 +1697,24 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
     setPage(1);
   }, [source, signalType, intent]);
 
-  const { data: metrics, isLoading: metricsLoading } = useSocialListeningMetrics();
+  const { metrics, metricsLoading, latestRun, isScanning, bootstrap } =
+    useSocialListeningBootstrap();
+  const triggerRun = useTriggerSocialListeningRun();
   const {
     data: signalsResult,
     isLoading: signalsLoading,
     error: signalsError,
-  } = useSocialListeningSignals({
-    page,
-    per_page: perPage,
-    search: debouncedSearch,
-    source,
-    signal_type: signalType,
-    buying_stage: intent,
-  });
+  } = useSocialListeningSignals(
+    {
+      page,
+      per_page: perPage,
+      search: debouncedSearch,
+      source,
+      signal_type: signalType,
+      buying_stage: intent,
+    },
+    { refetchInterval: isScanning ? 5000 : false }
+  );
 
   const createOutreach = useCreateSignalOutreach();
   const setReminder = useSetSignalReminder();
@@ -1704,6 +1734,20 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   }, [signals, activeSignalId]);
 
   const activeSignal = signals.find((signal) => signal.id === activeSignalId) ?? signals[0];
+
+  const emptyStateMessage = getSocialListeningEmptyMessage(
+    latestRun,
+    metrics?.last_run_at,
+    isScanning
+  );
+
+  const handleScanNow = () => {
+    triggerRun.mutate(true, {
+      onSuccess: () => toast.success("Social listening scan queued."),
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not start social listening scan.")),
+    });
+  };
 
   const statCards: SocialStatCard[] = [
     {
@@ -1770,6 +1814,9 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
             onSignalTypeChange={setSignalType}
             onIntentChange={setIntent}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onScanNow={handleScanNow}
+            isScanning={isScanning}
+            isScanPending={triggerRun.isPending || bootstrap.isPending}
           />
           {signalsError && isMissingActiveIcp(signalsError) ? (
             <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
@@ -1785,6 +1832,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
               perPage={meta.per_page}
               onPageChange={setPage}
               isLoading={signalsLoading}
+              emptyStateMessage={emptyStateMessage}
             />
           )}
         </div>
@@ -1824,7 +1872,14 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
           />
         ) : (
           <aside className="flex min-h-[645px] items-center justify-center rounded-[30px] bg-white px-8 text-center text-[13px] text-[#616263] shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-            {signalsLoading ? "Loading opportunity details…" : "Select a signal to view details."}
+            {signalsLoading || isScanning ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                {emptyStateMessage}
+              </span>
+            ) : (
+              "Select a signal to view details."
+            )}
           </aside>
         )}
       </div>
