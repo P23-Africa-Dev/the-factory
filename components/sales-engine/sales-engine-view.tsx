@@ -408,13 +408,13 @@ function LeadInlineResults({
         <p className="mb-2 rounded-[12px] bg-[#fff7ed] px-3 py-2 text-[8px] leading-[11px] text-[#92400e]">
           {mixedRecommendations
             ? "These answer your search. Leads marked ICP match align with your profile; Outside ICP leads still match what you asked for."
-            : "These answer your search but may fall outside your ICP — you can still review and save any lead below."}
+            : "These answer your search but may fall outside your ICP. You can still review and save any lead below."}
         </p>
       )}
       {unsavedIds.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[9px] font-medium text-[#616263]">
-            Review leads below — save the ones you want in CRM.
+            Review leads below. Save the ones you want in CRM.
           </p>
           <button
             type="button"
