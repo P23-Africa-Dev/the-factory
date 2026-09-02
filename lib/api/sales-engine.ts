@@ -113,7 +113,7 @@ async function seRequest<T>({
   orgId,
   timeoutMs,
 }: {
-  method: "GET" | "POST" | "PATCH" | "DELETE";
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   path: string;
   body?: unknown;
   token?: string;
@@ -413,4 +413,285 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString();
+}
+
+// ── Social Listening ────────────────────────────────────────────────────────
+
+export type SocialSignalApi = {
+  id: number;
+  signal: string;
+  source: string;
+  sourceIcon: string;
+  persona: string;
+  company: string;
+  location: string;
+  intent: string;
+  intentColor: string;
+  description: string;
+  score: number;
+  profile: string;
+  reasons: string[];
+  signalType: string;
+  buyingStage: string;
+  problem: string;
+  urgency: string;
+  suggestedMessage: string;
+  recommendedAction?: string;
+  status?: string;
+  posted_at?: string | null;
+  post_url?: string | null;
+  lead_id?: number | null;
+  f23_lead_id?: number | null;
+};
+
+export type SocialListeningMetrics = {
+  signals_detected: number;
+  high_opportunities: number;
+  added_to_crm: number;
+  percent_change: number;
+};
+
+export type SocialListeningSettings = {
+  enabled_sources: string[];
+  cadence_days: 14 | 30;
+  min_score: number;
+  intent_filters: string[];
+  crm_destination: "qualified_pipeline" | "human_review";
+  outreach_channel_default: "email" | "human_follow_up";
+  sender_mode: "platform" | "organization";
+  org_verified_from_email?: string | null;
+  org_verified_domain?: string | null;
+  verification_status: "pending" | "verified" | "failed";
+  last_run_at?: string | null;
+};
+
+export type OutreachSenderSettings = {
+  sender_mode: "platform" | "organization";
+  reply_to_email: string;
+  org_verified_from_email?: string | null;
+  org_verified_domain?: string | null;
+  verification_status: "pending" | "verified" | "failed";
+  platform_from_email?: string | null;
+};
+
+export type PaginatedMeta = {
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+};
+
+export type PaginatedSocialSignals = {
+  items: SocialSignalApi[];
+  meta: PaginatedMeta;
+};
+
+type PaginatedResponse<T> = {
+  data: T[];
+  meta: PaginatedMeta;
+};
+
+async function seRequestPaginated<T>({
+  method,
+  path,
+  body,
+  token,
+  orgId,
+}: {
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  path: string;
+  body?: unknown;
+  token?: string;
+  orgId?: string | null;
+}): Promise<PaginatedResponse<T>> {
+  const authToken = token ?? getSalesEngineToken();
+  if (!authToken) {
+    throw new SalesEngineApiError("Sales Engine session is not ready.", 401);
+  }
+
+  const organizationId = orgId ?? getSalesEngineOrgId();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    Authorization: `Bearer ${authToken}`,
+  };
+
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (organizationId) {
+    headers["X-Organization-Id"] = organizationId;
+  }
+
+  const response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { message?: string; data?: T[]; meta?: PaginatedMeta }
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : `Sales Engine request failed (${response.status})`;
+    throw new SalesEngineApiError(message, response.status);
+  }
+
+  return {
+    data: (payload?.data ?? []) as T[],
+    meta: payload?.meta ?? { current_page: 1, last_page: 1, per_page: 20, total: 0 },
+  };
+}
+
+export function fetchSocialSignals(params?: {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  source?: string;
+  signal_type?: string;
+  buying_stage?: string;
+}): Promise<PaginatedSocialSignals> {
+  return withSessionRetry(async () => {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.per_page) query.set("per_page", String(params.per_page));
+    if (params?.search) query.set("search", params.search);
+    if (params?.source && params.source !== "all") query.set("source", params.source);
+    if (params?.signal_type && params.signal_type !== "all") query.set("signal_type", params.signal_type);
+    if (params?.buying_stage && params.buying_stage !== "all") query.set("buying_stage", params.buying_stage);
+
+    const qs = query.toString();
+    const result = await seRequestPaginated<SocialSignalApi>({
+      method: "GET",
+      path: `/social-listening/signals${qs ? `?${qs}` : ""}`,
+    });
+    return { items: result.data, meta: result.meta };
+  });
+}
+
+export function fetchSocialSignal(id: number): Promise<SocialSignalApi> {
+  return withSessionRetry(async () =>
+    seRequest<SocialSignalApi>({ method: "GET", path: `/social-listening/signals/${id}` })
+  );
+}
+
+export function fetchSocialListeningMetrics(): Promise<SocialListeningMetrics> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningMetrics>({ method: "GET", path: "/social-listening/metrics" })
+  );
+}
+
+export function fetchSocialListeningSettings(): Promise<SocialListeningSettings> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningSettings>({ method: "GET", path: "/social-listening/settings" })
+  );
+}
+
+export function updateSocialListeningSettings(
+  payload: Partial<SocialListeningSettings>
+): Promise<SocialListeningSettings> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningSettings>({
+      method: "PUT",
+      path: "/social-listening/settings",
+      body: payload,
+    })
+  );
+}
+
+export function triggerSocialListeningRun(force = false): Promise<{ id: number; status: string }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number; status: string }>({
+      method: "POST",
+      path: "/social-listening/runs",
+      body: force ? { force: true } : {},
+    })
+  );
+}
+
+export function createSignalOutreach(
+  id: number,
+  opts?: { send?: boolean; to_email?: string }
+): Promise<{ subject?: string; body: string; activity_id?: number; sent?: boolean }> {
+  return withSessionRetry(async () =>
+    seRequest<{ subject?: string; body: string; activity_id?: number; sent?: boolean }>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/outreach`,
+      body: opts ?? {},
+    })
+  );
+}
+
+export function setSignalReminder(
+  id: number,
+  payload?: { remind_at?: string; note?: string }
+): Promise<{ id: number; remind_at: string }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number; remind_at: string }>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/reminder`,
+      body: payload ?? {},
+    })
+  );
+}
+
+export function syncSignalToCrm(id: number): Promise<{
+  lead_id: number;
+  f23_lead_id?: number | null;
+  crm?: unknown;
+  signal: SocialSignalApi;
+}> {
+  return withSessionRetry(async () =>
+    seRequest<{
+      lead_id: number;
+      f23_lead_id?: number | null;
+      crm?: unknown;
+      signal: SocialSignalApi;
+    }>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/sync-to-crm`,
+    })
+  );
+}
+
+export function dismissSignal(id: number): Promise<SocialSignalApi> {
+  return withSessionRetry(async () =>
+    seRequest<SocialSignalApi>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/dismiss`,
+    })
+  );
+}
+
+export function fetchOutreachSenderSettings(): Promise<OutreachSenderSettings> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachSenderSettings>({ method: "GET", path: "/outreach/sender-settings" })
+  );
+}
+
+export function updateOutreachSenderSettings(
+  payload: Partial<OutreachSenderSettings>
+): Promise<OutreachSenderSettings> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachSenderSettings>({
+      method: "PUT",
+      path: "/outreach/sender-settings",
+      body: payload,
+    })
+  );
+}
+
+export function pushLeadToCrm(leadId: number): Promise<{ lead_id: number; f23_lead_id?: number | null }> {
+  return withSessionRetry(async () =>
+    seRequest<{ lead_id: number; f23_lead_id?: number | null }>({
+      method: "POST",
+      path: `/leads/${leadId}/sync-to-crm`,
+    })
+  );
 }

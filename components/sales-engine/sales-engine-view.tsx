@@ -14,8 +14,30 @@ import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/ho
 import { isMissingActiveIcp, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
+import {
+  useCreateSignalOutreach,
+  useSetSignalReminder,
+  useSocialListeningSignals,
+  useSyncSignalToCrm,
+  useTriggerSocialListeningRun,
+} from "@/hooks/use-sales-engine-social-listening";
+import { useSocialListeningMetrics } from "@/hooks/use-sales-engine-social-metrics";
+import {
+  useSocialListeningSettings,
+  useUpdateSocialListeningSettings,
+} from "@/hooks/use-sales-engine-social-settings";
+import {
+  useOutreachSenderSettings,
+  useUpdateOutreachSenderSettings,
+} from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import { formatRelativeTime, type ChatIntent, type ChatLead } from "@/lib/api/sales-engine";
+import {
+  formatRelativeTime,
+  type ChatIntent,
+  type ChatLead,
+  type SocialListeningSettings,
+  type SocialSignalApi,
+} from "@/lib/api/sales-engine";
 import {
   Building2,
   Check,
@@ -50,26 +72,7 @@ type ChatMessage = {
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
 type SalesEngineTab = "smart-lead" | "social-listening";
-type SocialSignal = {
-  id: number;
-  signal: string;
-  source: "LinkedIn Post" | "X/Twitter Post" | "Reddit Post";
-  sourceIcon: string;
-  persona: string;
-  company: string;
-  location: string;
-  intent: string;
-  intentColor: string;
-  description: string;
-  score: number;
-  profile: string;
-  reasons: string[];
-  signalType: string;
-  buyingStage: string;
-  problem: string;
-  urgency: string;
-  suggestedMessage: string;
-};
+type SocialSignal = SocialSignalApi;
 
 type SocialStatCard = {
   title: string;
@@ -137,122 +140,19 @@ const salesEngineTabs: Array<{ id: SalesEngineTab; label: string }> = [
   { id: "social-listening", label: "Social Listening" },
 ];
 
-const socialStatCards: SocialStatCard[] = [
-  { title: "Signals Detected", value: "4,100", percent: "73", unit: "Signals", active: true },
-  { title: "High Opportunities", value: "1,100", percent: "43", unit: "Opportunities" },
-  { title: "Added to CRM", value: "34", percent: "43", unit: "Opportunities" },
-];
+const SOURCE_SETTING_OPTIONS = [
+  { key: "linkedin_public", label: "LinkedIn public index" },
+  { key: "x_mentions", label: "X/Twitter mentions" },
+  { key: "reddit", label: "Reddit communities" },
+  { key: "meta_pages", label: "Meta business pages" },
+] as const;
 
-const socialSignals: SocialSignal[] = [
-  {
-    id: 1,
-    signal: "We're struggling to consistently generate qualified leads in Nigeria. Any recommendations for agencies that actually understand B2B?",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Marketing Director",
-    company: "ABC Technologies",
-    location: "Lagos, Nigeria\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Actively looking for solutions",
-    score: 73,
-    profile: "Thabo Molefe",
-    reasons: [
-      "Explicit problem with current situation",
-      "Actively asking for recommendations",
-      "Relevant decision maker (Marketing Director)",
-      "Matches ICP (Industry, Size, Location)",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Consideration",
-    problem: "Generating qualified leads consistently",
-    urgency: "Medium-High",
-    suggestedMessage:
-      "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
-  },
-  {
-    id: 2,
-    signal: "Our CRM contract expires next month. Looking for something easier to implement. Anyone used Zoho or HubSpot?",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Sales Manager",
-    company: "Greenfield Ltd",
-    location: "Lagos, Nigeria\n51-200 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Evaluating alternatives",
-    score: 73,
-    profile: "Aisha Bello",
-    reasons: [
-      "Contract renewal creates a near-term trigger",
-      "Named competing tools in the current workflow",
-      "Relevant decision maker (Sales Manager)",
-      "Clear need for easier implementation",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Vendor Evaluation",
-    problem: "CRM implementation friction",
-    urgency: "High",
-    suggestedMessage:
-      "Hi Aisha,\nI noticed your team is evaluating CRM options before renewal. Factory 23 can help compare implementation effort and identify a lower-friction path for your sales process.",
-  },
-  {
-    id: 3,
-    signal: "We're struggling to consistently generate qualified leads in Nigeria. Any recommendations for agencies that actually understand B2B?",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Marketing Director",
-    company: "ABC Technologies",
-    location: "Lagos, Nigeria\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Actively looking for solutions",
-    score: 73,
-    profile: "Thabo Molefe",
-    reasons: [
-      "Explicit problem with current situation",
-      "Actively asking for recommendations",
-      "Relevant decision maker (Marketing Director)",
-      "Matches ICP (Industry, Size, Location)",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Consideration",
-    problem: "Generating qualified leads consistently",
-    urgency: "Medium-High",
-    suggestedMessage:
-      "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
-  },
-  {
-    id: 4,
-    signal: "Anyone know how much it actually costs to build a mobile app like these fintech apps?",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Marketing Director",
-    company: "Individual",
-    location: "",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Gathering pricing information",
-    score: 73,
-    profile: "Daniel Okafor",
-    reasons: [
-      "Pricing question suggests active budgeting",
-      "Mobile product scope fits Factory 23 discovery",
-      "Open to external recommendations",
-      "Fintech context has high commercial value",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Research",
-    problem: "Understanding app build cost",
-    urgency: "Medium",
-    suggestedMessage:
-      "Hi Daniel,\nI saw your question about fintech app build costs. We can help you break the scope into phases and estimate a realistic budget before you commit to a vendor.",
-  },
-];
+const INTENT_SETTING_OPTIONS = [
+  { key: "recommendation", label: "Recommendations" },
+  { key: "switching", label: "Switching" },
+  { key: "pricing", label: "Pricing questions" },
+  { key: "hiring_expansion", label: "Hiring or expansion" },
+] as const;
 
 const sourceFilterOptions: SelectOption[] = [
   { value: "all", label: "All Sources" },
@@ -1080,7 +980,9 @@ function SocialSignalRow({
       </td>
       <td className="px-3 py-3 align-middle">
         <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
-        <p className="mt-1 text-[8px] text-[#616263]/70 transition-colors group-hover:text-white/70 group-focus:text-white/70">2hr ago</p>
+        <p className="mt-1 text-[8px] text-[#616263]/70 transition-colors group-hover:text-white/70 group-focus:text-white/70">
+          {formatRelativeTime(signal.posted_at)}
+        </p>
       </td>
       <td className="px-3 py-3 align-middle">
         <p className="w-[68px] text-[8px] leading-[11px]">{signal.persona}</p>
@@ -1124,13 +1026,35 @@ function SocialSignalRow({
 function SocialSignalsTable({
   signals,
   onHoverSignal,
+  page,
+  lastPage,
+  total,
+  perPage,
+  onPageChange,
+  isLoading,
 }: {
   signals: SocialSignal[];
   onHoverSignal: (signal: SocialSignal) => void;
+  page: number;
+  lastPage: number;
+  total: number;
+  perPage: number;
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
 }) {
+  const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const rangeEnd = Math.min(page * perPage, total);
+  const visiblePages = Array.from({ length: Math.min(lastPage, 3) }, (_, index) => index + 1);
+
   return (
     <section className="flex min-h-[416px] flex-1 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
       <div className="min-h-0 flex-1 overflow-auto pr-1">
+        {isLoading ? (
+          <div className="flex h-[220px] items-center justify-center text-[12px] font-medium text-[#616263]">
+            <Loader2 size={18} className="mr-2 animate-spin" />
+            Loading signals…
+          </div>
+        ) : (
         <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
           <thead>
             <tr className="text-[9px] font-semibold text-[#333333]">
@@ -1149,30 +1073,58 @@ function SocialSignalsTable({
             ))}
           </tbody>
         </table>
-        {signals.length === 0 && (
+        )}
+        {!isLoading && signals.length === 0 && (
           <div className="flex h-[220px] items-center justify-center text-[12px] font-medium text-[#616263]">
             No matching signals found.
           </div>
         )}
       </div>
       <div className="flex items-center justify-between px-8 pb-3 pt-1 text-[9px] font-semibold text-[#333333] max-sm:px-3">
-        <span>Showing 1 - {Math.max(signals.length, 1)} of 213 Signals</span>
+        <span>
+          Showing {rangeStart} - {rangeEnd} of {total} Signals
+        </span>
         <div className="flex items-center gap-2">
-          <button type="button" className="px-2 text-[#c1c1c1]">Prev</button>
-          {[1, 2, 3].map((page) => (
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+            className={`px-2 ${page <= 1 ? "text-[#c1c1c1]" : ""}`}
+          >
+            Prev
+          </button>
+          {visiblePages.map((pageNumber) => (
             <button
-              key={page}
+              key={pageNumber}
               type="button"
+              onClick={() => onPageChange(pageNumber)}
               className={`grid size-8 place-items-center rounded-[8px] border text-[10px] ${
-                page === 1 ? "border-[#3f83f8] bg-[#3f83f8] text-white" : "border-[#f1f1f1] bg-white text-[#333333]"
+                pageNumber === page ? "border-[#3f83f8] bg-[#3f83f8] text-white" : "border-[#f1f1f1] bg-white text-[#333333]"
               }`}
             >
-              {page}
+              {pageNumber}
             </button>
           ))}
-          <span className="px-2 text-[13px]">...</span>
-          <button type="button" className="grid size-8 place-items-center rounded-[8px] border border-[#f1f1f1] bg-white text-[10px]">10</button>
-          <button type="button" className="px-2">Next</button>
+          {lastPage > 3 && (
+            <>
+              <span className="px-2 text-[13px]">...</span>
+              <button
+                type="button"
+                onClick={() => onPageChange(lastPage)}
+                className="grid size-8 place-items-center rounded-[8px] border border-[#f1f1f1] bg-white text-[10px]"
+              >
+                {lastPage}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            disabled={page >= lastPage}
+            onClick={() => onPageChange(page + 1)}
+            className={`px-2 ${page >= lastPage ? "text-[#c1c1c1]" : ""}`}
+          >
+            Next
+          </button>
         </div>
       </div>
     </section>
@@ -1245,7 +1197,27 @@ function SocialListeningFilters({
   );
 }
 
-function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
+function SocialOpportunityDetail({
+  signal,
+  onCreateOutreach,
+  onSetReminder,
+  onSyncToCrm,
+  isCreatingOutreach,
+  isSettingReminder,
+  isSyncingToCrm,
+}: {
+  signal: SocialSignal;
+  onCreateOutreach: () => void;
+  onSetReminder: () => void;
+  onSyncToCrm: () => void;
+  isCreatingOutreach?: boolean;
+  isSettingReminder?: boolean;
+  isSyncingToCrm?: boolean;
+}) {
+  const recommendedAction =
+    signal.recommendedAction ??
+    "Reach out within 24 hours — this prospect may be actively looking for solutions.";
+
   return (
     <aside className="flex min-h-[645px] flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
       <div className="relative h-[165px] bg-[#0b242e] px-7 pb-5 pt-8 text-white">
@@ -1256,7 +1228,9 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
         <p className="mt-3 max-w-[250px] text-[10px] font-light leading-[12px]">
           {signal.signal}
         </p>
-        <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">{signal.source} • Public • 2hrs ago</p>
+        <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
+          {signal.source} • Public • {formatRelativeTime(signal.posted_at)}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
@@ -1308,7 +1282,7 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
       <div className="space-y-[5px] px-2 pb-2">
         <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
           <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
-          <p className="mt-1 text-[9px] leading-[12px]"><span className="font-semibold">Reach out within 24 hours</span><br />This prospect is actively looking for solutions.</p>
+          <p className="mt-1 text-[9px] leading-[12px]">{recommendedAction}</p>
         </div>
         <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
           <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
@@ -1317,9 +1291,30 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
       </div>
 
       <div className="mt-auto flex items-center gap-[17px] bg-[#f7f7f7] px-6 py-4">
-        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white">Create Outreach</button>
-        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">Set Reminder</button>
-        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">Add to CRM</button>
+        <button
+          type="button"
+          disabled={isCreatingOutreach}
+          onClick={onCreateOutreach}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white disabled:opacity-60"
+        >
+          {isCreatingOutreach ? "Creating…" : "Create Outreach"}
+        </button>
+        <button
+          type="button"
+          disabled={isSettingReminder}
+          onClick={onSetReminder}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] disabled:opacity-60"
+        >
+          {isSettingReminder ? "Saving…" : "Set Reminder"}
+        </button>
+        <button
+          type="button"
+          disabled={isSyncingToCrm}
+          onClick={onSyncToCrm}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] disabled:opacity-60"
+        >
+          {isSyncingToCrm ? "Syncing…" : "Add to CRM"}
+        </button>
       </div>
     </aside>
   );
@@ -1332,12 +1327,63 @@ function ListeningSettingsModal({
   isOpen: boolean;
   onClose: () => void;
 }) {
-  const sources = ["LinkedIn public index", "X/Twitter mentions", "Reddit communities", "Meta business pages"];
-  const intents = ["Recommendations", "Switching", "Pricing questions", "Hiring or expansion"];
+  const { data: settings, isLoading } = useSocialListeningSettings(isOpen);
+  const { data: senderSettings } = useOutreachSenderSettings(isOpen);
+  const updateSettings = useUpdateSocialListeningSettings();
+  const updateSender = useUpdateOutreachSenderSettings();
+  const triggerRun = useTriggerSocialListeningRun();
 
-  const handleSave = () => {
-    toast.success("Listening settings saved for this mock workspace.");
-    onClose();
+  const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
+  const [minScore, setMinScore] = useState(70);
+  const [intentFilters, setIntentFilters] = useState<string[]>([]);
+  const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
+  const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
+  const [senderMode, setSenderMode] = useState<"platform" | "organization">("platform");
+
+  useEffect(() => {
+    if (!settings) return;
+    setEnabledSources(settings.enabled_sources ?? []);
+    setCadenceDays(settings.cadence_days ?? 14);
+    setMinScore(settings.min_score ?? 70);
+    setIntentFilters(settings.intent_filters ?? []);
+    setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
+    setOutreachChannel(settings.outreach_channel_default ?? "email");
+    setSenderMode(senderSettings?.sender_mode ?? settings.sender_mode ?? "platform");
+  }, [settings, senderSettings]);
+
+  const orgVerified = senderSettings?.verification_status === "verified";
+
+  const handleSave = async () => {
+    try {
+      await updateSettings.mutateAsync({
+        enabled_sources: enabledSources,
+        cadence_days: cadenceDays,
+        min_score: minScore,
+        intent_filters: intentFilters,
+        crm_destination: crmDestination,
+        outreach_channel_default: outreachChannel,
+        sender_mode: senderMode,
+      });
+      await updateSender.mutateAsync({ sender_mode: senderMode });
+      await triggerRun.mutateAsync(true);
+      toast.success("Listening settings saved. A refresh run has been queued.");
+      onClose();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not save listening settings."));
+    }
+  };
+
+  const toggleSource = (key: string) => {
+    setEnabledSources((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
+  };
+
+  const toggleIntent = (key: string) => {
+    setIntentFilters((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
   };
 
   return (
@@ -1377,16 +1423,28 @@ function ListeningSettingsModal({
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10 text-[13px] text-white/60">
+                  <Loader2 size={18} className="mr-2 animate-spin" />
+                  Loading settings…
+                </div>
+              ) : (
+                <>
               <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[13px] font-semibold">Sources monitored</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {sources.map((sourceName) => (
+                  {SOURCE_SETTING_OPTIONS.map((sourceOption) => (
                     <label
-                      key={sourceName}
+                      key={sourceOption.key}
                       className="flex items-center gap-2 rounded-[12px] bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
                     >
-                      <input type="checkbox" defaultChecked className="accent-[#8dec66]" />
-                      {sourceName}
+                      <input
+                        type="checkbox"
+                        checked={enabledSources.includes(sourceOption.key)}
+                        onChange={() => toggleSource(sourceOption.key)}
+                        className="accent-[#8dec66]"
+                      />
+                      {sourceOption.label}
                     </label>
                   ))}
                 </div>
@@ -1396,15 +1454,19 @@ function ListeningSettingsModal({
                 <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-[13px] font-semibold">Refresh cadence</p>
                   <div className="mt-3 space-y-2 text-[12px] text-white/70">
-                    {["Every 14 days", "Every 30 days"].map((cadence, index) => (
-                      <label key={cadence} className="flex items-center gap-2">
+                    {[
+                      { label: "Every 14 days", value: 14 as const },
+                      { label: "Every 30 days", value: 30 as const },
+                    ].map((cadence) => (
+                      <label key={cadence.value} className="flex items-center gap-2">
                         <input
                           type="radio"
                           name="social-listening-cadence"
-                          defaultChecked={index === 0}
+                          checked={cadenceDays === cadence.value}
+                          onChange={() => setCadenceDays(cadence.value)}
                           className="accent-[#8dec66]"
                         />
-                        {cadence}
+                        {cadence.label}
                       </label>
                     ))}
                   </div>
@@ -1413,10 +1475,17 @@ function ListeningSettingsModal({
                 <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-[13px] font-semibold">Opportunity threshold</p>
                   <div className="mt-4">
-                    <input type="range" min="40" max="90" defaultValue="70" className="w-full accent-[#8dec66]" />
+                    <input
+                      type="range"
+                      min="40"
+                      max="90"
+                      value={minScore}
+                      onChange={(event) => setMinScore(Number(event.target.value))}
+                      className="w-full accent-[#8dec66]"
+                    />
                     <div className="mt-2 flex justify-between text-[11px] text-white/45">
                       <span>Broad</span>
-                      <span>70% score</span>
+                      <span>{minScore}% score</span>
                       <span>Strict</span>
                     </div>
                   </div>
@@ -1426,13 +1495,18 @@ function ListeningSettingsModal({
               <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[13px] font-semibold">Intent signals</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {intents.map((intentName) => (
+                  {INTENT_SETTING_OPTIONS.map((intentOption) => (
                     <label
-                      key={intentName}
+                      key={intentOption.key}
                       className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
                     >
-                      <input type="checkbox" defaultChecked className="accent-[#8dec66]" />
-                      {intentName}
+                      <input
+                        type="checkbox"
+                        checked={intentFilters.includes(intentOption.key)}
+                        onChange={() => toggleIntent(intentOption.key)}
+                        className="accent-[#8dec66]"
+                      />
+                      {intentOption.label}
                     </label>
                   ))}
                 </div>
@@ -1443,20 +1517,73 @@ function ListeningSettingsModal({
                 <div className="mt-3 grid gap-3 text-[12px] text-white/70 sm:grid-cols-2">
                   <label>
                     CRM destination
-                    <select className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none">
-                      <option>Qualified leads pipeline</option>
-                      <option>Human review queue</option>
+                    <select
+                      value={crmDestination}
+                      onChange={(event) =>
+                        setCrmDestination(event.target.value as SocialListeningSettings["crm_destination"])
+                      }
+                      className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none"
+                    >
+                      <option value="qualified_pipeline">Qualified leads pipeline</option>
+                      <option value="human_review">Human review queue</option>
                     </select>
                   </label>
                   <label>
                     Outreach channel
-                    <select className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none">
-                      <option>Email first</option>
-                      <option>Human follow-up</option>
+                    <select
+                      value={outreachChannel}
+                      onChange={(event) =>
+                        setOutreachChannel(
+                          event.target.value as SocialListeningSettings["outreach_channel_default"]
+                        )
+                      }
+                      className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none"
+                    >
+                      <option value="email">Email first</option>
+                      <option value="human_follow_up">Human follow-up</option>
                     </select>
                   </label>
                 </div>
               </section>
+
+              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[13px] font-semibold">Email sender</p>
+                  <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] uppercase tracking-wide text-white/60">
+                    {senderSettings?.verification_status ?? "pending"}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-2 text-[12px] text-white/70">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="social-listening-sender"
+                      checked={senderMode === "platform"}
+                      onChange={() => setSenderMode("platform")}
+                      className="accent-[#8dec66]"
+                    />
+                    Send using The Factory (recommended)
+                  </label>
+                  <label className={`flex items-center gap-2 ${orgVerified ? "" : "opacity-50"}`}>
+                    <input
+                      type="radio"
+                      name="social-listening-sender"
+                      checked={senderMode === "organization"}
+                      onChange={() => orgVerified && setSenderMode("organization")}
+                      disabled={!orgVerified}
+                      className="accent-[#8dec66]"
+                    />
+                    Send using my organization email
+                  </label>
+                  {!orgVerified && (
+                    <p className="text-[11px] text-white/45">
+                      Verify your domain in SendGrid to enable organization sending.
+                    </p>
+                  )}
+                </div>
+              </section>
+                </>
+              )}
             </div>
 
             <div className="flex gap-3 border-t border-white/10 px-6 py-4">
@@ -1469,10 +1596,11 @@ function ListeningSettingsModal({
               </button>
               <button
                 type="button"
+                disabled={updateSettings.isPending || updateSender.isPending || triggerRun.isPending}
                 onClick={handleSave}
-                className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73]"
+                className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-60"
               >
-                Save Settings
+                {updateSettings.isPending ? "Saving…" : "Save Settings"}
               </button>
             </div>
           </motion.div>
@@ -1482,44 +1610,113 @@ function ListeningSettingsModal({
   );
 }
 
-function SocialListeningTab() {
+function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void }) {
+  const { data: activeProfile } = useActiveIcpProfile();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [source, setSource] = useState("all");
   const [signalType, setSignalType] = useState("all");
   const [intent, setIntent] = useState("all");
-  const [activeSignalId, setActiveSignalId] = useState(socialSignals[0].id);
+  const [page, setPage] = useState(1);
+  const [activeSignalId, setActiveSignalId] = useState<number | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const perPage = 20;
 
-  const filteredSignals = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return socialSignals.filter((signal) => {
-      const matchesSearch =
-        query.length === 0 ||
-        [signal.signal, signal.source, signal.persona, signal.company, signal.intent, signal.description]
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
-      const matchesSource = source === "all" || signal.source === source;
-      const matchesSignalType = signalType === "all" || signal.signalType === signalType;
-      const matchesIntent = intent === "all" || signal.buyingStage === intent;
-      return matchesSearch && matchesSource && matchesSignalType && matchesIntent;
-    });
-  }, [intent, search, signalType, source]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
-  const activeSignal =
-    filteredSignals.find((signal) => signal.id === activeSignalId) ?? filteredSignals[0] ?? socialSignals[0];
+  useEffect(() => {
+    setPage(1);
+  }, [source, signalType, intent]);
+
+  const { data: metrics, isLoading: metricsLoading } = useSocialListeningMetrics();
+  const {
+    data: signalsResult,
+    isLoading: signalsLoading,
+    error: signalsError,
+  } = useSocialListeningSignals({
+    page,
+    per_page: perPage,
+    search: debouncedSearch,
+    source,
+    signal_type: signalType,
+    buying_stage: intent,
+  });
+
+  const createOutreach = useCreateSignalOutreach();
+  const setReminder = useSetSignalReminder();
+  const syncToCrm = useSyncSignalToCrm();
+
+  const signals = signalsResult?.items ?? [];
+  const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
+
+  useEffect(() => {
+    if (signals.length === 0) {
+      setActiveSignalId(null);
+      return;
+    }
+    if (!activeSignalId || !signals.some((signal) => signal.id === activeSignalId)) {
+      setActiveSignalId(signals[0].id);
+    }
+  }, [signals, activeSignalId]);
+
+  const activeSignal = signals.find((signal) => signal.id === activeSignalId) ?? signals[0];
+
+  const statCards: SocialStatCard[] = [
+    {
+      title: "Signals Detected",
+      value: (metrics?.signals_detected ?? 0).toLocaleString(),
+      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      unit: "Signals",
+      active: true,
+    },
+    {
+      title: "High Opportunities",
+      value: (metrics?.high_opportunities ?? 0).toLocaleString(),
+      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      unit: "Opportunities",
+    },
+    {
+      title: "Added to CRM",
+      value: (metrics?.added_to_crm ?? 0).toLocaleString(),
+      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      unit: "Opportunities",
+    },
+  ];
+
+  if (!activeProfile) {
+    return (
+      <div className="flex min-h-[645px] flex-col items-center justify-center rounded-[30px] bg-white px-8 py-16 text-center shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+        <p className="max-w-md text-[14px] font-medium text-[#616263]">
+          Activate an ICP profile to start social listening against your target market.
+        </p>
+        <button
+          type="button"
+          onClick={onOpenIcpBuilder}
+          className="mt-5 h-11 rounded-[14px] bg-[#09232d] px-5 text-sm font-medium text-white transition-colors hover:bg-[#0c2e3b]"
+        >
+          Open ICP Builder
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1">
         <div className="flex min-h-[645px] flex-col gap-[17px]">
           <div className="grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
-            {socialStatCards.map((card) => (
+            {statCards.map((card) => (
               <MetricCard
                 key={card.title}
                 title={card.title}
-                value={card.value}
-                percent={card.percent}
+                value={metricsLoading ? "—" : card.value}
+                percent={metricsLoading ? "—" : card.percent}
                 active={card.active}
                 unit={card.unit}
               />
@@ -1536,9 +1733,62 @@ function SocialListeningTab() {
             onIntentChange={setIntent}
             onOpenSettings={() => setIsSettingsOpen(true)}
           />
-          <SocialSignalsTable signals={filteredSignals} onHoverSignal={(signal) => setActiveSignalId(signal.id)} />
+          {signalsError && isMissingActiveIcp(signalsError) ? (
+            <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
+              Select an active ICP profile first — open ICP Builder to create or activate one.
+            </div>
+          ) : (
+            <SocialSignalsTable
+              signals={signals}
+              onHoverSignal={(signal) => setActiveSignalId(signal.id)}
+              page={meta.current_page}
+              lastPage={Math.max(meta.last_page, 1)}
+              total={meta.total}
+              perPage={meta.per_page}
+              onPageChange={setPage}
+              isLoading={signalsLoading}
+            />
+          )}
         </div>
-        <SocialOpportunityDetail signal={activeSignal} />
+        {activeSignal ? (
+          <SocialOpportunityDetail
+            signal={activeSignal}
+            isCreatingOutreach={createOutreach.isPending}
+            isSettingReminder={setReminder.isPending}
+            isSyncingToCrm={syncToCrm.isPending}
+            onCreateOutreach={() => {
+              createOutreach.mutate(
+                { id: activeSignal.id },
+                {
+                  onSuccess: () => toast.success("Outreach draft created."),
+                  onError: (error) =>
+                    toast.error(getApiErrorMessage(error, "Could not create outreach draft.")),
+                }
+              );
+            }}
+            onSetReminder={() => {
+              setReminder.mutate(
+                { id: activeSignal.id, note: activeSignal.recommendedAction },
+                {
+                  onSuccess: () => toast.success("Reminder set for 24 hours from now."),
+                  onError: (error) =>
+                    toast.error(getApiErrorMessage(error, "Could not set reminder.")),
+                }
+              );
+            }}
+            onSyncToCrm={() => {
+              syncToCrm.mutate(activeSignal.id, {
+                onSuccess: () => toast.success("Signal synced to CRM."),
+                onError: (error) =>
+                  toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
+              });
+            }}
+          />
+        ) : (
+          <aside className="flex min-h-[645px] items-center justify-center rounded-[30px] bg-white px-8 text-center text-[13px] text-[#616263] shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+            {signalsLoading ? "Loading opportunity details…" : "Select a signal to view details."}
+          </aside>
+        )}
       </div>
       <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </>
@@ -1570,7 +1820,7 @@ export function SalesEngineView() {
         )}
 
         {activeTab === "social-listening" && !chatExpanded ? (
-          <SocialListeningTab />
+          <SocialListeningTab onOpenIcpBuilder={() => setIsIcpModalOpen(true)} />
         ) : (
           <>
         {!chatExpanded && (
