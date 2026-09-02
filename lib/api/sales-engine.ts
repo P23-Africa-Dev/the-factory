@@ -17,10 +17,12 @@ export const SALES_ENGINE_API_BASE_URL =
 
 export class SalesEngineApiError extends Error {
   status: number;
+  reason?: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, reason?: string | null) {
     super(message);
     this.status = status;
+    this.reason = reason ?? null;
   }
 }
 
@@ -174,7 +176,14 @@ async function seRequest<T>({
       typeof payload.message === "string"
         ? payload.message
         : `Sales Engine request failed (${response.status})`;
-    throw new SalesEngineApiError(message, response.status);
+    const reason =
+      payload &&
+      typeof payload === "object" &&
+      "reason" in payload &&
+      typeof payload.reason === "string"
+        ? payload.reason
+        : null;
+    throw new SalesEngineApiError(message, response.status, reason);
   }
 
   if (payload && typeof payload === "object" && "data" in payload) {
@@ -206,7 +215,10 @@ export async function ensureSalesEngineSession(): Promise<void> {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ assertion: assertionRes.data.assertion }),
+    body: JSON.stringify({
+      assertion: assertionRes.data.assertion,
+      f23_access_token: f23Token,
+    }),
   });
 
   const exchangePayload = (await exchangeResponse.json().catch(() => null)) as
@@ -227,6 +239,32 @@ export async function ensureSalesEngineSession(): Promise<void> {
 
   const exchange = exchangePayload as SeExchangeResponse;
   setSalesEngineSession(exchange.token, exchange.organization.id);
+  await ensureFactory23CrmLink({ skipSessionRetry: true });
+}
+
+/** Bridges the signed-in Factory23 session to Sales Engine CRM sync (no manual API tokens). */
+export async function ensureFactory23CrmLink(options?: {
+  skipSessionRetry?: boolean;
+}): Promise<Factory23IntegrationStatus> {
+  const f23Token = getAuthTokenFromDocument();
+  if (!f23Token) {
+    throw new SalesEngineApiError("Factory23 session is not available.", 401);
+  }
+
+  const request = () =>
+    seRequest<{
+      linked: boolean;
+      token_registered: boolean;
+      status: Factory23IntegrationStatus;
+    }>({
+      method: "POST",
+      path: "/integrations/factory23/ensure",
+      body: { f23_access_token: f23Token },
+    });
+
+  const result = options?.skipSessionRetry ? await request() : await withSessionRetry(request);
+
+  return result.status;
 }
 
 /** Runs `fn`; on a dead/expired SE token (401), re-runs the assertion → exchange handshake once and retries. */
@@ -809,7 +847,14 @@ async function seRequestPaginated<T>({
       typeof payload.message === "string"
         ? payload.message
         : `Sales Engine request failed (${response.status})`;
-    throw new SalesEngineApiError(message, response.status);
+    const reason =
+      payload &&
+      typeof payload === "object" &&
+      "reason" in payload &&
+      typeof payload.reason === "string"
+        ? payload.reason
+        : null;
+    throw new SalesEngineApiError(message, response.status, reason);
   }
 
   return {
@@ -988,18 +1033,23 @@ export type Factory23IntegrationStatus = {
   organization_enabled: boolean;
   f23_company_id?: string | number | null;
   linked: boolean;
+  token_linked?: boolean;
   can_sync: boolean;
   block_reason?: string | null;
   block_message?: string | null;
 };
 
-export function fetchFactory23IntegrationStatus(): Promise<Factory23IntegrationStatus> {
-  return withSessionRetry(async () =>
-    seRequest<Factory23IntegrationStatus>({
-      method: "GET",
-      path: "/integrations/factory23/status",
-    })
-  );
+export async function fetchFactory23IntegrationStatusWithAutoEnsure(): Promise<Factory23IntegrationStatus> {
+  let status = await fetchFactory23IntegrationStatus();
+  if (!status.can_sync && status.block_reason === "not_configured") {
+    try {
+      status = await ensureFactory23CrmLink();
+    } catch {
+      return status;
+    }
+  }
+
+  return status;
 }
 
 export function pushLeadToCrm(leadId: number): Promise<{
@@ -1008,31 +1058,68 @@ export function pushLeadToCrm(leadId: number): Promise<{
   synced?: boolean;
   f23_lead_id?: string | number | null;
 }> {
-  return withSessionRetry(async () =>
-    seRequest<{
-      lead_id: number;
-      save_status?: string;
-      synced?: boolean;
-      f23_lead_id?: string | number | null;
-    }>({
-      method: "POST",
-      path: `/leads/${leadId}/sync-to-crm`,
-    })
-  );
+  return withSessionRetry(async () => {
+    try {
+      return await seRequest<{
+        lead_id: number;
+        save_status?: string;
+        synced?: boolean;
+        f23_lead_id?: string | number | null;
+      }>({
+        method: "POST",
+        path: `/leads/${leadId}/sync-to-crm`,
+      });
+    } catch (error) {
+      if (
+        error instanceof SalesEngineApiError &&
+        (error.reason === "not_configured" || error.reason === "token_invalid")
+      ) {
+        await ensureFactory23CrmLink();
+        return await seRequest<{
+          lead_id: number;
+          save_status?: string;
+          synced?: boolean;
+          f23_lead_id?: string | number | null;
+        }>({
+          method: "POST",
+          path: `/leads/${leadId}/sync-to-crm`,
+        });
+      }
+      throw error;
+    }
+  });
 }
 
 export function syncLeadsBatch(leadIds: number[]): Promise<{
   synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
   errors: string[];
 }> {
-  return withSessionRetry(async () =>
-    seRequest<{
-      synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
-      errors: string[];
-    }>({
-      method: "POST",
-      path: "/leads/sync-to-crm",
-      body: { lead_ids: leadIds },
-    })
-  );
+  return withSessionRetry(async () => {
+    try {
+      return await seRequest<{
+        synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+        errors: string[];
+      }>({
+        method: "POST",
+        path: "/leads/sync-to-crm",
+        body: { lead_ids: leadIds },
+      });
+    } catch (error) {
+      if (
+        error instanceof SalesEngineApiError &&
+        (error.reason === "not_configured" || error.reason === "token_invalid")
+      ) {
+        await ensureFactory23CrmLink();
+        return await seRequest<{
+          synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+          errors: string[];
+        }>({
+          method: "POST",
+          path: "/leads/sync-to-crm",
+          body: { lead_ids: leadIds },
+        });
+      }
+      throw error;
+    }
+  });
 }
