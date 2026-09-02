@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
 import { IcpBuilderModal } from "./icp-builder-modal";
@@ -734,25 +735,40 @@ function OutreachPanel() {
         <h2 className="text-[13px] font-bold">Recent Outreach Activities</h2>
         <ChevronDown size={14} className="text-white/70" />
       </header>
-      <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
-      <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
-        {items.map((item, index) => {
-          const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-          const useApiColors = item.accentBg?.startsWith("#");
-          return (
-            <OutreachCard
-              key={item.id}
-              color={useApiColors ? item.accentBg : fallback.color}
-              icon={useApiColors ? "" : fallback.icon}
-              iconColor={useApiColors ? item.accentIcon : undefined}
-              name={item.name}
-              channel={item.channel}
-              preview={item.preview}
-              time={formatRelativeTime(item.occurred_at)}
-            />
-          );
-        })}
-      </div>
+      {items.length > 0 ? (
+        <>
+          <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
+          <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
+            {items.map((item, index) => {
+              const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
+              const useApiColors = item.accentBg?.startsWith("#");
+              return (
+                <OutreachCard
+                  key={item.id}
+                  color={useApiColors ? item.accentBg : fallback.color}
+                  icon={useApiColors ? "" : fallback.icon}
+                  iconColor={useApiColors ? item.accentIcon : undefined}
+                  name={item.name}
+                  channel={item.channel}
+                  preview={item.preview}
+                  time={formatRelativeTime(item.occurred_at)}
+                />
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="flex h-[460px] flex-col items-center justify-center max-xl:h-[380px]">
+          <Image
+            src="/message_empty.png"
+            alt="No recent outreach activities"
+            width={209}
+            height={201}
+            className="h-auto w-[180px] max-w-full select-none object-contain"
+            priority
+          />
+        </div>
+      )}
     </aside>
   );
 }
