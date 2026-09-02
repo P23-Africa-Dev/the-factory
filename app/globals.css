@@ -358,4 +358,19 @@ html {
     opacity: 1;
   }
 }
-
+
+@keyframes salesGaugeSpin {
+  0% {
+    transform: rotate(-145deg);
+    opacity: 0.35;
+  }
+  100% {
+    transform: rotate(-24deg);
+    opacity: 1;
+  }
+}
+
+.sales-gauge-spin {
+  animation: salesGaugeSpin 900ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+

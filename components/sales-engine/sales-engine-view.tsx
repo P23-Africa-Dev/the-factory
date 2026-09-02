@@ -1,13 +1,15 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
 import { IcpBuilderModal } from "./icp-builder-modal";
 import { ChatMessageBody } from "./chat-message-body";
+import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
 import { isMissingActiveIcp, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
@@ -15,8 +17,10 @@ import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { formatRelativeTime, type ChatIntent, type ChatLead } from "@/lib/api/sales-engine";
 import {
+  Building2,
   Check,
   ChevronDown,
+  CircleCheck,
   Copy,
   Expand,
   Globe2,
@@ -26,7 +30,9 @@ import {
   Minimize2,
   MoreVertical,
   Plus,
+  Search,
   Send,
+  SlidersHorizontal,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -43,6 +49,35 @@ type ChatMessage = {
 };
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
+type SalesEngineTab = "smart-lead" | "social-listening";
+type SocialSignal = {
+  id: number;
+  signal: string;
+  source: "LinkedIn Post" | "X/Twitter Post" | "Reddit Post";
+  sourceIcon: string;
+  persona: string;
+  company: string;
+  location: string;
+  intent: string;
+  intentColor: string;
+  description: string;
+  score: number;
+  profile: string;
+  reasons: string[];
+  signalType: string;
+  buyingStage: string;
+  problem: string;
+  urgency: string;
+  suggestedMessage: string;
+};
+
+type SocialStatCard = {
+  title: string;
+  value: string;
+  percent: string;
+  unit: string;
+  active?: boolean;
+};
 
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
@@ -97,6 +132,148 @@ const thinkingStagesByIntent: Record<ChatIntent, readonly string[]> = {
 };
 
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
+const salesEngineTabs: Array<{ id: SalesEngineTab; label: string }> = [
+  { id: "smart-lead", label: "Smart Lead" },
+  { id: "social-listening", label: "Social Listening" },
+];
+
+const socialStatCards: SocialStatCard[] = [
+  { title: "Signals Detected", value: "4,100", percent: "73", unit: "Signals", active: true },
+  { title: "High Opportunities", value: "1,100", percent: "43", unit: "Opportunities" },
+  { title: "Added to CRM", value: "34", percent: "43", unit: "Opportunities" },
+];
+
+const socialSignals: SocialSignal[] = [
+  {
+    id: 1,
+    signal: "We're struggling to consistently generate qualified leads in Nigeria. Any recommendations for agencies that actually understand B2B?",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Marketing Director",
+    company: "ABC Technologies",
+    location: "Lagos, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Actively looking for solutions",
+    score: 73,
+    profile: "Thabo Molefe",
+    reasons: [
+      "Explicit problem with current situation",
+      "Actively asking for recommendations",
+      "Relevant decision maker (Marketing Director)",
+      "Matches ICP (Industry, Size, Location)",
+      "Recent activity (Posted 2 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Consideration",
+    problem: "Generating qualified leads consistently",
+    urgency: "Medium-High",
+    suggestedMessage:
+      "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
+  },
+  {
+    id: 2,
+    signal: "Our CRM contract expires next month. Looking for something easier to implement. Anyone used Zoho or HubSpot?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Sales Manager",
+    company: "Greenfield Ltd",
+    location: "Lagos, Nigeria\n51-200 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Evaluating alternatives",
+    score: 73,
+    profile: "Aisha Bello",
+    reasons: [
+      "Contract renewal creates a near-term trigger",
+      "Named competing tools in the current workflow",
+      "Relevant decision maker (Sales Manager)",
+      "Clear need for easier implementation",
+      "Recent activity (Posted 2 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Vendor Evaluation",
+    problem: "CRM implementation friction",
+    urgency: "High",
+    suggestedMessage:
+      "Hi Aisha,\nI noticed your team is evaluating CRM options before renewal. Factory 23 can help compare implementation effort and identify a lower-friction path for your sales process.",
+  },
+  {
+    id: 3,
+    signal: "We're struggling to consistently generate qualified leads in Nigeria. Any recommendations for agencies that actually understand B2B?",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Marketing Director",
+    company: "ABC Technologies",
+    location: "Lagos, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Actively looking for solutions",
+    score: 73,
+    profile: "Thabo Molefe",
+    reasons: [
+      "Explicit problem with current situation",
+      "Actively asking for recommendations",
+      "Relevant decision maker (Marketing Director)",
+      "Matches ICP (Industry, Size, Location)",
+      "Recent activity (Posted 2 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Consideration",
+    problem: "Generating qualified leads consistently",
+    urgency: "Medium-High",
+    suggestedMessage:
+      "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
+  },
+  {
+    id: 4,
+    signal: "Anyone know how much it actually costs to build a mobile app like these fintech apps?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Marketing Director",
+    company: "Individual",
+    location: "",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Gathering pricing information",
+    score: 73,
+    profile: "Daniel Okafor",
+    reasons: [
+      "Pricing question suggests active budgeting",
+      "Mobile product scope fits Factory 23 discovery",
+      "Open to external recommendations",
+      "Fintech context has high commercial value",
+      "Recent activity (Posted 2 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Research",
+    problem: "Understanding app build cost",
+    urgency: "Medium",
+    suggestedMessage:
+      "Hi Daniel,\nI saw your question about fintech app build costs. We can help you break the scope into phases and estimate a realistic budget before you commit to a vendor.",
+  },
+];
+
+const sourceFilterOptions: SelectOption[] = [
+  { value: "all", label: "All Sources" },
+  { value: "LinkedIn Post", label: "LinkedIn Post" },
+  { value: "X/Twitter Post", label: "X/Twitter Post" },
+  { value: "Reddit Post", label: "Reddit Post" },
+];
+
+const signalTypeFilterOptions: SelectOption[] = [
+  { value: "all", label: "All Signal Type" },
+  { value: "Recommendation", label: "Recommendation" },
+  { value: "Switching", label: "Switching" },
+  { value: "Price", label: "Price" },
+];
+
+const intentFilterOptions: SelectOption[] = [
+  { value: "all", label: "All Intent" },
+  { value: "Consideration", label: "Consideration" },
+  { value: "Vendor Evaluation", label: "Vendor Evaluation" },
+  { value: "Research", label: "Research" },
+];
 
 const initialMessages: ChatMessage[] = [
   {
@@ -112,11 +289,13 @@ function MetricCard({
   value,
   percent,
   active = false,
+  unit = "Leads",
 }: {
   title: string;
   value: string;
   percent: string;
   active?: boolean;
+  unit?: string;
 }) {
   return (
     <section
@@ -135,7 +314,7 @@ function MetricCard({
         <div className="flex items-end gap-1">
           <p className="text-[32px] font-semibold leading-[43px]">{value}</p>
           <p className={`pb-2 text-[9px] font-semibold ${active ? "text-white" : "text-[#0b242e]"}`}>
-            Leads
+            {unit}
           </p>
         </div>
         <p className={`mt-[-4px] text-[8px] leading-[16px] ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
@@ -145,8 +324,8 @@ function MetricCard({
 
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
         <div
-          className={`absolute size-[84px] rounded-full border-[7px] ${
-            active ? "border-[#8dec66]" : "border-[#ff604c]"
+          className={`sales-gauge-spin absolute size-[84px] rounded-full border-[7px] ${
+            active ? "border-[#3E7210]" : "border-[#ff604c]"
           } border-l-transparent rotate-[-24deg]`}
         />
         <div className={`absolute size-[49px] rounded-full ${active ? "bg-[#14343e]" : "bg-[#f9f9f9]"}`} />
@@ -815,9 +994,561 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function SalesEngineTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: SalesEngineTab;
+  onChange: (tab: SalesEngineTab) => void;
+}) {
+  return (
+    <div className="flex">
+      <div className="inline-flex h-[42px] items-center gap-1 rounded-[21px] bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+        {salesEngineTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`h-[32px] rounded-[17px] px-5 text-[12px] font-semibold transition ${
+              activeTab === tab.id
+                ? "bg-[#09232d] text-white shadow-[0_2px_4px_rgba(0,0,0,0.25)]"
+                : "bg-transparent text-[#9d9d9d] hover:text-[#09232d]"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
+  const isLinkedIn = sourceIcon === "in";
+  const isReddit = sourceIcon === "r";
+  return (
+    <span
+      className={`grid size-[22px] shrink-0 place-items-center rounded-full text-[10px] font-bold text-white ${
+        isLinkedIn ? "bg-[#0a66c2]" : isReddit ? "bg-[#ff4500]" : "bg-black"
+      }`}
+    >
+      {sourceIcon}
+    </span>
+  );
+}
+
+function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative grid size-[43px] place-items-center">
+        <span
+          className={`sales-gauge-spin absolute inset-0 rounded-full border-[4px] border-[#3E7210] border-l-transparent rotate-[-35deg] ${
+            dark ? "bg-[#153841]" : "bg-white"
+          }`}
+        />
+        <span
+          className={`absolute inset-[7px] rounded-full ${dark ? "bg-[#3E7210]" : "bg-white"}`}
+        />
+        <span className={`relative text-[9px] font-semibold ${dark ? "text-white" : "text-[#09232d]"}`}>{score}%</span>
+      </div>
+      <span className={`text-[9px] ${dark ? "text-white/80" : "text-[#616263]"}`}>High</span>
+    </div>
+  );
+}
+
+function SocialSignalRow({
+  signal,
+  onHover,
+}: {
+  signal: SocialSignal;
+  onHover: (signal: SocialSignal) => void;
+}) {
+  return (
+    <tr
+      onMouseEnter={() => onHover(signal)}
+      onFocus={() => onHover(signal)}
+      tabIndex={0}
+      className="group bg-[#f4f4f4] text-[#616263] outline-none transition-colors duration-200 hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+    >
+      <td className="rounded-l-[20px] px-4 py-3">
+        <div className="flex min-w-[230px] gap-3">
+          <SourceBadge sourceIcon={signal.sourceIcon} />
+          <p className="line-clamp-4 text-[9px] leading-[11px] text-[#616263] transition-colors group-hover:text-white group-focus:text-white">
+            {signal.signal}
+          </p>
+        </div>
+      </td>
+      <td className="px-3 py-3 align-middle">
+        <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
+        <p className="mt-1 text-[8px] text-[#616263]/70 transition-colors group-hover:text-white/70 group-focus:text-white/70">2hr ago</p>
+      </td>
+      <td className="px-3 py-3 align-middle">
+        <p className="w-[68px] text-[8px] leading-[11px]">{signal.persona}</p>
+      </td>
+      <td className="px-3 py-3 align-middle">
+        <div className="flex min-w-[150px] items-center gap-2">
+          <Building2 size={20} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+          <div>
+            <p className="text-[9px] font-semibold leading-[11px]">{signal.company}</p>
+            {signal.location && <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>}
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-3 align-middle">
+        <span
+          className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
+          style={{ backgroundColor: signal.intentColor }}
+        >
+          {signal.intent}
+        </span>
+        <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
+      </td>
+      <td className="px-3 py-3 align-middle">
+        <div className="block group-hover:hidden group-focus:hidden">
+          <ScoreGauge score={signal.score} />
+        </div>
+        <div className="hidden group-hover:block group-focus:block">
+          <ScoreGauge score={signal.score} dark />
+        </div>
+      </td>
+      <td className="rounded-r-[20px] px-4 py-3 align-middle">
+        <div className="flex items-center gap-4">
+          <MessageCircle size={15} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+          <MoreVertical size={16} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function SocialSignalsTable({
+  signals,
+  onHoverSignal,
+}: {
+  signals: SocialSignal[];
+  onHoverSignal: (signal: SocialSignal) => void;
+}) {
+  return (
+    <section className="flex min-h-[416px] flex-1 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+      <div className="min-h-0 flex-1 overflow-auto pr-1">
+        <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
+          <thead>
+            <tr className="text-[9px] font-semibold text-[#333333]">
+              <th className="px-4 py-1 text-left">Signal</th>
+              <th className="px-3 py-1 text-left">Source</th>
+              <th className="px-3 py-1 text-left">Persona</th>
+              <th className="px-3 py-1 text-left">Company</th>
+              <th className="px-3 py-1 text-left">Intent</th>
+              <th className="px-3 py-1 text-center">Score</th>
+              <th className="px-4 py-1 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {signals.map((signal) => (
+              <SocialSignalRow key={signal.id} signal={signal} onHover={onHoverSignal} />
+            ))}
+          </tbody>
+        </table>
+        {signals.length === 0 && (
+          <div className="flex h-[220px] items-center justify-center text-[12px] font-medium text-[#616263]">
+            No matching signals found.
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-between px-8 pb-3 pt-1 text-[9px] font-semibold text-[#333333] max-sm:px-3">
+        <span>Showing 1 - {Math.max(signals.length, 1)} of 213 Signals</span>
+        <div className="flex items-center gap-2">
+          <button type="button" className="px-2 text-[#c1c1c1]">Prev</button>
+          {[1, 2, 3].map((page) => (
+            <button
+              key={page}
+              type="button"
+              className={`grid size-8 place-items-center rounded-[8px] border text-[10px] ${
+                page === 1 ? "border-[#3f83f8] bg-[#3f83f8] text-white" : "border-[#f1f1f1] bg-white text-[#333333]"
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+          <span className="px-2 text-[13px]">...</span>
+          <button type="button" className="grid size-8 place-items-center rounded-[8px] border border-[#f1f1f1] bg-white text-[10px]">10</button>
+          <button type="button" className="px-2">Next</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SocialListeningFilters({
+  search,
+  source,
+  signalType,
+  intent,
+  onSearchChange,
+  onSourceChange,
+  onSignalTypeChange,
+  onIntentChange,
+  onOpenSettings,
+}: {
+  search: string;
+  source: string;
+  signalType: string;
+  intent: string;
+  onSearchChange: (value: string) => void;
+  onSourceChange: (value: string) => void;
+  onSignalTypeChange: (value: string) => void;
+  onIntentChange: (value: string) => void;
+  onOpenSettings: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-[17px]">
+      <label className="flex h-12 min-w-[220px] flex-1 items-center gap-3 rounded-[24px] bg-white px-5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] lg:max-w-[316px]">
+        <Search size={16} className="text-[#09232d]" />
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          className="min-w-0 flex-1 bg-transparent text-[10px] text-[#09232d] outline-none placeholder:text-[#616263]"
+          placeholder="Search"
+        />
+      </label>
+      <SearchableSelect
+        value={source}
+        onChange={onSourceChange}
+        options={sourceFilterOptions}
+        className="h-8 min-w-[101px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+      />
+      <SearchableSelect
+        value={signalType}
+        onChange={onSignalTypeChange}
+        options={signalTypeFilterOptions}
+        className="h-8 min-w-[123px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+      />
+      <SearchableSelect
+        value={intent}
+        onChange={onIntentChange}
+        options={intentFilterOptions}
+        className="h-8 min-w-[101px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+      />
+      <button type="button" className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">
+        <SlidersHorizontal size={14} />
+        Filter
+      </button>
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340]"
+      >
+        <Sparkles size={14} />
+        Listen Settings
+      </button>
+    </div>
+  );
+}
+
+function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
+  return (
+    <aside className="flex min-h-[645px] flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+      <div className="relative h-[165px] bg-[#0b242e] px-7 pb-5 pt-8 text-white">
+        <div className="absolute right-7 top-8">
+          <ScoreGauge score={signal.score} dark />
+        </div>
+        <SourceBadge sourceIcon={signal.sourceIcon} />
+        <p className="mt-3 max-w-[250px] text-[10px] font-light leading-[12px]">
+          {signal.signal}
+        </p>
+        <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">{signal.source} • Public • 2hrs ago</p>
+      </div>
+
+      <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+        <div className="flex items-center gap-2 border-r border-[#e9e9e9] pr-4">
+          <Image src="/avatars/male-avatar.png" alt="" width={25} height={25} className="size-[25px] rounded-full object-cover" />
+          <div>
+            <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+            <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 pl-4">
+          <Building2 size={24} />
+          <div>
+            <p className="text-[10px] font-semibold leading-[12px]">{signal.company}</p>
+            <p className="whitespace-pre-line text-[10px] font-light leading-[12px]">
+              {signal.location || "Public profile"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+        <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
+        {signal.reasons.map((item) => (
+          <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
+            <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
+            {item}
+          </div>
+        ))}
+      </div>
+
+      <div className="px-5 py-3 text-[#616263]">
+        <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+          {[
+            ["Signal Type", signal.signalType],
+            ["Buying Stage", signal.buyingStage],
+            ["Problem", signal.problem],
+            ["Urgency", signal.urgency],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <p className="text-[10px] font-light leading-[12px]">{label}</p>
+              <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-[5px] px-2 pb-2">
+        <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+          <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
+          <p className="mt-1 text-[9px] leading-[12px]"><span className="font-semibold">Reach out within 24 hours</span><br />This prospect is actively looking for solutions.</p>
+        </div>
+        <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+          <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
+          <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
+        </div>
+      </div>
+
+      <div className="mt-auto flex items-center gap-[17px] bg-[#f7f7f7] px-6 py-4">
+        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white">Create Outreach</button>
+        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">Set Reminder</button>
+        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">Add to CRM</button>
+      </div>
+    </aside>
+  );
+}
+
+function ListeningSettingsModal({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const sources = ["LinkedIn public index", "X/Twitter mentions", "Reddit communities", "Meta business pages"];
+  const intents = ["Recommendations", "Switching", "Pricing questions", "Hiring or expansion"];
+
+  const handleSave = () => {
+    toast.success("Listening settings saved for this mock workspace.");
+    onClose();
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+          />
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 18 }}
+            transition={{ type: "spring", duration: 0.32 }}
+            className="relative z-10 flex max-h-[88vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0b242e] text-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/40">
+                  Social Listening
+                </p>
+                <h3 className="mt-1 text-[18px] font-semibold">Listen Settings</h3>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="grid size-9 place-items-center rounded-full bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close listen settings"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[13px] font-semibold">Sources monitored</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {sources.map((sourceName) => (
+                    <label
+                      key={sourceName}
+                      className="flex items-center gap-2 rounded-[12px] bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
+                    >
+                      <input type="checkbox" defaultChecked className="accent-[#8dec66]" />
+                      {sourceName}
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-[13px] font-semibold">Refresh cadence</p>
+                  <div className="mt-3 space-y-2 text-[12px] text-white/70">
+                    {["Every 14 days", "Every 30 days"].map((cadence, index) => (
+                      <label key={cadence} className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="social-listening-cadence"
+                          defaultChecked={index === 0}
+                          className="accent-[#8dec66]"
+                        />
+                        {cadence}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-[13px] font-semibold">Opportunity threshold</p>
+                  <div className="mt-4">
+                    <input type="range" min="40" max="90" defaultValue="70" className="w-full accent-[#8dec66]" />
+                    <div className="mt-2 flex justify-between text-[11px] text-white/45">
+                      <span>Broad</span>
+                      <span>70% score</span>
+                      <span>Strict</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[13px] font-semibold">Intent signals</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {intents.map((intentName) => (
+                    <label
+                      key={intentName}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
+                    >
+                      <input type="checkbox" defaultChecked className="accent-[#8dec66]" />
+                      {intentName}
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[13px] font-semibold">Routing rules</p>
+                <div className="mt-3 grid gap-3 text-[12px] text-white/70 sm:grid-cols-2">
+                  <label>
+                    CRM destination
+                    <select className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none">
+                      <option>Qualified leads pipeline</option>
+                      <option>Human review queue</option>
+                    </select>
+                  </label>
+                  <label>
+                    Outreach channel
+                    <select className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none">
+                      <option>Email first</option>
+                      <option>Human follow-up</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <div className="flex gap-3 border-t border-white/10 px-6 py-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-11 flex-1 rounded-[14px] bg-white/5 text-[13px] font-semibold text-white transition hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73]"
+              >
+                Save Settings
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function SocialListeningTab() {
+  const [search, setSearch] = useState("");
+  const [source, setSource] = useState("all");
+  const [signalType, setSignalType] = useState("all");
+  const [intent, setIntent] = useState("all");
+  const [activeSignalId, setActiveSignalId] = useState(socialSignals[0].id);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const filteredSignals = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return socialSignals.filter((signal) => {
+      const matchesSearch =
+        query.length === 0 ||
+        [signal.signal, signal.source, signal.persona, signal.company, signal.intent, signal.description]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      const matchesSource = source === "all" || signal.source === source;
+      const matchesSignalType = signalType === "all" || signal.signalType === signalType;
+      const matchesIntent = intent === "all" || signal.buyingStage === intent;
+      return matchesSearch && matchesSource && matchesSignalType && matchesIntent;
+    });
+  }, [intent, search, signalType, source]);
+
+  const activeSignal =
+    filteredSignals.find((signal) => signal.id === activeSignalId) ?? filteredSignals[0] ?? socialSignals[0];
+
+  return (
+    <>
+      <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1">
+        <div className="flex min-h-[645px] flex-col gap-[17px]">
+          <div className="grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
+            {socialStatCards.map((card) => (
+              <MetricCard
+                key={card.title}
+                title={card.title}
+                value={card.value}
+                percent={card.percent}
+                active={card.active}
+                unit={card.unit}
+              />
+            ))}
+          </div>
+          <SocialListeningFilters
+            search={search}
+            source={source}
+            signalType={signalType}
+            intent={intent}
+            onSearchChange={setSearch}
+            onSourceChange={setSource}
+            onSignalTypeChange={setSignalType}
+            onIntentChange={setIntent}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+          />
+          <SocialSignalsTable signals={filteredSignals} onHoverSignal={(signal) => setActiveSignalId(signal.id)} />
+        </div>
+        <SocialOpportunityDetail signal={activeSignal} />
+      </div>
+      <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+    </>
+  );
+}
+
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<SalesEngineTab>("social-listening");
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: metrics } = useSalesEngineMetrics();
 
@@ -828,6 +1559,20 @@ export function SalesEngineView() {
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
+        {!chatExpanded && (
+          <SalesEngineTabs
+            activeTab={activeTab}
+            onChange={(tab) => {
+              setActiveTab(tab);
+              setChatExpanded(false);
+            }}
+          />
+        )}
+
+        {activeTab === "social-listening" && !chatExpanded ? (
+          <SocialListeningTab />
+        ) : (
+          <>
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
             <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
@@ -878,6 +1623,8 @@ export function SalesEngineView() {
           />
           {!chatExpanded && <OutreachPanel />}
         </div>
+          </>
+        )}
       </div>
 
       <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
