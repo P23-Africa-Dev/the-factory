@@ -322,20 +322,114 @@ export type ChatMessageApi = {
 
 export type SendChatMessageResult = {
   user_message: ChatMessageApi;
-  assistant_message: ChatMessageApi;
+  assistant_message?: ChatMessageApi | null;
   discovery_run_id?: number | null;
+  status?: "processing" | "completed";
 };
 
-const DISCOVERY_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
-const CHAT_DISCOVERY_TIMEOUT_MS = 60_000;
+export type ChatSessionApi = {
+  id: number;
+  title?: string | null;
+  icp_profile_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
+};
 
-export function createChatSession(title?: string): Promise<{ id: number }> {
+export type DiscoveryRunApi = {
+  id: number;
+  status: string;
+  query?: string | null;
+  intent?: string | null;
+  stages?: string[] | null;
+  result_summary?: unknown;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+const ASYNC_CHAT_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
+const CHAT_OUTREACH_TIMEOUT_MS =
+  Number(process.env.NEXT_PUBLIC_CHAT_OUTREACH_TIMEOUT_MS) || 120_000;
+const CHAT_POLL_INTERVAL_MS = 2_000;
+const CHAT_POLL_MAX_MS = 300_000;
+
+const DISCOVERY_STAGE_LABELS: Record<string, string> = {
+  queued: "Queued…",
+  analyzing_brief: "Analyzing your brief…",
+  searching_sources: "Scanning web & social signals…",
+  extracting: "Extracting buying intent…",
+  synthesizing: "Synthesizing insights…",
+  compiling_results: "Compiling ranked results…",
+};
+
+export function formatDiscoveryStage(stages?: string[] | null): string {
+  if (!stages?.length) return "Processing…";
+  const last = stages[stages.length - 1];
+
+  return DISCOVERY_STAGE_LABELS[last] ?? last.replace(/_/g, " ");
+}
+
+export function createChatSession(icpProfileId?: string): Promise<ChatSessionApi> {
   return withSessionRetry(async () =>
-    seRequest<{ id: number }>({
+    seRequest<ChatSessionApi>({
       method: "POST",
       path: "/chat/sessions",
-      body: title ? { title } : {},
+      body: icpProfileId ? { icp_profile_id: Number(icpProfileId) } : {},
     })
+  );
+}
+
+export function fetchCurrentChatSession(icpProfileId?: string): Promise<ChatSessionApi | null> {
+  return withSessionRetry(async () => {
+    const query = icpProfileId ? `?icp_profile_id=${encodeURIComponent(icpProfileId)}` : "";
+
+    return seRequest<ChatSessionApi | null>({
+      method: "GET",
+      path: `/chat/sessions/current${query}`,
+    });
+  });
+}
+
+export function clearChatMessages(sessionId: number): Promise<{ cleared: boolean }> {
+  return withSessionRetry(async () =>
+    seRequest<{ cleared: boolean }>({
+      method: "DELETE",
+      path: `/chat/sessions/${sessionId}/messages`,
+    })
+  );
+}
+
+export function fetchDiscoveryRun(id: number): Promise<DiscoveryRunApi> {
+  return withSessionRetry(async () =>
+    seRequest<DiscoveryRunApi>({ method: "GET", path: `/discovery/runs/${id}` })
+  );
+}
+
+export async function pollDiscoveryRunUntilComplete(
+  runId: number,
+  options?: { onStage?: (label: string) => void; maxMs?: number }
+): Promise<DiscoveryRunApi> {
+  const maxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
+  const started = Date.now();
+
+  while (Date.now() - started < maxMs) {
+    const run = await fetchDiscoveryRun(runId);
+    options?.onStage?.(formatDiscoveryStage(run.stages));
+
+    if (run.status === "completed") {
+      return run;
+    }
+
+    if (run.status === "failed") {
+      throw new SalesEngineApiError(run.error ?? "Discovery run failed.", 422);
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
+  }
+
+  throw new SalesEngineApiError(
+    "This request is still running. Refresh the page to see results when ready.",
+    408
   );
 }
 
@@ -348,18 +442,47 @@ export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
   );
 }
 
-export function sendChatMessage(
+export async function sendChatMessage(
   sessionId: number,
-  payload: { body: string; intent: ChatIntent }
+  payload: { body: string; intent: ChatIntent },
+  options?: { onStage?: (label: string) => void }
 ): Promise<SendChatMessageResult> {
-  return withSessionRetry(async () =>
-    seRequest<SendChatMessageResult>({
+  return withSessionRetry(async () => {
+    const timeoutMs = payload.intent === "create_outreach" ? CHAT_OUTREACH_TIMEOUT_MS : undefined;
+
+    const initial = await seRequest<SendChatMessageResult>({
       method: "POST",
       path: `/chat/sessions/${sessionId}/messages`,
       body: payload,
-      timeoutMs: DISCOVERY_INTENTS.includes(payload.intent) ? CHAT_DISCOVERY_TIMEOUT_MS : undefined,
-    })
-  );
+      timeoutMs,
+    });
+
+    if (
+      ASYNC_CHAT_INTENTS.includes(payload.intent) &&
+      initial.status === "processing" &&
+      initial.discovery_run_id
+    ) {
+      await pollDiscoveryRunUntilComplete(initial.discovery_run_id, options);
+      const messages = await listChatMessages(sessionId);
+      const assistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+
+      if (!assistantMessage) {
+        throw new SalesEngineApiError("Assistant response was not found after processing.", 500);
+      }
+
+      return {
+        ...initial,
+        assistant_message: assistantMessage,
+        status: "completed",
+      };
+    }
+
+    if (!initial.assistant_message) {
+      throw new SalesEngineApiError("Assistant response was missing from the server.", 500);
+    }
+
+    return initial;
+  });
 }
 
 // ── Metrics ─────────────────────────────────────────────────────────────────

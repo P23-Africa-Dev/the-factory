@@ -11,7 +11,7 @@ import { IcpBuilderModal } from "./icp-builder-modal";
 import { ChatMessageBody } from "./chat-message-body";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
-import { isMissingActiveIcp, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
+import { isMissingActiveIcp, mapApiMessagesToUi, useChatHistory, useClearChatHistory, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import {
@@ -411,6 +411,8 @@ function ChatWorkspace({
   onToggleExpanded: () => void;
   onOpenIcpBuilder: () => void;
 }) {
+  const { data: activeProfile } = useActiveIcpProfile();
+  const activeIcpId = activeProfile?.id;
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
@@ -423,9 +425,6 @@ function ChatWorkspace({
   const thinkingIntervalRef = useRef<number | null>(null);
   const timersRef = useRef<number[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Local React keys for messages — independent of the API's session-scoped message
-  // ids, which restart from 1 per session and would collide with the hardcoded
-  // welcome message (id: 1).
   const nextMessageIdRef = useRef(2);
   function nextMessageId() {
     return nextMessageIdRef.current++;
@@ -434,10 +433,27 @@ function ChatWorkspace({
   const icpTriggerRef = useRef<HTMLButtonElement>(null);
 
   const { data: icpProfiles = [], isLoading: isIcpProfilesLoading } = useIcpProfiles();
+  const { data: chatHistory, isLoading: isHistoryLoading } = useChatHistory(activeIcpId);
+  const clearChatHistory = useClearChatHistory(activeIcpId);
+
   const activateIcpProfile = useActivateIcpProfile({
     onSuccess: (profile) => toast.success(`Switched active ICP to "${profile.name}"`),
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to switch ICP build.")),
   });
+
+  useEffect(() => {
+    if (!activeIcpId || isHistoryLoading) return;
+
+    if (!chatHistory || chatHistory.messages.length === 0) {
+      setMessages(initialMessages);
+      nextMessageIdRef.current = 2;
+
+      return;
+    }
+
+    setMessages(mapApiMessagesToUi(chatHistory.messages));
+    nextMessageIdRef.current = chatHistory.messages.length + 2;
+  }, [activeIcpId, chatHistory, isHistoryLoading]);
 
   useLayoutEffect(() => {
     if (!isIcpMenuOpen || !icpTriggerRef.current) return;
@@ -462,8 +478,9 @@ function ChatWorkspace({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isIcpMenuOpen]);
 
-  const sendMessage = useSendChatMessage({
+  const sendMessage = useSendChatMessage(activeIcpId, {
     onSuccess: ({ assistant_message }) => {
+      if (!assistant_message) return;
       setMessages((current) => [
         ...current,
         {
@@ -483,6 +500,8 @@ function ChatWorkspace({
     },
   });
   const isThinking = sendMessage.isPending;
+  const displayedThinkingStage = sendMessage.processingStage ?? thinkingStage;
+  const showWelcomeMessage = messages.length > 0 && messages[0]?.id === 1;
 
   function stopThinkingCycle() {
     if (thinkingIntervalRef.current != null) {
@@ -543,7 +562,7 @@ function ChatWorkspace({
       scrollTranscriptToBottom();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, isThinking, thinkingStage]);
+  }, [messages, isThinking, displayedThinkingStage]);
 
   useEffect(() => () => stopThinkingCycle(), []);
 
@@ -632,6 +651,25 @@ function ChatWorkspace({
             <div className="mt-1 border-t border-gray-100 pt-1">
               <button
                 type="button"
+                disabled={!activeIcpId || clearChatHistory.isPending}
+                onClick={() => {
+                  clearChatHistory.mutate(undefined, {
+                    onSuccess: () => {
+                      setMessages(initialMessages);
+                      nextMessageIdRef.current = 2;
+                      setIsIcpMenuOpen(false);
+                      toast.success("Chat history cleared for this ICP.");
+                    },
+                    onError: (error) =>
+                      toast.error(getApiErrorMessage(error, "Could not clear chat history.")),
+                  });
+                }}
+                className="w-full rounded-[10px] px-2.5 py-2 text-left text-[12px] font-medium text-[#616263] transition hover:bg-gray-100 disabled:opacity-60"
+              >
+                Clear chat history
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setIsIcpMenuOpen(false);
                   onOpenIcpBuilder();
@@ -663,18 +701,18 @@ function ChatWorkspace({
                 className={
                   message.role === "user"
                     ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
-                    : index === 0
+                    : showWelcomeMessage && index === 0
                       ? "text-[12px] leading-[15px] text-[#09232d]"
                       : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
                 }
               >
                 <ChatMessageBody
                   content={message.body}
-                  variant={message.role === "user" ? "user" : index === 0 ? "welcome" : "assistant"}
+                  variant={message.role === "user" ? "user" : showWelcomeMessage && index === 0 ? "welcome" : "assistant"}
                 />
               </div>
               {message.leads && <LeadInlineResults leads={message.leads} />}
-              {index === 0 && (
+              {showWelcomeMessage && index === 0 && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
                   <ThumbsUp size={14} />
                   <ThumbsDown size={14} />
@@ -683,7 +721,7 @@ function ChatWorkspace({
               )}
             </div>
           ))}
-          {isThinking && <ThinkingBubble stage={thinkingStage} />}
+          {isThinking && <ThinkingBubble stage={displayedThinkingStage} />}
           <div aria-hidden className="h-2" />
         </div>
       </div>
