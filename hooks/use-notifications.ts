@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import {
   listNotifications,
   getUnreadCount,
@@ -27,7 +28,7 @@ export function useNotifications(params: ListNotificationsParams = {}) {
       const res = await listNotifications(params, token);
       return res.data;
     },
-    enabled: !!token,
+    enabled: hasActiveApiSession(token),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -41,7 +42,7 @@ export function useUnreadCount(companyId?: number | string) {
       const res = await getUnreadCount(token, companyId);
       return res.data;
     },
-    enabled: !!token,
+    enabled: hasActiveApiSession(token),
     staleTime: 30_000,
     refetchInterval: 30_000,
   });

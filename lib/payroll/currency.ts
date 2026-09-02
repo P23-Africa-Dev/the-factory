@@ -28,7 +28,7 @@ export function resolvePayrollCurrency(preferredCurrency?: string | null): strin
 }
 
 export function formatPayrollMoney(amount: number, currency?: string | null): string {
-    const resolvedCurrency = resolvePayrollCurrency(currency);
+    const resolvedCurrency = PAYROLL_DEFAULT_CURRENCY;
 
     try {
         return new Intl.NumberFormat("en-US", {

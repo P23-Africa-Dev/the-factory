@@ -1,12 +1,29 @@
 "use client";
 
 import { apiRequest, ApiEnvelope, ApiRequestError, API_BASE_URL } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type ApiRoleBasePath = "/admin" | "/agent";
 
 export type ApiLeadStatus = string;
 
 export type ApiLeadPriority = "high" | "medium" | "low" | "urgent";
+
+export type LeadContact = {
+    id?: number;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    sort_order?: number;
+};
+
+export type CrmAssignee = {
+    id: number;
+    name: string;
+    email: string;
+    role: "owner" | "admin" | "supervisor" | "agent";
+};
 
 export type LeadActor = {
     id: number;
@@ -51,6 +68,12 @@ export type LeadApiItem = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    contacts?: LeadContact[];
+    company_name?: string | null;
+    company_email?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: ApiLeadStatus | null;
     priority?: ApiLeadPriority | null;
@@ -94,6 +117,7 @@ export type ListLeadsParams = {
     assigned_to_user_id?: number | string;
     per_page?: number;
     page?: number;
+    uncategorized?: boolean;
 };
 
 export type LeadsListData = {
@@ -119,11 +143,17 @@ export type PipelineSnapshot = {
 
 export type CreateLeadPayload = {
     company_id: number | string;
-    pipeline_id: number | string;
+    pipeline_id?: number | string;
     name: string;
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    contacts?: LeadContact[];
+    company_name?: string | null;
+    company_email?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
@@ -143,6 +173,12 @@ export type UpdateLeadPayload = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    contacts?: LeadContact[];
+    company_name?: string | null;
+    company_email?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: ApiLeadStatus;
     priority?: ApiLeadPriority;
@@ -194,6 +230,10 @@ export type ImportLeadRow = {
     email?: string;
     phone?: string;
     location?: string;
+    company_name?: string;
+    website?: string;
+    position?: string;
+    profile_urls?: string | string[];
     source?: string;
     status?: string;
     priority?: ApiLeadPriority;
@@ -337,6 +377,20 @@ function withBase(basePath: ApiRoleBasePath, path: string) {
     return `${basePath}${path}`;
 }
 
+export function listCrmAssignees(
+    companyId: number | string,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin",
+): Promise<ApiEnvelope<{ items: CrmAssignee[] }>> {
+    const query = buildQuery({ company_id: companyId });
+
+    return apiRequest<{ items: CrmAssignee[] }>({
+        method: "GET",
+        path: withBase(basePath, `/crm/assignees${query}`),
+        token,
+    });
+}
+
 export function listLeads(
     params: ListLeadsParams,
     token: string,
@@ -352,6 +406,7 @@ export function listLeads(
         assigned_to_user_id: params.assigned_to_user_id,
         per_page: params.per_page,
         page: params.page,
+        uncategorized: params.uncategorized ? 1 : undefined,
     });
 
     return apiRequest<LeadsListData>({
@@ -499,6 +554,77 @@ export function updateCrmPipeline(
     });
 }
 
+export function deleteCrmPipeline(
+    pipelineId: number | string,
+    payload: { company_id?: number | string; force?: boolean },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<
+    ApiEnvelope<{
+        deleted_pipeline_id: number;
+        reassigned_leads_count: number;
+        reassigned_to_pipeline_id?: number | null;
+        reassigned_to_pipeline_name?: string | null;
+    }>
+> {
+    return apiRequest<{
+        deleted_pipeline_id: number;
+        reassigned_leads_count: number;
+        reassigned_to_pipeline_id?: number | null;
+        reassigned_to_pipeline_name?: string | null;
+    }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/pipelines/${pipelineId}/delete`),
+        body: payload,
+        token,
+    });
+}
+
+export type CrmPreferences = {
+    preferred_pipeline_id: number | null;
+    company_default_pipeline_id: number | null;
+};
+
+export function getCrmPreferences(
+    params: Pick<ListLeadsParams, "company_id">,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<CrmPreferences>> {
+    const query = buildQuery({ company_id: params.company_id });
+    return apiRequest<CrmPreferences>({
+        method: "GET",
+        path: withBase(basePath, `/crm/preferences${query}`),
+        token,
+    });
+}
+
+export function setPreferredCrmPipeline(
+    payload: { company_id: number | string; pipeline_id: number | string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<CrmPreferences>> {
+    return apiRequest<CrmPreferences>({
+        method: "PUT",
+        path: withBase(basePath, "/crm/preferences/preferred-pipeline"),
+        body: payload,
+        token,
+    });
+}
+
+export function setCompanyDefaultCrmPipeline(
+    pipelineId: number | string,
+    payload: { company_id?: number | string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
+    return apiRequest<{ pipeline: CrmPipeline }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/pipelines/${pipelineId}/set-default`),
+        body: payload,
+        token,
+    });
+}
+
 export function listCrmLabels(
     params: Pick<ListLeadsParams, "company_id">,
     token: string,
@@ -607,10 +733,15 @@ export async function downloadCrmLeadsExport(
         query.set(key, String(value));
     });
 
-    const response = await fetch(`${API_BASE_URL}${withBase(basePath, "/crm/leads/export")}?${query.toString()}`, {
+    const transport = getSupportAwareApiTransport(
+        `${withBase(basePath, "/crm/leads/export")}?${query.toString()}`,
+        token,
+        API_BASE_URL,
+    );
+    const response = await fetch(transport.url, {
         method: "GET",
         headers: {
-            Authorization: `Bearer ${token}`,
+            ...transport.authorizationHeaders,
             Accept: "text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;q=0.9, */*;q=0.8",
         },
     });

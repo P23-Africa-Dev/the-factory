@@ -36,6 +36,13 @@ return [
     ],
 
     'fcm' => [
+        // Firebase project id (from google-services.json → project_info.project_id).
+        'project_id' => env('FCM_PROJECT_ID', 'fcatory23-apk'),
+        // Raw JSON or base64(JSON) for the Firebase Admin SDK service-account key.
+        'service_account_json' => env('FCM_SERVICE_ACCOUNT_JSON'),
+        // Optional absolute path to the service-account JSON file (preferred in k8s mounts).
+        'service_account_path' => env('FCM_SERVICE_ACCOUNT_PATH'),
+        // Deprecated: legacy HTTP API server key (Cloud Messaging API Legacy). Prefer HTTP v1.
         'server_key' => env('FCM_SERVER_KEY'),
         'legacy_send_endpoint' => env('FCM_LEGACY_SEND_ENDPOINT', 'https://fcm.googleapis.com/fcm/send'),
     ],
@@ -43,11 +50,68 @@ return [
     'google_calendar' => [
         'client_id' => env('GOOGLE_CALENDAR_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CALENDAR_CLIENT_SECRET'),
-        'redirect_uri' => env('GOOGLE_CALENDAR_REDIRECT_URI'),
+        'redirect_uri' => env(
+            'GOOGLE_CALENDAR_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/calendar/integration/callback',
+        ),
+        // Calendar meetings only — Gmail/CRM mailbox uses google_mail scopes via Email Accounts.
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_CALENDAR_SCOPES',
-            'openid,email,profile,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
+            'openid,email,profile,https://www.googleapis.com/auth/calendar.events',
         ))))),
+    ],
+
+    // Email Accounts OAuth may reuse Google client credentials, but always uses
+    // its own callback so Gmail and Calendar consent flows remain isolated.
+    'google_mail' => [
+        'client_id' => env('GOOGLE_MAIL_CLIENT_ID', env('GOOGLE_CALENDAR_CLIENT_ID')),
+        'client_secret' => env('GOOGLE_MAIL_CLIENT_SECRET', env('GOOGLE_CALENDAR_CLIENT_SECRET')),
+        'redirect_uri' => env(
+            'GOOGLE_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/google/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'GOOGLE_MAIL_SCOPES',
+            'openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify',
+        ))))),
+    ],
+
+    'microsoft_mail' => [
+        'client_id' => env('MICROSOFT_MAIL_CLIENT_ID'),
+        'client_secret' => env('MICROSOFT_MAIL_CLIENT_SECRET'),
+        'tenant' => env('MICROSOFT_MAIL_TENANT', 'common'),
+        'redirect_uri' => env(
+            'MICROSOFT_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/microsoft/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'MICROSOFT_MAIL_SCOPES',
+            'openid,email,profile,offline_access,https://graph.microsoft.com/Mail.ReadWrite,https://graph.microsoft.com/Mail.Send,https://graph.microsoft.com/User.Read',
+        ))))),
+    ],
+
+    'zoho_mail' => [
+        'client_id' => env('ZOHO_MAIL_CLIENT_ID'),
+        'client_secret' => env('ZOHO_MAIL_CLIENT_SECRET'),
+        'datacenter' => env('ZOHO_MAIL_DATACENTER', 'com'),
+        'redirect_uri' => env(
+            'ZOHO_MAIL_REDIRECT_URI',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/zoho/callback',
+        ),
+        'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
+            'ZOHO_MAIL_SCOPES',
+            'ZohoMail.messages.ALL,ZohoMail.accounts.READ',
+        ))))),
+    ],
+
+    // Custom IMAP/SMTP availability. Outbound SMTP is open on the production cluster
+    // (verified 2026-08-14); the live value is driven by EMAIL_IMAP_SMTP_ENABLED in the
+    // configmap. Flip that env to "false" if the hosting provider blocks SMTP again.
+    'email_accounts' => [
+        'imap_smtp_enabled' => filter_var(
+            env('EMAIL_IMAP_SMTP_ENABLED', 'true'),
+            FILTER_VALIDATE_BOOL,
+        ),
     ],
 
     'mapbox' => [
@@ -56,13 +120,20 @@ return [
     ],
 
     'ai' => [
+        // Env default only — runtime stack is overridden by platform_settings.ai.stack when set.
+        'stack' => env('AI_STACK', 'openai_claude'),
         'provider' => env('AI_PROVIDER', 'openai'),
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
-        'default_model' => env('AI_DEFAULT_MODEL', 'gpt-4.1-mini'),
-        'exec_model' => env('AI_EXEC_MODEL', 'gpt-4.1-mini'),
+        'default_model' => env('AI_DEFAULT_MODEL', 'auto'),
+        'exec_model' => env('AI_EXEC_MODEL', 'auto'),
         'analyst_model' => env('AI_ANALYST_MODEL', 'auto'),
         'request_timeout_ms' => (int) env('AI_REQUEST_TIMEOUT_MS', 30000),
         'max_tokens' => (int) env('AI_MAX_TOKENS', 4000),
+        'router_model' => env('AI_ROUTER_MODEL', 'auto'),
+        'provider_skip_ttl_seconds' => (int) env('AI_PROVIDER_SKIP_TTL', 300),
+        'enable_hybrid_router' => filter_var(env('AI_ENABLE_HYBRID_ROUTER', true), FILTER_VALIDATE_BOOL),
+        'intent_routing_mode' => env('AI_INTENT_ROUTING_MODE', 'rules_first'),
+        'enable_read_synthesis' => filter_var(env('AI_ENABLE_READ_SYNTHESIS', true), FILTER_VALIDATE_BOOL),
         'enable_streaming' => filter_var(env('AI_ENABLE_STREAMING', true), FILTER_VALIDATE_BOOL),
         'enable_actions' => filter_var(env('AI_ENABLE_ACTIONS', true), FILTER_VALIDATE_BOOL),
         'strict_confirmation_blocking' => filter_var(env('AI_STRICT_CONFIRMATION_BLOCKING', false), FILTER_VALIDATE_BOOL),
@@ -75,8 +146,9 @@ return [
         'openai' => [
             'api_key' => env('OPENAI_API_KEY'),
             'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-            'model' => env('OPENAI_MODEL', env('AI_DEFAULT_MODEL', 'gpt-4.1-mini')),
+            'model' => env('OPENAI_MODEL', env('AI_DEFAULT_MODEL', 'auto')),
             'audio_model' => env('OPENAI_AUDIO_MODEL', 'gpt-4o-mini-transcribe'),
+            'vision_model' => env('OPENAI_VISION_MODEL', 'gpt-4o-mini'),
         ],
         'claude' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
@@ -84,9 +156,55 @@ return [
             'model' => env('CLAUDE_MODEL', 'auto'),
             'version' => env('ANTHROPIC_VERSION', '2023-06-01'),
         ],
+        'nvidia' => [
+            'api_key' => env('NVIDIA_API_KEY'),
+            'base_url' => env('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+            // Ceiling / analyst default. Hosted NIM often queues for a long time under load.
+            'request_timeout_ms' => (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000),
+            // Intent routing must fail fast so rule-based routing can take over.
+            'routing_timeout_ms' => (int) env('NVIDIA_ROUTING_TIMEOUT_MS', 15000),
+            // Day-to-day Ask ELY; shorter than analyst so hung NIM does not block for 2 minutes.
+            'operational_timeout_ms' => (int) env('NVIDIA_OPERATIONAL_TIMEOUT_MS', 60000),
+            'analyst_timeout_ms' => (int) env('NVIDIA_ANALYST_TIMEOUT_MS', (int) env('NVIDIA_REQUEST_TIMEOUT_MS', 120000)),
+            // Cap day-to-day chat completions; larger budgets slow large models further.
+            'operational_max_tokens' => (int) env('NVIDIA_OPERATIONAL_MAX_TOKENS', 1000),
+            // Nemotron models reason ("thinking") by default, which is slow and can consume
+            // the whole token budget. Off by default; flip via env for analyst-grade output.
+            'enable_thinking' => filter_var(env('NVIDIA_ENABLE_THINKING', false), FILTER_VALIDATE_BOOL),
+            // Verified live on the hosted catalog (nano-8b pool hangs; ultra-253b is 404).
+            'routing_model' => env('NVIDIA_ROUTING_MODEL', 'meta/llama-3.1-8b-instruct'),
+            'exec_model' => env('NVIDIA_EXEC_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+            'analyst_model' => env('NVIDIA_ANALYST_MODEL', 'nvidia/llama-3.3-nemotron-super-49b-v1.5'),
+        ],
+        'glm' => [
+            'api_key' => env('GLM_API_KEY'),
+            'base_url' => env('GLM_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4'),
+            'request_timeout_ms' => (int) env('GLM_REQUEST_TIMEOUT_MS', 120000),
+            'routing_timeout_ms' => (int) env('GLM_ROUTING_TIMEOUT_MS', 15000),
+            'operational_timeout_ms' => (int) env('GLM_OPERATIONAL_TIMEOUT_MS', 60000),
+            'analyst_timeout_ms' => (int) env('GLM_ANALYST_TIMEOUT_MS', (int) env('GLM_REQUEST_TIMEOUT_MS', 120000)),
+            'operational_max_tokens' => (int) env('GLM_OPERATIONAL_MAX_TOKENS', 1000),
+            'routing_model' => env('GLM_ROUTING_MODEL', 'glm-4-flash'),
+            'exec_model' => env('GLM_EXEC_MODEL', 'glm-4-air'),
+            'analyst_model' => env('GLM_ANALYST_MODEL', 'glm-4-plus'),
+        ],
+        // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
+        'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),
         'admin' => [
             'spending_alert_usd' => (float) env('AI_ADMIN_SPENDING_ALERT_USD', 500),
         ],
+    ],
+
+    'vapid' => [
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+        'subject' => env('VAPID_SUBJECT', 'mailto:info@thefactory23.com'),
+    ],
+
+    'sales_engine' => [
+        'api_url' => env('SALES_ENGINE_API_URL', 'https://api.salesengine.thefactory23.com'),
+        // Must match Sales Engine FACTORY23_JWT_SECRET
+        'jwt_secret' => env('SALES_ENGINE_JWT_SECRET', env('FACTORY23_JWT_SECRET')),
     ],
 
 ];

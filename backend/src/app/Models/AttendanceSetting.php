@@ -19,6 +19,7 @@ class AttendanceSetting extends Model
         'working_days',
         'clockin_window_minutes',
         'auto_clockout_enabled',
+        'timezone',
     ];
 
     protected function casts(): array

@@ -22,10 +22,13 @@ class RunAiProviderHealthChecksCommand extends Command
 
         $this->info('OpenAI: ' . ($results['openai']['label'] ?? 'unknown'));
         $this->info('Claude: ' . ($results['claude']['label'] ?? 'unknown'));
+        $this->info('NVIDIA: ' . ($results['nvidia']['label'] ?? 'unknown'));
+        $this->info('GLM: ' . ($results['glm']['label'] ?? 'unknown'));
 
         if ($this->aiLogsTableAvailable()) {
             $monthStart = now()->startOfMonth()->toDateTimeString();
             $monthCost = (float) \App\Models\AiLog::query()
+                ->llmInvocations()
                 ->where('created_at', '>=', $monthStart)
                 ->sum('estimated_cost_usd');
             $analyticsService->checkSpendingAlert($monthCost);

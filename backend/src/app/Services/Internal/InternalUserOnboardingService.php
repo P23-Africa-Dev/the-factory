@@ -6,9 +6,11 @@ namespace App\Services\Internal;
 
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Models\CompanyZone;
 use App\Models\InternalUserInvitation;
 use App\Models\User;
 use App\Notifications\InternalUserOnboardingInviteNotification;
+use App\Services\Avatar\AvatarStorageService;
 use App\Services\Notification\NotificationService;
 use App\Support\CurrencyCatalog;
 use Illuminate\Http\UploadedFile;
@@ -16,7 +18,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -31,6 +32,8 @@ class InternalUserOnboardingService
         private readonly InternalUserAccessService $accessService,
         private readonly NotificationService $notificationService,
         private readonly \App\Services\Billing\CompanySeatLimitService $seatLimitService,
+        private readonly AvatarStorageService $avatarStorage,
+        private readonly InternalUserAuditLogger $auditLogger,
     ) {}
 
     public function createByManager(User $creator, array $data): array
@@ -63,6 +66,13 @@ class InternalUserOnboardingService
                 currency: $data['currency_code'] ?? null,
                 fallbackCurrency: $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'),
             );
+            $assignedZoneIds = $this->resolveAssignedZoneIds(
+                companyId: (int) $company->id,
+                assignedZoneIds: isset($data['assigned_zone_ids']) && is_array($data['assigned_zone_ids']) ? $data['assigned_zone_ids'] : null,
+                assignedZoneText: isset($data['assigned_zone']) ? (string) $data['assigned_zone'] : null,
+                actorUserId: (int) $creator->id,
+                fallbackCountryCode: (string) ($company->country ?? ''),
+            );
 
             $user = User::query()->create([
                 'name' => $data['full_name'],
@@ -71,7 +81,7 @@ class InternalUserOnboardingService
                 'is_active' => false,
                 'onboarding_status' => 'pending_onboarding',
                 'internal_role' => $role,
-                'assigned_zone' => $data['assigned_zone'],
+                'assigned_zone' => $this->resolveLegacyAssignedZoneLabel($assignedZoneIds, isset($data['assigned_zone']) ? (string) $data['assigned_zone'] : null),
                 'work_days' => $workDays,
                 'base_salary' => $data['base_salary'],
                 'payroll_salary_type' => $salaryType,
@@ -100,6 +110,8 @@ class InternalUserOnboardingService
             if ($role === 'supervisor' && ! empty($data['assign_agent_ids'])) {
                 $this->assignAgentsToSupervisor($company->id, (int) $user->id, Arr::wrap($data['assign_agent_ids']));
             }
+
+            $this->syncUserZones($user, $assignedZoneIds);
 
             ['invitation' => $invitation, 'plain_token' => $plainToken] = $this->createInvitation(
                 companyId: (int) $company->id,
@@ -292,30 +304,61 @@ class InternalUserOnboardingService
     {
         ['company' => $company, 'role' => $actorRole] = $this->accessService->resolveCompanyContext($actor, $data['company_id'] ?? null);
         $this->accessService->ensureCanManageInternalUsers($actorRole);
+        $this->accessService->ensureCanActOnTarget(
+            $actor,
+            $actorRole,
+            $target,
+            InternalUserAccessService::ACTION_EDIT,
+            $company,
+        );
 
         $this->ensureUserInCompanyWithRole((int) $company->id, (int) $target->id, ['admin', 'supervisor', 'agent']);
 
-        return DB::transaction(function () use ($company, $target, $data): User {
+        if (isset($data['role'])) {
+            $this->accessService->ensureCanChangeRole($actorRole, (string) $data['role']);
+        }
+
+        return DB::transaction(function () use ($actor, $company, $target, $data, $actorRole): User {
             $updates = [];
+            $changed = [];
 
             if (isset($data['full_name'])) {
                 $updates['name'] = $data['full_name'];
+                $changed['full_name'] = $data['full_name'];
             }
 
             if (isset($data['role'])) {
                 $updates['internal_role'] = $data['role'];
+                $changed['role'] = $data['role'];
             }
 
             if (array_key_exists('assigned_zone', $data)) {
                 $updates['assigned_zone'] = $data['assigned_zone'] ?? null;
+                $changed['assigned_zone'] = $data['assigned_zone'] ?? null;
             }
 
             if (array_key_exists('phone_number', $data)) {
                 $updates['phone_number'] = $data['phone_number'] ?? null;
+                $changed['phone_number'] = $data['phone_number'] ?? null;
             }
 
             if ($updates !== []) {
                 $target->update($updates);
+            }
+
+            if (array_key_exists('assigned_zone_ids', $data) || array_key_exists('assigned_zone', $data)) {
+                $assignedZoneIds = $this->resolveAssignedZoneIds(
+                    companyId: (int) $company->id,
+                    assignedZoneIds: array_key_exists('assigned_zone_ids', $data) && is_array($data['assigned_zone_ids']) ? $data['assigned_zone_ids'] : null,
+                    assignedZoneText: array_key_exists('assigned_zone', $data) ? (string) ($data['assigned_zone'] ?? '') : null,
+                    actorUserId: (int) $target->id,
+                    fallbackCountryCode: (string) ($company->country ?? ''),
+                );
+                $this->syncUserZones($target, $assignedZoneIds);
+                $target->update([
+                    'assigned_zone' => $this->resolveLegacyAssignedZoneLabel($assignedZoneIds, array_key_exists('assigned_zone', $data) ? (string) ($data['assigned_zone'] ?? '') : $target->assigned_zone),
+                ]);
+                $changed['assigned_zone_ids'] = $assignedZoneIds;
             }
 
             if (isset($data['role'])) {
@@ -326,6 +369,19 @@ class InternalUserOnboardingService
                 };
 
                 $company->users()->updateExistingPivot($target->id, ['role' => $pivotRole]);
+            }
+
+            if ($changed !== []) {
+                $this->auditLogger->log(
+                    companyId: (int) $company->id,
+                    actorUserId: (int) $actor->id,
+                    targetUserId: (int) $target->id,
+                    action: 'updated',
+                    metadata: [
+                        'changes' => $changed,
+                        'actor_role' => $actorRole,
+                    ],
+                );
             }
 
             return $target->fresh();
@@ -394,30 +450,45 @@ class InternalUserOnboardingService
             $avatarKey = $resolvedProfile['avatar_key'];
             $avatarSvg = $resolvedProfile['avatar_svg'];
             $avatarUrl = $resolvedProfile['avatar_url'];
+            $previousAvatar = $user->avatar;
+            $uploadedPath = null;
 
-            if (isset($data['avatar_file']) && $data['avatar_file'] instanceof UploadedFile) {
-                $avatarKey = $this->storeCustomAvatar($data['avatar_file'], (int) $user->id);
-                $avatarSvg = null;
-                $avatarUrl = $this->buildAvatarPublicUrl($avatarKey);
+            try {
+                if (isset($data['avatar_file']) && $data['avatar_file'] instanceof UploadedFile) {
+                    $uploadedPath = $this->avatarStorage->storeCustom($data['avatar_file'], (int) $user->id, allowSvg: true);
+                    $avatarKey = $uploadedPath;
+                    $avatarSvg = null;
+                    $avatarUrl = $this->avatarStorage->resolveUrl($avatarKey) ?? $this->avatarStorage->defaultUrl();
+                }
+
+                $invitation->company->users()->syncWithoutDetaching([
+                    $user->id => [
+                        'role' => $pivotRole,
+                        'joined_at' => now(),
+                    ],
+                ]);
+
+                $user->update([
+                    'phone_number' => $resolvedProfile['phone_number'],
+                    'gender' => $resolvedProfile['gender'],
+                    'avatar' => $avatarKey,
+                    'password' => $data['password'],
+                    'onboarding_status' => 'active',
+                    'internal_onboarding_completed_at' => now(),
+                    'is_active' => true,
+                    'email_verified_at' => $user->email_verified_at ?? now(),
+                ]);
+            } catch (\Throwable $exception) {
+                if (is_string($uploadedPath) && $uploadedPath !== '') {
+                    $this->avatarStorage->deleteIfOrphaned($uploadedPath);
+                }
+
+                throw $exception;
             }
 
-            $invitation->company->users()->syncWithoutDetaching([
-                $user->id => [
-                    'role' => $pivotRole,
-                    'joined_at' => now(),
-                ],
-            ]);
-
-            $user->update([
-                'phone_number' => $resolvedProfile['phone_number'],
-                'gender' => $resolvedProfile['gender'],
-                'avatar' => $avatarKey,
-                'password' => $data['password'],
-                'onboarding_status' => 'active',
-                'internal_onboarding_completed_at' => now(),
-                'is_active' => true,
-                'email_verified_at' => $user->email_verified_at ?? now(),
-            ]);
+            if (is_string($uploadedPath) && $uploadedPath !== '') {
+                $this->avatarStorage->replaceCustomAvatar($previousAvatar, $uploadedPath);
+            }
 
             $invitation->update([
                 'accepted_at' => now(),
@@ -527,7 +598,7 @@ class InternalUserOnboardingService
             ]);
         }
 
-        if ($normalizedAvatarKey !== null && ! $this->isCustomAvatarPath($normalizedAvatarKey)) {
+        if ($normalizedAvatarKey !== null && ! $this->avatarStorage->isCustomAvatarPath($normalizedAvatarKey)) {
             if ($normalizedGender !== null) {
                 if (! isset($avatarCatalog[$normalizedGender][$normalizedAvatarKey])) {
                     throw ValidationException::withMessages([
@@ -551,7 +622,7 @@ class InternalUserOnboardingService
         }
 
         if ($normalizedAvatarKey === null && $assignRandomAvatar && $normalizedGender !== null) {
-            $normalizedAvatarKey = $this->randomAvatarKeyForGender($normalizedGender);
+            $normalizedAvatarKey = $this->avatarStorage->randomCatalogKeyForGender($normalizedGender);
         }
 
         if ($requireCompleteProfile) {
@@ -578,11 +649,11 @@ class InternalUserOnboardingService
         $avatarUrl = null;
 
         if ($normalizedAvatarKey !== null) {
-            if ($this->isCustomAvatarPath($normalizedAvatarKey)) {
-                $avatarUrl = $this->buildAvatarPublicUrl($normalizedAvatarKey);
+            if ($this->avatarStorage->isCustomAvatarPath($normalizedAvatarKey)) {
+                $avatarUrl = $this->avatarStorage->resolveUrl($normalizedAvatarKey);
             } elseif ($normalizedGender !== null) {
                 $avatarOption = $avatarCatalog[$normalizedGender][$normalizedAvatarKey] ?? null;
-                $avatarUrl = $avatarOption['url'] ?? null;
+                $avatarUrl = $avatarOption['url'] ?? $this->avatarStorage->resolveUrl($normalizedAvatarKey, $normalizedGender);
             }
         }
 
@@ -595,108 +666,13 @@ class InternalUserOnboardingService
         ];
     }
 
-    private function storeCustomAvatar(UploadedFile $avatarFile, int $userId): string
-    {
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-        $directory = "{$basePath}/custom";
-        $extension = strtolower($avatarFile->getClientOriginalExtension() ?: $avatarFile->extension() ?: 'png');
-        $filename = sprintf('user_%d_%s.%s', $userId, Str::random(16), $extension);
-
-        return $avatarFile->storeAs($directory, $filename, ['disk' => 'public']);
-    }
-
-    private function buildAvatarPublicUrl(string $path): string
-    {
-        $publicBaseUrl = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: asset('storage')
-        ), '/');
-
-        return $publicBaseUrl . '/' . ltrim($path, '/');
-    }
-
-    private function isCustomAvatarPath(string $avatarKey): bool
-    {
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-
-        return str_starts_with($avatarKey, "{$basePath}/custom/");
-    }
-
     private function avatarCatalog(): array
     {
         if ($this->avatarCatalogCache !== null) {
             return $this->avatarCatalogCache;
         }
 
-        $catalog = [
-            'male' => [],
-            'female' => [],
-        ];
-
-        $disk = Storage::disk('public');
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-        $publicBaseUrl = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: asset('storage')
-        ), '/');
-
-        foreach (['male', 'female'] as $gender) {
-            $files = $disk->files("{$basePath}/{$gender}");
-            sort($files);
-
-            foreach ($files as $file) {
-                $filename = basename($file);
-                $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
-
-                if (! in_array($extension, ['png', 'svg'], true)) {
-                    continue;
-                }
-
-                $avatarKey = pathinfo($filename, PATHINFO_FILENAME);
-                $catalog[$gender][$avatarKey] = [
-                    'key' => $avatarKey,
-                    'svg' => null,
-                    'url' => $publicBaseUrl . '/' . ltrim($file, '/'),
-                ];
-
-                if ($extension === 'svg') {
-                    try {
-                        $catalog[$gender][$avatarKey]['svg'] = $disk->get($file);
-                    } catch (\Throwable) {
-                        // Non-fatal: URL fallback will be used.
-                    }
-                }
-            }
-        }
-
-        $fallbackCatalog = config('internal_onboarding.avatar_catalog', []);
-        if (! is_array($fallbackCatalog)) {
-            $fallbackCatalog = [];
-        }
-
-        foreach ($fallbackCatalog as $gender => $avatars) {
-            if (! isset($catalog[$gender]) || ! is_array($avatars)) {
-                continue;
-            }
-
-            foreach ($avatars as $avatarKey => $svg) {
-                if (! isset($catalog[$gender][$avatarKey])) {
-                    $catalog[$gender][$avatarKey] = [
-                        'key' => $avatarKey,
-                        'svg' => $svg,
-                        'url' => null,
-                    ];
-
-                    continue;
-                }
-
-                $catalog[$gender][$avatarKey]['svg'] = $svg;
-            }
-        }
-
-        $this->avatarCatalogCache = $catalog;
+        $this->avatarCatalogCache = $this->avatarStorage->catalog();
 
         return $this->avatarCatalogCache;
     }
@@ -714,17 +690,6 @@ class InternalUserOnboardingService
             ->all();
 
         return $this->avatarGenderMapCache;
-    }
-
-    private function randomAvatarKeyForGender(string $gender): ?string
-    {
-        $options = array_keys($this->avatarCatalog()[$gender] ?? []);
-
-        if ($options === []) {
-            return null;
-        }
-
-        return $options[array_rand($options)];
     }
 
     private function ensureValidSupervisor(int $companyId, int $supervisorUserId): void
@@ -756,5 +721,107 @@ class InternalUserOnboardingService
                 'supervisor_user_id' => $supervisorUserId,
             ]);
         }
+    }
+
+    /**
+     * @param  array<int, mixed>|null  $assignedZoneIds
+     * @return array<int, int>
+     */
+    private function resolveAssignedZoneIds(
+        int $companyId,
+        ?array $assignedZoneIds,
+        ?string $assignedZoneText,
+        int $actorUserId,
+        string $fallbackCountryCode = 'NG',
+    ): array {
+        $zoneIds = collect($assignedZoneIds ?? [])
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->filter(static fn(int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($zoneIds !== []) {
+            $count = CompanyZone::query()
+                ->where('company_id', $companyId)
+                ->whereIn('id', $zoneIds)
+                ->count();
+
+            if ($count !== count($zoneIds)) {
+                throw ValidationException::withMessages([
+                    'assigned_zone_ids' => ['One or more selected zones do not belong to your company.'],
+                ]);
+            }
+
+            return $zoneIds;
+        }
+
+        $zoneText = trim((string) ($assignedZoneText ?? ''));
+        if ($zoneText === '') {
+            return [];
+        }
+
+        $normalized = Str::lower(trim(preg_replace('/\s+/', ' ', $zoneText) ?? $zoneText));
+        $existing = CompanyZone::query()
+            ->where('company_id', $companyId)
+            ->where('normalized_name', $normalized)
+            ->first();
+
+        if ($existing instanceof CompanyZone) {
+            return [(int) $existing->id];
+        }
+
+        $countryCode = strtoupper(trim($fallbackCountryCode));
+        if (strlen($countryCode) !== 2) {
+            $countryCode = 'NG';
+        }
+
+        $created = CompanyZone::query()->create([
+            'company_id' => $companyId,
+            'name' => $zoneText,
+            'normalized_name' => $normalized,
+            'country_code' => $countryCode,
+            'state_name' => 'General',
+            'lga_name' => $zoneText,
+            'is_active' => true,
+            'created_by_user_id' => $actorUserId,
+        ]);
+
+        return [(int) $created->id];
+    }
+
+    /**
+     * @param  array<int, int>  $zoneIds
+     */
+    private function syncUserZones(User $user, array $zoneIds): void
+    {
+        if ($zoneIds === []) {
+            $user->zones()->detach();
+
+            return;
+        }
+
+        $syncPayload = [];
+        foreach ($zoneIds as $index => $zoneId) {
+            $syncPayload[$zoneId] = ['is_primary' => $index === 0];
+        }
+        $user->zones()->sync($syncPayload);
+    }
+
+    /**
+     * @param  array<int, int>  $zoneIds
+     */
+    private function resolveLegacyAssignedZoneLabel(array $zoneIds, ?string $fallback): ?string
+    {
+        if ($zoneIds !== []) {
+            $primaryZone = CompanyZone::query()->whereKey($zoneIds[0])->first();
+            if ($primaryZone instanceof CompanyZone) {
+                return (string) $primaryZone->name;
+            }
+        }
+
+        $fallbackText = trim((string) ($fallback ?? ''));
+
+        return $fallbackText !== '' ? $fallbackText : null;
     }
 }

@@ -244,6 +244,80 @@ describe("useCopilotChat", () => {
         expect(result.current.messages[1].content).toBe("Overdue tasks: 1");
         expect(result.current.messages[1].sources).toEqual(["tasks.overdue"]);
         expect(result.current.messages[1].tool).toBe("tasks.overdue");
+        expect(result.current.processingLabel).toBeNull();
+    });
+
+    it("rotates processing labels without writing them into assistant content", async () => {
+        vi.useFakeTimers();
+        listCopilotThreadsMock.mockResolvedValue({ data: { items: [] } });
+
+        let resolveStream: ((value: {
+            thread_id: string;
+            message: string;
+            tool: string | null;
+            sources: string[];
+            payload: Record<string, unknown> | null;
+        }) => void) | null = null;
+        let streamHandlers: {
+            onDone?: (event: {
+                thread_id: string;
+                message: string;
+                tool: string | null;
+                sources: string[];
+                payload: Record<string, unknown> | null;
+            }) => void;
+        } = {};
+
+        sendCopilotMessageStreamMock.mockImplementation(async (_payload, _token, handlers) => {
+            streamHandlers = handlers;
+            handlers.onMeta?.({ thread_id: "thread-status" });
+            handlers.onProcessing?.({ label: "Thinking..." });
+
+            return await new Promise((resolve) => {
+                resolveStream = resolve;
+            });
+        });
+
+        const { result } = renderHook(() => useCopilotChat());
+
+        let sendPromise: Promise<void>;
+        await act(async () => {
+            sendPromise = result.current.sendMessage({
+                message: "Give me the list of tasks created by Agent John",
+                companyId: 77,
+            });
+        });
+
+        expect(result.current.isStreaming).toBe(true);
+        expect(result.current.processingLabel).toBe("Thinking...");
+        expect(result.current.messages[1].content).toBe("");
+
+        await act(async () => {
+            vi.advanceTimersByTime(1000);
+        });
+
+        expect(result.current.processingLabel).toBe("Looking up tasks...");
+        expect(result.current.messages[1].content).toBe("");
+
+        const donePayload = {
+            thread_id: "thread-status",
+            message: "Here are the matching tasks.",
+            tool: "tasks.list",
+            sources: ["tasks.list"],
+            payload: null,
+        };
+
+        await act(async () => {
+            streamHandlers.onDone?.(donePayload);
+            resolveStream?.(donePayload);
+            await sendPromise;
+        });
+
+        expect(result.current.isStreaming).toBe(false);
+        expect(result.current.processingLabel).toBeNull();
+        expect(result.current.messages[1].content).toBe("Here are the matching tasks.");
+
+        vi.useRealTimers();
     });
 
     it("sends action confirmation payload with generated idempotency key", async () => {

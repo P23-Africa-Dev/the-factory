@@ -79,8 +79,7 @@ function AuthShell({ children }: { children: React.ReactNode }) {
           Factory 23
         </h1>
         <p className="text-white text-[14px] lg:text-[15px] leading-[18px] lg:leading-[16px] max-w-[240px]">
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-          eiusmod
+          Set up your enterprise workspace and start managing your team.
         </p>
 
         <Image

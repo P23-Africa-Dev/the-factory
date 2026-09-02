@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Services\Avatar\AvatarStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AvatarController
 {
+    public function __construct(private readonly AvatarStorageService $avatarStorage) {}
+
     /**
      * Get available avatars for a specific gender.
      *
@@ -37,73 +39,23 @@ class AvatarController
             ]);
         }
 
-        $disk = Storage::disk('public');
-        $basePath = trim((string) config('internal_onboarding.avatar_storage_root', 'avatar'), '/');
-        $avatarPath = "{$basePath}/{$normalizedGender}";
-        $publicBaseUrl = rtrim((string) (
-            config('internal_onboarding.avatar_public_base_url')
-            ?: config('filesystems.disks.public.url')
-            ?: asset('storage')
-        ), '/');
+        $avatarPath = "{$this->avatarStorage->avatarRoot()}/{$normalizedGender}";
+        $disk = $this->avatarStorage->disk();
 
         if (! $disk->exists($avatarPath)) {
-            throw ValidationException::withMessages([
-                'gender' => ['No avatars available for this gender.'],
-            ]);
+            $manifest = $this->avatarStorage->catalogManifest($normalizedGender);
+
+            if ($manifest === []) {
+                throw ValidationException::withMessages([
+                    'gender' => ['No avatars available for this gender.'],
+                ]);
+            }
         }
 
         $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.%s', $normalizedGender);
 
-        $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use (
-            $disk,
-            $avatarPath,
-            $publicBaseUrl,
-            $normalizedGender,
-        ): array {
-            $files = $disk->files($avatarPath);
-            sort($files);
-
-            $manifestItems = [];
-            $diskKeys = [];
-
-            foreach ($files as $file) {
-                $filename = basename($file);
-                $extension = strtolower((string) pathinfo($filename, PATHINFO_EXTENSION));
-
-                if (! in_array($extension, ['png', 'svg'], true)) {
-                    continue;
-                }
-
-                $key = pathinfo($filename, PATHINFO_FILENAME);
-                $url = $publicBaseUrl . '/' . ltrim($file, '/');
-
-                $manifestItems[] = [
-                    'key' => $key,
-                    'url' => $url,
-                    'file' => $file,
-                    'extension' => $extension,
-                    'svg' => null,
-                ];
-
-                $diskKeys[] = $key;
-            }
-
-            // Include SVG-only catalog entries whose keys are not already covered by disk files.
-            $svgCatalog = config("internal_onboarding.avatar_catalog.{$normalizedGender}", []);
-
-            foreach ($svgCatalog as $catalogKey => $svg) {
-                if (! in_array($catalogKey, $diskKeys, true)) {
-                    $manifestItems[] = [
-                        'key' => $catalogKey,
-                        'url' => null,
-                        'file' => null,
-                        'extension' => 'svg',
-                        'svg' => $svg,
-                    ];
-                }
-            }
-
-            return $manifestItems;
+        $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use ($normalizedGender): array {
+            return $this->avatarStorage->catalogManifest($normalizedGender);
         });
 
         $total = count($manifest);

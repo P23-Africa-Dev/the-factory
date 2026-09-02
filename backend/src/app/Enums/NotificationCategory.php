@@ -16,6 +16,7 @@ enum NotificationCategory: string
     case CRM = 'crm';
     case WORKFORCE = 'workforce';
     case PROFILE = 'profile';
+    case DRIVE = 'drive';
     case SYSTEM = 'system';
 
     public static function values(): array

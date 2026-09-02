@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listTasks,
+  listTaskAssignees,
   createTask,
   getTask,
   assignTask,
@@ -13,6 +14,8 @@ import {
   updateTaskStatusAdmin,
   createSelfTask,
   uploadTaskProof,
+  updateTask,
+  deleteTask,
   type ListTasksParams,
   type CreateTaskPayload,
   type CreateSelfTaskPayload,
@@ -23,13 +26,17 @@ import {
   type UpdateTaskStatusPayload,
   type TaskApiItem,
   type PaginationData,
+  type UpdateTaskPayload,
+  type TaskAssignee,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { toast } from "sonner";
 
 export const TASK_KEYS = {
   all: ["tasks"] as const,
   list: (params: ListTasksParams) => ["tasks", params] as const,
+  assignees: (companyId: number | string) => ["tasks", "assignees", companyId] as const,
   detail: (taskId: number | string, companyId?: number | string) =>
     ["tasks", "detail", taskId, companyId] as const,
   reassignmentInbox: (params: TaskReassignmentsInboxParams) =>
@@ -40,6 +47,18 @@ export type TasksResult = {
   tasks: TaskApiItem[];
   pagination: PaginationData;
 };
+
+export function useTaskAssignees(companyId?: number | string) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: TASK_KEYS.assignees(companyId ?? ""),
+    queryFn: async (): Promise<TaskAssignee[]> =>
+      (await listTaskAssignees({ company_id: companyId! }, token)).data.items,
+    enabled: hasActiveApiSession(token) && companyId != null && companyId !== "",
+    staleTime: 1000 * 60 * 5,
+  });
+}
 
 export function useTasks(params: ListTasksParams = {}) {
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
@@ -53,7 +72,7 @@ export function useTasks(params: ListTasksParams = {}) {
         pagination: res.data.pagination,
       };
     },
-    enabled: !!token && (!!params.company_id || !!params.project_id),
+    enabled: hasActiveApiSession(token) && (!!params.company_id || !!params.project_id),
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -81,7 +100,7 @@ export function useTaskDetail(taskId: number | string, companyId?: number | stri
   return useQuery({
     queryKey: TASK_KEYS.detail(taskId, companyId),
     queryFn: async () => (await getTask(taskId, { company_id: companyId }, token)).data.task,
-    enabled: !!token && !!taskId,
+    enabled: hasActiveApiSession(token) && !!taskId,
   });
 }
 
@@ -108,7 +127,7 @@ export function useTaskReassignmentInbox(params: TaskReassignmentsInboxParams = 
       const res = await listTaskReassignmentInbox(params, token);
       return res.data.reassignments;
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 30,
   });
 }
@@ -208,11 +227,48 @@ export function useCreateSelfTask(options?: { onSuccess?: (task: TaskApiItem) =>
     mutationFn: (payload: CreateSelfTaskPayload) => createSelfTask(payload, token),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: ["tracking"] });
       if (res.meta?.queued_offline) {
         toast.info("Task queued offline.");
         return;
       }
       options?.onSuccess?.(res.data.task);
+    },
+  });
+}
+
+export function useUpdateTask(options?: { onSuccess?: (task: TaskApiItem) => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      payload,
+    }: {
+      taskId: number | string;
+      payload: UpdateTaskPayload;
+    }) => updateTask(taskId, payload, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      options?.onSuccess?.(res.data.task);
+    },
+  });
+}
+
+export function useDeleteTask(options?: { onSuccess?: (deletedTaskId: number) => void }) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      companyId,
+    }: {
+      taskId: number | string;
+      companyId?: number | string;
+    }) => deleteTask(taskId, { company_id: companyId }, token),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+      options?.onSuccess?.(res.data.deleted_task_id);
     },
   });
 }

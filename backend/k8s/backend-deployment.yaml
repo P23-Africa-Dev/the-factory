@@ -15,15 +15,16 @@ metadata:
     app.kubernetes.io/part-of: factory23
     app.kubernetes.io/version: v2
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0  # Zero-downtime rolling deploy
+      # maxSurge: 0 avoids needing N+1 pod capacity on small DOKS nodes during deploy.
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:
@@ -54,6 +55,8 @@ spec:
                        /var/www/html/storage/app/public
 
               echo "[init-app] Regenerating Laravel caches with production env vars..."
+              # Clear first so baked image config (built without secrets) cannot linger.
+              php artisan config:clear
               php artisan config:cache
               php artisan route:cache
               php artisan event:cache
@@ -100,6 +103,10 @@ spec:
               mountPath: /srv/storage
             - name: laravel-boot-cache
               mountPath: /srv/bootstrap-cache
+            # Durable Places CORS allow-list (X-Places-Source etc.)
+            - name: cors-config
+              mountPath: /var/www/html/config/cors.php
+              subPath: cors.php
 
       containers:
         # ── PHP-FPM ────────────────────────────────────────────────────────────
@@ -120,7 +127,7 @@ spec:
 
           resources:
             requests:
-              cpu: "250m"
+              cpu: "120m"
               memory: "256Mi"
             limits:
               cpu: "1000m"
@@ -131,6 +138,9 @@ spec:
               mountPath: /var/www/html/storage
             - name: laravel-boot-cache
               mountPath: /var/www/html/bootstrap/cache
+            - name: cors-config
+              mountPath: /var/www/html/config/cors.php
+              subPath: cors.php
             - name: php-custom-ini
               mountPath: /usr/local/etc/php/conf.d/99-custom.ini
               subPath: 99-custom.ini
@@ -170,7 +180,7 @@ spec:
 
           resources:
             requests:
-              cpu: "100m"
+              cpu: "40m"
               memory: "64Mi"
             limits:
               cpu: "200m"
@@ -234,3 +244,6 @@ spec:
         - name: php-custom-ini
           configMap:
             name: php-custom-ini
+        - name: cors-config
+          configMap:
+            name: factory23-cors-config

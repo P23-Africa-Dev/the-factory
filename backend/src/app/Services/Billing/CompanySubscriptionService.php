@@ -24,6 +24,7 @@ class CompanySubscriptionService
     public function __construct(
         private readonly CompanySeatLimitService $seatLimitService,
         private readonly BillingEnforcementSettingService $billingEnforcement,
+        private readonly MapCreditService $mapCredits,
     ) {}
 
     /**
@@ -57,6 +58,7 @@ class CompanySubscriptionService
             'subscription_status' => $status->value,
             'has_active_subscription' => $company->hasEffectiveSubscriptionAccess(),
             'has_paid_subscription' => $company->hasPaidSubscription(),
+            'is_demo' => $company->isDemo(),
             'plan_key' => $company->subscription_plan_key,
             'billing_interval' => $company->subscription_billing_interval,
             'assigned_plan_key' => $company->assigned_plan_key,
@@ -68,6 +70,13 @@ class CompanySubscriptionService
             'current_period_end' => $company->subscription_current_period_end?->toIso8601String(),
             'grace_ends_at' => $company->subscription_grace_ends_at?->toIso8601String(),
             'seat_usage' => $usage,
+            'payment_method' => [
+                'type' => $company->pm_type,
+                'last_four' => $company->pm_last_four,
+                'exp_month' => $company->pm_exp_month,
+                'exp_year' => $company->pm_exp_year,
+            ],
+            'map_credits' => $this->mapCredits->snapshot($company),
         ];
     }
 
@@ -165,6 +174,46 @@ class CompanySubscriptionService
         return $checkout;
     }
 
+    public function createCreditTopupCheckout(User $user, float $amountUsd, ?int $companyId = null): Checkout
+    {
+        $company = $this->resolveBillableCompany($user, $companyId);
+        $this->ensureStripeConfigured();
+
+        $amountCents = (int) round($amountUsd * 100);
+
+        if ($amountCents < 100) {
+            throw ValidationException::withMessages([
+                'amount_usd' => ['The minimum top-up amount is $1.'],
+            ]);
+        }
+
+        if (! $company->hasStripeId()) {
+            $this->performStripeOperation($company, 'create_customer', function () use ($company): void {
+                $company->createAsStripeCustomer();
+            });
+        }
+
+        $credits = $this->mapCredits->usdToCredits($amountUsd);
+        $frontendUrl = rtrim((string) config('billing.frontend_url'), '/');
+
+        /** @var Checkout $checkout */
+        $checkout = $this->performStripeOperation($company, 'create_topup_checkout', function () use ($company, $amountCents, $credits, $amountUsd, $frontendUrl, $user): Checkout {
+            return $company->checkoutCharge($amountCents, 'Map usage credits', 1, [
+                'success_url' => $frontendUrl . '/billing/credit-success?session_id={CHECKOUT_SESSION_ID}',
+                'cancel_url' => $frontendUrl . '/settings/map-credits',
+                'metadata' => [
+                    'type' => 'credit_topup',
+                    'company_id' => (string) $company->id,
+                    'credits' => (string) $credits,
+                    'amount_usd' => (string) $amountUsd,
+                    'user_id' => (string) $user->id,
+                ],
+            ]);
+        });
+
+        return $checkout;
+    }
+
     public function createPortalSession(User $user, ?int $companyId = null): string
     {
         $company = $this->resolveBillableCompany($user, $companyId);
@@ -180,11 +229,18 @@ class CompanySubscriptionService
         return $company->billingPortalUrl($frontendUrl . '/dashboard');
     }
 
+    public function billableCompanyForManagement(User $user, ?int $companyId = null): Company
+    {
+        return $this->resolveBillableCompany($user, $companyId);
+    }
+
     public function syncFromStripeSubscription(Company $company, StripeSubscription $stripeSubscription): void
     {
         $priceId = $stripeSubscription->items->data[0]->price->id ?? null;
         $planKey = $priceId ? BillingPlanCatalog::planKeyForStripePriceId($priceId) : null;
         $interval = $priceId ? BillingPlanCatalog::intervalForStripePriceId($priceId) : null;
+
+        $previousPlanKey = $company->subscription_plan_key;
 
         $stripeStatus = (string) $stripeSubscription->status;
         $subscriptionStatus = match ($stripeStatus) {
@@ -208,6 +264,17 @@ class CompanySubscriptionService
                 ? null
                 : $company->subscription_grace_ends_at,
         ])->save();
+
+        if ($subscriptionStatus === SubscriptionStatus::ACTIVE) {
+            $fresh = $company->fresh();
+
+            // Plan change (upgrade/downgrade) => grant the new allocation immediately.
+            if ($planKey !== null && $planKey !== $previousPlanKey) {
+                $this->mapCredits->resetPlanCredits($fresh, 'webhook');
+            } else {
+                $this->mapCredits->ensureRecord($fresh);
+            }
+        }
     }
 
     public function activateFromCheckoutSession(Company $company, Session $session): void
@@ -255,6 +322,8 @@ class CompanySubscriptionService
             'payment_link_token_hash' => null,
             'payment_link_expires_at' => null,
         ])->save();
+
+        $this->mapCredits->allocateForActivation($company->fresh());
     }
 
     public function markPendingPayment(Company $company): void
@@ -336,7 +405,7 @@ class CompanySubscriptionService
         }
     }
 
-    private function ensureStripeConfigured(): void
+    public function ensureStripeConfigured(): void
     {
         $publishableKey = trim((string) config('cashier.key'));
         $secretKey = trim((string) config('cashier.secret'));

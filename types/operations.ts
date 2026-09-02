@@ -4,6 +4,8 @@ export interface DndItem {
   id: string;
   label: string;
   description: string;
+  companyName?: string;
+  position?: string;
   location: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -21,6 +23,13 @@ export interface DndItem {
   value?: string;
   rawValue?: number;
   assignedToUserId?: string | number | null;
+  taskType?: string;
+  address?: string;
+  dueDateIso?: string;
+  createdAt?: string;
+  requiredActions?: string[];
+  visitVerificationRequired?: boolean;
+  minPhotosRequired?: number;
 }
 
 export interface DndContainer {

@@ -1,14 +1,21 @@
 import type { GeoReading } from "@/types/tracking";
 import { recordTaskLocation } from "@/lib/api/tracking";
+import { useTrackingStore } from "@/store/tracking";
 import { watchPosition, watchVisibilityAccuracy } from "./geolocation";
+import {
+  LIVE_FLUSH_HEARTBEAT_MS,
+  shouldFlushLiveLocation,
+  type LiveFlushCursor,
+} from "@/lib/tracking/live-flush";
 
 const MAX_QUEUE = 50;
-const FLUSH_INTERVAL_MS = 30_000;
 const SESSION_KEY_PREFIX = "factory_location_buffer";
 
 interface BufferCallbacks {
   onArrived?: () => void;
   onError?: (err: unknown) => void;
+  /** Server rejected tracking for this task (e.g. reassigned) — tracking stops. */
+  onStopped?: (message: string) => void;
 }
 
 interface BufferState {
@@ -23,6 +30,8 @@ interface BufferState {
   stopVisibility: (() => void) | null;
   lowAccuracy: boolean;
   active: boolean;
+  needsImmediateFlush: boolean;
+  lastFlush: LiveFlushCursor | null;
 }
 
 let state: BufferState | null = null;
@@ -60,6 +69,10 @@ async function flushState(target: BufferState, options: { allowInactive?: boolea
   const allowInactive = options.allowInactive ?? false;
   if ((!target.active && !allowInactive) || target.queue.length === 0) return;
 
+  // Don't burn a failing request while offline; the 'online' listener and the
+  // periodic flush will retry once connectivity returns (PWA parity).
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
   const batch = target.queue.splice(0, MAX_QUEUE);
   saveToSession(target.sessionKey, target.queue);
 
@@ -80,10 +93,37 @@ async function flushState(target: BufferState, options: { allowInactive?: boolea
       target.token
     );
 
+    const last = batch[batch.length - 1];
+    if (last) {
+      target.lastFlush = {
+        atMs: Date.now(),
+        lng: last.longitude,
+        lat: last.latitude,
+      };
+    }
+
     if (res.data.arrived) {
       target.callbacks.onArrived?.();
     }
   } catch (err) {
+    // Server explicitly rejected tracking (e.g. task reassigned/no longer
+    // assigned to this agent) — stop cleanly instead of retry-looping.
+    const status = (err as { status?: number })?.status;
+    if (status === 422 || status === 403) {
+      const message =
+        (err as { message?: string })?.message ??
+        "You can only track tasks currently assigned to you.";
+      const callbacks = target.callbacks;
+      // Drop the queue so stop()'s final flush doesn't retry the rejected batch.
+      target.queue = [];
+      clearSession(target.sessionKey);
+      if (state === target) {
+        stop();
+      }
+      callbacks.onStopped?.(message);
+      return;
+    }
+
     // Put points back at the front of the queue for retry
     target.queue.unshift(...batch);
     if (target.queue.length > MAX_QUEUE) {
@@ -106,6 +146,34 @@ function push(reading: GeoReading) {
     state.queue.shift();
   }
   saveToSession(state.sessionKey, state.queue);
+
+  // Optimistically move the agent's own marker immediately instead of waiting
+  // for the REST flush + WebSocket echo round-trip (parity with the PWA).
+  useTrackingStore
+    .getState()
+    .appendPolylinePoint(state.taskId, [reading.longitude, reading.latitude]);
+
+  // Flush the very first fix immediately so the rest of the pipeline (WS
+  // consumers, management map) sees movement right away (PWA parity).
+  if (state.needsImmediateFlush) {
+    state.needsImmediateFlush = false;
+    void flush();
+    return;
+  }
+
+  if (
+    shouldFlushLiveLocation(
+      {
+        longitude: reading.longitude,
+        latitude: reading.latitude,
+        speedMps: reading.speedMps,
+      },
+      state.lastFlush,
+      Date.now(),
+    )
+  ) {
+    void flush();
+  }
 }
 
 function startWatcher() {
@@ -141,6 +209,8 @@ export function start(
     stopVisibility: null,
     lowAccuracy: false,
     active: true,
+    needsImmediateFlush: true,
+    lastFlush: null,
   };
 
   startWatcher();
@@ -151,16 +221,24 @@ export function start(
     startWatcher(); // restart with new accuracy
   });
 
-  state.flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
+  state.flushTimer = setInterval(flush, LIVE_FLUSH_HEARTBEAT_MS);
 
   // Flush recovered points immediately
   if (recovered.length > 0) {
     flush();
   }
 
-  // Also flush on network recovery
+  // Also flush on network recovery and when the tab becomes visible again
+  // (batched fixes accumulated in the background go out right away).
   if (typeof window !== "undefined") {
     window.addEventListener("online", flush);
+    document.addEventListener("visibilitychange", flushOnVisible);
+  }
+}
+
+function flushOnVisible() {
+  if (document.visibilityState === "visible") {
+    void flush();
   }
 }
 
@@ -177,6 +255,7 @@ export function stop() {
 
   if (typeof window !== "undefined") {
     window.removeEventListener("online", flush);
+    document.removeEventListener("visibilitychange", flushOnVisible);
   }
 
   // Final flush attempt

@@ -17,6 +17,7 @@ import {
   type UpdateKpiStatusPayload,
 } from "@/lib/api/kpi";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { toast } from "sonner";
 
 export const KPI_KEYS = {
@@ -50,7 +51,7 @@ export function useKpis(
         pagination: res.data.pagination,
       };
     },
-    enabled: !!token && !!params.company_id,
+    enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 60,
   });
 }
@@ -67,7 +68,7 @@ export function useKpiDetail(
     queryKey: KPI_KEYS.detail(kpiId, companyId, agentScope),
     queryFn: async () =>
       (await getKpi(kpiId, { company_id: companyId }, token, { agentScope })).data.kpi,
-    enabled: !!token && !!kpiId && !!companyId,
+    enabled: hasActiveApiSession(token) && !!kpiId && !!companyId,
   });
 }
 

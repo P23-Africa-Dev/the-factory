@@ -5,14 +5,21 @@ import { Mail, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import {
+    useCreateGmailLabel,
+    useDeleteGmailLabel,
     useDeleteLeadEmail,
+    useGmailLabels,
     useLeadEmails,
     useLeadEmailThread,
     useMarkLeadEmailRead,
+    useMarkLeadEmailUnread,
+    useModifyLeadEmailLabels,
+    useMoveLeadEmail,
     useSendLeadEmail,
+    useUpdateGmailLabel,
     useUploadEmailAttachment,
 } from "@/hooks/use-crm-emails";
-import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
+import { useEmailAccounts } from "@/hooks/use-email-accounts";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
 import { ComposeEmailPanel } from "./compose-email-panel";
 import { EmailConnectionBanner } from "./email-connection-banner";
@@ -28,6 +35,11 @@ type EmailPanelProps = {
     companyId?: number | string;
     basePath?: ApiRoleBasePath;
 };
+
+function mailboxErrorMessage(error: unknown, fallback: string): string {
+    const apiError = error as { message?: string };
+    return apiError.message || fallback;
+}
 
 export function EmailPanel({
     leadId,
@@ -49,7 +61,11 @@ export function EmailPanel({
         companyId,
         basePath,
     );
-    const statusQuery = useCalendarIntegrationStatus(companyId);
+    const emailAccountsQuery = useEmailAccounts(companyId);
+    const hasGoogleAccount = Boolean(
+        emailAccountsQuery.data?.some((account) => account.provider === "google" && account.status === "active"),
+    );
+    const labelsQuery = useGmailLabels(companyId, basePath, hasGoogleAccount && view === "detail");
     const sendMutation = useSendLeadEmail(leadId, companyId, basePath, {
         onSuccess: () => {
             toast.success("Email queued for sending.");
@@ -58,8 +74,23 @@ export function EmailPanel({
         },
     });
     const markReadMutation = useMarkLeadEmailRead(leadId, companyId, basePath);
+    const markUnreadMutation = useMarkLeadEmailUnread(leadId, companyId, basePath);
+    const moveMutation = useMoveLeadEmail(leadId, companyId, basePath);
+    const modifyLabelsMutation = useModifyLeadEmailLabels(leadId, companyId, basePath);
+    const createLabelMutation = useCreateGmailLabel(companyId, basePath);
+    const updateLabelMutation = useUpdateGmailLabel(companyId, basePath);
+    const deleteLabelMutation = useDeleteGmailLabel(companyId, basePath);
     const deleteMutation = useDeleteLeadEmail(leadId, companyId, basePath);
     const uploadMutation = useUploadEmailAttachment(leadId, companyId, basePath);
+
+    const mailboxBusy =
+        markUnreadMutation.isPending ||
+        moveMutation.isPending ||
+        modifyLabelsMutation.isPending ||
+        createLabelMutation.isPending ||
+        updateLabelMutation.isPending ||
+        deleteLabelMutation.isPending ||
+        deleteMutation.isPending;
 
     const emails = useMemo(() => {
         const mapped = flattenThreadsToMessages(emailsQuery.data?.items, leadName).map((email) => ({
@@ -162,10 +193,16 @@ export function EmailPanel({
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {view === "compose" ? (
                     <ComposeEmailPanel
+                        leadId={leadId}
                         leadName={leadName}
                         leadEmail={resolvedLeadEmail}
                         companyId={companyId}
-                        connectedAccountEmail={statusQuery.data?.organizer_email}
+                        connectedAccountEmail={
+                            emailAccountsQuery.data?.find((a) => a.is_default && a.status === "active")?.email
+                            ?? emailAccountsQuery.data?.find((a) => a.status === "active")?.email
+                            ?? null
+                        }
+                        emailAccounts={emailAccountsQuery.data}
                         replyTo={replyTo}
                         isSending={sendMutation.isPending}
                         onSend={handleSend}
@@ -180,6 +217,9 @@ export function EmailPanel({
                         <EmailDetailView
                             email={selectedEmail}
                             threadMessages={selectedThreadMessages}
+                            gmailLabels={labelsQuery.data ?? []}
+                            labelsLoading={labelsQuery.isLoading}
+                            mailboxBusy={mailboxBusy}
                             onBack={() => {
                                 setSelectedEmail(null);
                                 setView("list");
@@ -194,22 +234,183 @@ export function EmailPanel({
                                 setView("compose");
                             }}
                             onDelete={() => setShowDeleteEmailConfirm(true)}
+                            onMarkUnread={
+                                hasGoogleAccount
+                                    ? () => {
+                                          markUnreadMutation.mutate(selectedEmail.messageId, {
+                                              onSuccess: () => {
+                                                  toast.success("Marked as unread in Gmail.");
+                                                  setSelectedEmail((prev) =>
+                                                      prev ? { ...prev, isRead: false } : prev,
+                                                  );
+                                              },
+                                              onError: (error) =>
+                                                  toast.error(
+                                                      mailboxErrorMessage(
+                                                          error,
+                                                          "Failed to mark unread in Gmail.",
+                                                      ),
+                                                  ),
+                                          });
+                                      }
+                                    : undefined
+                            }
+                            onMoveInbox={
+                                hasGoogleAccount
+                                    ? () => {
+                                          moveMutation.mutate(
+                                              { messageId: selectedEmail.messageId, destination: "inbox" },
+                                              {
+                                                  onSuccess: () =>
+                                                      toast.success("Moved to Inbox in Gmail."),
+                                                  onError: (error) =>
+                                                      toast.error(
+                                                          mailboxErrorMessage(
+                                                              error,
+                                                              "Failed to move email to Inbox.",
+                                                          ),
+                                                      ),
+                                              },
+                                          );
+                                      }
+                                    : undefined
+                            }
+                            onMoveSpam={
+                                hasGoogleAccount
+                                    ? () => {
+                                          moveMutation.mutate(
+                                              { messageId: selectedEmail.messageId, destination: "spam" },
+                                              {
+                                                  onSuccess: () =>
+                                                      toast.success("Moved to Spam in Gmail."),
+                                                  onError: (error) =>
+                                                      toast.error(
+                                                          mailboxErrorMessage(
+                                                              error,
+                                                              "Failed to move email to Spam.",
+                                                          ),
+                                                      ),
+                                              },
+                                          );
+                                      }
+                                    : undefined
+                            }
+                            onCreateLabel={
+                                hasGoogleAccount
+                                    ? async (name) => {
+                                          try {
+                                              await createLabelMutation.mutateAsync(name);
+                                              toast.success(`Created Gmail label “${name}”.`);
+                                          } catch (error) {
+                                              toast.error(
+                                                  mailboxErrorMessage(error, "Failed to create Gmail label."),
+                                              );
+                                              throw error;
+                                          }
+                                      }
+                                    : undefined
+                            }
+                            onRenameLabel={
+                                hasGoogleAccount
+                                    ? async (labelId, name) => {
+                                          try {
+                                              await updateLabelMutation.mutateAsync({ labelId, name });
+                                              toast.success("Gmail label renamed.");
+                                          } catch (error) {
+                                              toast.error(
+                                                  mailboxErrorMessage(error, "Failed to rename Gmail label."),
+                                              );
+                                              throw error;
+                                          }
+                                      }
+                                    : undefined
+                            }
+                            onDeleteLabel={
+                                hasGoogleAccount
+                                    ? async (labelId) => {
+                                          try {
+                                              await deleteLabelMutation.mutateAsync(labelId);
+                                              toast.success("Gmail label deleted.");
+                                          } catch (error) {
+                                              toast.error(
+                                                  mailboxErrorMessage(error, "Failed to delete Gmail label."),
+                                              );
+                                              throw error;
+                                          }
+                                      }
+                                    : undefined
+                            }
+                            onApplyLabel={
+                                hasGoogleAccount
+                                    ? async (labelId) => {
+                                          try {
+                                              await modifyLabelsMutation.mutateAsync({
+                                                  messageId: selectedEmail.messageId,
+                                                  add: [labelId],
+                                              });
+                                              toast.success("Label applied in Gmail.");
+                                          } catch (error) {
+                                              toast.error(
+                                                  mailboxErrorMessage(error, "Failed to apply Gmail label."),
+                                              );
+                                              throw error;
+                                          }
+                                      }
+                                    : undefined
+                            }
+                            onRemoveLabel={
+                                hasGoogleAccount
+                                    ? async (labelId) => {
+                                          try {
+                                              await modifyLabelsMutation.mutateAsync({
+                                                  messageId: selectedEmail.messageId,
+                                                  remove: [labelId],
+                                              });
+                                              toast.success("Label removed in Gmail.");
+                                          } catch (error) {
+                                              toast.error(
+                                                  mailboxErrorMessage(error, "Failed to remove Gmail label."),
+                                              );
+                                              throw error;
+                                          }
+                                      }
+                                    : undefined
+                            }
                         />
                         <ConfirmDeleteModal
                             isOpen={showDeleteEmailConfirm}
-                            onClose={() => setShowDeleteEmailConfirm(false)}
+                            onClose={() => {
+                                if (!deleteMutation.isPending) {
+                                    setShowDeleteEmailConfirm(false);
+                                }
+                            }}
                             onConfirm={() => {
+                                if (!selectedEmail || deleteMutation.isPending) {
+                                    return;
+                                }
+
                                 deleteMutation.mutate(selectedEmail.messageId, {
                                     onSuccess: () => {
-                                        toast.success("Email deleted.");
+                                        toast.success("Email moved to trash.");
+                                        setShowDeleteEmailConfirm(false);
                                         setSelectedEmail(null);
                                         setView("list");
                                     },
+                                    onError: (error: unknown) => {
+                                        toast.error(
+                                            mailboxErrorMessage(
+                                                error,
+                                                "Failed to delete email. Reconnect Google if permissions are missing.",
+                                            ),
+                                        );
+                                    },
                                 });
-                                setShowDeleteEmailConfirm(false);
                             }}
                             title="Delete Email"
-                            description="Are you sure you want to delete this email? This action cannot be undone."
+                            description="This will move the email to trash in your connected mailbox and remove it from this lead."
+                            confirmLabel={deleteMutation.isPending ? "Deleting..." : "Delete"}
+                            closeOnConfirm={false}
+                            confirmDisabled={deleteMutation.isPending}
                         />
                     </>
                 ) : emailsQuery.isLoading ? (

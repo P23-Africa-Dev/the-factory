@@ -13,6 +13,7 @@ use App\Models\Company;
 use App\Models\CompanyLocation;
 use App\Models\Lead;
 use App\Models\LeadPipeline;
+use App\Models\Meeting;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\AI\Planning\DailyPlanningService;
@@ -99,6 +100,64 @@ final class DailyPlanningServiceTest extends TestCase
         $this->assertNotEmpty($nearbyItems);
         $this->assertNotNull($nearbyItems[0]['distance_km']);
         $this->assertLessThan(2.0, (float) $nearbyItems[0]['distance_km']);
+    }
+
+    public function test_plan_includes_meeting_attend_and_prep_items(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Meeting::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $agent->id,
+            'title' => 'Client call',
+            'timezone' => 'Africa/Lagos',
+            'start_at' => now()->copy()->startOfDay()->addHours(12),
+            'end_at' => now()->copy()->startOfDay()->addHours(13),
+            'status' => 'scheduled',
+            'source_page' => 'api',
+            'sync_status' => 'pending_setup',
+        ]);
+
+        $service = app(DailyPlanningService::class);
+        $result = $service->buildPlan($agent, $company->id);
+
+        $types = array_column($result['payload']['items'], 'type');
+        $this->assertContains('meeting_attend', $types);
+        $this->assertContains('meeting_prep', $types);
+    }
+
+    public function test_plan_items_include_editor_metadata_and_profile_summary(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Stale Prospect',
+            'status' => 'contacted',
+            'priority' => LeadPriority::MEDIUM->value,
+            'last_interaction_at' => now()->subDays(20),
+        ]);
+
+        $service = app(DailyPlanningService::class);
+        $result = $service->buildPlan($agent, $company->id, ['limit' => 15]);
+
+        $this->assertArrayHasKey('profile_summary', $result['payload']);
+        $this->assertGreaterThan(0, (int) ($result['payload']['profile_summary']['stale_leads'] ?? 0));
+
+        $items = $result['payload']['items'];
+        $this->assertNotEmpty($items);
+        $this->assertArrayHasKey('item_id', $items[0]);
+        $this->assertArrayHasKey('editable', $items[0]);
+        $this->assertArrayHasKey('removable', $items[0]);
+
+        $followUps = array_values(array_filter(
+            $items,
+            static fn(array $item): bool => in_array($item['type'], ['follow_up', 'overdue_follow_up'], true),
+        ));
+        $this->assertNotEmpty($followUps);
     }
 
     /**

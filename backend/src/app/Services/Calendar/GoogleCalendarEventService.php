@@ -139,6 +139,15 @@ class GoogleCalendarEventService
     {
         $meeting->loadMissing('attendees');
 
+        $settings = is_array($meeting->meeting_settings) ? $meeting->meeting_settings : [];
+        $hasExplicitInviteList = array_key_exists('google_invite_emails', $settings);
+        $inviteEmails = collect(Arr::get($settings, 'google_invite_emails', []))
+            ->map(static fn(mixed $email): string => strtolower(trim((string) $email)))
+            ->filter(static fn(string $email): bool => $email !== '')
+            ->unique()
+            ->values()
+            ->all();
+
         return [
             'summary' => $meeting->title,
             'description' => $meeting->description,
@@ -152,6 +161,22 @@ class GoogleCalendarEventService
                 'timeZone' => $meeting->timezone,
             ],
             'attendees' => $meeting->attendees
+                ->filter(static function ($attendee) use ($hasExplicitInviteList, $inviteEmails): bool {
+                    $email = strtolower(trim((string) $attendee->email));
+
+                    if ($email === '') {
+                        return false;
+                    }
+
+                    // Only emails that were explicitly added as attendees receive Google invites.
+                    // The Factory organizer is skipped unless their email was submitted in the attendee list.
+                    if ($hasExplicitInviteList) {
+                        return in_array($email, $inviteEmails, true);
+                    }
+
+                    // Legacy meetings: never auto-invite the Factory organizer marker.
+                    return ! (bool) $attendee->is_organizer;
+                })
                 ->map(function ($attendee): array {
                     $payload = [
                         'email' => $attendee->email,

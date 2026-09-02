@@ -10,14 +10,30 @@ use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
+use Mockery;
 use Tests\TestCase;
 
 class AgentLocationSnapshotTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+
+    private function mockPubsubPublish(): void
+    {
+        $connection = Mockery::mock();
+        $connection->shouldReceive('publish')->andReturn(1);
+        Redis::shouldReceive('connection')->with('pubsub')->andReturn($connection);
+    }
+
     public function test_management_can_list_and_fetch_latest_agent_location_snapshots(): void
     {
+        $this->mockPubsubPublish();
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
         $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
@@ -178,6 +194,67 @@ class AgentLocationSnapshotTest extends TestCase
             ->assertJsonPath('data.items.0.status.is_stale', true);
     }
 
+    public function test_snapshot_list_returns_distinct_avatar_urls_per_agent(): void
+    {
+        [$company, $admin, $agentA, $agentB] = $this->seedTwoAgentCompany('FAC-AGLOC-AVATAR');
+
+        $agentA->forceFill(['gender' => 'female', 'avatar' => 'avatar-01'])->save();
+        $agentB->forceFill(['gender' => 'male', 'avatar' => 'avatar-01'])->save();
+
+        $now = now();
+
+        AgentLocationSnapshot::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'task_id' => null,
+            'tracking_session_id' => null,
+            'latitude' => 6.4000,
+            'longitude' => 3.3900,
+            'event_type' => 'movement',
+            'task_status' => 'in_progress',
+            'arrived' => false,
+            'recorded_at' => $now,
+            'last_seen_at' => $now,
+        ]);
+
+        AgentLocationSnapshot::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'task_id' => null,
+            'tracking_session_id' => null,
+            'latitude' => 6.4100,
+            'longitude' => 3.4000,
+            'event_type' => 'movement',
+            'task_status' => 'in_progress',
+            'arrived' => false,
+            'recorded_at' => $now,
+            'last_seen_at' => $now,
+        ]);
+
+        $response = $this->withToken($admin->createToken('admin-avatar-token', ['*'])->plainTextToken)
+            ->getJson('/api/v1/agents/locations?company_id=' . $company->id);
+
+        $response->assertOk();
+
+        $items = collect($response->json('data.items'));
+        $this->assertCount(2, $items);
+
+        $avatarA = (string) $items->firstWhere('agent.id', $agentA->id)['agent']['avatar_url'];
+        $avatarB = (string) $items->firstWhere('agent.id', $agentB->id)['agent']['avatar_url'];
+
+        $this->assertNotSame('', $avatarA);
+        $this->assertNotSame('', $avatarB);
+        $this->assertNotSame($avatarA, $avatarB);
+        $this->assertSame(
+            \App\Support\AvatarUrlResolver::resolveOrDefault('avatar-01', 'female'),
+            $avatarA,
+        );
+        $this->assertSame(
+            \App\Support\AvatarUrlResolver::resolveOrDefault('avatar-01', 'male'),
+            $avatarB,
+        );
+    }
+
     private function createAssignedTask(int $companyId, int $creatorId, int $agentId, array $overrides = []): Task
     {
         $task = Task::query()->create(array_merge([
@@ -247,5 +324,51 @@ class AgentLocationSnapshotTest extends TestCase
         ]);
 
         return [$company, $admin, $agent];
+    }
+
+    private function seedTwoAgentCompany(string $companyCode = 'FAC-AGLOC002'): array
+    {
+        $company = Company::query()->create([
+            'company_id' => $companyCode,
+            'name' => 'Agent Location Two-Agent Factory Ltd',
+            'country' => 'NG',
+            'team_size' => '11-50',
+            'use_case' => 'Map live tracking read model',
+            'status' => 'active',
+            'activated_at' => now(),
+        ]);
+
+        $admin = User::factory()->create(['email_verified_at' => now()]);
+        $agentA = User::factory()->create(['email_verified_at' => now()]);
+        $agentB = User::factory()->create(['email_verified_at' => now()]);
+
+        DB::table('company_users')->insert([
+            [
+                'company_id' => $company->id,
+                'user_id' => $admin->id,
+                'role' => 'admin',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $agentA->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $company->id,
+                'user_id' => $agentB->id,
+                'role' => 'agent',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        return [$company, $admin, $agentA, $agentB];
     }
 }

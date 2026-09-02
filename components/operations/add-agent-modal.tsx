@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { Toggle } from "@/components/ui/toggle";
@@ -12,7 +13,10 @@ import {
   AgentDetailsModal,
   type AgentDetails,
 } from "@/components/operations/agent-details-modal";
-import { useCreateInternalUser } from "@/hooks/use-internal-users";
+import { useCompanyZones, useCreateInternalUser } from "@/hooks/use-internal-users";
+import { CreateZoneModal } from "@/components/zones/create-zone-modal";
+import { getProfile } from "@/lib/api/profile";
+import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useSupportedCurrencies } from "@/hooks/use-currencies";
 import { useAuthStore } from "@/store/auth";
@@ -21,7 +25,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
 const ROLE_OPTIONS = [
-  // { label: "Admin", value: "admin" },
+  { label: "Admin", value: "admin" },
   { label: "Supervisor", value: "supervisor" },
   { label: "Agent", value: "agent" },
 ] as const;
@@ -44,6 +48,7 @@ type FormErrors = Partial<{
   salary: string;
   currency: string;
   workDays: string;
+  assignedZoneIds: string;
   supervisorId: string;
   phone: string;
   gender: string;
@@ -66,6 +71,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [currencyCode, setCurrencyCode] = useState(PAYROLL_DEFAULT_CURRENCY);
   const [salary, setSalary] = useState("");
   const [workDays, setWorkDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+  const [assignedZoneIds, setAssignedZoneIds] = useState<number[]>([]);
   const [supervisorId, setSupervisorId] = useState("");
   const [commissionEnabled, setCommissionEnabled] = useState(false);
   const [fillForAgent, setFillForAgent] = useState(false);
@@ -76,6 +82,17 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     avatarKey: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
+  const [showCreateZoneModal, setShowCreateZoneModal] = useState(false);
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  const { data: profileData } = useQuery({
+    queryKey: ["org-profile"],
+    queryFn: async () => {
+      const res = await getProfile(token ?? "");
+      return res.data;
+    },
+    enabled: !!token,
+  });
 
   const createMutation = useCreateInternalUser();
   const { data: currenciesData, isLoading: loadingCurrencies } = useSupportedCurrencies();
@@ -98,6 +115,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers(
     { role: "supervisor", company_id: companyId ?? undefined },
   );
+  const { data: zones = [], isLoading: loadingZones } = useCompanyZones(companyId ?? undefined);
 
   const handleFillForAgentToggle = () => {
     if (role !== "agent") {
@@ -114,6 +132,13 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
     setErrors((prev) => ({ ...prev, workDays: undefined }));
+  };
+
+  const toggleZone = (zoneId: number) => {
+    setAssignedZoneIds((prev) => (
+      prev.includes(zoneId) ? prev.filter((id) => id !== zoneId) : [...prev, zoneId]
+    ));
+    setErrors((prev) => ({ ...prev, assignedZoneIds: undefined }));
   };
 
   const clearError = (field: keyof FormErrors) =>
@@ -147,6 +172,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       e.salary = "Base salary is required.";
     }
     if (workDays.length === 0) e.workDays = "Select at least one work day.";
+    if (assignedZoneIds.length === 0) e.assignedZoneIds = "Select at least one zone.";
     if (role === "agent" && !supervisorId) e.supervisorId = "Supervisor is required for agents.";
     if (fillForAgent && role === "agent") {
       if (!agentDetails.phone.trim()) e.phone = "Phone number is required.";
@@ -169,6 +195,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if (apiErr.errors.base_salary) fe.salary = apiErr.errors.base_salary[0];
       if (apiErr.errors.currency_code) fe.currency = apiErr.errors.currency_code[0];
       if (apiErr.errors.work_days) fe.workDays = apiErr.errors.work_days[0];
+      if (apiErr.errors.assigned_zone_ids) fe.assignedZoneIds = apiErr.errors.assigned_zone_ids[0];
       if (apiErr.errors.supervisor_user_id) fe.supervisorId = apiErr.errors.supervisor_user_id[0];
       if (apiErr.errors.phone_number) fe.phone = apiErr.errors.phone_number[0];
       if (apiErr.errors.gender) fe.gender = apiErr.errors.gender[0];
@@ -202,6 +229,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       email: email.trim(),
       role: role as "admin" | "supervisor" | "agent",
       assigned_zone: "",
+      assigned_zone_ids: assignedZoneIds,
       work_days: workDays,
       base_salary: baseSalaryNum,
       salary_type: salaryType,
@@ -366,13 +394,57 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[11px] text-gray-500">Assigned Zones</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateZoneModal(true)}
+                    className="text-[11px] font-semibold text-dash-dark hover:underline"
+                  >
+                    Create zone
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {zones.map((zone) => {
+                    const selected = assignedZoneIds.includes(zone.id);
+                    return (
+                      <button
+                        key={zone.id}
+                        type="button"
+                        onClick={() => toggleZone(zone.id)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border text-left ${selected
+                          ? "bg-dash-dark text-white border-dash-dark"
+                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                          }`}
+                      >
+                        <span className="block">{zone.name}</span>
+                        <span className={`block text-[10px] ${selected ? "text-white/70" : "text-gray-400"}`}>
+                          {zone.state_name} · {zone.lga_name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {zones.length === 0 && (
+                  <div className="mt-2 rounded-xl border border-dashed border-gray-200 p-3">
+                    <p className="text-[11px] text-gray-500">
+                      {loadingZones
+                        ? "Loading zones..."
+                        : "No zones yet. Create one in Settings > Zones or use the quick action above."}
+                    </p>
+                  </div>
+                )}
+                <FieldError message={errors.assignedZoneIds} />
+              </div>
+
 
               <div>
                 <FormRow label="Salary" labelClassName="w-28">
                   <InlineInput
                     value={salary}
                     onChange={(e) => {
-                      setSalary(e.target.value.replace(/[^0-9,]/g, ""));
+                      setSalary(e.target.value.replace(/[^0-9,]/g, "").slice(0, 60));
                       clearError("salary");
                     }}
                     placeholder="E.g 120000"
@@ -449,6 +521,15 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
         errors={{ phone: errors.phone, gender: errors.gender, avatarKey: errors.avatarKey }}
         onClearError={(field) => clearError(field as keyof FormErrors)}
       />
+
+      {companyId ? (
+        <CreateZoneModal
+          isOpen={showCreateZoneModal}
+          onClose={() => setShowCreateZoneModal(false)}
+          companyId={companyId}
+          defaultCountry={profileData?.organization.company.country ?? "NG"}
+        />
+      ) : null}
     </>
   );
 }

@@ -46,7 +46,7 @@ export default function CrmDashboardPage() {
         />
 
         {/* Safe Area Wrapper */}
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-6">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)]">
           {/* Header */}
           <div className="flex items-center gap-3.5 mb-6">
             {/* Search Bar */}

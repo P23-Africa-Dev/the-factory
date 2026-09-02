@@ -69,7 +69,7 @@ export function ExportLeadsDialog({
         {
             value: "filters",
             title: "Current view",
-            description: hasFilters ? "Leads matching your active search and filters." : "No filters are active — this matches all leads.",
+            description: hasFilters ? "Leads matching your active search and filters." : "No filters are active (this matches all leads).",
         },
         {
             value: "all",

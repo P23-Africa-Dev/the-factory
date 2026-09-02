@@ -15,6 +15,7 @@ import {
     type UpdateMeetingPayload,
 } from "@/lib/api/meetings";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { toast } from "sonner";
 
 export const MEETING_KEYS = {
@@ -45,7 +46,7 @@ export function useMeetings(params: MeetingsListParams = {}) {
                 pagination: res.data.pagination,
             };
         },
-        enabled: !!token && !!params.company_id,
+        enabled: hasActiveApiSession(token) && !!params.company_id,
         staleTime: 1000 * 60,
     });
 }
@@ -56,7 +57,7 @@ export function useMeetingDetail(meetingId: number | string, companyId?: number 
     return useQuery({
         queryKey: MEETING_KEYS.detail(meetingId, companyId),
         queryFn: async () => (await getMeeting(meetingId, { company_id: companyId }, token)).data.meeting,
-        enabled: !!token && !!meetingId,
+        enabled: hasActiveApiSession(token) && !!meetingId,
     });
 }
 

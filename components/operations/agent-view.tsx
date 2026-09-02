@@ -5,8 +5,9 @@ import { Search, SlidersHorizontal, BookmarkPlus } from "lucide-react";
 import { AgentCurveChart } from "./agent-curve-chart";
 import { AgentList } from "./agent-list";
 import type { AgentItem } from "./agent-list";
-import { AgentInfoCard, AgentLiveDetails } from "./agent-sidebar";
+import { AgentInfoCard } from "./agent-sidebar";
 import { AddAgentModal } from "./add-agent-modal";
+import { JourneyHistoryPanel } from "@/components/operations/journey-history-panel";
 import { useInternalUsersPaginated } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -16,6 +17,7 @@ import {
   mapApiPresence,
 } from "@/lib/agent-presence";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 function mapToAgentItem(input: InternalUserListItem): AgentItem {
   const presence = mapApiPresence(input.presence);
@@ -32,9 +34,13 @@ function mapToAgentItem(input: InternalUserListItem): AgentItem {
     zone: input.assigned_zone ?? "Unassigned",
     phone: input.phone_number ?? "",
     role: input.internal_role ?? input.role,
+    internalRole: input.internal_role ?? input.role,
+    supervisorUserId: input.supervisor_user_id ?? null,
     status: labels.badgeLabel,
     time: labels.subtextLabel,
-    avatar: input.avatar_url ?? "/avatars/male-avatar.png",
+    isSuspended: input.is_suspended ?? false,
+    suspendedUntil: input.suspended_until ?? null,
+    avatar: resolveAvatarSrc(input.avatar_url),
     active: labels.isMapActive,
     isMapActive: labels.isMapActive,
     isSessionOnline: labels.isSessionOnline,
@@ -142,7 +148,7 @@ export function AgentView({ basePath }: { basePath: string }) {
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by name, email, zone, phone"
+              placeholder="Search by name......"
               className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-[#09232D]/10 transition-all font-sans"
               style={{
                 height: '46px',
@@ -267,17 +273,14 @@ export function AgentView({ basePath }: { basePath: string }) {
 
         {/* Row 1 / Col 2 — Agent info */}
         {selectedAgent && (
-          <div className="xl:col-start-2 xl:row-start-1">
+          <div className="xl:col-start-2 xl:row-start-1 xl:row-span-2 flex flex-col gap-5">
             <AgentInfoCard agent={selectedAgent} />
+            <JourneyHistoryPanel
+              selected={{ userId: selectedAgent.id, name: selectedAgent.name }}
+              companyId={companyId ?? undefined}
+            />
           </div>
         )}
-
-        {/* Row 2 / Col 2 — Live Details (aligns with agents list) */}
-        {/* {selectedAgent && (
-          <div className="xl:col-start-2 xl:row-start-2">
-            <AgentLiveDetails agent={selectedAgent} />
-          </div>
-        )} */}
       </div>
 
       {/* ── Modal ─────────────────────────────────────────────── */}

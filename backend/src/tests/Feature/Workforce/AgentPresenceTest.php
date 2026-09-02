@@ -6,6 +6,8 @@ namespace Tests\Feature\Workforce;
 
 use App\Models\AgentLocationSnapshot;
 use App\Models\Company;
+use App\Models\Task;
+use App\Models\TaskTrackingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -137,6 +139,94 @@ class AgentPresenceTest extends TestCase
         ]);
     }
 
+    public function test_heartbeat_still_works_when_open_but_stale_tracking_session_exists(): void
+    {
+        config(['tracking.agent_location_stale_after_seconds' => 300]);
+
+        [$company, $admin, $agent] = $this->seedInternalUsers('FAC-PRESENCE-STALE');
+
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Stale Presence Task',
+            'type' => 'inspection',
+            'description' => 'Open session should not block stale heartbeat.',
+            'location_text' => 'Lagos',
+            'address_full' => 'Plot 9, Lagos',
+            'latitude' => 6.4300,
+            'longitude' => 3.4200,
+            'due_at' => now()->addDay(),
+            'required_actions' => [],
+            'priority' => 'medium',
+            'minimum_photos_required' => 0,
+            'visit_verification_required' => false,
+            'status' => 'in_progress',
+        ]);
+
+        $staleAt = now()->subMinutes(30);
+
+        $session = TaskTrackingSession::query()->create([
+            'task_id' => $task->id,
+            'company_id' => $company->id,
+            'started_by_user_id' => $agent->id,
+            'start_latitude' => 6.4000,
+            'start_longitude' => 3.3900,
+            'start_accuracy_meters' => 5,
+            'start_recorded_at' => $staleAt,
+            'last_latitude' => 6.4010,
+            'last_longitude' => 3.3910,
+            'last_accuracy_meters' => 5,
+            'last_recorded_at' => $staleAt,
+            'last_persisted_latitude' => 6.4010,
+            'last_persisted_longitude' => 3.3910,
+            'last_persisted_recorded_at' => $staleAt,
+            'destination_latitude' => 6.4300,
+            'destination_longitude' => 3.4200,
+            'destination_radius_meters' => 100,
+            'end_recorded_at' => null,
+        ]);
+
+        AgentLocationSnapshot::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'task_id' => $task->id,
+            'tracking_session_id' => $session->id,
+            'latitude' => 6.4010,
+            'longitude' => 3.3910,
+            'event_type' => 'movement',
+            'task_status' => 'in_progress',
+            'arrived' => false,
+            'recorded_at' => $staleAt,
+            'last_seen_at' => $staleAt,
+        ]);
+
+        $response = $this->withToken($agent->createToken('agent-stale-heartbeat')->plainTextToken)
+            ->postJson('/api/v1/agent/presence/heartbeat', [
+                'company_id' => $company->id,
+                'latitude' => 6.4550,
+                'longitude' => 3.3941,
+                'accuracy_meters' => 8,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.last_seen_at', fn ($value) => $value !== null);
+
+        $this->assertDatabaseHas('agent_location_snapshots', [
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'task_id' => null,
+            'tracking_session_id' => null,
+            'event_type' => 'map_presence',
+        ]);
+
+        // Open tracking session remains; heartbeat only refreshes presence.
+        $this->assertDatabaseHas('task_tracking_sessions', [
+            'id' => $session->id,
+            'end_recorded_at' => null,
+        ]);
+    }
+
     public function test_status_active_filter_matches_live_presence(): void
     {
         [$company, $admin, $agent] = $this->seedInternalUsers();
@@ -178,10 +268,10 @@ class AgentPresenceTest extends TestCase
     /**
      * @return array{0: Company, 1: User, 2: User}
      */
-    private function seedInternalUsers(): array
+    private function seedInternalUsers(string $companyCode = 'FAC-PRESENCE'): array
     {
         $company = Company::query()->create([
-            'company_id' => 'FAC-PRESENCE',
+            'company_id' => $companyCode,
             'name' => 'Presence Test Co',
             'country' => 'NG',
             'team_size' => '11-50',

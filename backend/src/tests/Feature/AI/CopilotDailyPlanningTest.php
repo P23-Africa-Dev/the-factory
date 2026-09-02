@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Feature\AI;
 
+use App\Enums\KpiCategory;
+use App\Enums\KpiPriority;
+use App\Enums\KpiStatus;
 use App\Enums\LeadPriority;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\TaskType;
 use App\Models\AttendanceSetting;
 use App\Models\Company;
+use App\Models\Kpi;
 use App\Models\Lead;
 use App\Models\LeadPipeline;
 use App\Models\Task;
@@ -33,7 +37,7 @@ final class CopilotDailyPlanningTest extends TestCase
             'last_status_updated_by_user_id' => $agent->id,
             'title' => 'Due today inspection',
             'type' => TaskType::INSPECTION->value,
-            'due_at' => now()->addHours(3),
+            'due_at' => now()->copy()->endOfDay()->subHours(2),
             'priority' => TaskPriority::MEDIUM->value,
             'status' => TaskStatus::PENDING->value,
         ]);
@@ -53,6 +57,189 @@ final class CopilotDailyPlanningTest extends TestCase
         $items = $response->json('data.response.payload.items');
         $this->assertIsArray($items);
         $this->assertNotEmpty($items);
+        $this->assertArrayHasKey('task_draft', $items[0]);
+        $this->assertArrayHasKey('scheduled_start', $items[0]);
+        $this->assertArrayHasKey('acceptance', $response->json('data.response.payload'));
+    }
+
+    public function test_copilot_plan_payload_can_be_accepted_to_create_tasks(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Acme Corp',
+            'status' => 'contacted',
+            'priority' => LeadPriority::HIGH->value,
+            'last_interaction_at' => now()->subDays(21),
+        ]);
+
+        $planResponse = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ]);
+
+        $planResponse->assertOk();
+
+        $payload = $planResponse->json('data.response.payload');
+        $this->assertIsArray($payload);
+
+        $items = $payload['items'] ?? [];
+        $this->assertNotEmpty($items);
+
+        $drafts = array_values(array_map(
+            static fn (array $item): array => $item['task_draft'],
+            $items,
+        ));
+
+        $acceptResponse = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/agent/planning/accept', [
+                'company_id' => $company->id,
+                'plan_date' => $payload['plan_date'] ?? now()->toDateString(),
+                'items' => $drafts,
+            ]);
+
+        $acceptResponse
+            ->assertCreated()
+            ->assertJsonPath('data.linked_existing', fn (mixed $value): bool => is_int($value) || is_numeric($value));
+
+        $created = $acceptResponse->json('data.created');
+        $this->assertIsArray($created);
+
+        $creatableCount = count(array_filter(
+            $drafts,
+            static fn (array $draft): bool => ($draft['creates_task'] ?? false) === true,
+        ));
+
+        if ($creatableCount > 0) {
+            $this->assertNotEmpty($created);
+            $this->assertDatabaseHas('tasks', [
+                'company_id' => $company->id,
+                'assigned_agent_id' => $agent->id,
+            ]);
+        }
+    }
+
+    public function test_accept_accepts_plan_drafts_with_empty_location_strings(): void
+    {
+        [$company, $agent] = $this->seedAgentCompany();
+        $dedupeKey = hash('sha256', 'meeting:1:' . now()->toDateString());
+
+        $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/agent/planning/accept', [
+                'company_id' => $company->id,
+                'plan_date' => now()->toDateString(),
+                'items' => [
+                    [
+                        'creates_task' => true,
+                        'dedupe_key' => $dedupeKey,
+                        'title' => 'Prepare for: Team standup',
+                        'type' => TaskType::AWARENESS->value,
+                        'description' => 'Prepare talking points for Team standup. [plan:' . $dedupeKey . ']',
+                        'due_date' => now()->addHours(2)->toIso8601String(),
+                        'priority' => TaskPriority::HIGH->value,
+                        'location' => '',
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.skipped', 0);
+    }
+
+    public function test_plan_includes_kpi_items_with_task_drafts(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Kpi::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Retail Visits',
+            'category' => KpiCategory::CUSTOMER_VISITS->value,
+            'objective' => 'Complete 20 retail visits this month',
+            'target_value' => '20',
+            'expected_outcome' => 'Higher store coverage',
+            'priority' => KpiPriority::HIGH->value,
+            'status' => KpiStatus::IN_PROGRESS->value,
+            'start_date' => now()->subDays(5)->toDateString(),
+            'end_date' => now()->addDays(10)->toDateString(),
+        ]);
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ]);
+
+        $response->assertOk();
+
+        $items = $response->json('data.response.payload.items') ?? [];
+        $kpiItems = array_values(array_filter($items, static fn(array $item): bool => ($item['type'] ?? '') === 'kpi'));
+
+        $this->assertNotEmpty($kpiItems);
+        $this->assertTrue($kpiItems[0]['task_draft']['creates_task'] ?? false);
+        $this->assertArrayHasKey('item_id', $kpiItems[0]);
+    }
+
+    public function test_plan_includes_profile_summary_and_overdue_follow_up_types(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        Lead::query()->create([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $agent->id,
+            'assigned_to_user_id' => $agent->id,
+            'name' => 'Faith University',
+            'status' => 'contacted',
+            'priority' => LeadPriority::HIGH->value,
+            'last_interaction_at' => now()->subDays(21),
+        ]);
+
+        $response = $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ]);
+
+        $response->assertOk();
+
+        $payload = $response->json('data.response.payload');
+        $this->assertIsArray($payload['profile_summary'] ?? null);
+        $this->assertGreaterThan(0, (int) ($payload['profile_summary']['stale_leads'] ?? 0));
+
+        $types = array_column($payload['items'] ?? [], 'type');
+        $this->assertTrue(
+            in_array('overdue_follow_up', $types, true) || in_array('follow_up', $types, true),
+        );
+    }
+
+    public function test_plan_ready_notification_is_created(): void
+    {
+        [$company, $agent, $pipelineId] = $this->seedAgentCompany();
+
+        $this
+            ->actingAs($agent)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Plan my day',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('app_notifications', [
+            'user_id' => $agent->id,
+            'type' => 'daily_plan.ready',
+            'title' => 'Your daily plan is ready',
+        ]);
     }
 
     public function test_agent_plan_excludes_other_agents_leads(): void

@@ -6,12 +6,133 @@
  * - Network First: API calls (/api/v1/*)
  * - Stale While Revalidate: Mapbox tiles + RSC payloads
  * - Navigation fallback: cached pages, then /offline.html shell
+ *
+ * Background Sync limitations (pure PWA):
+ * - Auth token is mirrored into IndexedDB `syncMeta` by the app (SW cannot
+ *   read localStorage). If credentials are missing, location upload falls
+ *   back to postMessage when a client window is open.
+ * - Proof blobs and offline action queue still require an open client
+ *   (multipart / complex payloads).
+ * - Android APK uses Capgo Capacitor + native FGS; this SW path is for
+ *   installed PWA / browser tabs.
  */
 
-const CACHE_NAME = "factory-agent-pwa-v8";
-const STATIC_CACHE = "factory-static-v8";
-const API_CACHE = "factory-api-v8";
-const PAGE_CACHE = "factory-pages-v8";
+const CACHE_NAME = "factory-agent-pwa-v13";
+const STATIC_CACHE = "factory-static-v13";
+const API_CACHE = "factory-api-v13";
+const PAGE_CACHE = "factory-pages-v13";
+
+/** Keep in sync with src/lib/notifications/pwaNotificationIcons.ts */
+const PWA_NOTIFICATION_ICON = "/icons/icon-192x192.png";
+const PWA_NOTIFICATION_BADGE = "/icons/notification-badge.png";
+const IDB_NAME = "factory-agent-pwa";
+const LOCATION_BATCH_SIZE = 50;
+
+/**
+ * Keep in sync with src/lib/notifications/resolveAgentDeepLink.ts
+ * (service workers cannot import the TS module).
+ */
+function resolveAgentDeepLink(rawUrl) {
+  const input = typeof rawUrl === "string" ? rawUrl.trim() : "";
+  if (!input) return "/";
+
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const parsed = new URL(input);
+      if (parsed.origin === self.location.origin) {
+        return resolveAgentDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+      }
+      return input;
+    } catch {
+      // fall through
+    }
+  }
+
+  let path = input;
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      const parsed = new URL(path);
+      path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      // keep
+    }
+  }
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+
+  const parts = path.split("?");
+  let pathname = parts[0] || "/";
+  const search = parts[1] ? `?${parts[1]}` : "";
+
+  if (pathname === "/agent") {
+    pathname = "/";
+  } else if (pathname.startsWith("/agent/")) {
+    pathname = pathname.slice("/agent".length);
+  }
+
+  const taskDetail = pathname.match(/^\/tasks\/(\d+)(?:\/.*)?$/);
+  if (taskDetail) return `/task/${taskDetail[1]}${search}`;
+  if (pathname.startsWith("/tasks/reassignments")) return `/tasks${search}`;
+  if (pathname === "/tasks") return `/tasks${search}`;
+
+  const meetingDetail = pathname.match(/^\/meetings\/(\d+)/);
+  if (meetingDetail) return `/meetings/${meetingDetail[1]}${search}`;
+  if (pathname.startsWith("/meetings")) return `${pathname}${search}`;
+
+  const leadDetail = pathname.match(/^\/crm\/leads\/(\d+)/);
+  if (leadDetail) return `/crm/leads/${leadDetail[1]}${search}`;
+  if (pathname.startsWith("/crm")) return `${pathname}${search}`;
+
+  if (pathname.startsWith("/field-activity")) return `${pathname}${search}`;
+  if (pathname === "/map" || pathname.startsWith("/map/")) return `/map${search}`;
+
+  if (
+    pathname.startsWith("/operations/attendance") ||
+    pathname === "/operations" ||
+    pathname.startsWith("/operations/")
+  ) {
+    return "/";
+  }
+
+  if (pathname === "/user/profile" || pathname === "/profile") return "/profile";
+  if (pathname === "/assistant" || pathname.startsWith("/assistant/")) return "/assistant";
+
+  if (
+    pathname === "/" ||
+    pathname === "/dashboard" ||
+    pathname === "/home" ||
+    pathname === "/notifications" ||
+    pathname === "/insight" ||
+    pathname === "/payroll" ||
+    pathname.startsWith("/projects/") ||
+    pathname === "/subscribe" ||
+    pathname.startsWith("/enterprise/") ||
+    pathname.startsWith("/internal") ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/drive")
+  ) {
+    return "/";
+  }
+
+  const knownPrefixes = [
+    "/task/",
+    "/tasks",
+    "/map",
+    "/meetings",
+    "/crm",
+    "/field-activity",
+    "/profile",
+    "/assistant",
+    "/sync",
+    "/login",
+  ];
+  if (knownPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) {
+    return `${pathname}${search}`;
+  }
+
+  return "/";
+}
+
 
 const STATIC_ASSETS = [
   "/",
@@ -35,8 +156,9 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
         keys
           .filter(
             (key) =>
@@ -46,10 +168,16 @@ self.addEventListener("activate", (event) => {
               key !== PAGE_CACHE,
           )
           .map((key) => caches.delete(key)),
-      ),
-    ),
+      );
+      // Best-effort: drain location queue if no client is open yet.
+      try {
+        await uploadQueuedLocationsFromIdb();
+      } catch {
+        // Non-fatal
+      }
+      await self.clients.claim();
+    })(),
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -97,40 +225,285 @@ self.addEventListener("sync", (event) => {
     event.tag === "proof-sync" ||
     event.tag === "offline-action-sync"
   ) {
-    event.waitUntil(
-      self.clients.matchAll().then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({
-            type: "SYNC_REQUESTED",
-            tag: event.tag,
-          });
-        });
-      }),
-    );
+    event.waitUntil(handleBackgroundSync(event.tag));
   }
 });
 
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
+async function handleBackgroundSync(tag) {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+
+  if (clients.length > 0) {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: "SYNC_REQUESTED",
+        tag,
+      });
+    });
+    return;
+  }
+
+  // No open client — SW can still upload location points from IndexedDB.
+  if (tag === "location-sync" || tag === "offline-action-sync") {
+    await uploadQueuedLocationsFromIdb();
+  }
+  // Proof / offline-action multipart sync still requires an open client.
+}
+
+function openFactoryDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_NAME);
+    request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readSyncCredentials(db) {
+  if (!db.objectStoreNames.contains("syncMeta")) return null;
+  const tx = db.transaction("syncMeta", "readonly");
+  const row = await idbRequest(tx.objectStore("syncMeta").get("credentials"));
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  if (!row || !row.token || !row.apiBaseUrl) return null;
+  return row;
+}
+
+async function getPendingLocationRows(db) {
+  if (!db.objectStoreNames.contains("locationQueue")) return [];
+  const tx = db.transaction("locationQueue", "readonly");
+  const store = tx.objectStore("locationQueue");
+  let rows = [];
+  if (store.indexNames.contains("by-synced")) {
+    rows = await idbRequest(store.index("by-synced").getAll(0));
+  } else {
+    rows = await idbRequest(store.getAll());
+    rows = rows.filter((r) => r && r.synced === 0);
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  const now = Date.now();
+  return rows.filter((row) => {
+    if (!row || row.inFlight === 1) return false;
+    if (!row.nextAttemptAt) return true;
+    return new Date(row.nextAttemptAt).getTime() <= now;
+  });
+}
+
+async function markLocationRows(db, rows, patch) {
+  if (!rows.length) return;
+  const tx = db.transaction("locationQueue", "readwrite");
+  const store = tx.objectStore("locationQueue");
+  for (const row of rows) {
+    if (row.id == null) continue;
+    store.put({ ...row, ...patch });
+  }
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function postLocationBatch(apiBaseUrl, token, path, companyId, points) {
+  const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      company_id: companyId,
+      points: points.map((r) => ({
+        latitude: r.latitude,
+        longitude: r.longitude,
+        accuracy_meters: r.accuracyMeters ?? null,
+        speed_mps: r.speedMps ?? null,
+        heading_degrees: r.headingDegrees ?? null,
+        recorded_at: r.recordedAt,
+      })),
+    }),
+  });
+  return response;
+}
+
+async function uploadQueuedLocationsFromIdb() {
+  let db;
+  try {
+    db = await openFactoryDb();
+  } catch {
+    return;
+  }
 
   try {
-    const data = event.data.json();
-    const options = {
-      body: data.message || data.body || "",
-      icon: "/icons/icon-192x192.png",
-      badge: "/icons/icon-72x72.png",
-      tag: data.tag || "factory-notification",
-      data: {
-        url: data.action_url || "/",
-      },
-    };
+    const credentials = await readSyncCredentials(db);
+    if (!credentials) return;
 
-    event.waitUntil(
-      self.registration.showNotification(data.title || "Factory 23", options),
+    const pending = await getPendingLocationRows(db);
+    if (pending.length === 0) return;
+
+    const fallbackCompanyId = credentials.companyId;
+    const fieldRows = pending.filter(
+      (row) => row.fieldActivitySessionId != null && row.fieldActivitySessionId > 0,
     );
-  } catch {
-    // Malformed push — ignore
+    const taskRows = pending.filter((row) => !row.fieldActivitySessionId);
+
+    const byField = {};
+    for (const row of fieldRows) {
+      const sid = Number(row.fieldActivitySessionId);
+      if (!byField[sid]) byField[sid] = [];
+      byField[sid].push(row);
+    }
+
+    for (const [sessionIdRaw, rows] of Object.entries(byField)) {
+      const batch = rows.slice(0, LOCATION_BATCH_SIZE);
+      const companyId = batch[0].companyId || fallbackCompanyId;
+      if (!companyId) continue;
+
+      await markLocationRows(db, batch, { inFlight: 1 });
+      try {
+        const res = await postLocationBatch(
+          credentials.apiBaseUrl,
+          credentials.token,
+          `/agent/field-activity/sessions/${sessionIdRaw}/points`,
+          companyId,
+          batch,
+        );
+        if (res.ok) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
+        } else if (res.status === 422) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            nextAttemptAt: null,
+            lastError: `HTTP ${res.status}`,
+          });
+        } else {
+          await markLocationRows(db, batch, {
+            inFlight: 0,
+            attempts: (batch[0].attempts || 0) + 1,
+            lastError: `HTTP ${res.status}`,
+          });
+        }
+      } catch (err) {
+        await markLocationRows(db, batch, {
+          inFlight: 0,
+          lastError: err && err.message ? err.message : "SW upload failed",
+        });
+      }
+    }
+
+    const byTask = {};
+    for (const row of taskRows) {
+      const tid = Number(row.taskId);
+      if (!tid) continue;
+      if (!byTask[tid]) byTask[tid] = [];
+      byTask[tid].push(row);
+    }
+
+    for (const [taskIdRaw, rows] of Object.entries(byTask)) {
+      const batch = rows.slice(0, LOCATION_BATCH_SIZE);
+      const companyId = batch[0].companyId || fallbackCompanyId;
+      if (!companyId) continue;
+
+      await markLocationRows(db, batch, { inFlight: 1 });
+      try {
+        const res = await postLocationBatch(
+          credentials.apiBaseUrl,
+          credentials.token,
+          `/agent/tasks/${taskIdRaw}/location`,
+          companyId,
+          batch,
+        );
+        if (res.ok) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            attempts: 0,
+            nextAttemptAt: null,
+            lastError: null,
+          });
+        } else if (res.status === 422) {
+          await markLocationRows(db, batch, {
+            synced: 1,
+            inFlight: 0,
+            nextAttemptAt: null,
+            lastError: `HTTP ${res.status}`,
+          });
+        } else {
+          await markLocationRows(db, batch, {
+            inFlight: 0,
+            attempts: (batch[0].attempts || 0) + 1,
+            lastError: `HTTP ${res.status}`,
+          });
+        }
+      } catch (err) {
+        await markLocationRows(db, batch, {
+          inFlight: 0,
+          lastError: err && err.message ? err.message : "SW upload failed",
+        });
+      }
+    }
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
   }
+}
+
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      let data = {};
+      try {
+        data = event.data ? event.data.json() : {};
+      } catch {
+        try {
+          const text = event.data ? event.data.text() : "";
+          data = text ? { body: text } : {};
+        } catch {
+          data = {};
+        }
+      }
+
+      const title = data.title || "Factory 23 Agent";
+      const body = data.message || data.body || "";
+      const url = resolveAgentDeepLink(data.action_url || data.url || "/");
+      const tag = data.tag || `factory-notification-${data.notification_id || Date.now()}`;
+
+      await self.registration.showNotification(title, {
+        body,
+        icon: PWA_NOTIFICATION_ICON,
+        badge: PWA_NOTIFICATION_BADGE,
+        tag,
+        renotify: true,
+        requireInteraction: false,
+        vibrate: [120, 60, 120],
+        data: {
+          url,
+          notification_id: data.notification_id || null,
+          type: data.type || null,
+          category: data.category || null,
+        },
+      });
+    })(),
+  );
 });
 
 self.addEventListener("message", (event) => {
@@ -140,11 +513,11 @@ self.addEventListener("message", (event) => {
   if (data.type === "SHOW_NOTIFICATION") {
     const options = {
       body: data.body || "",
-      icon: "/icons/icon-192x192.png",
-      badge: "/icons/icon-72x72.png",
+      icon: PWA_NOTIFICATION_ICON,
+      badge: PWA_NOTIFICATION_BADGE,
       tag: data.tag || "factory-notification",
       data: {
-        url: data.url || "/",
+        url: resolveAgentDeepLink(data.url || "/"),
       },
     };
 
@@ -157,20 +530,34 @@ self.addEventListener("message", (event) => {
   if (data.type === "CACHE_ROUTES" && Array.isArray(data.routes)) {
     event.waitUntil(cacheRoutes(data.routes));
   }
+
+  if (data.type === "SYNC_LOCATIONS_NOW") {
+    event.waitUntil(uploadQueuedLocationsFromIdb());
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/";
+  const rawUrl = event.notification.data?.url || "/";
+  const resolvedPath = resolveAgentDeepLink(rawUrl);
+  const targetUrl = /^https?:\/\//i.test(resolvedPath)
+    ? resolvedPath
+    : new URL(resolvedPath, self.location.origin).href;
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window" }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes(url) && "focus" in client) {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          if ("navigate" in client) {
+            return client.focus().then(() => client.navigate(targetUrl));
+          }
           return client.focus();
         }
       }
-      return self.clients.openWindow(url);
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+      return undefined;
     }),
   );
 });
@@ -184,7 +571,8 @@ async function cacheRoutes(routes) {
     try {
       const response = await fetch(route);
       if (response.ok) {
-        await cache.put(route, response.clone());
+        const cloned = response.clone();
+        await cache.put(route, cloned);
       }
     } catch {
       // Skip routes that fail to fetch.
@@ -217,7 +605,8 @@ async function handleNavigation(request) {
   try {
     const response = await fetch(request);
     if (shouldCacheNavigationResponse(request, response)) {
-      cache.put(request, response.clone());
+      const cloned = response.clone();
+      cache.put(request, cloned);
     }
     return response;
   } catch {
@@ -242,8 +631,9 @@ async function cacheFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
+      const cloned = response.clone();
       const cache = await caches.open(STATIC_CACHE);
-      cache.put(request, response.clone());
+      cache.put(request, cloned);
     }
     return response;
   } catch {
@@ -260,8 +650,9 @@ async function networkFirst(request) {
   try {
     const response = await fetch(request);
     if (response.ok) {
+      const cloned = response.clone();
       const cache = await caches.open(API_CACHE);
-      cache.put(request, response.clone());
+      await cache.put(request, cloned);
     }
     return response;
   } catch {
@@ -282,7 +673,8 @@ async function staleWhileRevalidate(request, cacheName) {
   const fetchPromise = fetch(request)
     .then((response) => {
       if (response.ok) {
-        caches.open(cacheName).then((c) => c.put(request, response.clone()));
+        const cloned = response.clone();
+        caches.open(cacheName).then((c) => c.put(request, cloned));
       }
       return response;
     })

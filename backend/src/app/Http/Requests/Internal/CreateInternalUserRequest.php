@@ -39,6 +39,8 @@ class CreateInternalUserRequest extends FormRequest
             'gender' => ['nullable', 'string', Rule::in(['male', 'female'])],
             'avatar_key' => ['nullable', 'string', 'max:50'],
             'assigned_zone' => ['nullable', 'string', 'min:2', 'max:120'],
+            'assigned_zone_ids' => ['nullable', 'array', 'max:50'],
+            'assigned_zone_ids.*' => ['integer', 'exists:company_zones,id'],
             'work_days' => ['required', 'array', 'min:1', 'max:7'],
             'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
             'base_salary' => ['required', 'numeric', 'min:0'],

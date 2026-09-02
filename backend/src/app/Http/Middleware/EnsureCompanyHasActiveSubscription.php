@@ -22,6 +22,10 @@ class EnsureCompanyHasActiveSubscription
 
     public function handle(Request $request, Closure $next): Response
     {
+        if ($request->attributes->has('support_access_session')) {
+            return $next($request);
+        }
+
         if (! $this->billingEnforcement->isEnabled()) {
             return $next($request);
         }
@@ -84,6 +88,14 @@ class EnsureCompanyHasActiveSubscription
     private function isExempt(Request $request): bool
     {
         if ($request->is('api/v1/billing*')) {
+            return true;
+        }
+
+        if ($request->is('api/v1/map-credits*')) {
+            return true;
+        }
+
+        if ($request->is('api/v1/map/poi-display*')) {
             return true;
         }
 

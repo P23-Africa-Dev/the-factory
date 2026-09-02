@@ -123,7 +123,14 @@ class User extends Authenticatable
     public function companies(): BelongsToMany
     {
         return $this->belongsToMany(Company::class, 'company_users')
-            ->withPivot(['role', 'joined_at'])
+            ->withPivot(['role', 'joined_at', 'preferred_pipeline_id'])
+            ->withTimestamps();
+    }
+
+    public function zones(): BelongsToMany
+    {
+        return $this->belongsToMany(CompanyZone::class, 'user_zones', 'user_id', 'company_zone_id')
+            ->withPivot(['is_primary'])
             ->withTimestamps();
     }
 

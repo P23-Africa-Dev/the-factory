@@ -91,17 +91,18 @@ class CalendarIntegrationController extends Controller
     {
         $authenticated = $request->expectsJson() || $request->wantsJson();
         $error = trim((string) $request->query('error', ''));
+        $errorDescription = trim((string) $request->query('error_description', ''));
 
         if ($error !== '') {
             if ($authenticated) {
                 throw ValidationException::withMessages([
-                    'integration' => ['Google returned an OAuth error: ' . $error . '. Please retry connection.'],
+                    'integration' => [$this->humanizeOAuthError($error, $errorDescription)],
                 ]);
             }
 
             return $this->browserCallbackResponse(
                 success: false,
-                message: 'Google returned an OAuth error: ' . $error . '. Please retry connection.',
+                message: $this->humanizeOAuthError($error, $errorDescription),
                 status: 422,
             );
         }
@@ -144,37 +145,36 @@ class CalendarIntegrationController extends Controller
                 $message = 'Google Calendar connection failed. Please retry from your dashboard.';
             }
 
-            return $this->browserCallbackResponse(success: false, message: $message, status: 422);
+            return $this->browserCallbackResponse(
+                success: false,
+                message: $message,
+                status: 422,
+                connectionType: $connectionType,
+            );
         }
-
-        $gmailEnabled = (bool) ($data['gmail_enabled'] ?? false);
 
         if ($authenticated) {
             return $this->success(
-                message: 'Google Calendar integration connected successfully.',
+                message: 'Google Calendar connected successfully.',
                 data: $data,
             );
         }
 
-        if ($gmailEnabled) {
-            return $this->browserCallbackResponse(
-                success: true,
-                message: 'Google Workspace connected successfully for calendar and email. You can close this window.',
-                status: 200,
-                extra: ['gmail_enabled' => true],
-            );
-        }
-
         return $this->browserCallbackResponse(
-            success: false,
-            message: 'Google connected for calendar only. Gmail permissions were not granted. Reconnect and approve all Gmail permissions to enable email.',
+            success: true,
+            message: 'Google Calendar connected successfully.',
             status: 200,
-            extra: ['gmail_enabled' => false, 'requires_gmail_reconnect' => true],
+            connectionType: $connectionType,
         );
     }
 
-    private function browserCallbackResponse(bool $success, string $message, int $status, array $extra = []): Response
-    {
+    private function browserCallbackResponse(
+        bool $success,
+        string $message,
+        int $status,
+        string $connectionType = 'company',
+        array $extra = [],
+    ): Response {
         $payload = json_encode(array_merge([
             'type' => 'google-calendar-oauth',
             'status' => $success ? 'success' : 'error',
@@ -186,6 +186,7 @@ class CalendarIntegrationController extends Controller
         }
 
         $safeMessage = e($message);
+        $redirectUrl = e($this->frontendRedirectUrl($success, $connectionType, $message, $extra));
 
         $html = <<<HTML
 <!doctype html>
@@ -198,7 +199,8 @@ class CalendarIntegrationController extends Controller
     body { font-family: Arial, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f9; color: #0b1215; }
     .card { width: min(92vw, 480px); background: #fff; border: 1px solid #e6e8ec; border-radius: 14px; padding: 20px; box-shadow: 0 8px 24px rgba(10, 20, 30, 0.08); }
     h1 { margin: 0 0 10px; font-size: 18px; }
-    p { margin: 0; line-height: 1.5; font-size: 14px; }
+    p { margin: 0 0 14px; line-height: 1.5; font-size: 14px; }
+    a { color: #0b252c; font-weight: 600; }
     .success { color: #0f766e; }
     .error { color: #b91c1c; }
   </style>
@@ -206,21 +208,28 @@ class CalendarIntegrationController extends Controller
 <body>
   <main class="card">
     <h1 class="%s">%s</h1>
-    <p>You can return to the app window now.</p>
+    <p>Redirecting you back to Factory 23…</p>
+    <p><a id="continue-link" href="%s">Continue to settings</a></p>
   </main>
   <script>
     (function () {
       var payload = %s;
+      var redirectUrl = %s;
       try {
         if (window.opener && !window.opener.closed) {
           window.opener.postMessage(payload, "*");
+          setTimeout(function () {
+            try { window.close(); } catch (error) { /* noop */ }
+            if (!window.closed) {
+              window.location.replace(redirectUrl);
+            }
+          }, 300);
+          return;
         }
       } catch (error) {
-        // Ignore cross-window access errors.
+        // Ignore cross-window access errors and fall through to redirect.
       }
-      setTimeout(function () {
-        try { window.close(); } catch (error) { /* noop */ }
-      }, 200);
+      window.location.replace(redirectUrl);
     })();
   </script>
 </body>
@@ -228,9 +237,55 @@ class CalendarIntegrationController extends Controller
 HTML;
 
         return response(
-            sprintf($html, $success ? 'success' : 'error', $safeMessage, $payload),
+            sprintf(
+                $html,
+                $success ? 'success' : 'error',
+                $safeMessage,
+                $redirectUrl,
+                $payload,
+                json_encode($this->frontendRedirectUrl($success, $connectionType, $message, $extra), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
+            ),
             $status,
             ['Content-Type' => 'text/html; charset=UTF-8'],
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    private function frontendRedirectUrl(bool $success, string $connectionType, string $message, array $extra = []): string
+    {
+        $frontendBase = rtrim((string) config('app.frontend_url', 'https://thefactory23.com'), '/');
+        $settingsPath = $connectionType === 'user' ? '/settings/calendar' : '/settings/meetings';
+
+        $query = [
+            'google_oauth' => $success ? 'success' : 'error',
+            'message' => $message,
+        ];
+
+        if (array_key_exists('gmail_enabled', $extra)) {
+            $query['gmail_enabled'] = ((bool) $extra['gmail_enabled']) ? '1' : '0';
+        }
+
+        if (array_key_exists('requires_gmail_reconnect', $extra)) {
+            $query['requires_gmail_reconnect'] = ((bool) $extra['requires_gmail_reconnect']) ? '1' : '0';
+        }
+
+        return $frontendBase.$settingsPath.'?'.http_build_query($query);
+    }
+
+    private function humanizeOAuthError(string $error, string $errorDescription = ''): string
+    {
+        $normalized = strtolower(trim($error));
+        $description = trim($errorDescription);
+
+        return match ($normalized) {
+            'org_internal' => 'This Google OAuth app is currently restricted to one organization. Switch the app to External in Google Cloud Console and retry.',
+            'access_denied' => 'Google Calendar permissions were not granted. Reconnect and approve calendar access.',
+            'admin_policy_enforced' => 'Your Google Workspace admin blocked this app or requested scopes. Contact your admin to allow access.',
+            default => $description !== ''
+                ? 'Google OAuth error: ' . $description
+                : 'Google OAuth error: ' . ($normalized !== '' ? $normalized : 'unknown_error') . '. Please retry connection.',
+        };
     }
 }

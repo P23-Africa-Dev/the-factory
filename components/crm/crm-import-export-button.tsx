@@ -18,6 +18,8 @@ export function CrmImportExportButton({
     defaultPipelineId,
     activeFilters,
     selectedLeadIds,
+    onViewImportedPipeline,
+    onViewAllLeads,
 }: {
     companyId: number | string | null | undefined;
     apiBasePath: ApiRoleBasePath;
@@ -26,6 +28,8 @@ export function CrmImportExportButton({
     defaultPipelineId?: number | null;
     activeFilters?: ExportLeadsFilters;
     selectedLeadIds?: Array<number | string>;
+    onViewImportedPipeline?: (pipelineId: number) => void;
+    onViewAllLeads?: () => void;
 }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [showImport, setShowImport] = useState(false);
@@ -89,6 +93,14 @@ export function CrmImportExportButton({
                     labels={labels}
                     defaultPipelineId={defaultPipelineId}
                     onClose={() => setShowImport(false)}
+                    onViewImportedPipeline={(pipelineId) => {
+                        setShowImport(false);
+                        onViewImportedPipeline?.(pipelineId);
+                    }}
+                    onViewAllLeads={() => {
+                        setShowImport(false);
+                        onViewAllLeads?.();
+                    }}
                 />
             )}
 

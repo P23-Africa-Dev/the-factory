@@ -33,21 +33,9 @@ import {
   type AvatarCatalogItem,
 } from "@/lib/api/profile";
 import { ApiRequestError } from "@/lib/api/onboarding";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-function getSafeAvatar(url: string | null | undefined): string {
-  if (!url) return "/avatars/male-avatar.png";
-  const t = url.trim();
-  if (!t) return "/avatars/male-avatar.png";
-  if (t.startsWith("/") || t.startsWith("http")) return t;
-  const base = (
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    "https://api.thefactory23.com/api/v1"
-  ).replace(/\/api\/v1\/?$/, "");
-  if (t.startsWith("storage/")) return `${base}/${t}`;
-  return `${base}/storage/${t}`;
-}
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -411,7 +399,7 @@ function AvatarModal({
                           )}
                         >
                           <Image
-                            src={getSafeAvatar(item.url)}
+                            src={resolveAvatarSrc(item.url)}
                             alt={item.key}
                             fill
                             className="object-cover"
@@ -682,7 +670,7 @@ export function ProfilePage() {
     },
   });
 
-  const avatarSrc = getSafeAvatar(profile?.identity.avatar_url ?? user?.avatar);
+  const avatarSrc = resolveAvatarSrc(profile?.identity.avatar_url ?? user?.avatar);
   const isAvatarSrcExternal = avatarSrc.startsWith("http");
 
   // ── derived ────────────────────────────────────────────────────────────────

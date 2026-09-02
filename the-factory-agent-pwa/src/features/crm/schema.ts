@@ -7,6 +7,15 @@ export const leadActorSchema = z.object({
   avatar_url: z.string().nullable().optional(),
 });
 
+export const leadContactSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(v => Number(v)).optional(),
+  name: z.string(),
+  email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  sort_order: z.number().nullable().optional(),
+}).passthrough();
+
 export const leadNoteSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(v => Number(v)),
   lead_id: z.number(),
@@ -41,6 +50,10 @@ const rawLeadSchema = z.object({
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
+  company_name: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  position: z.string().nullable().optional(),
+  profile_urls: z.array(z.string()).nullable().optional(),
   source: z.string().nullable().optional(),
   status: z.string().nullable().optional(),
   priority: z.enum(['high', 'medium', 'low', 'urgent']).nullable().optional(),
@@ -59,6 +72,7 @@ const rawLeadSchema = z.object({
     .optional(),
   notes: z.array(leadNoteSchema).optional(),
   activities: z.array(leadActivitySchema).optional(),
+  contacts: z.array(leadContactSchema).nullable().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
 });
@@ -73,6 +87,10 @@ export const leadSchema = rawLeadSchema.transform(data => ({
   email: data.email ?? null,
   phone: data.phone ?? null,
   location: data.location ?? null,
+  companyName: data.company_name ?? null,
+  website: data.website ?? null,
+  position: data.position ?? null,
+  profileUrls: data.profile_urls ?? [],
   source: data.source ?? null,
   status: data.status ?? null,
   priority: data.priority ?? null,
@@ -88,6 +106,7 @@ export const leadSchema = rawLeadSchema.transform(data => ({
   pipeline: data.pipeline ?? null,
   notes: data.notes ?? [],
   activities: data.activities ?? [],
+  contacts: data.contacts ?? [],
   createdAt: data.created_at ?? null,
   updatedAt: data.updated_at ?? null,
 }));
@@ -148,6 +167,10 @@ export const createLeadPayloadSchema = z.object({
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
+  company_name: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  position: z.string().nullable().optional(),
+  profile_urls: z.array(z.string()).nullable().optional(),
   source: z.string().nullable().optional(),
   status: z.string().optional(),
   priority: z.enum(['high', 'medium', 'low', 'urgent']).optional(),
@@ -155,6 +178,7 @@ export const createLeadPayloadSchema = z.object({
   last_interaction: z.string().nullable().optional(),
   last_interaction_at: z.string().nullable().optional(),
   assigned_to_user_id: z.number().nullable().optional(),
+  contacts: z.array(leadContactSchema).nullable().optional(),
   meta: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
@@ -165,6 +189,10 @@ export const updateLeadPayloadSchema = z.object({
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
+  company_name: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  position: z.string().nullable().optional(),
+  profile_urls: z.array(z.string()).nullable().optional(),
   source: z.string().nullable().optional(),
   status: z.string().optional(),
   priority: z.enum(['high', 'medium', 'low', 'urgent']).optional(),
@@ -172,6 +200,7 @@ export const updateLeadPayloadSchema = z.object({
   last_interaction: z.string().nullable().optional(),
   last_interaction_at: z.string().nullable().optional(),
   assigned_to_user_id: z.number().nullable().optional(),
+  contacts: z.array(leadContactSchema).nullable().optional(),
   converted_at: z.string().nullable().optional(),
   meta: z.record(z.string(), z.unknown()).nullable().optional(),
 });

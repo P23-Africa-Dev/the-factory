@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL, apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type CopilotSource = string;
 
@@ -123,6 +124,7 @@ export type WeeklySummaryStatusResponse = {
     progress: number;
     error: string | null;
     available: boolean;
+    drive_file_id?: number | null;
 };
 
 const WEEKLY_SUMMARY_STATUSES = new Set<WeeklySummaryStatusResponse["status"]>([
@@ -145,6 +147,7 @@ export function normalizeWeeklySummaryStatus(raw: Record<string, unknown>): Week
         progress: typeof raw.progress === "number" ? raw.progress : Number(raw.progress) || 0,
         error: typeof raw.error === "string" ? raw.error : null,
         available: status === "completed" && downloadReady,
+        drive_file_id: raw.drive_file_id != null ? Number(raw.drive_file_id) : null,
     };
 }
 
@@ -302,6 +305,48 @@ export function sendCopilotMessage(
     });
 }
 
+export type CopilotEmailComposeRequest = {
+    company_id?: number | string;
+    lead_id?: number | null;
+    to_email?: string;
+    subject?: string;
+    body_text?: string;
+    user_note?: string;
+};
+
+export type CopilotEmailComposeResponse = {
+    subject: string;
+    body_text: string;
+    previous: {
+        subject: string;
+        body_text: string;
+    };
+};
+
+export function regenerateCopilotEmailDraft(
+    payload: CopilotEmailComposeRequest,
+    token: string
+): Promise<ApiEnvelope<CopilotEmailComposeResponse>> {
+    return apiRequest<CopilotEmailComposeResponse>({
+        method: "POST",
+        path: "/copilot/email/regenerate",
+        body: payload,
+        token,
+    });
+}
+
+export function enhanceCopilotEmailDraft(
+    payload: CopilotEmailComposeRequest,
+    token: string
+): Promise<ApiEnvelope<CopilotEmailComposeResponse>> {
+    return apiRequest<CopilotEmailComposeResponse>({
+        method: "POST",
+        path: "/copilot/email/enhance",
+        body: payload,
+        token,
+    });
+}
+
 export function lookupCopilotAssignees(
     token: string,
     query: string,
@@ -376,13 +421,18 @@ export async function downloadWeeklySummaryReport(
     params.set("format", format);
     const query = `?${params.toString()}`;
 
+    const transport = getSupportAwareApiTransport(
+        `/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
+        token,
+        API_BASE_URL,
+    );
     const response = await fetch(
-        `${API_BASE_URL}/copilot/reports/weekly-summary/${encodeURIComponent(reportId)}/download${query}`,
+        transport.url,
         {
             method: "GET",
             headers: {
                 Accept: "application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream, */*",
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                ...transport.authorizationHeaders,
             },
         }
     );
@@ -525,12 +575,13 @@ export async function sendCopilotMessageStream(
         onDone?: (event: StreamEventDone) => void;
     } = {}
 ): Promise<StreamEventDone> {
-    const response = await fetch(`${API_BASE_URL}/copilot/chat`, {
+    const transport = getSupportAwareApiTransport("/copilot/chat", token, API_BASE_URL);
+    const response = await fetch(transport.url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
             "Accept": "text/event-stream, application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...transport.authorizationHeaders,
         },
         body: JSON.stringify({
             ...payload,

@@ -1,17 +1,20 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-const rootDir = __dirname;
+const rootDir = fileURLToPath(new URL("./", import.meta.url));
 const agentSrc = path.resolve(rootDir, "the-factory-agent-pwa/src");
 
 export default defineConfig({
+    root: rootDir,
     test: {
         projects: [
             {
+                root: rootDir,
                 test: {
                     name: "root",
                     environment: "jsdom",
-                    setupFiles: ["./tests/setup.ts"],
+                    setupFiles: [path.join(rootDir, "tests/setup.ts")],
                     globals: true,
                     clearMocks: true,
                     restoreMocks: true,
@@ -33,10 +36,11 @@ export default defineConfig({
                 },
             },
             {
+                root: rootDir,
                 test: {
                     name: "agent-pwa",
                     environment: "jsdom",
-                    setupFiles: ["./tests/setup.ts"],
+                    setupFiles: [path.join(rootDir, "tests/setup.ts")],
                     globals: true,
                     clearMocks: true,
                     restoreMocks: true,

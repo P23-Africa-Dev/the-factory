@@ -3,6 +3,11 @@ export type LocationContext = {
   center: [number, number]; // [lng, lat]
   bbox: [number, number, number, number] | null; // [minLng, minLat, maxLng, maxLat]
   radiusKm: number;
+  placeId?: string;
+  address?: string;
+  category?: string | null;
+  /** True when the user searched a POI/brand, not just an area. */
+  isBusiness?: boolean;
 };
 
 export function isInsideLocationContext(

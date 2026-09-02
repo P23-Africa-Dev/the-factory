@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Http\Requests\Crm;
 
 use App\Enums\LeadPriority;
+use App\Http\Requests\Concerns\NormalizesLeadContacts;
+use App\Http\Requests\Concerns\NormalizesLeadProfessionalFields;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreLeadRequest extends FormRequest
 {
+    use NormalizesLeadContacts;
+    use NormalizesLeadProfessionalFields;
     use ResolvesCompanyContextId;
 
     protected function prepareForValidation(): void
@@ -21,6 +26,8 @@ class StoreLeadRequest extends FormRequest
             'status' => $this->input('status', 'newly_lead'),
             'priority' => $this->input('priority', LeadPriority::MEDIUM->value),
             ...$budget,
+            ...$this->normalizeLeadProfessionalFields(),
+            ...$this->normalizeLeadContacts(),
         ]);
     }
 
@@ -72,14 +79,25 @@ class StoreLeadRequest extends FormRequest
     {
         return [
             'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'pipeline_id' => ['required', 'integer', 'exists:lead_pipelines,id'],
+            'pipeline_id' => ['nullable', 'integer', 'exists:lead_pipelines,id'],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:40'],
             'location' => ['nullable', 'string', 'max:255'],
+            'contacts' => ['sometimes', 'array', 'min:1', 'max:50'],
+            'contacts.*.name' => ['required', 'string', 'max:255'],
+            'contacts.*.email' => ['nullable', 'email', 'max:255'],
+            'contacts.*.phone' => ['nullable', 'string', 'max:40'],
+            'contacts.*.location' => ['nullable', 'string', 'max:255'],
+            'company_name' => ['nullable', 'string', 'max:255'],
+            'company_email' => ['nullable', 'email', 'max:255'],
+            'website' => ['nullable', 'string', 'max:255', 'url'],
+            'position' => ['nullable', 'string', 'max:120'],
+            'profile_urls' => ['nullable', 'array'],
+            'profile_urls.*' => ['nullable', 'string', 'url', 'max:2048'],
             'source' => ['nullable', 'string', 'max:120'],
             'status' => ['required', 'string', 'max:120'],
-            'priority' => ['required', 'string', \Illuminate\Validation\Rule::in(LeadPriority::values())],
+            'priority' => ['required', 'string', Rule::in(LeadPriority::values())],
             'budget_amount' => ['nullable', 'numeric', 'min:0'],
             'budget_currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'budget' => ['nullable', 'string', 'max:64'],

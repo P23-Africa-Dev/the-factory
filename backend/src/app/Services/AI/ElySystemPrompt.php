@@ -25,4 +25,24 @@ final class ElySystemPrompt
     {
         return (string) config('ely.name', 'ELY');
     }
+
+    public static function readToolSynthesis(): string
+    {
+        return trim((string) config('ely.read_tool_synthesis_prompt'));
+    }
+
+    public static function fewShotExamples(): string
+    {
+        return trim((string) config('ely.few_shot_examples'));
+    }
+
+    public static function productKnowledge(): string
+    {
+        return trim((string) config('ely.product_knowledge'));
+    }
+
+    public static function productOverview(): string
+    {
+        return trim((string) config('ely.product_overview'));
+    }
 }

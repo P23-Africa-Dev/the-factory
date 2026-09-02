@@ -1,5 +1,29 @@
 import type { LiveTaskState, OperationalTrackingStatus } from "@/types/tracking";
 
+/**
+ * Milliseconds since we last heard from this agent. Prefers the client-stamped
+ * `lastReceivedAt` (set the moment a WS event / snapshot arrives) because the
+ * server/device `lastEventAt` can carry a skewed timezone offset that makes a
+ * live agent look ~1h stale. Falls back to `lastEventAt` when no receive stamp.
+ */
+export function taskAgeMs(task: LiveTaskState, nowMs: number): number {
+  if (typeof task.lastReceivedAt === "number" && task.lastReceivedAt > 0) {
+    return nowMs - task.lastReceivedAt;
+  }
+  if (!task.lastEventAt) return 0;
+  return nowMs - new Date(task.lastEventAt).getTime();
+}
+
+/** True when the task has gone longer than `staleMs` without a fresh receive. */
+export function isLiveTaskStale(
+  task: LiveTaskState,
+  nowMs: number,
+  staleMs: number,
+): boolean {
+  if (!nowMs) return false;
+  return taskAgeMs(task, nowMs) > staleMs;
+}
+
 export const OPERATIONAL_STATUS_META: Record<
   OperationalTrackingStatus,
   {
@@ -50,17 +74,23 @@ export function resolveOperationalStatusFromTask(
   nowMs: number,
   staleMs: number,
 ): OperationalTrackingStatus {
-  if (task.operationalStatus) {
-    return task.operationalStatus;
-  }
-
-  const lastSeenAge = nowMs - new Date(task.lastEventAt).getTime();
-  if (Number.isFinite(lastSeenAge) && lastSeenAge > staleMs) {
+  // Freshness is decided by the client's own clock against receive/event time,
+  // which is internally consistent. The backend `operational_status` "offline"
+  // (and `is_online`) are derived from server-vs-device time and misfire under
+  // clock skew — a live, actively-reporting agent then shows as offline. So we
+  // only declare "offline" when the client itself sees the task as stale.
+  if (isLiveTaskStale(task, nowMs, staleMs)) {
     return "offline";
   }
 
+  // Completed always wins over a stale destination_reached operational flag.
   if (task.status === "completed") {
     return "completed";
+  }
+
+  // Trust real, non-clock backend statuses when present.
+  if (task.operationalStatus && task.operationalStatus !== "offline") {
+    return task.operationalStatus;
   }
 
   if (task.status === "arrived") {
@@ -71,13 +101,7 @@ export function resolveOperationalStatusFromTask(
     return "near_destination";
   }
 
-  if (task.etaSeconds != null && task.etaSeconds >= 1800) {
-    return "delayed";
-  }
-
-  if (task.movementStarted) {
-    return "en_route";
-  }
-
-  return "available";
+  // Fresh and actively tracking → online. Represent as en route (the online
+  // indicator) rather than the skew-derived offline flag.
+  return "en_route";
 }

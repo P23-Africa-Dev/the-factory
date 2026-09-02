@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "fix-all-lint.js",
     "start-dev.js",
+    "scripts/**",
+    "public/sw.js",
   ]),
 ]);
 

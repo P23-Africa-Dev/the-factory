@@ -18,11 +18,13 @@ export function MobileInstallContent() {
   const fromPath = searchParams.get('from') || getAppLaunchPath();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- detect iOS install flow on mount
     setIsIos(isIosDevice());
   }, []);
 
   useEffect(() => {
     if (canInstall && !installAttempted && !isIos) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-trigger install prompt once
       setInstallAttempted(true);
       void install();
     }

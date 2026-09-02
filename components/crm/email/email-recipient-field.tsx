@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { useInternalUsers } from "@/hooks/use-internal-users";
 import type { EmailRecipient } from "@/lib/api/crm-emails";
@@ -27,6 +27,28 @@ export function EmailRecipientField({
     const [input, setInput] = useState("");
     const [showSearch, setShowSearch] = useState(false);
     const [search, setSearch] = useState("");
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setShowSearch(false);
+            }
+        };
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setShowSearch(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        document.addEventListener("keydown", handleKeyDown);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("keydown", handleKeyDown);
+        };
+    }, []);
 
     const { data: internalUsers = [] } = useInternalUsers({
         company_id: companyId,
@@ -67,7 +89,7 @@ export function EmailRecipientField({
     };
 
     return (
-        <div className="flex items-start gap-3 py-3 border-b border-gray-50">
+        <div ref={containerRef} className="flex items-start gap-3 py-3 border-b border-gray-50">
             <label className="text-[12px] font-bold text-gray-400 w-12 shrink-0 uppercase tracking-wider pt-1.5">
                 {label}
             </label>

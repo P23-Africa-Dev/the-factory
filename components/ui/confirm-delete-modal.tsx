@@ -10,6 +10,9 @@ type ConfirmDeleteModalProps = {
   title?: string;
   description?: string;
   confirmLabel?: string;
+  /** When false, caller controls closing (e.g. after async success). Default true. */
+  closeOnConfirm?: boolean;
+  confirmDisabled?: boolean;
 };
 
 export default function ConfirmDeleteModal({
@@ -19,6 +22,8 @@ export default function ConfirmDeleteModal({
   title = "Delete",
   description = "Are you sure you want to delete this? This action cannot be undone.",
   confirmLabel = "Delete",
+  closeOnConfirm = true,
+  confirmDisabled = false,
 }: ConfirmDeleteModalProps) {
   return (
     <AnimatePresence>
@@ -28,7 +33,9 @@ export default function ConfirmDeleteModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={() => {
+              if (!confirmDisabled) onClose();
+            }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
           />
 
@@ -49,13 +56,18 @@ export default function ConfirmDeleteModal({
             <div className="flex gap-3 w-full">
               <button
                 onClick={onClose}
-                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-[#0B1215] rounded-xl text-[13px] font-semibold transition-colors cursor-pointer"
+                disabled={confirmDisabled}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-[#0B1215] rounded-xl text-[13px] font-semibold transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
-                onClick={() => { onConfirm(); onClose(); }}
-                className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[13px] font-semibold shadow-sm transition-all cursor-pointer"
+                onClick={() => {
+                  onConfirm();
+                  if (closeOnConfirm) onClose();
+                }}
+                disabled={confirmDisabled}
+                className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[13px] font-semibold shadow-sm transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {confirmLabel}
               </button>

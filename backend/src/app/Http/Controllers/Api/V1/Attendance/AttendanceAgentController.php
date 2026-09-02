@@ -10,6 +10,7 @@ use App\Http\Requests\Attendance\AttendancePayrollSummaryRequest;
 use App\Http\Requests\Attendance\AttendanceStatsRequest;
 use App\Http\Requests\Attendance\ClockInRequest;
 use App\Http\Requests\Attendance\ClockOutRequest;
+use App\Http\Requests\Attendance\AttendanceMapSnapshotRequest;
 use App\Http\Requests\Attendance\AttendanceMetricsRequest;
 use App\Http\Resources\AttendancePayrollSummaryResource;
 use App\Http\Resources\AttendanceRecordResource;
@@ -117,6 +118,19 @@ class AttendanceAgentController extends Controller
             data: [
                 'summary' => $summary ? new AttendancePayrollSummaryResource($summary) : null,
             ],
+        );
+    }
+
+    public function mapSnapshot(AttendanceMapSnapshotRequest $request): JsonResponse
+    {
+        $snapshot = $this->attendanceService->mapSnapshotForAgent(
+            user: $request->user(),
+            filters: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Attendance map snapshot fetched successfully.',
+            data: $snapshot,
         );
     }
 }

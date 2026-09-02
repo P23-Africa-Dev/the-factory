@@ -17,6 +17,7 @@ import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { flattenApiError, isTrackingAlreadyActiveError } from '@/lib/api/errors';
 import { toast } from '@/lib/toast';
+import { notifyTrackingNearDestination } from '@/lib/notifications/trackingAlerts';
 
 function resolveCompanyId(taskCompanyId: number | null | undefined): number {
   return taskCompanyId ?? getActiveCompanyId() ?? 0;
@@ -30,7 +31,7 @@ export default function TrackingPage() {
 
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { resolveCurrentPosition, ensureLocationPermission, retryLocationPermission, checkPermission } = useGeolocation();
-  const { goToMapActivity, goToTrackingComplete } = useTrackingNavigation();
+  const { goToMapActivity } = useTrackingNavigation();
   const { startTracking } = useActiveTracking();
   const [gateMode, setGateMode] = useState<'request' | 'denied'>('request');
   const [isRequesting, setIsRequesting] = useState(false);
@@ -62,6 +63,9 @@ export default function TrackingPage() {
       startTracking(taskId, companyId, {
         onArrived: () => {
           useTrackingStore.getState().markArrived(taskId, new Date().toISOString());
+        },
+        onNearDestination: () => {
+          void notifyTrackingNearDestination(taskId);
         },
       });
       useTrackingStore.getState().setActiveTrackingTaskId(taskId);
@@ -224,7 +228,7 @@ export default function TrackingPage() {
         isBusy={isRequesting}
         isResume={false}
         onRequest={handleRequest}
-        onDismiss={() => goToTrackingComplete(taskId)}
+        onDismiss={() => router.replace(`/task/${taskId}`)}
         fullScreen
       />
     </div>

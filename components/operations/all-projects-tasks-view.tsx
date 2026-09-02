@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, BookmarkPlus, User } from "lucide-react";
 import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
@@ -9,11 +10,13 @@ import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
 import { TaskDetailModal } from "@/components/operations/task-detail-modal";
 import { CreateTaskModal } from "@/components/operations/create-task-modal";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { TaskBoardSkeleton } from "@/components/operations/skeletons/task-board-skeleton";
-import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
+import { useTasks, useUpdateTaskStatusAdmin, useUpdateTask, useDeleteTask } from "@/hooks/use-tasks";
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
+import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import Arrow57Deg from "@/assets/images/arrow-57deg.png";
@@ -195,8 +198,13 @@ function statusToContainerId(s: string): string | null {
 }
 
 export function AllProjectsTasksView() {
+  const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
+  const isManagementUser =
+    role === "owner" ||
+    role === "admin" ||
+    role === "supervisor";
   const canManageTaskStatuses =
     role === "owner" ||
     role === "admin" ||
@@ -205,15 +213,35 @@ export function AllProjectsTasksView() {
     role === "supervisor";
 
   const [search, setSearch] = useState("");
+  const [taskScope, setTaskScope] = useState<"mine" | "all">("mine");
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState("All");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [editingTask, setEditingTask] = useState<DndItem | null>(null);
+  const [deleteTaskTarget, setDeleteTaskTarget] = useState<DndItem | null>(null);
 
   const { data: tasksData, isPending: loadingTasks } = useTasks(
-    companyId ? { company_id: companyId } : {}
+    companyId
+      ? {
+          company_id: companyId,
+          assigned_to_me: isManagementUser && taskScope === "mine",
+        }
+      : {}
   );
   const statusMutation = useUpdateTaskStatusAdmin();
+  const updateTaskMutation = useUpdateTask({
+    onSuccess: () => {
+      toast.success("Task updated successfully.");
+      setEditingTask(null);
+    },
+  });
+  const deleteTaskMutation = useDeleteTask({
+    onSuccess: () => {
+      toast.success("Task deleted successfully.");
+      setDeleteTaskTarget(null);
+    },
+  });
 
   const serverContainers = useMemo(
     () => buildContainers(tasksData?.tasks ?? []),
@@ -384,53 +412,86 @@ export function AllProjectsTasksView() {
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* ── Toolbar ── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 sm:justify-end min-w-0 transition-all duration-300 relative z-10">
-        <div className="relative w-full md:w-114.5 group shrink-0">
-          <Search
-            className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
-            size={18}
-            strokeWidth={2}
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tasks, agents, categories…"
-            className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {isManagementUser && (
+          <div
+            className="flex w-fit items-center gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-sm shrink-0"
+            role="group"
+            aria-label="Task visibility"
+          >
+            {([
+              ["mine", "My Tasks"],
+              ["all", "All Tasks"],
+            ] as const).map(([scope, label]) => {
+              const active = taskScope === scope;
+
+              return (
+                <button
+                  key={scope}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTaskScope(scope)}
+                  className={`rounded-full px-5 py-2 text-[13px] font-bold transition-colors ${
+                    active
+                      ? "bg-[#09232D] text-white shadow-sm"
+                      : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Toolbar ── */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 sm:justify-end min-w-0 transition-all duration-300 relative z-10">
+          <div className="relative w-full md:w-114.5 group shrink-0">
+            <Search
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-dash-dark transition-colors"
+              size={18}
+              strokeWidth={2}
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tasks......"
+              className="w-full bg-white pl-13 pr-5 text-[14px] placeholder:text-gray-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-dash-dark/10 transition-all font-sans"
+              style={{
+                height: "46px",
+                borderRadius: "24px",
+                border: "0.7px solid #D7D7D7",
+                boxShadow: "0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026",
+              }}
+            />
+          </div>
+
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
+              showFilters ? "text-white" : "text-gray-500"
+            }`}
             style={{
-              height: "46px",
-              borderRadius: "24px",
-              border: "0.7px solid #D7D7D7",
-              boxShadow: "0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026",
+              background: showFilters ? "#34373C" : "#F8F8F8",
+              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
+              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
             }}
-          />
+          >
+            <SlidersHorizontal size={14} strokeWidth={2} />
+            <span style={{ fontSize: "10px", fontWeight: 400 }}>Filter</span>
+          </button>
+
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
+            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+          >
+            <BookmarkPlus size={15} strokeWidth={2} />
+            <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>
+            <span className="sm:hidden">Task</span>
+          </button>
         </div>
-
-        <button
-          onClick={() => setShowFilters((v) => !v)}
-          className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-            showFilters ? "text-white" : "text-gray-500"
-          }`}
-          style={{
-            background: showFilters ? "#34373C" : "#F8F8F8",
-            border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
-            boxShadow: showFilters ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
-          }}
-        >
-          <SlidersHorizontal size={14} strokeWidth={2} />
-          <span style={{ fontSize: "10px", fontWeight: 400 }}>Filter</span>
-        </button>
-
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-          style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
-        >
-          <BookmarkPlus size={15} strokeWidth={2} />
-          <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>
-          <span className="sm:hidden">Task</span>
-        </button>
       </div>
 
       {/* ── Filter panel ── */}
@@ -485,12 +546,87 @@ export function AllProjectsTasksView() {
           onStatusDrop={handleStatusDrop}
           onDragStateChange={handleDragStateChange}
           onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+          onTaskEdit={(item) => setEditingTask(item)}
+          onTaskDelete={(item) => setDeleteTaskTarget(item)}
+          onViewMap={(item) => {
+            const url = buildTaskMapUrl(item, role);
+            if (!url) {
+              toast.error("This task has no map coordinates yet.");
+              return;
+            }
+            router.push(url);
+          }}
         />
       )}
 
       <CreateTaskModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
+      />
+
+      <CreateTaskModal
+        key={editingTask ? `edit-task-${editingTask.id}` : "edit-task-modal"}
+        isOpen={!!editingTask}
+        onClose={() => setEditingTask(null)}
+        mode="edit"
+        submitLabel="Save Changes"
+        initialValues={
+          editingTask
+            ? {
+                title: editingTask.description,
+                taskType: editingTask.taskType ?? "",
+                description: editingTask.addedDescription ?? "",
+                location: editingTask.location ?? "",
+                address: editingTask.address ?? "",
+                dueDate: editingTask.dueDateIso ? editingTask.dueDateIso.slice(0, 10) : "",
+                requiredActions: editingTask.requiredActions?.join(", ") ?? "",
+                priority: editingTask.priority
+                  ? (editingTask.priority.charAt(0).toUpperCase() + editingTask.priority.slice(1).toLowerCase()) as
+                      | "High"
+                      | "Medium"
+                      | "Low"
+                  : "",
+                minPhotos: editingTask.minPhotosRequired != null ? String(editingTask.minPhotosRequired) : "2",
+                visitVerification: editingTask.visitVerificationRequired ?? false,
+              }
+            : undefined
+        }
+        onSubmitTask={(payload) => {
+          if (!editingTask || !companyId) return;
+          updateTaskMutation.mutate({
+            taskId: editingTask.id,
+            payload: {
+              company_id: companyId,
+              title: payload.title,
+              type: payload.taskType,
+              description: payload.description,
+              location: payload.location,
+              address: payload.address,
+              due_date: payload.dueDate ? new Date(payload.dueDate).toISOString() : undefined,
+              required_actions: payload.requiredActions,
+              priority: payload.priority,
+              minimum_photos_required: payload.minPhotos,
+              visit_verification_required: payload.visitVerification,
+              latitude: payload.latitude,
+              longitude: payload.longitude,
+            },
+          });
+        }}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!deleteTaskTarget}
+        onClose={() => setDeleteTaskTarget(null)}
+        title="Delete Task"
+        description="Are you sure you want to delete this task? This action cannot be undone."
+        confirmLabel={deleteTaskMutation.isPending ? "Deleting..." : "Delete"}
+        onConfirm={() => {
+          if (!deleteTaskTarget || !companyId) return;
+          deleteTaskMutation.mutate({
+            taskId: deleteTaskTarget.id,
+            companyId,
+          });
+        }}
       />
 
       <TaskDetailModal
@@ -573,7 +709,8 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     id: String(apiTask.id),
     label: assigneeLabel,
     description: apiTask.title,
-    location: formatTaskLocationLabel(apiTask.location, apiTask.address),
+    location: formatTaskLocationLabel(apiTask.location, apiTask.address, "No location set", apiTask.created_at),
+    address: apiTask.address ?? undefined,
     latitude: apiTask.latitude ?? null,
     longitude: apiTask.longitude ?? null,
     hasTrackableLocation: hasTrackableTaskLocation(apiTask),
@@ -581,8 +718,15 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     avatar: apiTask.assignee?.avatar_url || undefined,
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
+    dueDateIso: apiTask.due_date ?? undefined,
+    createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
+    taskType: apiTask.type ?? undefined,
+    requiredActions: apiTask.required_actions ?? undefined,
+    minPhotosRequired: apiTask.minimum_photos_required ?? undefined,
+    visitVerificationRequired: apiTask.visit_verification_required ?? undefined,
+    priority: apiTask.priority ?? undefined,
     statusLabel,
   };
 }

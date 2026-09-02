@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\Company\CompanyContextService;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,6 +35,10 @@ class LeadService
         'Email',
         'Phone',
         'Location',
+        'Company Name',
+        'Website',
+        'Position',
+        'Profile URLs',
         'Source',
         'Status',
         'Priority',
@@ -61,9 +66,33 @@ class LeadService
         $query = $this->baseQuery($companyId);
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
-        $perPage = (int) ($filters['per_page'] ?? 20);
+        $perPage = max(1, min((int) ($filters['per_page'] ?? 20), 100));
 
         return $query->latest('id')->paginate($perPage)->withQueryString();
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    public function listAssignees(User $user, ?int $companyId = null): Collection
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $this->ensureCanManage((string) $context['role']);
+
+        return User::query()
+            ->select([
+                'users.id',
+                'users.name',
+                'users.email',
+                'company_users.role as company_role',
+            ])
+            ->join('company_users', 'company_users.user_id', '=', 'users.id')
+            ->where('company_users.company_id', (int) $context['company']->id)
+            ->whereIn('company_users.role', ['owner', 'admin', 'supervisor', 'agent'])
+            ->where('users.is_active', true)
+            ->orderBy('company_users.role')
+            ->orderBy('users.name')
+            ->get();
     }
 
     public function create(User $user, array $data): Lead
@@ -79,6 +108,9 @@ class LeadService
             ? (int) $user->id
             : (isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null);
         $pipelineId = (int) ($data['pipeline_id'] ?? 0);
+        if ($pipelineId <= 0) {
+            $pipelineId = $this->resolvePreferredPipelineId($user, $companyId);
+        }
 
         $this->assertPipelineInCompany($companyId, $pipelineId);
         $this->assertLabelExists($companyId, (string) $data['status']);
@@ -92,28 +124,39 @@ class LeadService
             $role,
         );
 
-        $lead = Lead::create([
-            'company_id' => $companyId,
-            'pipeline_id' => $pipelineId,
-            'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
-            'created_by_user_id' => $user->id,
-            'assigned_to_user_id' => $assignedToUserId,
-            'name' => $data['name'],
-            'email' => $data['email'] ?? null,
-            'phone' => $data['phone'] ?? null,
-            'location' => $data['location'] ?? null,
-            'source' => $source,
-            'status' => $data['status'],
-            'priority' => $data['priority'],
-            'budget_amount' => $data['budget_amount'] ?? null,
-            'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
-                ? strtoupper((string) $data['budget_currency'])
-                : null,
-            'next_action' => $data['next_action'] ?? null,
-            'last_interaction' => $data['last_interaction'] ?? null,
-            'last_interaction_at' => $data['last_interaction_at'] ?? null,
-            'meta' => $data['meta'] ?? null,
-        ]);
+        $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source): Lead {
+            $lead = Lead::create([
+                'company_id' => $companyId,
+                'pipeline_id' => $pipelineId,
+                'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
+                'created_by_user_id' => $user->id,
+                'assigned_to_user_id' => $assignedToUserId,
+                'name' => $data['name'],
+                'email' => $data['email'] ?? null,
+                'phone' => $data['phone'] ?? null,
+                'location' => $data['location'] ?? null,
+                'company_name' => $data['company_name'] ?? null,
+                'company_email' => $data['company_email'] ?? null,
+                'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
+                'position' => $data['position'] ?? null,
+                'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
+                'source' => $source,
+                'status' => $data['status'],
+                'priority' => $data['priority'],
+                'budget_amount' => $data['budget_amount'] ?? null,
+                'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
+                    ? strtoupper((string) $data['budget_currency'])
+                    : null,
+                'next_action' => $data['next_action'] ?? null,
+                'last_interaction' => $data['last_interaction'] ?? null,
+                'last_interaction_at' => $data['last_interaction_at'] ?? null,
+                'meta' => $data['meta'] ?? null,
+            ]);
+
+            $this->replaceContacts($lead, $this->contactPayloads($data));
+
+            return $lead;
+        });
 
         $this->notifyLeadRecipients(
             lead: $lead,
@@ -156,15 +199,24 @@ class LeadService
         if ($role === 'agent') {
             $this->assertAgentCanAccessLead($lead, (int) $user->id);
 
-            $allowedFields = ['company_id', 'pipeline_id', 'status'];
+            $editsContacts = array_key_exists('contacts', $data);
+            if ($editsContacts && (int) $lead->created_by_user_id !== (int) $user->id) {
+                throw ValidationException::withMessages([
+                    'authorization' => ['Agents can only edit contact details on leads they created.'],
+                ]);
+            }
+
+            $allowedFields = $editsContacts
+                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location']
+                : ['company_id', 'pipeline_id', 'status'];
             $forbiddenFields = collect(array_keys($data))
-                ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
+                ->reject(static fn (string $field): bool => in_array($field, $allowedFields, true))
                 ->values()
                 ->all();
 
             if ($forbiddenFields !== []) {
                 throw ValidationException::withMessages([
-                    'authorization' => ['Agents can only update lead status and pipeline.'],
+                    'authorization' => ['Agents can only update lead status, pipeline, and contact details on leads they created.'],
                     'forbidden_fields' => $forbiddenFields,
                 ]);
             }
@@ -177,10 +229,26 @@ class LeadService
                 $this->assertLabelExists($companyId, (string) $data['status']);
             }
 
-            $lead->update([
-                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-                'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
-            ]);
+            $lead = DB::transaction(function () use ($lead, $data, $editsContacts): Lead {
+                $lead->update([
+                    'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                    'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
+                    'name' => $data['name'] ?? $lead->name,
+                    'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
+                    'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
+                    'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+                ]);
+
+                if ($editsContacts) {
+                    $this->replaceContacts($lead, $this->contactPayloads($data));
+                }
+
+                return $lead->fresh();
+            });
+
+            if ($editsContacts && $lead->company_location_id !== null) {
+                $this->mapSavedLeadBridgeService->syncLeadToLocation($lead);
+            }
 
             return $this->findForUser($user, $lead->fresh(), $companyId);
         }
@@ -199,30 +267,47 @@ class LeadService
             $this->assertLabelExists($companyId, (string) $data['status']);
         }
 
-        $lead->update([
-            'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-            'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
-                ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
-                : $lead->assigned_to_user_id,
-            'name' => $data['name'] ?? $lead->name,
-            'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
-            'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
-            'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
-            'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
-            'status' => $data['status'] ?? $lead->status,
-            'priority' => $data['priority'] ?? $lead->priority,
-            'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
-            'budget_currency' => array_key_exists('budget_currency', $data)
-                ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
-                : $lead->budget_currency,
-            'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
-            'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
-            'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
-            'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
-            'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
-        ]);
+        $lead = DB::transaction(function () use ($lead, $data): Lead {
+            $lead->update([
+                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
+                    ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
+                    : $lead->assigned_to_user_id,
+                'name' => $data['name'] ?? $lead->name,
+                'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
+                'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
+                'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+                'company_name' => array_key_exists('company_name', $data) ? $data['company_name'] : $lead->company_name,
+                'company_email' => array_key_exists('company_email', $data) ? $data['company_email'] : $lead->company_email,
+                'website' => array_key_exists('website', $data)
+                    ? ($data['website'] !== null ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null)
+                    : $lead->website,
+                'position' => array_key_exists('position', $data) ? $data['position'] : $lead->position,
+                'profile_urls' => array_key_exists('profile_urls', $data)
+                    ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
+                    : $lead->profile_urls,
+                'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
+                'status' => $data['status'] ?? $lead->status,
+                'priority' => $data['priority'] ?? $lead->priority,
+                'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
+                'budget_currency' => array_key_exists('budget_currency', $data)
+                    ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
+                    : $lead->budget_currency,
+                'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
+                'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
+                'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
+                'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
+                'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
+            ]);
 
-        $lead = $lead->fresh();
+            if (array_key_exists('contacts', $data)) {
+                $this->replaceContacts($lead, $this->contactPayloads($data));
+            } elseif ($this->containsPrimaryContactFields($data)) {
+                $this->syncPrimaryContactFromLead($lead->fresh());
+            }
+
+            return $lead->fresh();
+        });
 
         if ($lead->company_location_id !== null) {
             $this->mapSavedLeadBridgeService->syncLeadToLocation($lead);
@@ -343,7 +428,7 @@ class LeadService
             ->pluck('total', 'status')
             ->all();
 
-        $total = (int) array_sum(array_map(static fn($value): int => (int) $value, $counts));
+        $total = (int) array_sum(array_map(static fn ($value): int => (int) $value, $counts));
 
         return [
             'total' => $total,
@@ -393,7 +478,7 @@ class LeadService
                     'id' => (int) $agent->id,
                     'name' => (string) $agent->name,
                     'email' => (string) $agent->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($agent->avatar, $agent->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender),
                     'total_uploads' => (int) $topUploader->total_uploads,
                 ];
             }
@@ -411,7 +496,7 @@ class LeadService
                     'id' => (int) $fallbackAgent->id,
                     'name' => (string) $fallbackAgent->name,
                     'email' => (string) $fallbackAgent->email,
-                    'avatar_url' => AvatarUrlResolver::resolve($fallbackAgent->avatar, $fallbackAgent->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($fallbackAgent->avatar, $fallbackAgent->gender),
                     'total_uploads' => 0,
                 ];
             }
@@ -433,7 +518,7 @@ class LeadService
                         'id' => (int) $lead->creator->id,
                         'name' => (string) $lead->creator->name,
                         'email' => (string) $lead->creator->email,
-                        'avatar_url' => AvatarUrlResolver::resolve($lead->creator->avatar, $lead->creator->gender),
+                        'avatar_url' => AvatarUrlResolver::resolveOrDefault($lead->creator->avatar, $lead->creator->gender),
                     ] : null,
                 ];
             })
@@ -449,7 +534,7 @@ class LeadService
     }
 
     /**
-     * @param array<string,mixed> $filters
+     * @param  array<string,mixed>  $filters
      * @return array{
      *     total_leads: int,
      *     week_growth_percent: int,
@@ -650,6 +735,226 @@ class LeadService
         return $pipeline->fresh();
     }
 
+    /**
+     * @return array{preferred_pipeline_id:int|null,company_default_pipeline_id:int|null}
+     */
+    public function getCrmPreferences(User $user, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($resolvedCompanyId);
+
+        return [
+            'preferred_pipeline_id' => $this->getPreferredPipelineId((int) $user->id, $resolvedCompanyId),
+            'company_default_pipeline_id' => $this->getCompanyDefaultPipelineId($resolvedCompanyId),
+        ];
+    }
+
+    /**
+     * @return array{preferred_pipeline_id:int|null,company_default_pipeline_id:int|null}
+     */
+    public function setPreferredPipeline(User $user, array $payload): array
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanCreateLeads((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipelineId = (int) ($payload['pipeline_id'] ?? 0);
+        $this->assertPipelineInCompany($companyId, $pipelineId);
+
+        if ($this->isMapSystemPipeline($companyId, $pipelineId)) {
+            throw ValidationException::withMessages([
+                'pipeline_id' => ['System pipelines cannot be set as a personal default.'],
+            ]);
+        }
+
+        DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->where('user_id', $user->id)
+            ->update(['preferred_pipeline_id' => $pipelineId]);
+
+        return $this->getCrmPreferences($user, $companyId);
+    }
+
+    public function setCompanyDefaultPipeline(User $user, int $pipelineId, array $payload): LeadPipeline
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanManage((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipeline = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->findOrFail($pipelineId);
+
+        if ($pipeline->system_key === MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['System pipelines cannot be set as the company default.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($companyId, $pipeline): void {
+            LeadPipeline::query()
+                ->where('company_id', $companyId)
+                ->where('id', '!=', $pipeline->id)
+                ->where('is_default', true)
+                ->update(['is_default' => false]);
+
+            $pipeline->update(['is_default' => true]);
+        });
+
+        return $pipeline->fresh();
+    }
+
+    public function resolvePreferredPipelineId(User $user, int $companyId): int
+    {
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $preferredId = $this->getPreferredPipelineId((int) $user->id, $companyId);
+        if ($preferredId !== null && $this->pipelineExistsInCompany($companyId, $preferredId)) {
+            return $preferredId;
+        }
+
+        $companyDefaultId = $this->getCompanyDefaultPipelineId($companyId);
+        if ($companyDefaultId !== null) {
+            return $companyDefaultId;
+        }
+
+        $fallbackId = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where(function ($query): void {
+                $query->whereNull('system_key')
+                    ->orWhere('system_key', '!=', MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY);
+            })
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->value('id');
+
+        return (int) ($fallbackId ?? 0);
+    }
+
+    private function getPreferredPipelineId(int $userId, int $companyId): ?int
+    {
+        $value = DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->value('preferred_pipeline_id');
+
+        return $value !== null ? (int) $value : null;
+    }
+
+    private function getCompanyDefaultPipelineId(int $companyId): ?int
+    {
+        $value = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('is_default', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->value('id');
+
+        return $value !== null ? (int) $value : null;
+    }
+
+    private function pipelineExistsInCompany(int $companyId, int $pipelineId): bool
+    {
+        return LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('id', $pipelineId)
+            ->exists();
+    }
+
+    private function isMapSystemPipeline(int $companyId, int $pipelineId): bool
+    {
+        return LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('id', $pipelineId)
+            ->where('system_key', MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY)
+            ->exists();
+    }
+
+    /**
+     * @return array{deleted_pipeline_id:int,reassigned_leads_count:int,reassigned_to_pipeline_id:int|null,reassigned_to_pipeline_name:string|null}
+     */
+    public function deletePipeline(User $user, int $pipelineId, array $payload): array
+    {
+        $context = $this->companyContextService->resolve($user, $payload['company_id'] ?? null);
+        $this->ensureCanManage((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $pipeline = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->findOrFail($pipelineId);
+
+        if ($pipeline->is_default) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['The default pipeline cannot be deleted.'],
+            ]);
+        }
+
+        if ($pipeline->system_key === MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['System pipelines cannot be deleted.'],
+            ]);
+        }
+
+        $assignedCount = Lead::query()
+            ->where('company_id', $companyId)
+            ->where('pipeline_id', $pipeline->id)
+            ->count();
+
+        $fallbackPipeline = LeadPipeline::query()
+            ->where('company_id', $companyId)
+            ->where('id', '!=', $pipeline->id)
+            ->where(function ($query): void {
+                $query->whereNull('system_key')
+                    ->orWhere('system_key', '!=', MapSavedLeadBridgeService::MAP_PIPELINE_SYSTEM_KEY);
+            })
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first();
+
+        if ($fallbackPipeline === null) {
+            throw ValidationException::withMessages([
+                'pipeline' => ['This pipeline cannot be deleted because no fallback pipeline is available.'],
+            ]);
+        }
+
+        $forceDelete = (bool) ($payload['force'] ?? false);
+
+        if ($assignedCount > 0 && ! $forceDelete) {
+            throw ValidationException::withMessages([
+                'pipeline' => ["This pipeline currently has {$assignedCount} leads. Confirm deletion to continue."],
+                'pipeline_usage_count' => [(string) $assignedCount],
+            ]);
+        }
+
+        DB::transaction(function () use ($companyId, $pipeline, $assignedCount, $fallbackPipeline): void {
+            if ($assignedCount > 0) {
+                Lead::query()
+                    ->where('company_id', $companyId)
+                    ->where('pipeline_id', $pipeline->id)
+                    ->update(['pipeline_id' => $fallbackPipeline->id]);
+            }
+
+            DB::table('company_users')
+                ->where('company_id', $companyId)
+                ->where('preferred_pipeline_id', $pipeline->id)
+                ->update(['preferred_pipeline_id' => null]);
+
+            $pipeline->delete();
+        });
+
+        return [
+            'deleted_pipeline_id' => (int) $pipeline->id,
+            'reassigned_leads_count' => (int) $assignedCount,
+            'reassigned_to_pipeline_id' => $assignedCount > 0 ? (int) $fallbackPipeline->id : null,
+            'reassigned_to_pipeline_name' => $assignedCount > 0 ? $fallbackPipeline->name : null,
+        ];
+    }
+
     public function listLabels(User $user, ?int $companyId = null): Collection
     {
         $context = $this->companyContextService->resolve($user, $companyId);
@@ -735,7 +1040,7 @@ class LeadService
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
-        $ids = collect($payload['ordered_label_ids'] ?? [])->map(static fn($id): int => (int) $id)->values();
+        $ids = collect($payload['ordered_label_ids'] ?? [])->map(static fn ($id): int => (int) $id)->values();
 
         DB::transaction(function () use ($companyId, $ids): void {
             foreach ($ids as $index => $id) {
@@ -842,6 +1147,7 @@ class LeadService
                     'data' => $row,
                     'errors' => $validation['errors'],
                 ];
+
                 continue;
             }
 
@@ -857,6 +1163,7 @@ class LeadService
                     'data' => $row,
                     'reason' => "A lead with the same email or phone already exists ('{$duplicate->name}').",
                 ];
+
                 continue;
             }
 
@@ -870,11 +1177,16 @@ class LeadService
                         'data' => $row,
                         'reason' => "A matching lead exists ('{$duplicate->name}') but is not assigned to you, so it was not updated.",
                     ];
+
                     continue;
                 }
 
-                $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data));
+                DB::transaction(function () use ($duplicate, $row, $data, $pipelineId): void {
+                    $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data, $pipelineId));
+                    $this->syncPrimaryContactFromLead($duplicate->fresh());
+                });
                 $updatedCount++;
+
                 continue;
             }
 
@@ -890,6 +1202,10 @@ class LeadService
                 'email' => $data['email'],
                 'phone' => $data['phone'],
                 'location' => $data['location'],
+                'company_name' => $data['company_name'] ?? null,
+                'website' => $data['website'] ?? null,
+                'position' => $data['position'] ?? null,
+                'profile_urls' => $data['profile_urls'] ?? null,
                 'source' => $normalizedSource,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
@@ -942,6 +1258,7 @@ class LeadService
                     'data' => $row,
                     'errors' => $validation['errors'],
                 ];
+
                 continue;
             }
 
@@ -955,6 +1272,7 @@ class LeadService
                     'existing_lead_id' => (int) $duplicate->id,
                     'existing_lead_name' => (string) $duplicate->name,
                 ];
+
                 continue;
             }
 
@@ -1003,6 +1321,68 @@ class LeadService
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<int, array{name:string,email:?string,phone:?string,location:?string}>
+     */
+    private function contactPayloads(array $data): array
+    {
+        $contacts = isset($data['contacts']) && is_array($data['contacts'])
+            ? array_values($data['contacts'])
+            : [[
+                'name' => $data['name'],
+                'email' => $data['email'] ?? null,
+                'phone' => $data['phone'] ?? null,
+                'location' => $data['location'] ?? null,
+            ]];
+
+        return array_map(static fn (array $contact): array => [
+            'name' => trim((string) $contact['name']),
+            'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
+            'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
+            'location' => isset($contact['location']) && $contact['location'] !== '' ? trim((string) $contact['location']) : null,
+        ], $contacts);
+    }
+
+    /**
+     * @param  array<int, array{name:string,email:?string,phone:?string,location:?string}>  $contacts
+     */
+    private function replaceContacts(Lead $lead, array $contacts): void
+    {
+        $lead->contacts()->delete();
+        $lead->contacts()->createMany(array_map(
+            static fn (array $contact, int $index): array => [
+                ...$contact,
+                'sort_order' => $index,
+            ],
+            $contacts,
+            array_keys($contacts),
+        ));
+        $lead->unsetRelation('contacts');
+    }
+
+    private function syncPrimaryContactFromLead(Lead $lead): void
+    {
+        $lead->contacts()->updateOrCreate(
+            ['sort_order' => 0],
+            [
+                'name' => (string) $lead->name,
+                'email' => $lead->email,
+                'phone' => $lead->phone,
+                'location' => $lead->location,
+            ],
+        );
+        $lead->unsetRelation('contacts');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function containsPrimaryContactFields(array $data): bool
+    {
+        return array_intersect(['name', 'email', 'phone', 'location'], array_keys($data)) !== [];
+    }
+
     private function baseQuery(int $companyId): Builder
     {
         return Lead::query()
@@ -1011,9 +1391,10 @@ class LeadService
                 'pipeline:id,name,currency_code',
                 'creator:id,name,email',
                 'assignee:id,name,email',
-                'notes' => fn($query) => $query->latest('id')->limit(10),
+                'contacts:id,lead_id,name,email,phone,location,sort_order',
+                'notes' => fn ($query) => $query->latest('id')->limit(10),
                 'notes.creator:id,name,email',
-                'activities' => fn($query) => $query->latest('id')->limit(20),
+                'activities' => fn ($query) => $query->latest('id')->limit(20),
                 'activities.creator:id,name,email',
             ]);
     }
@@ -1063,7 +1444,7 @@ class LeadService
     }
 
     /**
-     * @param array<string,mixed> $filters
+     * @param  array<string,mixed>  $filters
      */
     private function applyLeadListFilters(Builder $query, User $user, string $role, array $filters): void
     {
@@ -1078,6 +1459,15 @@ class LeadService
 
         if (! empty($filters['status'])) {
             $query->where('status', (string) $filters['status']);
+        }
+
+        if (! empty($filters['uncategorized'])) {
+            $query->whereNotExists(function ($subquery): void {
+                $subquery->selectRaw('1')
+                    ->from('lead_labels')
+                    ->whereColumn('lead_labels.company_id', 'leads.company_id')
+                    ->whereColumn('lead_labels.slug', 'leads.status');
+            });
         }
 
         if (! empty($filters['priority'])) {
@@ -1098,17 +1488,25 @@ class LeadService
             if ($this->isAgentUploadSourceFilter($source)) {
                 $this->applyAgentUploadedSourceFilter($query);
             } else {
-                $query->where('source', 'like', '%' . $source . '%');
+                $query->where('source', 'like', '%'.$source.'%');
             }
         }
 
         if (! empty($filters['search'])) {
             $search = trim((string) $filters['search']);
             $query->where(function (Builder $builder) use ($search): void {
-                $builder->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('email', 'like', '%' . $search . '%')
-                    ->orWhere('phone', 'like', '%' . $search . '%')
-                    ->orWhere('location', 'like', '%' . $search . '%');
+                $builder->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('email', 'like', '%'.$search.'%')
+                    ->orWhere('phone', 'like', '%'.$search.'%')
+                    ->orWhere('location', 'like', '%'.$search.'%')
+                    ->orWhere('company_name', 'like', '%'.$search.'%')
+                    ->orWhere('source', 'like', '%'.$search.'%')
+                    ->orWhereHas('contacts', function (Builder $contactQuery) use ($search): void {
+                        $contactQuery->where('name', 'like', '%'.$search.'%')
+                            ->orWhere('email', 'like', '%'.$search.'%')
+                            ->orWhere('phone', 'like', '%'.$search.'%')
+                            ->orWhere('location', 'like', '%'.$search.'%');
+                    });
             });
         }
     }
@@ -1168,10 +1566,10 @@ class LeadService
         while (LeadLabel::query()
             ->where('company_id', $companyId)
             ->where('slug', $slug)
-            ->when($ignoreLabelId !== null, fn($query) => $query->where('id', '!=', $ignoreLabelId))
+            ->when($ignoreLabelId !== null, fn ($query) => $query->where('id', '!=', $ignoreLabelId))
             ->exists()
         ) {
-            $slug = $baseSlug . '_' . $suffix;
+            $slug = $baseSlug.'_'.$suffix;
             $suffix++;
         }
 
@@ -1203,7 +1601,7 @@ class LeadService
             'uploaded by agents',
         ];
 
-        $quoted = implode(',', array_map(static fn(string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
+        $quoted = implode(',', array_map(static fn (string $value): string => "'".str_replace("'", "''", $value)."'", $accepted));
 
         $query->whereRaw(
             "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
@@ -1372,7 +1770,11 @@ class LeadService
         if ($normalizedEmail !== null && $normalizedEmail !== '') {
             $match = Lead::query()
                 ->where('company_id', $companyId)
-                ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+                ->where(function (Builder $query) use ($normalizedEmail): void {
+                    $query->whereRaw('LOWER(leads.email) = ?', [$normalizedEmail])
+                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                            ->whereRaw('LOWER(lead_contacts.email) = ?', [$normalizedEmail]));
+                })
                 ->orderBy('id')
                 ->first();
 
@@ -1386,11 +1788,16 @@ class LeadService
             return null;
         }
 
-        $strippedPhoneSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')";
+        $strippedLeadPhoneSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(leads.phone, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')";
+        $strippedContactPhoneSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(lead_contacts.phone, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')";
 
         return Lead::query()
             ->where('company_id', $companyId)
-            ->whereRaw("$strippedPhoneSql = ?", [$phoneDigits])
+            ->where(function (Builder $query) use ($strippedLeadPhoneSql, $strippedContactPhoneSql, $phoneDigits): void {
+                $query->whereRaw("$strippedLeadPhoneSql = ?", [$phoneDigits])
+                    ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                        ->whereRaw("$strippedContactPhoneSql = ?", [$phoneDigits]));
+            })
             ->orderBy('id')
             ->first();
     }
@@ -1403,14 +1810,25 @@ class LeadService
      * @param  array<string, mixed>  $normalized
      * @return array<string, mixed>
      */
-    private function buildDuplicateUpdatePayload(Lead $existing, array $row, array $normalized): array
-    {
-        $update = [];
-        $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
+    private function buildDuplicateUpdatePayload(
+        Lead $existing,
+        array $row,
+        array $normalized,
+        int $targetPipelineId,
+    ): array {
+        // "Target Pipeline" applies to both newly created and updated rows.
+        $update = ['pipeline_id' => $targetPipelineId];
+        $provided = static fn (string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
 
-        foreach (['name', 'email', 'phone', 'location', 'source'] as $field) {
+        foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
             if ($provided($field) && $normalized[$field] !== null) {
                 $update[$field] = $normalized[$field];
+            }
+        }
+
+        if ($provided('profile_urls') || (is_array($row['profile_urls'] ?? null) && ($row['profile_urls'] ?? []) !== [])) {
+            if (! empty($normalized['profile_urls'])) {
+                $update['profile_urls'] = $normalized['profile_urls'];
             }
         }
 
@@ -1487,14 +1905,14 @@ class LeadService
         $writer = null;
 
         try {
-            $writer = new XlsxWriter();
+            $writer = new XlsxWriter;
             $writer->openToFile($tmpFile);
             $writer->setCreator('Factory23 CRM');
 
             $sheet = $writer->getCurrentSheet();
             $sheet->setName('Leads Export');
 
-            $headerStyle = (new Style())->setFontBold();
+            $headerStyle = (new Style)->setFontBold();
             $columnStyles = [];
             foreach (array_keys(self::LEAD_EXPORT_HEADERS) as $index) {
                 $columnStyles[$index] = $headerStyle;
@@ -1557,7 +1975,7 @@ class LeadService
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
         if (! empty($filters['lead_ids'])) {
-            $leadIds = array_map(static fn($id): int => (int) $id, (array) $filters['lead_ids']);
+            $leadIds = array_map(static fn ($id): int => (int) $id, (array) $filters['lead_ids']);
             $query->whereIn('id', $leadIds);
         }
 
@@ -1568,6 +1986,10 @@ class LeadService
                     (string) ($lead->email ?? ''),
                     (string) ($lead->phone ?? ''),
                     (string) ($lead->location ?? ''),
+                    (string) ($lead->company_name ?? ''),
+                    (string) ($lead->website ?? ''),
+                    (string) ($lead->position ?? ''),
+                    implode(', ', is_array($lead->profile_urls) ? $lead->profile_urls : []),
                     (string) ($lead->source ?? ''),
                     (string) ($labelNames[$lead->status] ?? $lead->status ?? ''),
                     (string) ($lead->priority?->value ?? ''),
@@ -1599,6 +2021,10 @@ class LeadService
         $email = trim((string) ($row['email'] ?? ''));
         $phone = trim((string) ($row['phone'] ?? ''));
         $location = trim((string) ($row['location'] ?? ''));
+        $companyName = trim((string) ($row['company_name'] ?? ''));
+        $websiteRaw = trim((string) ($row['website'] ?? ''));
+        $position = trim((string) ($row['position'] ?? ''));
+        $profileUrlsRaw = $row['profile_urls'] ?? null;
         $source = trim((string) ($row['source'] ?? ''));
         $status = trim((string) ($row['status'] ?? 'newly_lead'));
         $priority = strtolower(trim((string) ($row['priority'] ?? 'medium')));
@@ -1613,6 +2039,17 @@ class LeadService
 
         if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Email is invalid.';
+        }
+
+        $website = $websiteRaw !== '' ? LeadFieldNormalizer::normalizeWebsite($websiteRaw) : null;
+        if ($websiteRaw !== '' && ! LeadFieldNormalizer::isValidWebsite($website)) {
+            $errors[] = 'Website is invalid.';
+        }
+
+        $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
+        $invalidProfileUrls = LeadFieldNormalizer::invalidProfileUrls($profileUrls);
+        if ($invalidProfileUrls !== []) {
+            $errors[] = 'Profile URLs contain invalid entries: '.implode(', ', $invalidProfileUrls).'.';
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
@@ -1649,6 +2086,10 @@ class LeadService
                 'email' => $email !== '' ? $email : null,
                 'phone' => $phone !== '' ? $phone : null,
                 'location' => $location !== '' ? $location : null,
+                'company_name' => $companyName !== '' ? $companyName : null,
+                'website' => $website,
+                'position' => $position !== '' ? $position : null,
+                'profile_urls' => $profileUrls !== [] ? $profileUrls : null,
                 'source' => $source !== '' ? $source : null,
                 'status' => $resolvedStatus ?? $status,
                 'priority' => $priority,
@@ -1701,12 +2142,12 @@ class LeadService
                     ->where('company_id', $lead->company_id)
                     ->whereIn('role', ['owner', 'admin', 'supervisor'])
                     ->pluck('user_id')
-                    ->map(static fn(mixed $id): int => (int) $id)
+                    ->map(static fn (mixed $id): int => (int) $id)
                     ->all(),
             )
-            ->filter(static fn(int $id): bool => $id > 0)
+            ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
-            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
+            ->reject(static fn (int $id): bool => $id === (int) $actor->id)
             ->values()
             ->all();
 
@@ -1719,7 +2160,7 @@ class LeadService
                 'message' => $message,
                 'reference_type' => Lead::class,
                 'reference_id' => (int) $lead->id,
-                'action_url' => '/crm/leads/' . $lead->id,
+                'action_url' => '/crm/leads/'.$lead->id,
                 'action_route' => 'crm.leads.show',
                 'priority' => $priority,
                 'created_by_user_id' => (int) $actor->id,
@@ -1728,7 +2169,7 @@ class LeadService
                     'lead_status' => $lead->status,
                     'actor_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => $type . ':' . $lead->id . ':' . $recipientId,
+                'dedupe_key' => $type.':'.$lead->id.':'.$recipientId,
             ]);
         }
     }

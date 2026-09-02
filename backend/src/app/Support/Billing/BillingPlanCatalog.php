@@ -97,6 +97,16 @@ final class BillingPlanCatalog
         return is_string($priceId) && $priceId !== '' ? $priceId : null;
     }
 
+    /**
+     * @param  array<string, mixed>  $plan
+     */
+    private static function hasPriceId(array $plan, string $key): bool
+    {
+        $priceId = $plan[$key] ?? null;
+
+        return is_string($priceId) && $priceId !== '';
+    }
+
     public static function amountCents(string $planKey, BillingInterval $interval): int
     {
         $plan = self::get($planKey);
@@ -142,7 +152,16 @@ final class BillingPlanCatalog
         if ($lockedPlanKey !== null) {
             $plans = array_intersect_key($plans, [$lockedPlanKey => true]);
         } else {
-            $plans = array_filter($plans, static fn(array $plan): bool => (bool) ($plan['is_active'] ?? true));
+            // Only surface active plans that have at least one purchasable price ID.
+            // A locked/assigned plan is always kept so the user still sees it (marked unavailable).
+            $plans = array_filter($plans, static function (array $plan): bool {
+                if (! (bool) ($plan['is_active'] ?? true)) {
+                    return false;
+                }
+
+                return self::hasPriceId($plan, 'monthly_price_id')
+                    || self::hasPriceId($plan, 'annual_price_id');
+            });
         }
 
         return collect($plans)->map(function (array $plan, string $key): array {
@@ -154,6 +173,8 @@ final class BillingPlanCatalog
                 'annual_amount' => (int) $plan['annual_amount'],
                 'monthly_amount_display' => self::formatUsd((int) $plan['monthly_amount']),
                 'annual_amount_display' => self::formatUsd((int) $plan['annual_amount']),
+                'monthly_available' => self::hasPriceId($plan, 'monthly_price_id'),
+                'annual_available' => self::hasPriceId($plan, 'annual_price_id'),
             ];
         })->values();
     }

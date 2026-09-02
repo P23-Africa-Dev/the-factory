@@ -11,27 +11,10 @@ import {
   setActiveThreadId,
 } from './storage';
 import type { AssistantMessage } from './types';
-
-const PROCESSING_LABELS = [
-  'Thinking...',
-  'Analyzing...',
-  'Sorting results...',
-  'Preparing response...',
-];
-
-function processingLabelsForMessage(text: string): string[] {
-  const normalized = text.toLowerCase();
-  if (/\b(perform|performance|team|kpi|rank)\b/.test(normalized)) {
-    return ['Thinking...', 'Analyzing team KPIs...', 'Ranking performers...'];
-  }
-  if (/\bplan\s+my\s+day\b/.test(normalized)) {
-    return ['Thinking...', 'Reviewing your schedule...', 'Prioritizing actions...'];
-  }
-  if (/\b(crm|lead|follow[\s-]?up)\b/.test(normalized)) {
-    return ['Thinking...', 'Scanning CRM records...', 'Sorting leads...'];
-  }
-  return PROCESSING_LABELS;
-}
+import {
+  labelsForMessage,
+  PROCESSING_LABEL_INTERVAL_MS,
+} from '@/lib/ely-processing-labels';
 
 let messageSeq = 0;
 function nextId(suffix: string): string {
@@ -122,7 +105,18 @@ export function useAssistantConversation() {
   }, [isAuthenticated]);
 
   const send = useCallback(
-    async (text: string, options?: { withGeolocation?: boolean }) => {
+    async (
+      text: string,
+      options?: {
+        withGeolocation?: boolean;
+        context?: {
+          latitude?: number;
+          longitude?: number;
+          focus?: 'all' | 'visits' | 'followups' | 'tasks';
+          limit?: number;
+        };
+      },
+    ) => {
       const content = text.trim();
       if (!content || isSending) return;
 
@@ -134,18 +128,21 @@ export function useAssistantConversation() {
       setMessages((prev) => [...prev, userMsg]);
       setIsSending(true);
 
-      const labels = processingLabelsForMessage(content);
+      const labels = labelsForMessage(content);
       let labelIndex = 0;
       setProcessingLabel(labels[0] ?? 'Thinking...');
       const labelTimer = window.setInterval(() => {
         labelIndex = (labelIndex + 1) % labels.length;
         setProcessingLabel(labels[labelIndex] ?? 'Thinking...');
-      }, 900);
+      }, PROCESSING_LABEL_INTERVAL_MS);
 
       try {
-        const context = options?.withGeolocation
+        const geoContext = options?.withGeolocation
           ? await resolveAssistantGeolocationContext()
           : undefined;
+        const context = geoContext
+          ? { ...geoContext, ...options?.context }
+          : options?.context;
         const result = await assistantApi.sendMessage({
           message: content,
           threadId,
@@ -157,6 +154,7 @@ export function useAssistantConversation() {
           content: result.content || 'I could not generate a response. Please try rephrasing.',
           sources: result.sources,
           tool: result.tool,
+          payload: result.payload,
         };
         setMessages((prev) => [...prev, aiMsg]);
         if (result.thread_id) {
@@ -183,6 +181,13 @@ export function useAssistantConversation() {
     },
     [threadId, isSending, userId],
   );
+
+  const runPlanMyDay = useCallback(() => {
+    return send('Plan my day', {
+      withGeolocation: true,
+      context: { focus: 'all', limit: 15 },
+    });
+  }, [send]);
 
   const clearCurrent = useCallback(async () => {
     const current = threadId;
@@ -216,6 +221,7 @@ export function useAssistantConversation() {
     isSending,
     processingLabel,
     send,
+    runPlanMyDay,
     clearCurrent,
     clearAll,
   };

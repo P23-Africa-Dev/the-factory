@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: config
 data:
   # ── Application ─────────────────────────────────────────────────────────────
-  APP_NAME: "Factory API"
+  APP_NAME: "Factory23"
   APP_ENV: "production"
   APP_DEBUG: "false"
   APP_URL: "https://api.thefactory23.com"
@@ -39,7 +39,6 @@ data:
   SESSION_SECURE_COOKIE: "true"
   SESSION_CONNECTION: "default"
   BROADCAST_CONNECTION: "log"
-  FILESYSTEM_DISK: "local"
 
   # ── Redis (non-sensitive) ─────────────────────────────────────────────────────
   REDIS_CLIENT: "predis"
@@ -48,7 +47,9 @@ data:
 
   # ── Frontend / CORS ───────────────────────────────────────────────────────────
   FRONTEND_URL: "https://thefactory23.com"
-  SANCTUM_STATEFUL_DOMAINS: "thefactory23.com,api.thefactory23.com"
+  AGENT_PWA_URL: "https://app.thefactory23.com"
+  CORS_ALLOWED_ORIGINS: "https://thefactory23.com,https://www.thefactory23.com,https://app.thefactory23.com,https://the-factory-frontend-git-space-p23-africa.vercel.app,https://the-factory-frontend-git-dev-work-p23-africa.vercel.app,http://localhost:3000,http://localhost:3001"
+  SANCTUM_STATEFUL_DOMAINS: "thefactory23.com,www.thefactory23.com,app.thefactory23.com,api.thefactory23.com"
   BILLING_ENFORCE: "false"
   ENTERPRISE_ONBOARDING_SETUP_PATH: "/enterprise/setup"
   ENTERPRISE_ONBOARDING_SETUP_URL: ""
@@ -61,22 +62,49 @@ data:
   AWS_DEFAULT_REGION: "lon1"
   AWS_BUCKET: "factory23-storage"
   AWS_ENDPOINT: "https://lon1.digitaloceanspaces.com"
-  AWS_URL: "https://factory23-storage.lon1.cdn.digitaloceanspaces.com"
+  AWS_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
   AWS_USE_PATH_STYLE_ENDPOINT: "false"
+  AVATAR_FILESYSTEM_DISK: "avatars"
+  # Browser-facing avatar links — must match direct origin (not .cdn.) unless CDN is enabled.
+  AVATAR_PUBLIC_BASE_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
+  DRIVE_FILESYSTEM_DISK: "drive"
+  DRIVE_DEFAULT_QUOTA_GB: "5"
+  INTERNAL_AVATAR_STORAGE_ROOT: "avatar"
+  INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
 
   # ── AI Providers (non-sensitive config) ───────────────────────────────────────
+  AI_STACK: "openai_claude"
+  AI_INTENT_ROUTING_MODE: "rules_first"
   AI_PROVIDER: "openai"
   AI_FALLBACK_PROVIDER: "claude"
-  AI_DEFAULT_MODEL: "gpt-4.1-mini"
-  AI_EXEC_MODEL: "gpt-4.1-mini"
-  AI_ANALYST_MODEL: "claude-3-5-sonnet-latest"
+  AI_DEFAULT_MODEL: "auto"
+  AI_EXEC_MODEL: "auto"
+  AI_ANALYST_MODEL: "auto"
   AI_REQUEST_TIMEOUT_MS: "30000"
   OPENAI_BASE_URL: "https://api.openai.com/v1"
-  OPENAI_MODEL: "gpt-4.1-mini"
+  OPENAI_MODEL: "auto"
   OPENAI_AUDIO_MODEL: "gpt-4o-mini-transcribe"
   ANTHROPIC_BASE_URL: "https://api.anthropic.com/v1"
   ANTHROPIC_VERSION: "2023-06-01"
-  CLAUDE_MODEL: "claude-3-5-sonnet-latest"
+  CLAUDE_MODEL: "auto"
+  NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
+  NVIDIA_ROUTING_MODEL: "meta/llama-3.1-8b-instruct"
+  NVIDIA_REQUEST_TIMEOUT_MS: "120000"
+  NVIDIA_ROUTING_TIMEOUT_MS: "15000"
+  NVIDIA_OPERATIONAL_TIMEOUT_MS: "60000"
+  NVIDIA_OPERATIONAL_MAX_TOKENS: "1000"
+  NVIDIA_ENABLE_THINKING: "false"
+  NVIDIA_EXEC_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+  NVIDIA_ANALYST_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+
+  GLM_BASE_URL: "https://open.bigmodel.cn/api/paas/v4"
+  GLM_ROUTING_MODEL: "glm-4-flash"
+  GLM_EXEC_MODEL: "glm-4-air"
+  GLM_ANALYST_MODEL: "glm-4-plus"
+  GLM_REQUEST_TIMEOUT_MS: "120000"
+  GLM_ROUTING_TIMEOUT_MS: "15000"
+  GLM_OPERATIONAL_TIMEOUT_MS: "60000"
+  GLM_OPERATIONAL_MAX_TOKENS: "1000"
 
   # ── Task Tracking ─────────────────────────────────────────────────────────────
   TASK_TRACKING_ARRIVAL_RADIUS_METERS: "75"
@@ -93,10 +121,29 @@ data:
   TASK_TRACKING_PRUNE_CHUNK_SIZE: "1000"
   MAP_PROVIDER_DEFAULT: "mapbox"
 
+  # ── Google Calendar OAuth (meetings only) ───────────────────────────────────
+  # Client ID + secret live in factory23-secret. Redirect URI must match Google Cloud Console.
+  GOOGLE_CALENDAR_REDIRECT_URI: "https://api.thefactory23.com/api/v1/calendar/integration/callback"
+  GOOGLE_CALENDAR_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/calendar.events"
+
+  # ── Email Accounts OAuth (mailbox connect) ──────────────────────────────────
+  # Google Mail has a dedicated callback so consent never merges Calendar scopes.
+  GOOGLE_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/google/callback"
+  GOOGLE_MAIL_SCOPES: "openid,email,profile,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.modify"
+  MICROSOFT_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/microsoft/callback"
+  MICROSOFT_MAIL_TENANT: "common"
+  MICROSOFT_MAIL_SCOPES: "openid,email,profile,offline_access,https://graph.microsoft.com/Mail.ReadWrite,https://graph.microsoft.com/Mail.Send,https://graph.microsoft.com/User.Read"
+  ZOHO_MAIL_REDIRECT_URI: "https://api.thefactory23.com/api/v1/email-accounts/oauth/zoho/callback"
+  ZOHO_MAIL_DATACENTER: "com"
+  ZOHO_MAIL_SCOPES: "ZohoMail.messages.ALL,ZohoMail.accounts.READ"
+  # Custom IMAP/SMTP enabled: DigitalOcean outbound SMTP (465/587/25) is open on this cluster
+  # (verified 2026-08-14 from the backend pod). Set to "false" again if DO reinstates the block.
+  EMAIL_IMAP_SMTP_ENABLED: "true"
+
   # ── Mail (non-sensitive) ──────────────────────────────────────────────────────
   MAIL_MAILER: "resend"
   MAIL_FROM_ADDRESS: "noreply@thefactory23.com"
-  MAIL_FROM_NAME: "Factory API"
+  MAIL_FROM_NAME: "Factory23"
 
   # ── Realtime WebSocket Server ─────────────────────────────────────────────────
   TRACKING_WS_HOST: "0.0.0.0"
@@ -110,3 +157,31 @@ data:
   TRACKING_WS_AUTH_TIMEOUT_MS: "10000"
   TRACKING_WS_MAX_MESSAGE_BYTES: "32768"
   TRACKING_WS_LOG_LEVEL: "info"
+
+  # ── Push notifications (non-secret) ───────────────────────────────────────────
+  VAPID_SUBJECT: "mailto:info@thefactory23.com"
+  NOTIFICATIONS_PUSH_PROVIDER: "log"
+  NOTIFICATIONS_PUSH_MAX_FAILED_ATTEMPTS: "5"
+
+  # ── API rate limits (per minute unless noted) ─────────────────────────────────
+  RATE_LIMIT_API_PER_MINUTE: "300"
+  RATE_LIMIT_API_HEAVY_PER_MINUTE: "600"
+  RATE_LIMIT_LOGIN_EMAIL_IP: "60"
+  RATE_LIMIT_LOGIN_IP: "500"
+  RATE_LIMIT_AUTH_SENSITIVE: "30"
+  RATE_LIMIT_AUTH_REGISTER: "15"
+  RATE_LIMIT_AUTH_RESEND_OTP: "5"
+  RATE_LIMIT_AUTH_FORGOT_PASSWORD: "15"
+
+  INTERNAL_ONBOARDING_FRONTEND_URL: "https://thefactory23.com/onboarding/internal"
+
+  NEXT_PUBLIC_ENABLE_OVERPASS_POI_FALLBACK: "true"
+
+  PLACES_SHOW_PROVIDER_ATTRIBUTION: "true"
+  PLACES_FOURSQUARE_PREMIUM_FIELDS: "false"
+  PLACES_MAX_RESULTS_AUTOCOMPLETE: "12"
+  PLACES_MAX_RESULTS_SEARCH: "15"
+
+  # ── Sales Engine (Continue-with-Factory23) ───────────────────────────────────
+  # JWT secret lives in factory23-secret as SALES_ENGINE_JWT_SECRET (must match SE FACTORY23_JWT_SECRET).
+  SALES_ENGINE_API_URL: "https://api.salesengine.thefactory23.com"

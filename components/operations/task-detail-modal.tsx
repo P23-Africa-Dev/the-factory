@@ -5,6 +5,7 @@ import mapboxgl from 'mapbox-gl';
 import { useRouter } from 'next/navigation';
 import { X, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
+import { DEFAULT_AVATAR } from '@/lib/avatar';
 import {
   useTaskDetail,
   useAssignTask,
@@ -26,6 +27,7 @@ import {
 import { toast } from 'sonner';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
+import { TaskProofGallery } from '@/components/operations/task-proof-gallery';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
@@ -33,6 +35,8 @@ import type { GeoReading } from '@/types/tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
+import { buildTaskMapUrl } from '@/lib/tasks/map-navigation';
+import { useTrackingStore } from '@/store/tracking';
 
 type TaskGoogleMaps = {
   maps: {
@@ -214,7 +218,7 @@ function TaskLocationMap({
         'display:flex;align-items:center;gap:8px;padding:4px 8px;background:rgba(15,23,42,0.86);color:white;border-radius:999px;box-shadow:0 4px 12px rgba(2,6,23,0.35);font-size:11px;font-weight:700;';
 
       const avatar = document.createElement('img');
-      avatar.src = agentAvatar || '/avatars/female-avatar.png';
+      avatar.src = agentAvatar || DEFAULT_AVATAR;
       avatar.alt = agentName;
       avatar.style.cssText =
         'width:22px;height:22px;border-radius:999px;border:2px solid rgba(255,255,255,0.9);object-fit:cover;';
@@ -340,6 +344,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const locationText = formatTaskLocationLabel(
     detailQuery.data?.location || task.location,
     detailQuery.data?.address,
+    "No location set",
+    detailQuery.data?.created_at || task.createdAt,
   );
   const dueDateText = detailQuery.data?.due_date
     ? new Date(detailQuery.data.due_date).toLocaleString()
@@ -392,9 +398,32 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         },
         token
       );
+      // Seed the tracking store from the fresh start response so the map shows
+      // the task's current destination (reflects any location edits made by
+      // admins/supervisors), instead of relying on possibly-stale cached data.
+      useTrackingStore.getState().seedFromTaskStart({
+        taskId,
+        trackingSessionId: res.data.tracking.id,
+        userId: assignee?.id ?? currentUserId,
+        agentName: assigneeName,
+        agentAvatarUrl: assigneeAvatar ?? undefined,
+        taskTitle: res.data.task.title,
+        taskAddress: res.data.task.address ?? res.data.task.location ?? undefined,
+        destination:
+          typeof res.data.task.latitude === 'number' &&
+          typeof res.data.task.longitude === 'number'
+            ? {
+              lat: res.data.task.latitude,
+              lng: res.data.task.longitude,
+              radiusM: res.data.tracking.destination?.radius_meters ?? 75,
+            }
+            : undefined,
+        position: [reading.longitude, reading.latitude],
+        occurredAt: reading.recordedAt,
+      });
       startTracking(taskId, companyId as number, token, {
         onArrived: () => toast.success("You've arrived at the destination!"),
-        onError: () => { },
+        // onError/onStopped fall back to the provider's visible toasts.
       });
       if (res.data.arrived) {
         toast.success("Task started — you're already at the destination!");
@@ -577,13 +606,32 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
               </section>
 
               <section>
-                <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Location</h3>
-                <p className="text-[14px] text-gray-500 underline decoration-gray-300 underline-offset-4 leading-relaxed mb-3">
-                  {locationText}
+                <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">
+                  {locationText.startsWith("Created:") || locationText === "No location set" ? "Created" : "Location"}
+                </h3>
+                <p className={`text-[14px] leading-relaxed mb-3 ${
+                  locationText.startsWith("Created:") || locationText === "No location set"
+                    ? "text-gray-400 no-underline"
+                    : "text-gray-500 underline decoration-gray-300 underline-offset-4"
+                }`}>
+                  {locationText.replace(/^Created:\s*/i, "")}
                 </p>
                 {hasTrackableLocation ? (
                   <button
-                    onClick={() => router.push(fullMapPath)}
+                    onClick={() =>
+                      router.push(
+                        buildTaskMapUrl(
+                          {
+                            id: taskId,
+                            latitude,
+                            longitude,
+                            location: locationText,
+                            address: detailQuery.data?.address ?? task.address,
+                          },
+                          role,
+                        ) ?? fullMapPath,
+                      )
+                    }
                     className="px-4 py-1.5 bg-dash-teal/15 text-[#3A8C88] rounded-full text-[12px] font-semibold hover:bg-dash-teal/25 transition-colors"
                   >
                     View on Full Map
@@ -726,25 +774,16 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   </div>
                 </div>
               )}
-              {detailQuery.data?.proofs?.length ? (
-                <div className="mt-4 space-y-2">
-                  <h4 className="text-[13px] font-bold text-dash-dark">Proofs</h4>
-                  {detailQuery.data.proofs.map((proof) => (
-                    <div
-                      key={proof.id}
-                      className="flex items-center justify-between text-[11px] text-gray-500 border border-gray-100 rounded-lg px-3 py-2"
-                    >
-                      <span>Proof #{proof.id}</span>
-                      {canDownloadProofs && proof.file_url ? (
-                        <a href={proof.file_url} className="text-dash-teal font-semibold">
-                          Download
-                        </a>
-                      ) : (
-                        <span className="text-gray-400">Restricted</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+              {detailQuery.data?.proofs?.length && taskId && companyId ? (
+                <TaskProofGallery
+                  taskId={taskId}
+                  companyId={companyId}
+                  proofs={detailQuery.data.proofs}
+                  canDownload={canDownloadProofs}
+                  onProofReplaced={() => {
+                    void detailQuery.refetch();
+                  }}
+                />
               ) : null}
               <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
                 <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>

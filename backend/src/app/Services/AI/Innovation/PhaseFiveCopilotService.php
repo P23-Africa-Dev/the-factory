@@ -35,23 +35,40 @@ class PhaseFiveCopilotService
     {
         $context = $this->companyContextService->resolve($user, $companyId);
 
+        $resolvedCompanyId = (int) $context['company']->id;
+        $transcriptResult = $this->aiProviderRouter->transcribeAudio(
+            audio: $audio,
+            prompt: 'Transcribe operations meeting audio with clear punctuation and short sentences.',
+            options: [
+                'company_id' => $resolvedCompanyId,
+                'purpose' => 'operational',
+                '_log' => [
+                    'company_id' => $resolvedCompanyId,
+                    'user_id' => (int) $user->id,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'phase5.voice_transcribe',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => 'Voice transcription request',
+                ],
+            ],
+        );
+
         return [
-            'company_id' => (int) $context['company']->id,
+            'company_id' => $resolvedCompanyId,
             'role' => (string) $context['role'],
             'pipeline' => 'voice.input.v1',
             'file_name' => (string) $audio->getClientOriginalName(),
             'mime_type' => (string) ($audio->getMimeType() ?? 'application/octet-stream'),
             'size_bytes' => (int) $audio->getSize(),
-            'transcript' => $this->aiProviderRouter->transcribeAudio(
-                audio: $audio,
-                prompt: 'Transcribe operations meeting audio with clear punctuation and short sentences.',
-            ) ?? 'Voice transcription pipeline is active. Provider transcription integration can now be attached to this endpoint.',
+            'transcript' => $transcriptResult?->text
+                ?? 'Voice transcription pipeline is active. Provider transcription integration can now be attached to this endpoint.',
         ];
     }
 
     public function analyzeFile(User $user, UploadedFile $file, ?int $companyId = null): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
         $extension = strtolower((string) $file->getClientOriginalExtension());
 
         $isSpreadsheet = in_array($extension, ['xlsx', 'xls', 'csv'], true);
@@ -75,15 +92,26 @@ PROMPT;
 
         if (is_string($extractedText) && trim($extractedText) !== '') {
             $analysisMethod = 'local_extract';
-            $aiSummary = $this->aiProviderRouter->generateForPurpose(
+            $userPrompt = "File name: {$file->getClientOriginalName()}\n\nExcerpt:\n" . Str::limit($extractedText, 12000);
+            $summaryResult = $this->aiProviderRouter->generateForPurpose(
                 purpose: 'operational',
                 systemPrompt: $systemPrompt,
-                userPrompt: "File name: {$file->getClientOriginalName()}\n\nExcerpt:\n" . Str::limit($extractedText, 12000),
+                userPrompt: $userPrompt,
                 options: [
                     'max_tokens' => 900,
                     'temperature' => 0.2,
+                    'company_id' => $resolvedCompanyId,
+                    '_log' => [
+                        'company_id' => $resolvedCompanyId,
+                        'user_id' => (int) $user->id,
+                        'intent_type' => 'inference',
+                        'tool_name' => 'phase5.file_analyze',
+                        'routing_purpose' => 'operational',
+                        'user_prompt' => mb_substr($userPrompt, 0, 10000),
+                    ],
                 ],
             );
+            $aiSummary = $summaryResult?->text;
         } elseif ($isPdf) {
             $analysisMethod = 'openai_pdf';
             $aiSummary = $this->aiProviderRouter->analyzeDocumentFile(
@@ -175,12 +203,21 @@ PROMPT;
             ];
         }
 
-        $providerSummary = $this->aiProviderRouter->generateForPurpose(
+        $providerSummaryResult = $this->aiProviderRouter->generateForPurpose(
             purpose: 'report',
             systemPrompt: ElySystemPrompt::meetingTranscriptSummary(),
             userPrompt: $transcript,
             options: [
                 'max_tokens' => 220,
+                'company_id' => $resolvedCompanyId,
+                '_log' => [
+                    'company_id' => $resolvedCompanyId,
+                    'user_id' => (int) $user->id,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'phase5.meeting_summary',
+                    'routing_purpose' => 'report',
+                    'user_prompt' => mb_substr($transcript, 0, 10000),
+                ],
             ],
         );
 
@@ -192,7 +229,7 @@ PROMPT;
                 'key_points' => $keyPoints,
                 'action_items' => $actionItems,
                 'recommended_follow_up' => 'Convert action items into tasks and schedule follow-up meeting reminders.',
-                'provider_summary' => $providerSummary,
+                'provider_summary' => $providerSummaryResult?->text,
             ],
         ];
     }
@@ -321,6 +358,8 @@ PROMPT;
             horizonDays: $horizonDays,
             snapshot: $snapshot,
             structuredRecommendations: $structuredRecommendations,
+            companyId: $resolvedCompanyId,
+            userId: (int) $user->id,
         );
 
         return [
@@ -473,6 +512,8 @@ PROMPT;
         int $horizonDays,
         array $snapshot,
         array $structuredRecommendations,
+        int $companyId,
+        int $userId,
     ): ?string {
         $routing = $this->aiProviderRouter->routingMetadata('report');
         $systemPrompt = <<<'PROMPT'
@@ -489,7 +530,7 @@ PROMPT;
             'recommendations' => $structuredRecommendations,
         ], JSON_UNESCAPED_SLASHES);
 
-        $text = $this->aiProviderRouter->generateForPurpose(
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'report',
             systemPrompt: $systemPrompt,
             userPrompt: is_string($userPrompt) ? $userPrompt : '{}',
@@ -497,11 +538,20 @@ PROMPT;
                 'max_tokens' => 700,
                 'temperature' => 0.2,
                 'model' => $routing['model'] ?? null,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'intent_type' => 'report',
+                    'tool_name' => 'phase5.forecast',
+                    'routing_purpose' => 'report',
+                    'user_prompt' => is_string($userPrompt) ? mb_substr($userPrompt, 0, 10000) : '{}',
+                ],
             ],
         );
 
-        return is_string($text) && trim($text) !== ''
-            ? AiPlainTextFormatter::normalize(trim($text))
+        return is_string($result?->text) && trim($result->text) !== ''
+            ? AiPlainTextFormatter::normalize(trim($result->text))
             : null;
     }
 

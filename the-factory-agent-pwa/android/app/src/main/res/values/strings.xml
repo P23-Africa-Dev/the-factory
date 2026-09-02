@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Factory 23 Agent</string>
+    <string name="title_activity_main">Factory 23 Agent</string>
+    <string name="package_name">com.thefactory23.agent</string>
+    <string name="custom_url_scheme">com.thefactory23.agent</string>
+
+    <!-- Background geolocation foreground notification channel -->
+    <string name="capacitor_background_geolocation_notification_channel_name">
+        Factory 23 tracking
+    </string>
+    <!-- Must be a monochrome notification/status icon — launcher mipmaps make the FGS notif flaky. -->
+    <string name="capacitor_background_geolocation_notification_icon">
+        drawable/ic_stat_live_tracking
+    </string>
+    <string name="capacitor_background_geolocation_notification_color">
+        #75ADAF
+    </string>
+</resources>

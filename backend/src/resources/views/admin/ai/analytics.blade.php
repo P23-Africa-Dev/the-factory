@@ -223,9 +223,12 @@
         <div class="col-lg-4">
             <div class="metric-card p-4 h-100">
                 <h6 class="fw-bold mb-3" style="font-size:.88rem">Model Usage</h6>
-                @forelse($modelUsage as $model)
+                @forelse($modelUsageDetailed as $model)
                     <div class="d-flex justify-content-between py-2" style="border-bottom:1px solid var(--border-light);font-size:.82rem">
-                        <span style="font-family:monospace;font-size:.75rem">{{ $model['model'] }}</span>
+                        <div>
+                            <div style="font-family:monospace;font-size:.72rem">{{ $model['label'] }}</div>
+                            <div style="font-size:.7rem;color:var(--text-muted)">{{ number_format($model['requests']) }} req · {{ number_format($model['tokens']) }} tok</div>
+                        </div>
                         <strong>{{ $model['percentage'] }}%</strong>
                     </div>
                 @empty

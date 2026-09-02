@@ -4,11 +4,13 @@ import React from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { DndItem } from "@/types/operations";
-import { User, CalendarDays } from "lucide-react";
+import { User, CalendarDays, Pencil, Trash2 } from "lucide-react";
 
 interface KpiCardProps {
   item: DndItem;
   onClick?: (item: DndItem) => void;
+  onEdit?: (item: DndItem) => void;
+  onDelete?: (item: DndItem) => void;
 }
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -59,7 +61,7 @@ function PriorityBadge({ priority }: { priority?: string }) {
   );
 }
 
-export function KpiCard({ item, onClick }: KpiCardProps) {
+export function KpiCard({ item, onClick, onEdit, onDelete }: KpiCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
 
@@ -76,7 +78,7 @@ export function KpiCard({ item, onClick }: KpiCardProps) {
       {...listeners}
       onClick={() => onClick?.(item)}
       className={`
-        bg-white rounded-[24px] p-5 border border-gray-100
+        group relative bg-white rounded-[24px] p-5 border border-gray-100
         shadow-[0px_2px_12px_rgba(0,0,0,0.05)]
         flex flex-col gap-3.5
         cursor-pointer select-none mb-3 transition-all duration-200
@@ -86,6 +88,39 @@ export function KpiCard({ item, onClick }: KpiCardProps) {
         }
       `}
     >
+      {(onEdit || onDelete) && (
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onEdit ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(item);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="h-7 w-7 rounded-full bg-white border border-gray-200 text-[#094B5C] hover:bg-gray-50 flex items-center justify-center"
+              aria-label="Edit KPI"
+            >
+              <Pencil size={13} />
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(item);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="h-7 w-7 rounded-full bg-white border border-gray-200 text-red-500 hover:bg-red-50 flex items-center justify-center"
+              aria-label="Delete KPI"
+            >
+              <Trash2 size={13} />
+            </button>
+          ) : null}
+        </div>
+      )}
+
       {/* Top row — category + priority */}
       <div className="flex items-center justify-between gap-2">
         <CategoryBadge category={item.category} />

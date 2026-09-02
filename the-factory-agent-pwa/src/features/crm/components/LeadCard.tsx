@@ -3,6 +3,7 @@
 import React from 'react';
 import { formatDistanceToNowStrict, parseISO } from 'date-fns';
 import type { Lead, CrmLabel } from '@/features/crm';
+import { resolveAvatarSrc } from '@/lib/avatar';
 
 function toRelativeTime(value?: string | null): string {
   if (!value) return 'Just now';
@@ -99,11 +100,11 @@ export function LeadCard({ lead, labels, onOpenDetails }: LeadCardProps): React.
 
         {/* Assignee Footer Row */}
         <div className="flex items-center gap-1.5">
-          {/* Avatar stack */}
-          <div className="flex items-center h-5">
-            <div className="w-5 h-5 rounded-full border-[1.5px] border-[#0B3343] bg-[#FD6046] z-10" />
-            <div className="w-5 h-5 rounded-full border-[1.5px] border-[#0B3343] bg-[#44AFCD] -ml-2 z-0" />
-          </div>
+          <img
+            src={resolveAvatarSrc(lead.assignee?.avatar_url)}
+            alt={assigneeName}
+            className="w-5 h-5 rounded-full border-[1px] border-white/20 object-cover"
+          />
           <span className="text-[10px] text-white/60 truncate flex-1">
             {assigneeName === 'You' ? `You and ${relativeTime}` : assigneeName}
           </span>

@@ -6,10 +6,15 @@ import {
   ElyMeetingActionFields,
   type ElyMeetingDraft,
 } from "@/components/dashboard/ely-meeting-action-fields";
+import {
+  buildTaskActionArgs,
+  ElyTaskActionFields,
+  type ElyTaskDraft,
+} from "@/components/dashboard/ely-task-action-fields";
 import { formatAiMessageHtml, formatPlainAiMessage } from "@/lib/format-ai-message";
 import { ELY_INPUT_PLACEHOLDER, ELY_LANDING_HEADLINE, ELY_LANDING_SUBTEXT, ELY_NAME } from "@/lib/ely-brand";
 import type { CopilotChatContext, CopilotThreadSearchResult, ForecastHorizonDays, ForecastOverviewResponse } from "@/lib/api/copilot";
-import { searchCopilotThreads } from "@/lib/api/copilot";
+import { enhanceCopilotEmailDraft, regenerateCopilotEmailDraft, searchCopilotThreads } from "@/lib/api/copilot";
 import {
   buildForecastChatMessage,
   buildForecastSnapshotRows,
@@ -22,10 +27,18 @@ import {
 import { resolveCopilotGeolocationContext } from "@/lib/copilot-geolocation";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels } from "@/hooks/use-crm";
+import { useCompanyZones } from "@/hooks/use-internal-users";
+import { CreateZoneModal } from "@/components/zones/create-zone-modal";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
+import { listLeads } from "@/lib/api/crm";
+import {
+  authorizeEmailAccountOAuth,
+  listEmailAccounts,
+} from "@/lib/api/email-accounts";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ChevronLeft,
   Copy,
@@ -42,6 +55,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type MessageAction = "liked" | "disliked" | null;
 
@@ -54,7 +68,15 @@ interface Message {
   payload?: unknown;
 }
 
-const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis)\.[a-z_]+$/;
+const ACTION_TOOL_PATTERN = /^(?:tasks|meetings|projects|notifications|crm|kpis|org)\.[a-z_]+$/;
+
+const ARRAY_ACTION_DRAFT_SKIP_KEYS = new Set([
+  "user_ids",
+  "roles",
+  "delivery_types",
+  "recipient_names",
+  "__inference",
+]);
 
 const USER_ASSIGNMENT_FIELD_PATTERN = /(^|_)(user_id|assigned_to_user_id|assigned_agent_id|to_user_id|project_manager_user_id)$/;
 
@@ -91,7 +113,19 @@ interface MeetingAttendeeOptionsState {
   items: MeetingAttendeeCandidate[];
 }
 
-type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number";
+interface LeadOption {
+  id: number;
+  name: string;
+  email: string | null;
+}
+
+interface LeadOptionsState {
+  loading: boolean;
+  loaded: boolean;
+  items: LeadOption[];
+}
+
+type EditControlType = "text" | "textarea" | "select" | "date" | "datetime-local" | "number" | "multi-select";
 
 interface EditFieldOption {
   value: string;
@@ -176,25 +210,107 @@ const NOTIFICATION_CATEGORY_OPTIONS: EditFieldOption[] = [
   { value: "system", label: "System" },
 ];
 
-function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
-  if (!rawAvatar) return null;
-  const trimmed = rawAvatar.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("/")) return trimmed;
-  if (trimmed.startsWith("avatar/") || trimmed.startsWith("storage/")) {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1";
-    const apiOrigin = apiBase.replace(/\/api\/v1\/?$/, "");
-    return trimmed.startsWith("storage/") ? `${apiOrigin}/${trimmed}` : `${apiOrigin}/storage/${trimmed}`;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.toString();
-  } catch { }
-  return null;
-}
+const ORG_USER_ROLE_OPTIONS: EditFieldOption[] = [
+  { value: "admin", label: "Admin" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "agent", label: "Agent" },
+];
+
+const ORG_USER_SALARY_TYPE_OPTIONS: EditFieldOption[] = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
+const ORG_USER_WEEKDAY_OPTIONS: EditFieldOption[] = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" },
+];
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseUserIdsValue(value: unknown): number[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => Number(item))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return [value];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return [];
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        return parseUserIdsValue(JSON.parse(trimmed));
+      } catch {
+        return [];
+      }
+    }
+
+    return trimmed
+      .split(/\s*,\s*/)
+      .map((part) => Number(part))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+
+  return [];
+}
+
+function parseDeliveryTypesValue(value: unknown): string[] {
+  const fallback = ["in_app", "push", "email"];
+
+  if (Array.isArray(value)) {
+    const types = value.map((item) => String(item).trim().toLowerCase()).filter((item) => item !== "");
+    return types.length > 0 ? types : fallback;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return fallback;
+    }
+
+    if (trimmed.startsWith("[")) {
+      try {
+        return parseDeliveryTypesValue(JSON.parse(trimmed));
+      } catch {
+        return fallback;
+      }
+    }
+
+    const types = trimmed
+      .split(/\s*,\s*/)
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part !== "");
+    return types.length > 0 ? types : fallback;
+  }
+
+  return fallback;
+}
+
+function formatDeliveryTypesLabel(value: unknown): string {
+  const labels: Record<string, string> = {
+    in_app: "In-app",
+    push: "Push",
+    email: "Email",
+  };
+
+  const types = Array.isArray(value) ? value.map((item) => String(item)) : parseDeliveryTypesValue(value);
+  return types.map((type) => labels[type] ?? type).join(", ") || "In-app, Push, Email";
 }
 
 function highlightPlainText(content: string, query: string): string {
@@ -229,10 +345,11 @@ function formatSearchDate(value: string): string {
 export function AIChat({ open, onClose }: AIChatProps) {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name?.split(" ")[0] ?? "User";
-  const avatarSrc = getSafeAvatarSrc(user?.avatar) ?? "/avatars/male-avatar.png";
+  const avatarSrc = resolveAvatarSrc(user?.avatar);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
   const { data: crmLabels = [] } = useCrmLabels(companyId ?? undefined);
+  const { data: companyZones = [] } = useCompanyZones(companyId ?? undefined);
   const leadStatusOptions: EditFieldOption[] = crmLabels.length > 0
     ? crmLabels.map((label) => ({ value: label.slug, label: label.name }))
     : LEAD_STATUS_OPTIONS;
@@ -265,11 +382,16 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [searchResults, setSearchResults] = useState<CopilotThreadSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [showCreateZoneModal, setShowCreateZoneModal] = useState(false);
   const [highlightQuery, setHighlightQuery] = useState("");
   const [actionDrafts, setActionDrafts] = useState<ActionDraftMap>({});
   const [meetingActionDrafts, setMeetingActionDrafts] = useState<Record<string, ElyMeetingDraft>>({});
+  const [taskActionDrafts, setTaskActionDrafts] = useState<Record<string, ElyTaskDraft>>({});
+  const [emailComposeVersions, setEmailComposeVersions] = useState<Record<string, { previous: { subject: string; body_text: string }; pending: boolean }>>({});
   const [assigneeOptions, setAssigneeOptions] = useState<Record<string, AssigneeOptionsState>>({});
+  const [leadOptions, setLeadOptions] = useState<Record<string, LeadOptionsState>>({});
   const [meetingAttendeeOptions, setMeetingAttendeeOptions] = useState<Record<string, MeetingAttendeeOptionsState>>({});
+  const pendingEmailConfirmRef = useRef<{ index: number; msg: Message } | null>(null);
   const closeSearchPanel = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery("");
@@ -376,6 +498,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     setTimeout(() => setAssigneeOptions({}), 0);
     setTimeout(() => setMeetingAttendeeOptions({}), 0);
     setTimeout(() => setMeetingActionDrafts({}), 0);
+    setTimeout(() => setTaskActionDrafts({}), 0);
   }, [companyId]);
 
   useEffect(() => {
@@ -441,7 +564,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const argKeys = rawArgs ? Object.keys(rawArgs) : [];
       const hasUserAssignmentField = argKeys.some((key) => USER_ASSIGNMENT_FIELD_PATTERN.test(key));
 
-      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) && !hasUserAssignmentField) {
+      if (!["tasks.create", "tasks.reassign", "projects.create", "meetings.schedule", "crm.create_lead", "crm.send_email", "crm.log_visit", "kpis.create", "notifications.send", "org.users.create"].includes(tool) && !hasUserAssignmentField) {
         continue;
       }
 
@@ -450,7 +573,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
         continue;
       }
 
-      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "crm.send_email", "kpis.create"].includes(tool) || hasUserAssignmentField) {
+      if (tool === "crm.send_email" || tool === "crm.log_visit") {
+        void loadLeadOptions(msg.id);
+        continue;
+      }
+
+      if (["tasks.create", "tasks.reassign", "projects.create", "crm.create_lead", "kpis.create", "notifications.send", "org.users.create"].includes(tool) || hasUserAssignmentField) {
         if (isAgent && tool === "tasks.create") {
           continue;
         }
@@ -585,7 +713,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
         if (key.startsWith("__") || key === "company_id" || key === "meta" || key === "pipeline_id") {
           continue;
         }
+        if (ARRAY_ACTION_DRAFT_SKIP_KEYS.has(key) || Array.isArray(value)) {
+          continue;
+        }
         if (value === null || value === undefined) {
+          continue;
+        }
+        if (typeof value === "object") {
           continue;
         }
         seed[key] = String(value);
@@ -618,6 +752,12 @@ export function AIChat({ open, onClose }: AIChatProps) {
     );
   }
 
+  function sanitizeActionArgsForConfirm(args: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(args).filter(([key]) => !key.startsWith("__") && key !== "recipient_names" && key !== "recipient_labels"),
+    );
+  }
+
   function warningCodesForMessage(msg: Message): string[] {
     const payload = messagePayload(msg);
     if (!payload || !Array.isArray(payload.validation_warning_codes)) {
@@ -641,11 +781,117 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function updateActionDraft(msgId: string, field: string, value: string) {
-    setActionDrafts((prev) => ({
-      ...prev,
-      [msgId]: {
+    setActionDrafts((prev) => {
+      const nextDraft: Record<string, string> = {
         ...(prev[msgId] ?? {}),
         [field]: value,
+      };
+
+      if (field === "lead_id" && value.trim() !== "") {
+        const selectedLead = (leadOptions[msgId]?.items ?? []).find((item) => String(item.id) === value.trim());
+        if (selectedLead?.email) {
+          nextDraft.to_email = selectedLead.email;
+        }
+      }
+
+      return {
+        ...prev,
+        [msgId]: nextDraft,
+      };
+    });
+  }
+
+  async function composeEmailDraftForMessage(msg: Message, mode: "regenerate" | "enhance") {
+    const args = actionArgsForMessage(msg);
+    if (!args) return;
+
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      toast.error("You must be signed in to update the email draft.");
+      return;
+    }
+
+    const subject = String(args.subject ?? "");
+    const bodyText = String(args.body_text ?? "");
+    const toEmail = String(args.to_email ?? args.lead_email ?? "");
+    const leadId = typeof args.lead_id === "number" ? args.lead_id : Number(args.lead_id);
+
+    setEmailComposeVersions((prev) => ({
+      ...prev,
+      [msg.id]: {
+        previous: { subject, body_text: bodyText },
+        pending: true,
+      },
+    }));
+
+    try {
+      const payload = {
+        company_id: companyId ?? undefined,
+        lead_id: Number.isFinite(leadId) && leadId > 0 ? leadId : null,
+        to_email: toEmail || undefined,
+        subject,
+        body_text: bodyText,
+      };
+      const response = mode === "enhance"
+        ? await enhanceCopilotEmailDraft(payload, token)
+        : await regenerateCopilotEmailDraft(payload, token);
+
+      const nextSubject = String(response.data?.subject ?? subject);
+      const nextBody = String(response.data?.body_text ?? bodyText);
+      const previous = response.data?.previous ?? { subject, body_text: bodyText };
+
+      setActionDrafts((prev) => ({
+        ...prev,
+        [msg.id]: {
+          ...(prev[msg.id] ?? {}),
+          subject: nextSubject,
+          body_text: nextBody,
+        },
+      }));
+      setEmailComposeVersions((prev) => ({
+        ...prev,
+        [msg.id]: {
+          previous: {
+            subject: String(previous.subject ?? subject),
+            body_text: String(previous.body_text ?? bodyText),
+          },
+          pending: false,
+        },
+      }));
+      toast.success(mode === "enhance" ? "Message enhanced." : "Message regenerated.");
+    } catch (err) {
+      setEmailComposeVersions((prev) => ({
+        ...prev,
+        [msg.id]: {
+          previous: { subject, body_text: bodyText },
+          pending: false,
+        },
+      }));
+      toast.error(err instanceof Error ? err.message : "Unable to update the email draft.");
+    }
+  }
+
+  function restorePreviousEmailDraft(msg: Message) {
+    const version = emailComposeVersions[msg.id];
+    if (!version) return;
+
+    const currentArgs = actionArgsForMessage(msg);
+    const currentSubject = String(currentArgs?.subject ?? "");
+    const currentBody = String(currentArgs?.body_text ?? "");
+
+    setActionDrafts((prev) => ({
+      ...prev,
+      [msg.id]: {
+        ...(prev[msg.id] ?? {}),
+        subject: version.previous.subject,
+        body_text: version.previous.body_text,
+      },
+    }));
+    setEmailComposeVersions((prev) => ({
+      ...prev,
+      [msg.id]: {
+        previous: { subject: currentSubject, body_text: currentBody },
+        pending: false,
       },
     }));
   }
@@ -693,6 +939,60 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ...prev,
       [msgId]: draft,
     }));
+  }
+
+  function updateTaskActionDraft(msgId: string, draft: ElyTaskDraft) {
+    setTaskActionDrafts((prev) => ({
+      ...prev,
+      [msgId]: draft,
+    }));
+  }
+
+  async function loadLeadOptions(msgId: string) {
+    const current = leadOptions[msgId];
+    if (current?.loading === true || current?.loaded === true) {
+      return;
+    }
+
+    setLeadOptions((prev) => ({
+      ...prev,
+      [msgId]: {
+        loading: true,
+        loaded: false,
+        items: prev[msgId]?.items ?? [],
+      },
+    }));
+
+    try {
+      const token = getAuthTokenFromDocument();
+      const response = await listLeads(
+        { company_id: companyId ?? undefined, per_page: 100 },
+        token,
+      );
+      const items = (response.data.items ?? []).map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email ?? null,
+      }));
+
+      setLeadOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items,
+        },
+      }));
+    } catch {
+      setLeadOptions((prev) => ({
+        ...prev,
+        [msgId]: {
+          loading: false,
+          loaded: true,
+          items: [],
+        },
+      }));
+    }
   }
 
   async function loadAssigneeOptions(msgId: string) {
@@ -748,19 +1048,35 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      const merged: Record<string, unknown> = { ...baseArgs };
+      const taskDraft = taskActionDrafts[msg.id];
+      if (taskDraft) {
+        const merged: Record<string, unknown> = {
+          ...baseArgs,
+          ...buildTaskActionArgs(taskDraft),
+        };
 
-      if (Object.prototype.hasOwnProperty.call(draft, "title")) {
-        merged.title = draft.title;
+        // Prefer the edited assignee token so the backend can re-resolve the agent ID.
+        if (typeof merged.assignee === "string" && merged.assignee.trim() !== "") {
+          delete merged.assigned_agent_id;
+        }
+
+        if (isAgent) {
+          delete merged.assignee;
+          delete merged.assigned_agent_id;
+          delete merged.assigned_agent_ids;
+        }
+
+        // Preserve hidden server fields when the specialized form rebuilds args.
+        for (const key of ["project_id", "draft_id", "draft_version"] as const) {
+          if (baseArgs[key] !== undefined && merged[key] === undefined) {
+            merged[key] = baseArgs[key];
+          }
+        }
+
+        return merged;
       }
 
-      if (Object.prototype.hasOwnProperty.call(draft, "type")) {
-        merged.type = draft.type;
-      }
-
-      if (Object.prototype.hasOwnProperty.call(draft, "due_date")) {
-        merged.due_date = draft.due_date;
-      }
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
 
       if (Object.prototype.hasOwnProperty.call(draft, "assignee")) {
         const assignee = (draft.assignee ?? "").trim();
@@ -785,7 +1101,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const draft = meetingActionDrafts[msg.id];
       if (draft) {
         const candidates = meetingAttendeeOptions[msg.id]?.items ?? [];
-        return buildMeetingActionArgs(draft, candidates);
+        return buildMeetingActionArgs(draft, candidates, baseArgs);
       }
 
       return baseArgs;
@@ -821,6 +1137,123 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return merged;
     }
 
+    if (tool === "notifications.send") {
+      const merged: Record<string, unknown> = { ...baseArgs };
+
+      for (const field of ["title", "message", "category", "priority", "type"] as const) {
+        if (Object.prototype.hasOwnProperty.call(draft, field)) {
+          merged[field] = draft[field];
+        }
+      }
+
+      const userIdsSource = Object.prototype.hasOwnProperty.call(draft, "user_ids")
+        ? draft.user_ids
+        : baseArgs.user_ids;
+      const userIds = parseUserIdsValue(userIdsSource);
+      if (userIds.length > 0) {
+        merged.user_ids = userIds;
+      } else {
+        delete merged.user_ids;
+      }
+
+      const deliverySource = Object.prototype.hasOwnProperty.call(draft, "delivery_types")
+        ? draft.delivery_types
+        : baseArgs.delivery_types;
+      merged.delivery_types = parseDeliveryTypesValue(deliverySource);
+
+      if (Array.isArray(baseArgs.recipient_names)) {
+        merged.recipient_names = baseArgs.recipient_names;
+      }
+
+      return merged;
+    }
+
+    if (tool === "crm.send_email") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+      const leadIdRaw = String(draft.lead_id ?? merged.lead_id ?? "").trim();
+      if (leadIdRaw !== "" && !Number.isNaN(Number(leadIdRaw))) {
+        merged.lead_id = Number(leadIdRaw);
+        const selectedLead = (leadOptions[msg.id]?.items ?? []).find((item) => item.id === Number(leadIdRaw));
+        if (selectedLead) {
+          merged.lead_name = selectedLead.name;
+          merged.lead_email = selectedLead.email;
+        }
+      }
+
+      const toEmail = String(draft.to_email ?? "").trim();
+      if (toEmail !== "") {
+        merged.to_email = toEmail;
+        merged.to = [{
+          email: toEmail,
+          name: typeof merged.lead_name === "string" ? merged.lead_name : null,
+        }];
+      } else if (Array.isArray(merged.to) && merged.to.length > 0) {
+        const first = merged.to[0];
+        if (first && typeof first === "object" && first !== null && typeof (first as Record<string, unknown>).email === "string") {
+          merged.to_email = (first as Record<string, unknown>).email;
+        }
+      } else if (typeof merged.lead_email === "string" && merged.lead_email.trim() !== "") {
+        merged.to_email = merged.lead_email;
+        merged.to = [{ email: merged.lead_email, name: merged.lead_name ?? null }];
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "subject")) {
+        merged.subject = draft.subject;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "body_text")) {
+        merged.body_text = draft.body_text;
+        merged.body_html = `<p>${String(draft.body_text).replace(/\n/g, "<br />")}</p>`;
+      }
+
+      return merged;
+    }
+
+    if (tool === "org.users.create") {
+      const merged: Record<string, unknown> = { ...baseArgs, ...draft };
+
+      if (Object.prototype.hasOwnProperty.call(draft, "base_salary")) {
+        const salary = Number(String(draft.base_salary ?? "").trim());
+        merged.base_salary = Number.isFinite(salary) ? salary : 0;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "commission_enabled")) {
+        const boolValue = String(draft.commission_enabled ?? "").trim().toLowerCase();
+        merged.commission_enabled = boolValue === "true";
+      }
+
+      const workDaysSource = Object.prototype.hasOwnProperty.call(draft, "work_days")
+        ? String(draft.work_days ?? "")
+        : (Array.isArray(baseArgs.work_days) ? baseArgs.work_days.join(",") : String(baseArgs.work_days ?? ""));
+      merged.work_days = workDaysSource
+        .split(",")
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item !== "");
+
+      const zoneIdsSource = Object.prototype.hasOwnProperty.call(draft, "assigned_zone_ids")
+        ? String(draft.assigned_zone_ids ?? "")
+        : (Array.isArray(baseArgs.assigned_zone_ids) ? baseArgs.assigned_zone_ids.join(",") : "");
+      merged.assigned_zone_ids = zoneIdsSource
+        .split(",")
+        .map((item) => Number(item.trim()))
+        .filter((item) => Number.isFinite(item) && item > 0);
+
+      if (Object.prototype.hasOwnProperty.call(draft, "supervisor_user_id")) {
+        const supervisorId = Number(String(draft.supervisor_user_id ?? "").trim());
+        merged.supervisor_user_id = Number.isFinite(supervisorId) && supervisorId > 0 ? supervisorId : null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(draft, "role")) {
+        const roleValue = String(draft.role ?? "").trim().toLowerCase();
+        merged.role = roleValue;
+        if (roleValue !== "agent") {
+          merged.supervisor_user_id = null;
+        }
+      }
+
+      return merged;
+    }
+
     if (Object.keys(draft).length === 0) {
       return baseArgs;
     }
@@ -837,6 +1270,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function assigneeDropdownValue(msg: Message, args: Record<string, unknown>): string {
+    const taskDraftAssignee = String(taskActionDrafts[msg.id]?.assignee ?? "").trim();
+    if (taskDraftAssignee !== "") {
+      return taskDraftAssignee;
+    }
+
     const draftValue = assigneeDraftValue(msg);
     if (draftValue !== "") {
       return draftValue;
@@ -879,6 +1317,58 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return "";
   }
 
+  function leadSelectOptions(msg: Message): EditFieldOption[] {
+    return (leadOptions[msg.id]?.items ?? []).map((item) => ({
+      value: String(item.id),
+      label: item.email ? `${item.name} (${item.email})` : item.name,
+    }));
+  }
+
+  function leadDisplayName(msg: Message, args: Record<string, unknown>): string {
+    const draftLeadId = String(resolveActionDraft(msg.id).lead_id ?? "").trim();
+    const leadId = draftLeadId !== "" && !Number.isNaN(Number(draftLeadId))
+      ? Number(draftLeadId)
+      : (typeof args.lead_id === "number" ? args.lead_id : null);
+
+    if (leadId !== null) {
+      const matched = (leadOptions[msg.id]?.items ?? []).find((item) => item.id === leadId);
+      if (matched) {
+        return matched.name;
+      }
+    }
+
+    if (typeof args.lead_name === "string" && args.lead_name.trim() !== "") {
+      return args.lead_name.trim();
+    }
+
+    return "";
+  }
+
+  function emailRecipientValue(msg: Message, args: Record<string, unknown>): string {
+    const draftEmail = String(resolveActionDraft(msg.id).to_email ?? "").trim();
+    if (draftEmail !== "") {
+      return draftEmail;
+    }
+
+    const to = Array.isArray(args.to) ? args.to : [];
+    if (to[0] && typeof to[0] === "object" && to[0] !== null) {
+      const email = String((to[0] as Record<string, unknown>).email ?? "").trim();
+      if (email !== "") {
+        return email;
+      }
+    }
+
+    if (typeof args.lead_email === "string" && args.lead_email.trim() !== "") {
+      return args.lead_email.trim();
+    }
+
+    if (typeof args.to_email === "string" && args.to_email.trim() !== "") {
+      return args.to_email.trim();
+    }
+
+    return "";
+  }
+
   function assigneeSelectOptions(msg: Message): EditFieldOption[] {
     return (assigneeOptions[msg.id]?.items ?? []).map((item) => ({
       value: item.email,
@@ -893,21 +1383,51 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }));
   }
 
+  function supervisorSelectOptions(msg: Message): EditFieldOption[] {
+    return (assigneeOptions[msg.id]?.items ?? [])
+      .filter((item) => ["owner", "admin", "supervisor"].includes(String(item.role ?? "").toLowerCase()))
+      .map((item) => ({
+        value: String(item.id),
+        label: item.name,
+      }));
+  }
+
+  function zoneSelectOptions(): EditFieldOption[] {
+    return companyZones.map((zone) => ({
+      value: String(zone.id),
+      label: `${zone.name} (${zone.state_name}, ${zone.lga_name})`,
+    }));
+  }
+
+  function notificationRecipientLabel(msg: Message, args: Record<string, unknown>): string {
+    const explicitNames = Array.isArray(args.recipient_names)
+      ? args.recipient_names.map((name) => String(name).trim()).filter((name) => name !== "")
+      : [];
+
+    if (explicitNames.length > 0) {
+      return explicitNames.join(", ");
+    }
+
+    const userIds = parseUserIdsValue(args.user_ids);
+    if (userIds.length === 0) {
+      return "";
+    }
+
+    const options = assigneeOptions[msg.id]?.items ?? [];
+    const names = userIds.map((id) => {
+      const matched = options.find((item) => item.id === id);
+      return matched?.name ?? `User #${String(id)}`;
+    });
+
+    return names.join(", ");
+  }
+
   function editFieldsForMessage(msg: Message, args: Record<string, unknown>): EditFieldConfig[] {
     const tool = actionToolForMessage(msg);
 
     if (tool === "tasks.create") {
-      const fields: EditFieldConfig[] = [
-        { key: "title", label: "Title", control: "text" },
-        { key: "type", label: "Type", control: "select", options: TASK_TYPE_OPTIONS },
-        { key: "due_date", label: "Due Date", control: "date" },
-      ];
-
-      if (!isAgent) {
-        fields.push({ key: "assignee", label: "Assignee", control: "select", options: assigneeSelectOptions(msg) });
-      }
-
-      return fields;
+      // Specialized ElyTaskActionFields renderer handles the full task form.
+      return [];
     }
 
     if (tool === "meetings.schedule") {
@@ -917,22 +1437,28 @@ export function AIChat({ open, onClose }: AIChatProps) {
     if (tool === "projects.create") {
       return [
         { key: "name", label: "Project Name", control: "text" },
+        { key: "description", label: "Description", control: "textarea" },
         { key: "type", label: "Type", control: "select", options: PROJECT_TYPE_OPTIONS },
         { key: "status", label: "Status", control: "select", options: PROJECT_STATUS_OPTIONS },
         { key: "priority", label: "Priority", control: "select", options: PRIORITY_OPTIONS },
         { key: "start_date", label: "Start Date", control: "date" },
         { key: "end_date", label: "End Date", control: "date" },
         { key: "project_manager_user_id", label: "Project Manager", control: "select", options: userIdSelectOptions(msg) },
+        { key: "assigned_team", label: "Assigned Team", control: "text" },
+        { key: "territory_zone", label: "Territory Zone", control: "text" },
+        { key: "notes", label: "Notes", control: "textarea" },
       ];
     }
 
     if (tool === "notifications.send") {
       return [
+        { key: "user_ids", label: "Recipients", control: "multi-select", options: userIdSelectOptions(msg) },
         { key: "title", label: "Title", control: "text" },
         { key: "message", label: "Message", control: "textarea" },
         { key: "category", label: "Category", control: "select", options: NOTIFICATION_CATEGORY_OPTIONS },
         { key: "priority", label: "Priority", control: "select", options: NOTIFICATION_PRIORITY_OPTIONS },
-        { key: "type", label: "Type", control: "text" },
+        { key: "delivery_types", label: "Delivery (in_app, push, email)", control: "text" },
+        { key: "action_url", label: "Action URL", control: "text" },
       ];
     }
 
@@ -941,6 +1467,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "task_id", label: "Task ID", control: "number" },
         { key: "to_user_id", label: "Reassign To", control: "select", options: userIdSelectOptions(msg) },
         { key: "reason", label: "Reason", control: "textarea" },
+      ];
+    }
+
+    if (tool === "crm.log_visit") {
+      return [
+        { key: "lead_id", label: "Lead", control: "select", options: leadSelectOptions(msg) },
+        { key: "summary", label: "Visit Summary", control: "textarea" },
+        { key: "outcomes", label: "Outcomes", control: "textarea" },
+        { key: "opportunities", label: "Opportunities", control: "textarea" },
+        { key: "objections", label: "Objections", control: "textarea" },
+        { key: "follow_up_actions", label: "Follow-up Actions", control: "textarea" },
       ];
     }
 
@@ -962,7 +1499,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (tool === "crm.send_email") {
       return [
-        { key: "lead_id", label: "Lead ID", control: "number" },
+        { key: "lead_id", label: "Lead", control: "select", options: leadSelectOptions(msg) },
+        { key: "to_email", label: "To", control: "text" },
         { key: "subject", label: "Subject", control: "text" },
         { key: "body_text", label: "Message", control: "textarea" },
       ];
@@ -979,6 +1517,20 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "start_date", label: "Start Date", control: "date" },
         { key: "end_date", label: "End Date", control: "date" },
         { key: "assigned_to_user_id", label: "Assign To", control: "select", options: userIdSelectOptions(msg) },
+      ];
+    }
+
+    if (tool === "org.users.create") {
+      return [
+        { key: "full_name", label: "Full Name", control: "text" },
+        { key: "email", label: "Email", control: "text" },
+        { key: "role", label: "Role", control: "select", options: ORG_USER_ROLE_OPTIONS },
+        { key: "assigned_zone_ids", label: "Assigned Zones", control: "multi-select", options: zoneSelectOptions() },
+        { key: "work_days", label: "Work Days", control: "multi-select", options: ORG_USER_WEEKDAY_OPTIONS },
+        { key: "salary_type", label: "Salary Type", control: "select", options: ORG_USER_SALARY_TYPE_OPTIONS },
+        { key: "base_salary", label: "Base Salary", control: "number" },
+        { key: "commission_enabled", label: "Commission Enabled", control: "select", options: [{ value: "true", label: "True" }, { value: "false", label: "False" }] },
+        { key: "supervisor_user_id", label: "Supervisor", control: "select", options: supervisorSelectOptions(msg) },
       ];
     }
 
@@ -1054,6 +1606,48 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (field.key === "assignee") {
       return assigneeDropdownValue(msg, args);
+    }
+
+    if (field.key === "user_ids") {
+      if (Object.prototype.hasOwnProperty.call(draft, "user_ids")) {
+        return String(draft.user_ids ?? "");
+      }
+
+      const userIds = parseUserIdsValue(args.user_ids);
+      return userIds.length > 0 ? userIds.join(", ") : "";
+    }
+
+    if (field.key === "delivery_types") {
+      if (Object.prototype.hasOwnProperty.call(draft, "delivery_types")) {
+        return String(draft.delivery_types ?? "");
+      }
+
+      return parseDeliveryTypesValue(args.delivery_types).join(", ");
+    }
+
+    if (field.key === "assigned_zone_ids" || field.key === "work_days") {
+      const rawValue = args[field.key];
+      if (Array.isArray(rawValue)) {
+        return rawValue.map((item) => String(item)).join(",");
+      }
+      return "";
+    }
+
+    if (field.key === "to_email") {
+      return emailRecipientValue(msg, args);
+    }
+
+    if (field.key === "lead_id") {
+      const draftLeadId = String(draft.lead_id ?? "").trim();
+      if (draftLeadId !== "") {
+        return draftLeadId;
+      }
+
+      if (typeof args.lead_id === "number") {
+        return String(args.lead_id);
+      }
+
+      return "";
     }
 
     const raw = args[field.key];
@@ -1134,8 +1728,111 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       if (code === "missing_lead_name") {
-        const name = String(args?.name ?? "").trim().toLowerCase();
+        const name = String(draft.name ?? args?.name ?? "").trim().toLowerCase();
         if (name === "" || name === "new lead") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_kpi_name") {
+        const name = String(draft.name ?? args?.name ?? "").trim();
+        if (name === "" || name.toLowerCase() === "new kpi") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_objective") {
+        const objective = String(draft.objective ?? args?.objective ?? "").trim();
+        if (objective.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_target_value") {
+        const target = String(draft.target_value ?? args?.target_value ?? "").trim();
+        if (target === "" || target.toLowerCase() === "to be defined") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_expected_outcome") {
+        const outcome = String(draft.expected_outcome ?? args?.expected_outcome ?? "").trim();
+        if (outcome.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "recipients_unresolved") {
+        const userIds = parseUserIdsValue(args?.user_ids);
+        if (userIds.length === 0) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "message_too_generic") {
+        const message = String(args?.message ?? "").trim();
+        if (message.length < 10) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "lead_unresolved") {
+        const draftLeadId = String(draft.lead_id ?? "").trim();
+        const hasLeadId =
+          (typeof args?.lead_id === "number" && args.lead_id > 0)
+          || (draftLeadId !== "" && !Number.isNaN(Number(draftLeadId)));
+        if (!hasLeadId) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "recipient_email_missing") {
+        const recipient = emailRecipientValue(msg, argsForChecks);
+        if (recipient === "") {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_full_name") {
+        const name = String(draft.full_name ?? args?.full_name ?? "").trim();
+        if (name.length < 2) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_email") {
+        const email = String(draft.email ?? args?.email ?? "").trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_supervisor") {
+        const resolvedRole = String(draft.role ?? args?.role ?? "").trim().toLowerCase();
+        const supervisorId = String(draft.supervisor_user_id ?? args?.supervisor_user_id ?? "").trim();
+        if (resolvedRole === "agent" && (supervisorId === "" || Number.isNaN(Number(supervisorId)))) {
+          remaining.push(code);
+        }
+        continue;
+      }
+
+      if (code === "missing_zone") {
+        const fromDraft = String(draft.assigned_zone_ids ?? "").trim();
+        const zoneIds = fromDraft !== ""
+          ? fromDraft.split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item) && item > 0)
+          : (Array.isArray(args?.assigned_zone_ids) ? args.assigned_zone_ids : []);
+        if (!Array.isArray(zoneIds) || zoneIds.length === 0) {
           remaining.push(code);
         }
         continue;
@@ -1205,6 +1902,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "type", label: "Type", value: formatPreviewValue("type", args.type) },
         { key: "due_date", label: "Due Date", value: formatPreviewValue("due_date", args.due_date) },
         { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
+        { key: "address", label: "Address", value: formatPreviewValue("address", args.address) },
       ];
 
       const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
@@ -1269,16 +1967,32 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
 
     if (tool === "crm.send_email") {
-      const to = Array.isArray(args.to) ? args.to : [];
-      const recipient = to[0] && typeof to[0] === "object" && to[0] !== null
-        ? String((to[0] as Record<string, unknown>).email ?? "")
-        : formatPreviewValue("to", args.to);
+      const leadName = leadDisplayName(msg, args);
+      const recipient = emailRecipientValue(msg, args);
+      const inference = parseRecord(args.__inference);
+      const gmailRequired = inference?.gmail_connection_required === true;
 
       return [
-        { key: "lead_id", label: "Lead ID", value: formatPreviewValue("lead_id", args.lead_id) },
-        { key: "to", label: "To", value: recipient },
+        {
+          key: "lead",
+          label: "Lead",
+          value: leadName !== "" ? leadName : "Not provided",
+          warning: warningCodes.includes("lead_unresolved"),
+        },
+        {
+          key: "to",
+          label: "To",
+          value: recipient !== "" ? recipient : "Not provided",
+          warning: warningCodes.includes("recipient_email_missing"),
+        },
         { key: "subject", label: "Subject", value: formatPreviewValue("subject", args.subject) },
         { key: "body_text", label: "Message", value: formatPreviewValue("body_text", args.body_text) },
+        ...(gmailRequired ? [{
+          key: "gmail",
+          label: "Google Email",
+          value: "Connect Google to send this follow-up",
+          warning: true,
+        }] : []),
       ];
     }
 
@@ -1306,6 +2020,33 @@ export function AIChat({ open, onClose }: AIChatProps) {
       ];
     }
 
+    if (tool === "notifications.send") {
+      const recipientLabel = notificationRecipientLabel(msg, args);
+
+      return [
+        {
+          key: "recipients",
+          label: "Recipients",
+          value: recipientLabel !== "" ? recipientLabel : "Needs correction",
+          warning: warningCodes.includes("recipients_unresolved"),
+        },
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
+        {
+          key: "message",
+          label: "Message",
+          value: formatPreviewValue("message", args.message),
+          warning: warningCodes.includes("message_too_generic"),
+        },
+        { key: "category", label: "Category", value: formatPreviewValue("category", args.category) },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
+        {
+          key: "delivery_types",
+          label: "Delivery",
+          value: formatDeliveryTypesLabel(args.delivery_types),
+        },
+      ];
+    }
+
     return Object.entries(args)
       .filter(([key]) => key !== "company_id")
       .map(([key, value]) => ({
@@ -1316,8 +2057,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
   }
 
   function findActionContextForConfirm(index: number): string {
-    const parts: string[] = [];
-
     for (let i = index - 1; i >= 0; i -= 1) {
       const candidate = messages[i];
       if (!candidate) {
@@ -1335,15 +2074,15 @@ export function AIChat({ open, onClose }: AIChatProps) {
       if (candidate.role === "user") {
         const content = String(candidate.content ?? "").trim();
         if (content !== "" && !/^\s*confirm\b/i.test(content)) {
-          parts.unshift(content);
+          return content;
         }
       }
     }
 
-    return parts.join("\n");
+    return "";
   }
 
-  function handleConfirmAction(index: number, msg: Message) {
+  function submitConfirmedAction(index: number, msg: Message) {
     const payload = messagePayload(msg);
     if (!payload) return;
 
@@ -1351,7 +2090,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     if (!priorPrompt.trim()) return;
 
     const actionArgs = actionArgsForMessage(msg);
-    const sanitizedArgs = actionArgs ? sanitizeActionArgs(actionArgs) : undefined;
+    const sanitizedArgs = actionArgs ? sanitizeActionArgsForConfirm(actionArgs) : undefined;
     const hasSanitizedArgs = sanitizedArgs ? Object.keys(sanitizedArgs).length > 0 : false;
 
     void sendCopilotMessage({
@@ -1360,6 +2099,103 @@ export function AIChat({ open, onClose }: AIChatProps) {
       actionConfirmed: true,
       actionArgs: hasSanitizedArgs ? sanitizedArgs : undefined,
     });
+  }
+
+  function openEmailAuthorizationPopup(authorizationUrl: string, popupName: string) {
+    const popup = window.open(authorizationUrl, popupName, "width=560,height=720");
+    if (!popup) {
+      window.location.href = authorizationUrl;
+      return;
+    }
+
+    toast.info("Complete email sign-in in the popup. Your follow-up will send automatically after connection.");
+  }
+
+  async function ensureEmailAccountReadyForSend(): Promise<boolean> {
+    if (!companyId) {
+      toast.error("Select a company before sending CRM email.");
+      return false;
+    }
+
+    const token = getAuthTokenFromDocument();
+    if (!token) {
+      toast.error("You must be signed in to connect an email account.");
+      return false;
+    }
+
+    const accountsResponse = await listEmailAccounts({ company_id: companyId }, token);
+    const hasActiveAccount = (accountsResponse.data.items ?? []).some(
+      (account) => account.status === "active",
+    );
+
+    if (hasActiveAccount) {
+      return true;
+    }
+
+    try {
+      const connectResponse = await authorizeEmailAccountOAuth(
+        "google",
+        { company_id: companyId, force_account_picker: true },
+        token,
+      );
+      openEmailAuthorizationPopup(connectResponse.data.authorization_url, "email-oauth-google");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start email connection.";
+      toast.error(message || "Connect an email account in Settings → Email Accounts to send CRM email.");
+    }
+
+    return false;
+  }
+
+  useEffect(() => {
+    const handleOAuthMessage = (event: MessageEvent) => {
+      const payload = event.data as {
+        type?: string;
+        success?: boolean;
+        status?: "success" | "error";
+        message?: string;
+        provider?: string;
+      };
+
+      if (!payload || payload.type !== "email-account-oauth") {
+        return;
+      }
+
+      // Only react when Ely started this OAuth (avoid duplicate toasts with Settings).
+      const pending = pendingEmailConfirmRef.current;
+      if (!pending) {
+        return;
+      }
+
+      const ok = payload.success === true || payload.status === "success";
+      if (!ok) {
+        toast.error(payload.message || "Email account connection failed.");
+        pendingEmailConfirmRef.current = null;
+        return;
+      }
+
+      pendingEmailConfirmRef.current = null;
+      toast.success(payload.message || "Email connected. Sending your follow-up now.");
+      submitConfirmedAction(pending.index, pending.msg);
+    };
+
+    window.addEventListener("message", handleOAuthMessage);
+    return () => window.removeEventListener("message", handleOAuthMessage);
+  }, [companyId]);
+
+  async function handleConfirmAction(index: number, msg: Message) {
+    const tool = actionToolForMessage(msg);
+
+    if (tool === "crm.send_email") {
+      pendingEmailConfirmRef.current = { index, msg };
+      const ready = await ensureEmailAccountReadyForSend();
+      if (!ready) {
+        return;
+      }
+      pendingEmailConfirmRef.current = null;
+    }
+
+    submitConfirmedAction(index, msg);
   }
 
   function handleEditActionDetails(index: number) {
@@ -1389,6 +2225,34 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
     if (issues.includes("missing_lead_name")) {
       return "Confirmation is blocked until the business name is provided.";
+    }
+
+    if (issues.includes("missing_kpi_name")) {
+      return "Confirmation is blocked until the KPI name is provided.";
+    }
+
+    if (issues.includes("missing_objective")) {
+      return "Confirmation is blocked until the KPI objective is at least 10 characters.";
+    }
+
+    if (issues.includes("missing_target_value")) {
+      return "Confirmation is blocked until a measurable target value is provided.";
+    }
+
+    if (issues.includes("missing_expected_outcome")) {
+      return "Confirmation is blocked until the expected outcome is at least 10 characters.";
+    }
+
+    if (issues.includes("assignee_unresolved")) {
+      return "Confirmation is blocked until an assignee is selected.";
+    }
+
+    if (issues.includes("lead_unresolved")) {
+      return "Confirmation is blocked until a CRM lead is selected.";
+    }
+
+    if (issues.includes("recipient_email_missing")) {
+      return "Confirmation is blocked until a recipient email is provided.";
     }
 
     return "Confirmation is currently blocked until required fields are corrected.";
@@ -2407,6 +3271,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     >
                       Download Word
                     </button>
+                    {weeklyReport.drive_file_id != null && (
+                      <Link
+                        href={`/drive?folder=ely_reports&file=${weeklyReport.drive_file_id}`}
+                        className="rounded-full border border-[#3D6A78] bg-[#11303A] px-3 py-1.5 text-[11px] font-semibold text-[#9CC6CA] hover:bg-[#1A3D4D]"
+                      >
+                        Also saved in Drive
+                      </Link>
+                    )}
                   </>
                 )}
                 {weeklyReport?.status === "failed" && weeklyReport.error && (
@@ -2429,7 +3301,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               )}
-              {messages.map((msg, index) => (
+              {messages.map((msg, index) => {
+                const isStreamingPlaceholder =
+                  isStreaming &&
+                  index === messages.length - 1 &&
+                  msg.role === "assistant" &&
+                  !Boolean(msg.content?.trim());
+                if (isStreamingPlaceholder) {
+                  return null;
+                }
+
+                return (
                 <div key={msg.id} id={`copilot-msg-${msg.id}`}>
                   {msg.role === "user" ? (
                     /* User message */
@@ -2465,7 +3347,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           ))}
                         </div>
                       )}
-                      {messagePayload(msg)?.confirmation_required === true && (
+                      {messagePayload(msg)?.confirmation_required === true && index === messages.length - 1 && (
                         <div className="pl-1">
                           {(() => {
                             const previewRows = confirmationPreviewRows(msg);
@@ -2512,6 +3394,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
                               );
                             }
 
+                            if (payloadTool === "tasks.create") {
+                              return (
+                                <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
+                                  <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                  <ElyTaskActionFields
+                                    msgId={msg.id}
+                                    args={args}
+                                    draft={taskActionDrafts[msg.id]}
+                                    onDraftChange={updateTaskActionDraft}
+                                    assigneeOptions={assigneeOptions[msg.id]?.items ?? []}
+                                    loadingAssignees={assigneeOptions[msg.id]?.loading === true}
+                                    isAgent={isAgent}
+                                  />
+                                </div>
+                              );
+                            }
+
                             const fields = editFieldsForMessage(msg, args);
                             if (fields.length === 0) {
                               return null;
@@ -2520,6 +3419,19 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             return (
                               <div className="mb-2 rounded-xl border border-[#355C57]/70 bg-[#102322] px-3 py-2">
                                 <p className="text-[11px] font-semibold text-[#9FD3C8] mb-2">Edit before confirm:</p>
+                                {payloadTool === "org.users.create" && companyZones.length === 0 ? (
+                                  <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                                    No company zones found.{" "}
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowCreateZoneModal(true)}
+                                      className="underline font-semibold"
+                                    >
+                                      Create a zone
+                                    </button>{" "}
+                                    or open Settings &gt; Zones first.
+                                  </div>
+                                ) : null}
                                 <div className="grid grid-cols-1 gap-2">
                                   {fields.map((field) => {
                                     const value = editFieldValue(msg, args, field);
@@ -2563,6 +3475,43 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                       );
                                     }
 
+                                    if (field.control === "multi-select") {
+                                      const options = field.options ?? [];
+                                      const selectedValues = value
+                                        .split(",")
+                                        .map((item) => item.trim())
+                                        .filter((item) => item !== "");
+
+                                      return (
+                                        <div key={`${msg.id}-edit-${field.key}`} className="grid gap-1">
+                                          <label className="text-[11px] text-[#8CB9B3]">{field.label}</label>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {options.map((option) => {
+                                              const selected = selectedValues.includes(option.value);
+                                              return (
+                                                <button
+                                                  key={`${msg.id}-multi-${field.key}-${option.value}`}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const nextValues = selected
+                                                      ? selectedValues.filter((item) => item !== option.value)
+                                                      : [...selectedValues, option.value];
+                                                    updateActionDraft(msg.id, field.key, nextValues.join(","));
+                                                  }}
+                                                  className={`rounded-full border px-2.5 py-1 text-[11px] ${selected
+                                                    ? "border-[#4F8C83] bg-[#1E3E3A] text-[#C9E5E0]"
+                                                    : "border-[#355C57] bg-[#0D1C1C] text-[#8CB9B3]"
+                                                    }`}
+                                                >
+                                                  {option.label}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
                                     const inputType = field.control === "datetime-local"
                                       ? "datetime-local"
                                       : field.control === "date"
@@ -2584,6 +3533,35 @@ export function AIChat({ open, onClose }: AIChatProps) {
                                     );
                                   })}
                                 </div>
+                                {payloadTool === "crm.send_email" && (
+                                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      disabled={emailComposeVersions[msg.id]?.pending === true || isStreaming}
+                                      onClick={() => void composeEmailDraftForMessage(msg, "regenerate")}
+                                      className="rounded-full border border-[#4F8C83]/60 bg-[#14302E] px-3 py-1.5 text-[11px] font-semibold text-[#A6DFD2] hover:bg-[#1A3B38] disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      {emailComposeVersions[msg.id]?.pending ? "Working…" : "Regenerate message"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={emailComposeVersions[msg.id]?.pending === true || isStreaming}
+                                      onClick={() => void composeEmailDraftForMessage(msg, "enhance")}
+                                      className="rounded-full border border-[#4F8C83]/60 bg-[#14302E] px-3 py-1.5 text-[11px] font-semibold text-[#A6DFD2] hover:bg-[#1A3B38] disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Enhance message
+                                    </button>
+                                    {emailComposeVersions[msg.id] && !emailComposeVersions[msg.id]?.pending && (
+                                      <button
+                                        type="button"
+                                        onClick={() => restorePreviousEmailDraft(msg)}
+                                        className="rounded-full border border-[#7A5A2A]/60 bg-[#2F2617] px-3 py-1.5 text-[11px] font-semibold text-[#F2D9A6] hover:bg-[#3B2E1D]"
+                                      >
+                                        Use previous
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
@@ -2616,7 +3594,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             )}
                             <button
                               onClick={() => handleConfirmAction(index, msg)}
-                              disabled={isStreaming || isBlockingConfirmation(msg)}
+                              disabled={isStreaming || isBlockingConfirmation(msg) || emailComposeVersions[msg.id]?.pending === true}
                               className="rounded-full bg-[#2D6F63] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#358372] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Confirm Action
@@ -2658,7 +3636,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
 
               {isStreaming && (() => {
                 const lastMessage = messages[messages.length - 1];
@@ -2728,6 +3707,15 @@ export function AIChat({ open, onClose }: AIChatProps) {
           text-decoration-thickness: 1px;
         }
       `}</style>
+
+      {companyId ? (
+        <CreateZoneModal
+          isOpen={showCreateZoneModal}
+          onClose={() => setShowCreateZoneModal(false)}
+          companyId={companyId}
+          defaultCountry="NG"
+        />
+      ) : null}
     </>
   );
 }

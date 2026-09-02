@@ -40,6 +40,9 @@ const rawTaskSchema = z
     priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
     assigned_by: z.string().nullable().optional(),
     assigned_agent_id: z.union([z.string(), z.number(), z.null()]).optional(),
+    required_actions: z.array(z.string()).optional().nullable(),
+    minimum_photos_required: z.number().optional().nullable(),
+    visit_verification_required: z.boolean().optional().nullable(),
     creator: z
       .object({
         name: z.string().optional(),
@@ -75,6 +78,14 @@ const rawTaskSchema = z
       data.assigned_agent_id != null && data.assigned_agent_id !== ''
         ? Number(data.assigned_agent_id)
         : null,
+    requiredActions: (data.required_actions ?? []).filter(
+      (a): a is string => typeof a === 'string' && a.trim().length > 0,
+    ),
+    minimumPhotosRequired:
+      typeof data.minimum_photos_required === 'number' && Number.isFinite(data.minimum_photos_required)
+        ? Math.max(0, Math.floor(data.minimum_photos_required))
+        : 0,
+    visitVerificationRequired: Boolean(data.visit_verification_required),
   }));
 
 export const taskSchema = rawTaskSchema;
@@ -94,4 +105,27 @@ export const taskFiltersSchema = z.object({
 export const completionSchema = z.object({
   photos: z.array(z.string()).min(1, 'At least one photo is required'),
   notes: z.string().optional(),
+});
+
+export const createSelfTaskSchema = z.object({
+  title: z
+    .string()
+    .min(3, 'Title must be at least 3 characters')
+    .max(255, 'Title must be at most 255 characters'),
+  type: z.enum(['sales_visit', 'inspection', 'delivery', 'collection', 'awareness']),
+  description: z
+    .string()
+    .min(10, 'Description must be at least 10 characters')
+    .max(5000)
+    .optional()
+    .nullable(),
+  location: z.string().min(2).max(255).optional().nullable(),
+  address: z.string().min(5).max(1000).optional().nullable(),
+  latitude: z.union([z.number(), z.string(), z.null()]).optional(),
+  longitude: z.union([z.number(), z.string(), z.null()]).optional(),
+  due_date: z.string().optional().nullable(),
+  required_actions: z.array(z.string()).optional().nullable(),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional().nullable(),
+  minimum_photos_required: z.number().min(0).max(20).optional().nullable(),
+  visit_verification_required: z.boolean().optional().nullable(),
 });

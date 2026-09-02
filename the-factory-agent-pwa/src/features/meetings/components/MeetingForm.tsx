@@ -111,6 +111,7 @@ export function MeetingForm({
     const creator = candidates.find((candidate) => candidate.id === creatorId);
     if (!creator) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pre-select meeting creator attendee
     setInternalAttendees((prev) => {
       if (prev.some((attendee) => attendee.id === creator.id)) return prev;
       return [

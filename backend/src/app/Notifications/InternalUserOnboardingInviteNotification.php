@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class InternalUserOnboardingInviteNotification extends Notification
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly string $invitationLink,
@@ -23,17 +24,19 @@ class InternalUserOnboardingInviteNotification extends Notification
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        return (new MailMessage)
-            ->mailer('resend')
-            ->subject('You are invited to join The Factory')
+        return $this->factory23Mail()
+            ->subject("You're invited to Factory23")
             ->greeting("Hello {$notifiable->name},")
-            ->line("You have been added as {$this->role} in The Factory.")
-            ->line("Assigned zone: {$this->zone}")
+            ->line('You have been invited to join your team on Factory23.')
+            ->line($this->factory23DetailTable([
+                'Role' => $this->role,
+                'Assigned zone' => $this->zone,
+            ]))
             ->line('Please complete your onboarding and set your password using the secure link below.')
             ->action('Complete onboarding', $this->invitationLink)
             ->line('For security, this link expires and can only be used once.')
-            ->salutation('The Factory Team');
+            ->salutation($this->factory23Salutation());
     }
 }

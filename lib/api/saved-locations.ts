@@ -57,7 +57,24 @@ export type ListSavedLocationsParams = {
   q?: string;
   type?: string;
   is_active?: boolean;
+  /** When true, only return pins created by the authenticated user. */
+  mine?: boolean;
   per_page?: number;
+  page?: number;
+  min_lat?: number;
+  max_lat?: number;
+  min_lng?: number;
+  max_lng?: number;
+  /** Sort nearest-first relative to this point when both are set. */
+  near_lat?: number;
+  near_lng?: number;
+};
+
+export type SavedLocationViewportBounds = {
+  min_lat: number;
+  max_lat: number;
+  min_lng: number;
+  max_lng: number;
 };
 
 export type CreateSavedLocationPayload = {
@@ -92,7 +109,15 @@ export function listSavedLocations(
   if (params.q) qs.set("q", params.q);
   if (params.type) qs.set("type", params.type);
   if (params.is_active != null) qs.set("is_active", params.is_active ? "1" : "0");
-  qs.set("per_page", String(params.per_page ?? 200));
+  if (params.mine) qs.set("mine", "1");
+  qs.set("per_page", String(params.per_page ?? 50));
+  if (params.page != null) qs.set("page", String(params.page));
+  if (params.min_lat != null) qs.set("min_lat", String(params.min_lat));
+  if (params.max_lat != null) qs.set("max_lat", String(params.max_lat));
+  if (params.min_lng != null) qs.set("min_lng", String(params.min_lng));
+  if (params.max_lng != null) qs.set("max_lng", String(params.max_lng));
+  if (params.near_lat != null) qs.set("near_lat", String(params.near_lat));
+  if (params.near_lng != null) qs.set("near_lng", String(params.near_lng));
   const query = qs.toString() ? `?${qs.toString()}` : "";
 
   return apiRequest<SavedLocationsListData>({

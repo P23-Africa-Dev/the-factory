@@ -8,6 +8,7 @@ import {
   type ListInternalUsersParams,
 } from "@/lib/api/internal-users";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 
 export const INTERNAL_ONBOARDING_KEYS = {
   all: ["internal-onboarding"] as const,
@@ -22,7 +23,7 @@ export function useInternalUsersList(params: ListInternalUsersParams = {}) {
   return useQuery({
     queryKey: INTERNAL_ONBOARDING_KEYS.users(params),
     queryFn: async () => (await listInternalUsers(params, token)).data,
-    enabled: !!token,
+    enabled: hasActiveApiSession(token),
   });
 }
 
@@ -32,7 +33,7 @@ export function useInternalOnboardingStatus(companyId?: number | string) {
     queryKey: INTERNAL_ONBOARDING_KEYS.status(companyId),
     queryFn: async () =>
       (await getInternalUsersOnboardingStatus({ company_id: companyId }, token)).data,
-    enabled: !!token,
+    enabled: hasActiveApiSession(token),
   });
 }
 

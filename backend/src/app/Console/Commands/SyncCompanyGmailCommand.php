@@ -4,31 +4,38 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Jobs\SyncCompanyGmailJob;
-use App\Models\CompanyCalendarConnection;
-use App\Services\Google\GoogleScopeHelper;
+use App\Jobs\SyncAllEmailAccountsJob;
+use App\Models\EmailAccount;
 use Illuminate\Console\Command;
 
 class SyncCompanyGmailCommand extends Command
 {
     protected $signature = 'crm:sync-gmail';
 
-    protected $description = 'Dispatch Gmail sync jobs for all connected companies';
+    protected $description = 'Dispatch email sync jobs for all connected email accounts across providers';
 
     public function handle(): int
     {
-        $companyIds = CompanyCalendarConnection::query()
+        $companyIds = EmailAccount::query()
             ->where('status', 'active')
-            ->whereNull('disconnected_at')
-            ->get()
-            ->filter(fn (CompanyCalendarConnection $connection): bool => GoogleScopeHelper::connectionHasGmailScopes($connection))
+            ->distinct()
             ->pluck('company_id');
 
         foreach ($companyIds as $companyId) {
-            SyncCompanyGmailJob::dispatch((int) $companyId);
+            SyncAllEmailAccountsJob::dispatch((int) $companyId);
         }
 
-        $this->info('Dispatched Gmail sync for ' . $companyIds->count() . ' companies.');
+        $accountCount = EmailAccount::query()
+            ->where('status', 'active')
+            ->count();
+
+        $this->info(
+            'Dispatched email sync for '
+                . $companyIds->count()
+                . ' companies covering '
+                . $accountCount
+                . ' active email accounts.'
+        );
 
         return self::SUCCESS;
     }

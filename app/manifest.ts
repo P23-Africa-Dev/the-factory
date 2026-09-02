@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Factory 23 Workforce",
-    short_name: "Factory23",
+    short_name: "Factory 23",
     description:
       "Offline-first workforce management for tasks, projects, meetings, attendance, and tracking.",
     id: "/",

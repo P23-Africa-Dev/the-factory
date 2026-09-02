@@ -11,7 +11,8 @@ export type ServerSessionState = {
 };
 
 export async function getServerSessionState(
-  token: string | null | undefined
+  token: string | null | undefined,
+  options: { support?: boolean } = {},
 ): Promise<ServerSessionState> {
   if (!token) {
     return {
@@ -52,15 +53,19 @@ export async function getServerSessionState(
     return {
       isAuthenticated: true,
       onboardingCompleted: Boolean(data?.onboarding_completed),
-      hasActiveSubscription: Boolean(
-        billing?.has_active_subscription ?? activeCompany?.has_active_subscription
-      ),
+      hasActiveSubscription: options.support
+        ? true
+        : Boolean(
+            billing?.has_active_subscription ?? activeCompany?.has_active_subscription
+          ),
       hasPaidSubscription: Boolean(
         billing?.has_paid_subscription ?? activeCompany?.has_paid_subscription
       ),
-      billingEnforced: Boolean(
-        billing?.billing_enforced ?? activeCompany?.billing_enforced ?? true
-      ),
+      billingEnforced: options.support
+        ? false
+        : Boolean(
+            billing?.billing_enforced ?? activeCompany?.billing_enforced ?? true
+          ),
       role: typeof activeCompany?.role === "string" ? activeCompany.role : null,
     };
   } catch {

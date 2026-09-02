@@ -3,6 +3,7 @@
 import React from 'react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useProfile, useAuth, useAuthNavigation, useAgentIdentity } from '@/features/auth';
+import { JourneyHistoryPanel } from '@/features/field-activity';
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
@@ -102,7 +103,7 @@ export default function ProfilePage() {
     <ScreenErrorBoundary screenName="Profile">
       <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-hidden pb-10">
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 pt-6 mb-6">
+        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] mb-6">
           <button
             onClick={goBack}
             className="w-10 h-10 flex items-center justify-center text-3xl font-light text-white/90 hover:text-white transition-colors focus:outline-none"
@@ -225,6 +226,9 @@ export default function ProfilePage() {
                   </div>
                 </SectionCard>
               )}
+
+              {/* Journey History */}
+              <JourneyHistoryPanel agentName={displayName} />
             </>
           )}
         </div>

@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(AdminUserSeeder::class);
         $this->call(BillingPlanSeeder::class);
+        $this->call(MapCreditSkuSeeder::class);
 
         // if (app()->environment('local', 'testing')) {
         //     User::factory()->create([

@@ -50,8 +50,16 @@ export function ActiveTrackingBar() {
   return (
     <div className="fixed bottom-16 left-0 right-0 z-50 px-3 pb-1 pointer-events-none">
       <div
+        role="button"
+        tabIndex={0}
         className="mx-auto max-w-lg bg-dash-dark text-white rounded-2xl shadow-2xl flex items-center gap-3 px-4 py-3 pointer-events-auto cursor-pointer"
         onClick={() => router.push(`/agent/tasks/${activeTaskId}/tracking`)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            router.push(`/agent/tasks/${activeTaskId}/tracking`);
+          }
+        }}
       >
         {/* Pulsing dot */}
         <span className="relative flex h-3 w-3 shrink-0">

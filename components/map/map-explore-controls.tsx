@@ -1,6 +1,6 @@
 "use client";
 
-import { LocateFixed } from "lucide-react";
+import { EyeOff, LocateFixed } from "lucide-react";
 
 type MapExploreControlsProps = {
   locating: boolean;
@@ -9,6 +9,9 @@ type MapExploreControlsProps = {
   onMapModeChange: (mode: "2d" | "3d") => void;
   className?: string;
   showDimensionToggle?: boolean;
+  showPinsToggle?: boolean;
+  onTogglePins?: () => void;
+  pinsToggleLabel?: string;
 };
 
 export function MapExploreControls({
@@ -18,9 +21,24 @@ export function MapExploreControls({
   onMapModeChange,
   className = "absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2",
   showDimensionToggle = true,
+  showPinsToggle = false,
+  onTogglePins,
+  pinsToggleLabel = "Hide Pins",
 }: MapExploreControlsProps) {
   return (
     <div className={className}>
+      {showPinsToggle && onTogglePins && (
+        <button
+          type="button"
+          onClick={onTogglePins}
+          title={pinsToggleLabel}
+          className="h-10 rounded-full bg-white/95 backdrop-blur shadow-lg border border-slate-200 px-4 flex items-center gap-2 text-[12px] font-semibold text-dash-dark hover:bg-slate-50 active:scale-95 transition-all"
+        >
+          <EyeOff size={16} />
+          {pinsToggleLabel}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={onLocateMe}

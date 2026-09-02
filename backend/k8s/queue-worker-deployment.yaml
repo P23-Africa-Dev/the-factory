@@ -55,7 +55,7 @@ spec:
               php artisan config:clear
               php artisan config:cache
               exec php artisan queue:work redis \
-                --queue=email-sync,email-attachments,default \
+                --queue=notifications-push,email-sync,email-attachments,default \
                 --sleep=1 \
                 --tries=3 \
                 --max-time=3600 \
@@ -69,7 +69,7 @@ spec:
 
           resources:
             requests:
-              cpu: "100m"
+              cpu: "50m"
               memory: "128Mi"
             limits:
               cpu: "500m"

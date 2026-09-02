@@ -62,6 +62,10 @@ export const assistantApi = {
       content: String(response.content ?? ''),
       sources: Array.isArray(response.sources) ? (response.sources as string[]) : [],
       tool: (response.tool as string | null) ?? null,
+      payload:
+        response.payload && typeof response.payload === 'object'
+          ? (response.payload as Record<string, unknown>)
+          : null,
     };
   },
 
@@ -106,5 +110,27 @@ export const assistantApi = {
     await Promise.all(
       threads.map((t) => assistantApi.deleteThread(t.thread_id).catch(() => undefined)),
     );
+  },
+
+  analyzeFile: async (file: File): Promise<{ summary: string }> => {
+    const companyId = getActiveCompanyId();
+    const formData = new FormData();
+    formData.append('file', file);
+    if (companyId != null) {
+      formData.append('company_id', String(companyId));
+    }
+
+    const res = await client.post('/copilot/files/analyze', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    const data = unwrap(res.data);
+    const analysis = (data.analysis && typeof data.analysis === 'object'
+      ? data.analysis
+      : {}) as Record<string, unknown>;
+    return {
+      summary: String(analysis.summary ?? 'File analysis completed.'),
+    };
   },
 };

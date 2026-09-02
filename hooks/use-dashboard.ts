@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/dashboard";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
 import { getAuthTokenFromDocument, getCompanyId } from "@/lib/auth/session";
+import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { useAuthStore } from "@/store/auth";
 
 export type UseDashboardParams = DashboardQueryParams & {
@@ -66,7 +67,7 @@ export function useDashboardOverview(params: UseDashboardParams = {}) {
             const res = await getDashboardOverview(requestParams, token, basePath);
             return res.data;
         },
-        enabled: !!token && hasHydrated,
+        enabled: hasActiveApiSession(token) && hasHydrated,
         staleTime: 1000 * 60 * 2,
     });
 }
@@ -84,7 +85,7 @@ export function useWorkforceSummary(params: UseDashboardParams = {}) {
             const res = await getWorkforceSummary(requestParams, token, basePath);
             return res.data;
         },
-        enabled: !!token && hasHydrated,
+        enabled: hasActiveApiSession(token) && hasHydrated,
         staleTime: 1000 * 60 * 2,
     });
 }

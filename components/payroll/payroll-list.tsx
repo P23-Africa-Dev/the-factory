@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TinyButton } from "../ui/tiny-button";
 import { StatusBadge } from "../ui/status-badge";
 import type { InternalUserListItem } from "@/lib/api/internal-users";
+import { resolveAvatarSrc } from "@/lib/avatar";
 export { mapPayrollAgentToUi, mapPayrollProfileToUi } from "@/lib/api/payroll";
 
 export interface PayrollAgent {
@@ -28,7 +29,7 @@ export function mapInternalUserToPayrollAgent(user: InternalUserListItem): Payro
     name: user.name,
     address: user.email,
     lga: user.assigned_zone ?? "Unassigned",
-    avatar: user.avatar_url ?? "/avatars/male-avatar.png",
+    avatar: resolveAvatarSrc(user.avatar_url),
     baseSalary: "--",
     netPay: "--",
     role: user.internal_role ?? user.role,

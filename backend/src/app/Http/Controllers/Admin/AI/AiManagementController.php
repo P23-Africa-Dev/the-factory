@@ -11,6 +11,8 @@ use App\Services\AI\Admin\AiFailoverTracker;
 use App\Services\AI\Admin\AiOperationsAnalyticsService;
 use App\Services\AI\Admin\AiProviderHealthService;
 use App\Services\AI\AiLoggingService;
+use App\Services\AI\AiIntentRoutingSettingService;
+use App\Services\AI\AiStackSettingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -26,6 +28,8 @@ class AiManagementController extends Controller
         private readonly AiFailoverTracker $failoverTracker,
         private readonly AiOperationsAnalyticsService $operationsAnalytics,
         private readonly AiAlertService $alertService,
+        private readonly AiStackSettingService $aiStackSettingService,
+        private readonly AiIntentRoutingSettingService $aiIntentRoutingSettingService,
     ) {}
 
     public function index(): View
@@ -40,14 +44,18 @@ class AiManagementController extends Controller
         $statsToday = $this->emptyStats();
         $statsWeek = $this->emptyStats();
         $statsMonth = $this->emptyStats();
-        $avgExecutionByProvider = ['openai' => null, 'claude' => null];
+        $avgExecutionByProvider = ['openai' => null, 'claude' => null, 'nvidia' => null, 'glm' => null];
         $providerUsage = [
             'openai' => $this->emptyProviderUsage(),
             'claude' => $this->emptyProviderUsage(),
+            'nvidia' => $this->emptyProviderUsage(),
+            'glm' => $this->emptyProviderUsage(),
         ];
         $topUsers = [];
         $topOrganizations = [];
         $modelUsage = [];
+        $modelUsageDetailed = [];
+        $providerModelMatrix = [];
         $dailyTrends = [];
         $recentErrors = [];
         $recentLogs = collect();
@@ -60,11 +68,23 @@ class AiManagementController extends Controller
             $statsMonth = $this->aiLoggingService->analytics(null, $thirtyDaysAgo . ' 00:00:00', $today . ' 23:59:59');
 
             $avgExecutionByProvider['openai'] = AiLog::query()
+                ->llmInvocations()
                 ->where('provider', 'openai')
                 ->where('created_at', '>=', $now->copy()->subDays(30))
                 ->avg('execution_ms');
             $avgExecutionByProvider['claude'] = AiLog::query()
+                ->llmInvocations()
                 ->where('provider', 'claude')
+                ->where('created_at', '>=', $now->copy()->subDays(30))
+                ->avg('execution_ms');
+            $avgExecutionByProvider['nvidia'] = AiLog::query()
+                ->llmInvocations()
+                ->where('provider', 'nvidia')
+                ->where('created_at', '>=', $now->copy()->subDays(30))
+                ->avg('execution_ms');
+            $avgExecutionByProvider['glm'] = AiLog::query()
+                ->llmInvocations()
+                ->where('provider', 'glm')
                 ->where('created_at', '>=', $now->copy()->subDays(30))
                 ->avg('execution_ms');
 
@@ -72,17 +92,20 @@ class AiManagementController extends Controller
             $topUsers = $this->operationsAnalytics->topUsers($now->copy()->subDays(30));
             $topOrganizations = $this->operationsAnalytics->topOrganizations($now->copy()->subDays(30));
             $modelUsage = $this->operationsAnalytics->modelUsage($now->copy()->subDays(30));
+            $modelUsageDetailed = $this->operationsAnalytics->modelUsageDetailed($now->copy()->subDays(30));
+            $providerModelMatrix = $this->operationsAnalytics->providerModelMatrix($now->copy()->subDays(30));
             $dailyTrends = $this->operationsAnalytics->dailyTrends($now->copy()->subDays(29)->startOfDay(), $now);
             $recentErrors = $this->operationsAnalytics->recentErrors(10);
 
             $recentLogs = AiLog::query()
+                ->llmInvocations()
                 ->with(['user:id,name,email', 'company:id,name'])
                 ->latest()
                 ->limit(10)
                 ->get();
 
-            $last24hTotal = AiLog::query()->where('created_at', '>=', $now->copy()->subDay())->count();
-            $last24hFailed = AiLog::query()->where('created_at', '>=', $now->copy()->subDay())
+            $last24hTotal = AiLog::query()->llmInvocations()->where('created_at', '>=', $now->copy()->subDay())->count();
+            $last24hFailed = AiLog::query()->llmInvocations()->where('created_at', '>=', $now->copy()->subDay())
                 ->whereIn('status', ['failed', 'timeout'])
                 ->count();
 
@@ -91,34 +114,44 @@ class AiManagementController extends Controller
 
         $openaiConfigured = trim((string) config('services.ai.openai.api_key')) !== '';
         $claudeConfigured = trim((string) config('services.ai.claude.api_key')) !== '';
+        $nvidiaConfigured = trim((string) config('services.ai.nvidia.api_key')) !== '';
+        $glmConfigured = trim((string) config('services.ai.glm.api_key')) !== '';
         $primaryProvider = (string) config('services.ai.provider', 'openai');
         $fallbackProvider = (string) config('services.ai.fallback_provider', 'claude');
+        $aiStackSnapshot = $this->aiStackSettingService->getSnapshot();
+        $activeAiStack = (string) $aiStackSnapshot['stack'];
+        $intentRoutingSnapshot = $this->aiIntentRoutingSettingService->getSnapshot();
+        $activeIntentRoutingMode = (string) $intentRoutingSnapshot['mode'];
+        $canManageAiStack = auth('admin')->user()?->canAccessAbility('manage_ai') === true;
 
-        $openaiHealth = $this->healthService->displayStatus('openai');
-        $claudeHealth = $this->healthService->displayStatus('claude');
+        $providerChecks = $this->healthService->checkAll(persist: true);
+        $openaiHealth = $providerChecks['openai'];
+        $claudeHealth = $providerChecks['claude'];
+        $nvidiaHealth = $providerChecks['nvidia'];
+        $glmHealth = $providerChecks['glm'];
         $warningBanners = $this->operationsAnalytics->warningBanners($openaiHealth, $claudeHealth);
         $activeAlerts = $this->alertService->activeAlerts(10);
         $lastFailover = $this->failoverTracker->latest();
 
         $errorRate = $last24hTotal > 0 ? round(($last24hFailed / $last24hTotal) * 100, 1) : 0;
 
-        $aiStatus = 'online';
-        if (! $openaiConfigured && ! $claudeConfigured) {
-            $aiStatus = 'offline';
-        } elseif (($openaiHealth['ok'] ?? false) === false && ($claudeHealth['ok'] ?? false) === false) {
-            $aiStatus = 'offline';
-        } elseif ($errorRate > 20 || (($openaiHealth['ok'] ?? false) === false xor ($claudeHealth['ok'] ?? false) === false)) {
-            $aiStatus = 'degraded';
-        } elseif ($lastFailover !== null) {
-            $aiStatus = 'fallback';
-        }
-
-        $activeProviderLabel = ucfirst($primaryProvider);
-        if (($openaiHealth['ok'] ?? false) === false && ($claudeHealth['ok'] ?? false) === true) {
-            $activeProviderLabel = ucfirst($fallbackProvider);
-        } elseif (($claudeHealth['ok'] ?? false) === false && ($openaiHealth['ok'] ?? false) === true) {
-            $activeProviderLabel = ucfirst($primaryProvider);
-        }
+        $aggregateStatus = $this->healthService->aggregateStatus(
+            openaiHealth: $openaiHealth,
+            claudeHealth: $claudeHealth,
+            openaiConfigured: $openaiConfigured,
+            claudeConfigured: $claudeConfigured,
+            primaryProvider: $primaryProvider,
+            fallbackProvider: $fallbackProvider,
+            lastFailover: $lastFailover,
+            errorRate: $errorRate,
+            stack: $activeAiStack,
+            nvidiaHealth: $nvidiaHealth,
+            nvidiaConfigured: $nvidiaConfigured,
+            glmHealth: $glmHealth,
+            glmConfigured: $glmConfigured,
+        );
+        $aiStatus = $aggregateStatus['status'];
+        $activeProviderLabel = $aggregateStatus['active_provider'];
 
         return view('admin.ai.index', compact(
             'statsToday',
@@ -127,8 +160,15 @@ class AiManagementController extends Controller
             'aiLogsReady',
             'openaiConfigured',
             'claudeConfigured',
+            'nvidiaConfigured',
+            'glmConfigured',
             'primaryProvider',
             'fallbackProvider',
+            'aiStackSnapshot',
+            'activeAiStack',
+            'intentRoutingSnapshot',
+            'activeIntentRoutingMode',
+            'canManageAiStack',
             'avgExecutionByProvider',
             'errorRate',
             'aiStatus',
@@ -136,6 +176,8 @@ class AiManagementController extends Controller
             'last24hFailed',
             'openaiHealth',
             'claudeHealth',
+            'nvidiaHealth',
+            'glmHealth',
             'warningBanners',
             'activeAlerts',
             'lastFailover',
@@ -143,10 +185,13 @@ class AiManagementController extends Controller
             'topUsers',
             'topOrganizations',
             'modelUsage',
+            'modelUsageDetailed',
+            'providerModelMatrix',
             'dailyTrends',
             'recentErrors',
             'recentLogs',
             'activeProviderLabel',
+            'aggregateStatus',
         ));
     }
 
@@ -173,6 +218,8 @@ class AiManagementController extends Controller
 
         $stats = $this->emptyStats();
         $modelUsage = [];
+        $modelUsageDetailed = [];
+        $providerModelMatrix = [];
         $topUsers = [];
         $topOrganizations = [];
 
@@ -183,6 +230,8 @@ class AiManagementController extends Controller
                 to: $now->toDateTimeString(),
             );
             $modelUsage = $this->operationsAnalytics->modelUsage($from);
+            $modelUsageDetailed = $this->operationsAnalytics->modelUsageDetailed($from);
+            $providerModelMatrix = $this->operationsAnalytics->providerModelMatrix($from);
             $topUsers = $this->operationsAnalytics->topUsers($from, 8);
             $topOrganizations = $this->operationsAnalytics->topOrganizations($from, 8);
         }
@@ -191,6 +240,7 @@ class AiManagementController extends Controller
 
         if ($aiLogsReady) {
             $dailyData = AiLog::query()
+                ->llmInvocations()
                 ->where('created_at', '>=', $from)
                 ->selectRaw("DATE(created_at) as day, COUNT(*) as requests, SUM(COALESCE(total_tokens,0)) as tokens, SUM(COALESCE(estimated_cost_usd,0)) as cost, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful, SUM(CASE WHEN status IN ('failed','timeout') THEN 1 ELSE 0 END) as failed")
                 ->groupBy('day')
@@ -219,6 +269,8 @@ class AiManagementController extends Controller
             'range',
             'aiLogsReady',
             'modelUsage',
+            'modelUsageDetailed',
+            'providerModelMatrix',
             'topUsers',
             'topOrganizations',
         ));

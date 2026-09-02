@@ -22,6 +22,7 @@ import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
+import { TrackingConnectionStatus } from '@/components/tracking/TrackingConnectionStatus';
 import { useTrackingStore } from '@/store/tracking';
 import type { GeoReading } from '@/types/tracking';
 import {
@@ -37,10 +38,13 @@ import {
   resolveVisualTaskState,
   sanitizePolyline,
   updateAgentMarkerElement,
+  updateAgentMarkerHeading,
   VISUAL_PALETTE,
 } from '@/lib/tracking/map-visualization';
+import { resolveHeading } from '@/lib/tracking/dead-reckoning';
 import { useEffectiveMapProvider, type EffectiveMapProviderState } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
+import { buildTaskMapUrl } from '@/lib/tasks/map-navigation';
 
 type Phase = 'permission' | 'ready' | 'tracking' | 'complete';
 
@@ -367,6 +371,7 @@ function MapboxTrackingMap({
 
     if (!agentPosition) return;
 
+    const agentHeading = resolveHeading(null, trail);
     if (!agentMarkerRef.current) {
       const el = createAgentMarkerElement({
         name: agentName,
@@ -378,6 +383,7 @@ function MapboxTrackingMap({
         .setLngLat(agentPosition)
         .addTo(map);
       markerPositionRef.current = agentPosition;
+      updateAgentMarkerHeading(el, agentHeading);
     } else {
       updateAgentMarkerElement(agentMarkerRef.current.getElement(), {
         name: agentName,
@@ -385,6 +391,7 @@ function MapboxTrackingMap({
         visualState,
         stale: false,
       });
+      updateAgentMarkerHeading(agentMarkerRef.current.getElement(), agentHeading);
 
       const from = markerPositionRef.current ?? [agentMarkerRef.current.getLngLat().lng, agentMarkerRef.current.getLngLat().lat] as [number, number];
       if (!areSamePoint(from, agentPosition)) {
@@ -825,7 +832,7 @@ export default function TrackingPage({
           setArrived(true);
           toast.success("You've arrived at the destination!");
         },
-        onError: () => { },
+        // onError/onStopped fall back to the provider's visible toasts.
       });
 
       if (res.data.arrived) {
@@ -833,7 +840,16 @@ export default function TrackingPage({
         toast.success("You're already at the destination!");
       }
 
-      setPhase('tracking');
+      const mapUrl = buildTaskMapUrl({
+        id: taskId,
+        latitude: res.data.task.latitude,
+        longitude: res.data.task.longitude,
+        label: res.data.task.title,
+        location: res.data.task.location ?? undefined,
+        address: res.data.task.address ?? undefined,
+      }) ?? '/agent/map';
+
+      router.replace(mapUrl);
     } catch (err) {
       if (err instanceof ApiRequestError) {
         const first = err.errors ? Object.values(err.errors)[0]?.[0] : null;
@@ -937,6 +953,8 @@ export default function TrackingPage({
               agentAvatarUrl={liveTask?.agentAvatarUrl ?? user?.avatar ?? undefined}
               status={liveTask?.status ?? 'in_progress'}
             />
+
+            <TrackingConnectionStatus className="absolute top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-none" />
 
             {/* GPS accuracy badge */}
             {initialReading?.accuracyMeters && (

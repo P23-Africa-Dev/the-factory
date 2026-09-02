@@ -1,3 +1,5 @@
+import { isSupportSessionActiveInDocument } from "@/lib/auth/support-session";
+
 export const AUTH_TOKEN_COOKIE = "factory_auth_token";
 export const ONBOARDING_DONE_COOKIE = "factory_onboarding_done";
 export const COMPANY_ID_KEY = "factory_company_id";
@@ -29,17 +31,8 @@ export function setOnboardingCompletedCookie() {
 
 export function clearAuthSession() {
   if (typeof document !== "undefined") {
-    // Clear specific known cookies
     document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
     document.cookie = `${ONBOARDING_DONE_COOKIE}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-
-    // Clear all cookies
-    const cookies = document.cookie.split(";");
-    for (const cookie of cookies) {
-      const eqPos = cookie.indexOf("=");
-      const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
-      document.cookie = `${name}=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-    }
   }
 
   if (typeof localStorage !== "undefined") {
@@ -83,6 +76,10 @@ export function getCompanyId(): string | null {
 
 export function getAuthTokenFromDocument() {
   if (typeof document === "undefined") {
+    return "";
+  }
+
+  if (isSupportSessionActiveInDocument()) {
     return "";
   }
 

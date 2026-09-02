@@ -2,14 +2,15 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class SmtpConnectionTestNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly string $environment,
@@ -20,15 +21,17 @@ class SmtpConnectionTestNotification extends Notification implements ShouldQueue
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        return (new MailMessage)
-            ->mailer('resend')
-            ->subject('SMTP Test Email - Factory 23')
-            ->greeting('SMTP configuration test')
-            ->line('This confirms your Laravel mail configuration can send through the configured production transport.')
-            ->line('Environment: '.$this->environment)
-            ->line('Sent at: '.now()->toDateTimeString())
-            ->salutation('Factory 23 System');
+        return $this->factory23Mail()
+            ->subject('Mail delivery test — Factory23')
+            ->greeting('Mail configuration test')
+            ->line('This confirms your Factory23 mail configuration can send through the configured production transport.')
+            ->line($this->factory23DetailTable([
+                'Environment' => $this->environment,
+                'Sent at' => now()->toDateTimeString(),
+                'Mailer' => 'resend',
+            ]))
+            ->salutation(config('brand.name') . ' System');
     }
 }

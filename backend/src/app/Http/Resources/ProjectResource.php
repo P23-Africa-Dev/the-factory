@@ -37,20 +37,20 @@ class ProjectResource extends JsonResource
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->creator->avatar, $this->creator->gender),
             ] : null),
             'manager' => $this->whenLoaded('manager', fn(): ?array => $this->manager ? [
                 'id' => $this->manager->id,
                 'name' => $this->manager->name,
                 'email' => $this->manager->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->manager->avatar, $this->manager->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->manager->avatar, $this->manager->gender),
             ] : null),
             'assigned_team' => $this->whenLoaded('teamUsers', fn() => $this->teamUsers->map(fn($user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->pivot->role,
-                'avatar_url' => AvatarUrlResolver::resolve($user->avatar, $user->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($user->avatar, $user->gender),
             ])->values()->all()),
             'attachments' => ProjectFileResource::collection($this->whenLoaded('files')),
             'task_summary' => [

@@ -1,12 +1,13 @@
 "use client";
 
-import type { ChangeEvent } from "react";
-import { useMemo, useRef, useState } from "react";
+import type { ChangeEvent, DragEvent } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, FileText, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ModalShell } from "@/components/crm/crm-toolbar-modals";
 import { downloadCsvFile, parseCsvContent, toCsvContent } from "@/lib/crm/csv";
+import { parseProfileUrls } from "@/lib/crm/lead-fields";
 import type {
     ApiLeadPriority,
     ApiRoleBasePath,
@@ -18,7 +19,8 @@ import type {
     ImportLeadsResult,
     ImportPreviewResult,
 } from "@/lib/api/crm";
-import { useImportCrmLeads, usePreviewImportCrmLeads } from "@/hooks/use-crm";
+import { useCrmPreferences, useImportCrmLeads, usePreviewImportCrmLeads } from "@/hooks/use-crm";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
 const MAX_IMPORT_ROWS = 500;
 
@@ -29,6 +31,10 @@ const FIELD_OPTIONS: Array<{ value: FieldKey; label: string }> = [
     { value: "email", label: "Email" },
     { value: "phone", label: "Phone" },
     { value: "location", label: "Location" },
+    { value: "company_name", label: "Company Name" },
+    { value: "website", label: "Website" },
+    { value: "position", label: "Position" },
+    { value: "profile_urls", label: "Profile URLs (comma-separated)" },
     { value: "source", label: "Source" },
     { value: "status", label: "Status" },
     { value: "priority", label: "Priority" },
@@ -50,6 +56,22 @@ const HEADER_ALIASES: Record<string, FieldKey> = {
     location: "location",
     address: "location",
     city: "location",
+    company_name: "company_name",
+    company: "company_name",
+    organization: "company_name",
+    organisation: "company_name",
+    website: "website",
+    web: "website",
+    url: "website",
+    position: "position",
+    job_title: "position",
+    title: "position",
+    role: "position",
+    profile_urls: "profile_urls",
+    profile_url: "profile_urls",
+    linkedin: "profile_urls",
+    social_urls: "profile_urls",
+    social_links: "profile_urls",
     source: "source",
     lead_source: "source",
     status: "status",
@@ -82,9 +104,10 @@ export function ImportLeadsWizard({
     companyId,
     apiBasePath,
     pipelines,
-    defaultPipelineId,
     labels,
     onClose,
+    onViewImportedPipeline,
+    onViewAllLeads,
 }: {
     companyId: number | string;
     apiBasePath: ApiRoleBasePath;
@@ -92,20 +115,33 @@ export function ImportLeadsWizard({
     defaultPipelineId?: number | null;
     labels: CrmLabel[];
     onClose: () => void;
+    onViewImportedPipeline?: (pipelineId: number) => void;
+    onViewAllLeads?: () => void;
 }) {
     const [step, setStep] = useState<Step>("upload");
     const [fileName, setFileName] = useState<string>("");
     const [headers, setHeaders] = useState<string[]>([]);
     const [rawRows, setRawRows] = useState<string[][]>([]);
     const [mapping, setMapping] = useState<Record<number, FieldKey | "">>({});
-    const [pipelineId, setPipelineId] = useState<string>(
-        defaultPipelineId ? String(defaultPipelineId) : pipelines[0] ? String(pipelines[0].id) : ""
+    const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
+    const resolvedPipelineId = resolveCrmPipelineId(
+        pipelines,
+        preferences?.preferred_pipeline_id,
+        preferences?.company_default_pipeline_id,
     );
+    const [pipelineIdOverride, setPipelineIdOverride] = useState<string>("");
+    const pipelineId =
+        pipelineIdOverride ||
+        (resolvedPipelineId != null ? String(resolvedPipelineId) : "") ||
+        (pipelines[0] ? String(pipelines[0].id) : "");
+    const setPipelineId = setPipelineIdOverride;
     const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>("skip");
     const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
     const [result, setResult] = useState<ImportLeadsResult | null>(null);
     const [failedRows, setFailedRows] = useState<FailedImportRow[]>([]);
     const fileRef = useRef<HTMLInputElement | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragCounter = useRef(0);
 
     const importMutation = useImportCrmLeads(apiBasePath);
     const previewMutation = usePreviewImportCrmLeads(apiBasePath);
@@ -113,15 +149,46 @@ export function ImportLeadsWizard({
     const downloadTemplate = () => {
         const exampleStatus = labels[0]?.name ?? "New Lead";
         const content = toCsvContent(
-            ["name", "email", "phone", "location", "source", "status", "priority", "budget_amount", "budget_currency"],
-            [["Jane Doe", "jane@example.com", "+1 555 000 1234", "Lagos", "Referral", exampleStatus, "medium", "5000", "USD"]]
+            [
+                "name",
+                "email",
+                "phone",
+                "location",
+                "company_name",
+                "website",
+                "position",
+                "profile_urls",
+                "source",
+                "status",
+                "priority",
+                "budget_amount",
+                "budget_currency",
+            ],
+            [[
+                "Jane Doe",
+                "jane@example.com",
+                "+1 555 000 1234",
+                "Lagos",
+                "Acme Ltd",
+                "https://acme.com",
+                "Head of Sales",
+                "https://linkedin.com/in/jane,https://x.com/jane",
+                "Referral",
+                exampleStatus,
+                "medium",
+                "5000",
+                "USD",
+            ]]
         );
         downloadCsvFile("crm-leads-import-template.csv", content);
     };
 
-    const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    const processFile = useCallback(async (file: File) => {
+        if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv") {
+            toast.error("Please upload a CSV file.");
+            return;
+        }
+
         const text = await file.text();
         const parsed = parseCsvContent(text);
 
@@ -148,7 +215,47 @@ export function ImportLeadsWizard({
             }
         });
         setMapping(autoMapping);
+    }, []);
+
+    const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await processFile(file);
     };
+
+    const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current += 1;
+        if (e.dataTransfer.items?.length) {
+            setIsDragging(true);
+        }
+    }, []);
+
+    const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current -= 1;
+        if (dragCounter.current === 0) {
+            setIsDragging(false);
+        }
+    }, []);
+
+    const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }, []);
+
+    const handleDrop = useCallback(async (e: DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current = 0;
+        setIsDragging(false);
+
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        await processFile(file);
+    }, [processFile]);
 
     const mappedRows = useMemo<ImportLeadRow[]>(() => {
         return rawRows.map((values) => {
@@ -162,6 +269,11 @@ export function ImportLeadsWizard({
                     row.priority = val.toLowerCase() as ApiLeadPriority;
                 } else if (field === "budget_currency") {
                     row.budget_currency = val.toUpperCase();
+                } else if (field === "profile_urls") {
+                    const urls = parseProfileUrls(val);
+                    if (urls.length > 0) {
+                        row.profile_urls = urls;
+                    }
                 } else {
                     row[field] = val;
                 }
@@ -220,13 +332,19 @@ export function ImportLeadsWizard({
 
     const downloadErrorReport = () => {
         if (!result) return;
-        const reportHeaders = ["row", "name", "email", "phone", "location", "source", "status", "priority", "budget_amount", "budget_currency", "issue"];
+        const reportHeaders = [
+            "row", "name", "email", "phone", "location", "company_name", "website", "position", "profile_urls",
+            "source", "status", "priority", "budget_amount", "budget_currency", "issue",
+        ];
         const rows: Array<Array<string | number | null | undefined>> = [];
 
         for (const failed of result.failed_rows) {
             rows.push([
                 failed.row_index,
-                failed.data.name, failed.data.email, failed.data.phone, failed.data.location, failed.data.source,
+                failed.data.name, failed.data.email, failed.data.phone, failed.data.location,
+                failed.data.company_name, failed.data.website, failed.data.position,
+                Array.isArray(failed.data.profile_urls) ? failed.data.profile_urls.join(", ") : failed.data.profile_urls,
+                failed.data.source,
                 failed.data.status, failed.data.priority, failed.data.budget_amount, failed.data.budget_currency,
                 failed.errors.join(" | "),
             ]);
@@ -234,7 +352,10 @@ export function ImportLeadsWizard({
         for (const skipped of result.skipped_rows) {
             rows.push([
                 skipped.row_index,
-                skipped.data.name, skipped.data.email, skipped.data.phone, skipped.data.location, skipped.data.source,
+                skipped.data.name, skipped.data.email, skipped.data.phone, skipped.data.location,
+                skipped.data.company_name, skipped.data.website, skipped.data.position,
+                Array.isArray(skipped.data.profile_urls) ? skipped.data.profile_urls.join(", ") : skipped.data.profile_urls,
+                skipped.data.source,
                 skipped.data.status, skipped.data.priority, skipped.data.budget_amount, skipped.data.budget_currency,
                 skipped.reason,
             ]);
@@ -282,10 +403,57 @@ export function ImportLeadsWizard({
                             </button>
                         </div>
 
-                        <div className="border border-dashed border-gray-300 rounded-xl p-5 bg-gray-50 text-center">
+                        <div className="rounded-xl border border-gray-100 bg-white px-4 py-3 text-[12px] text-gray-600 space-y-2">
+                            <p><span className="font-semibold text-dash-dark">Required:</span> Name</p>
+                            <p><span className="font-semibold text-dash-dark">Optional:</span> Email, Phone, Location, Company Name, Website, Position, Profile URLs, Source, Status, Priority, Budget Amount, Budget Currency</p>
+                            <p><span className="font-semibold text-dash-dark">Profile URLs:</span> Put multiple URLs in one cell, separated by commas (e.g. <code className="text-[11px] bg-gray-50 px-1 rounded">https://linkedin.com/in/jane,https://x.com/jane</code>).</p>
+                        </div>
+
+                        <div
+                            onDragEnter={handleDragEnter}
+                            onDragLeave={handleDragLeave}
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                            className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors duration-200 ${
+                                isDragging
+                                    ? "border-dash-dark bg-dash-dark/5 ring-2 ring-dash-dark/10"
+                                    : "border-gray-300 bg-gray-50"
+                            }`}
+                        >
                             <p className="text-[13px] font-semibold text-dash-dark mb-1">2. Upload your CSV file</p>
-                            <p className="text-[12px] text-gray-500 mb-3">Any column names are fine — you can map them in the next step.</p>
-                            <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onFileChange} className="text-[12px] mx-auto" />
+                            <p className="text-[12px] text-gray-500 mb-4">
+                                {isDragging
+                                    ? "Drop your CSV file here"
+                                    : "Drag & drop your CSV here, or choose a file. Any column names are fine."}
+                            </p>
+                            <div className="flex flex-col items-center gap-2">
+                                <input
+                                    ref={fileRef}
+                                    id="crm-import-csv-file"
+                                    type="file"
+                                    accept=".csv,text/csv"
+                                    onChange={onFileChange}
+                                    className="sr-only"
+                                />
+                                {!isDragging && (
+                                    <button
+                                        type="button"
+                                        onClick={() => fileRef.current?.click()}
+                                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-[12px] font-semibold text-gray-700 shadow-sm hover:border-gray-400 hover:bg-gray-100 transition-colors"
+                                    >
+                                        <Upload size={14} />
+                                        {fileName ? "Choose another file" : "Choose CSV file"}
+                                    </button>
+                                )}
+                                {isDragging && (
+                                    <div className="flex flex-col items-center gap-1 py-2">
+                                        <Upload size={24} className="text-dash-dark animate-bounce" />
+                                    </div>
+                                )}
+                                {!fileName && !isDragging && (
+                                    <p className="text-[11px] text-gray-400">No file chosen</p>
+                                )}
+                            </div>
                             {fileName && (
                                 <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-[12px] text-gray-600">
                                     <FileText size={13} />
@@ -522,6 +690,9 @@ export function ImportLeadsWizard({
                                 <span className="font-semibold">{result.failed_rows.length}</span> failed.
                             </p>
                         </div>
+                        <p className="text-[12px] text-gray-500">
+                            Imported leads are available immediately. Pipeline columns load progressively for large datasets.
+                        </p>
 
                         {(result.failed_rows.length > 0 || result.skipped_rows.length > 0) && (
                             <div className="flex justify-end">
@@ -573,8 +744,17 @@ export function ImportLeadsWizard({
                                     {importMutation.isPending ? "Retrying…" : "Retry failed rows"}
                                 </button>
                             )}
-                            <button onClick={onClose} className={`px-4 py-2 rounded-lg text-[12px] font-semibold ${failedRows.length > 0 ? "border border-gray-200 text-gray-600" : "bg-dash-dark text-white"}`}>
-                                {failedRows.length > 0 ? "Close" : "View imported leads"}
+                            <button
+                                onClick={() => onViewAllLeads?.()}
+                                className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-[12px] font-semibold"
+                            >
+                                View all leads
+                            </button>
+                            <button
+                                onClick={() => onViewImportedPipeline?.(Number(pipelineId))}
+                                className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
+                            >
+                                View imported pipeline
                             </button>
                         </div>
                     </>

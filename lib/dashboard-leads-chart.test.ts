@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCalibratedLeadsTrendChart,
+  hasLeadsTrendData,
   LEADS_TREND_BUCKET_COUNT,
   LEADS_TREND_MIN_BAR_VALUE,
   normalizeLeadsTrendBuckets,
@@ -35,7 +36,7 @@ describe("dashboard-leads-chart", () => {
     ]);
   });
 
-  it("floors all-zero data to minimum bar values for both colors", () => {
+  it("floors zero buckets to the minimum display height", () => {
     expect(buildCalibratedLeadsTrendChart([])).toEqual(
       Array.from({ length: LEADS_TREND_BUCKET_COUNT }, (_, index) => ({
         name: String(index + 1),
@@ -83,5 +84,12 @@ describe("dashboard-leads-chart", () => {
       { name: "5", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
       { name: "6", v1: LEADS_TREND_MIN_BAR_VALUE, v2: LEADS_TREND_MIN_BAR_VALUE },
     ]);
+  });
+
+  it("detects when trend data is empty or present using raw counts", () => {
+    expect(hasLeadsTrendData([])).toBe(false);
+    expect(hasLeadsTrendData([{ name: "1", v1: 0, v2: 0 }])).toBe(false);
+    expect(hasLeadsTrendData([{ name: "1", v1: 2, v2: 0 }])).toBe(true);
+    expect(hasLeadsTrendData([{ name: "1", v1: 0, v2: 1 }])).toBe(true);
   });
 });

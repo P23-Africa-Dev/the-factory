@@ -12,29 +12,33 @@ import {
   useStartTask,
   useActiveTracking,
   useTaskRoute,
-  buildCompleteFormData,
   hydrateLiveTaskFromRoute,
   trackingApi,
   LocationPermissionGate,
+  CompleteRequirementsSheet,
+  resolveCompletionRequirements,
 } from '@/features/tracking';
-import { useTaskListItems, useTask, taskKeys, taskApi, taskHasMapLocation } from '@/features/tasks';
+import { useTaskListItems, useTask, taskKeys, taskHasMapLocation } from '@/features/tasks';
 import { useAuth, useAgentIdentity } from '@/features/auth';
 import { getSafeAvatarSrc } from '@/lib/avatar';
 import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
 import { NavigationRideSheet } from '@/features/tracking/components/NavigationRideSheet';
 import {
+  formatTripSummaryToast,
+  summarizeTaskRoute,
+} from '@/features/tracking/tripSummary';
+import {
   MAP_SHEET_COLLAPSED_SNAP_INDEX,
   MAP_SHEET_EXPANDED_SNAP_INDEX,
 } from '@/features/tracking/components/MapBottomSheet';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { attendanceApi } from '@/features/attendance/api';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { env } from '@/constants/env';
 import { getMapboxPublicToken } from '@/lib/map/public-env';
 import { fetchDirectionsRoute, type DirectionsResult } from '@/lib/map/directions';
-import { getDb } from '@/lib/db/client';
-import { syncEngine } from '@/lib/sync/syncEngine';
-import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import { showApiErrorToast } from '@/lib/api/errors';
 import { openGoogleMapsNavigation, resolveGoogleMapsTravelMode } from '@/lib/map/googleMapsNavigation';
 import { resolveTaskDestinationCoords } from '@/lib/map/resolveTaskDestinationCoords';
@@ -45,6 +49,7 @@ import {
   requestTrackingNotificationPermission,
 } from '@/lib/notifications/trackingAlerts';
 import { getApiErrorMessage, startMapTaskSession } from '@/features/tracking/lib/startMapTaskSession';
+import { demoSyntheticStartFromDestination, isDemoOrganization } from '@/features/tracking/lib/demoTracking';
 import { toast } from '@/lib/toast';
 import {
   useSavedLocations,
@@ -55,10 +60,19 @@ import {
   type CreateSavedLocationInput,
 } from '@/features/locations';
 import { getSavedLocationType } from '@/lib/map/locationTypes';
-import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
+import {
+  suggestPlaces,
+  retrievePlace,
+  createSearchSessionToken,
+  type PlaceSuggestion,
+} from '@/lib/map/place-search';
+import { placeAttributionLabel } from '@/lib/map/place-attribution';
+import { getCachedSearchProximity, setCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import type { SavedLocationPin } from '@/features/tracking/components/MapboxMap';
-import { MapPin, Plus } from 'lucide-react';
+import { TrackingConnectionStatus } from '@/features/tracking/components/TrackingConnectionStatus';
+import { useOfflineSyncStatus } from '@/lib/offline/useOfflineSyncStatus';
+import { MapPin, Plus, Eye, EyeOff } from 'lucide-react';
 
 const MapBottomSheetDynamic = dynamic(
   () => import('@/features/tracking/components/MapBottomSheet').then((m) => m.MapBottomSheet),
@@ -258,7 +272,7 @@ function RouteInfoSheet({
     <div className="px-5 pb-3 text-[#09232D]">
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-sans font-bold text-base text-[#09232D]">
-          {isRouteLoading ? 'Calculating route…' : MODE_LABELS[transportMode]}
+          {MODE_LABELS[transportMode]}
         </h4>
         <div className="flex gap-2">
           <button
@@ -288,12 +302,7 @@ function RouteInfoSheet({
 
       <div className="h-[1px] bg-gray-200 mb-3" />
 
-      {isRouteLoading && (
-        <div className="flex items-center gap-2 mb-3 text-sm text-[#1D7293] font-semibold">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent" />
-          <span>Loading route preview…</span>
-        </div>
-      )}
+
 
       <div className="flex justify-around items-center">
         {MODES.map(({ mode, icon }) => (
@@ -333,6 +342,10 @@ function ActivityButton({
   taskStatus?: string;
   onStart: () => void;
 }) {
+  if (!hasDestination) {
+    return null;
+  }
+
   if (taskStatus === 'completed' || taskStatus === 'cancelled') {
     return (
       <div className="mx-auto w-[344px] h-[67px] rounded-[60px] bg-[#D1D5D8] flex items-center justify-center">
@@ -394,34 +407,13 @@ function ActivityButton({
       onClick={canStart ? onStart : undefined}
       disabled={!canStart}
       style={canStart ? activeButtonStyle : disabledButtonStyle}
-      className={`mx-auto flex items-center justify-between transition-all duration-200 ${
+      className={`mx-auto flex items-center justify-center transition-all duration-200 ${
         canStart ? 'text-white active:scale-[0.98]' : 'text-[#8F9098] cursor-not-allowed'
       }`}
     >
-      <div className={`relative w-[58px] h-[58px] flex items-center justify-center flex-shrink-0 ${!canStart && 'opacity-50'}`}>
-        <img
-          src="/assets/Ellipse 436.png"
-          alt="Ellipse"
-          className="absolute inset-0 w-[58px] h-[58px] object-contain"
-        />
-        <img
-          src="/assets/navigation-03.png"
-          alt="Arrow"
-          className="relative w-[29px] h-[29px] object-contain"
-        />
-      </div>
-
-      <span className="font-sans font-bold text-sm text-center flex-1">
+      <span className="font-sans font-bold text-sm text-center">
         Start Task
       </span>
-
-      <div className={`pr-3 flex-shrink-0 ${!canStart && 'opacity-50'}`}>
-        <img
-          src="/assets/arrow-right-double.png"
-          alt="Double Arrow"
-          className="w-[24px] h-[24px] object-contain"
-        />
-      </div>
     </button>
   );
 }
@@ -462,16 +454,22 @@ function DestinationSearch({
   results,
   taskResults,
   onSelect,
+  onSelectSuggestion,
   onClose,
+  isResolving,
 }: {
   searchQuery: string;
   onQueryChange: (q: string) => void;
   results: RecentDestination[];
   taskResults: RecentDestination[];
   onSelect: (dest: RecentDestination) => void;
+  onSelectSuggestion: (suggestion: PlaceSuggestion) => void;
   onClose: () => void;
+  isResolving?: boolean;
+  suggestions?: PlaceSuggestion[];
 }) {
   const showTasks = taskResults.length > 0 && !searchQuery.trim();
+  const hasSuggestions = results.length > 0;
 
   return (
     <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
@@ -492,15 +490,20 @@ function DestinationSearch({
             <LocationIcon />
             <input
               type="text"
-              placeholder="Search destination..."
+              placeholder="Search places…"
               value={searchQuery}
               onChange={(e) => onQueryChange(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent border-none text-[#09232D] text-sm focus:outline-none placeholder-gray-400 font-semibold p-0"
+              disabled={isResolving}
+              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0 disabled:opacity-60"
             />
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
-              <X size={18} />
-            </button>
+            {isResolving ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent flex-shrink-0" />
+            ) : (
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
+                <X size={18} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -532,33 +535,70 @@ function DestinationSearch({
               </div>
             </div>
           )}
-          {results.length > 0 ? (
+          {hasSuggestions ? (
             <div>
               <div className="px-4 pt-4 pb-2 text-white font-bold text-sm tracking-wider uppercase opacity-40">
                 {searchQuery.trim() ? 'Places' : 'Recent'}
               </div>
               <div className="divide-y divide-white/5">
-                {results.map((item, index) => (
-                  <div
-                    key={index}
-                    onClick={() => onSelect(item)}
-                    className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70"
-                  >
-                    <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
-                      <img
-                        src="/assets/clock-arrow-up.png"
-                        alt="Recent"
-                        className="w-4.5 h-4.5 object-contain"
-                      />
+                {results.map((item, index) => {
+                  // Distinguish between PlaceSuggestion (from search) and RecentDestination
+                  const isSuggestion = 'id' in item && 'provider' in item;
+                  return (
+                    <div
+                      key={isSuggestion ? (item as unknown as PlaceSuggestion).id : index}
+                      onClick={() =>
+                        isSuggestion
+                          ? onSelectSuggestion(item as unknown as PlaceSuggestion)
+                          : onSelect(item)
+                      }
+                      className={`flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70 ${
+                        isResolving ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                    >
+                      <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
+                        <img
+                          src="/assets/clock-arrow-up.png"
+                          alt="Recent"
+                          className="w-4.5 h-4.5 object-contain"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <p className="text-sm font-semibold text-white truncate">
+                          {item.name}
+                          {isSuggestion && (item as unknown as PlaceSuggestion).category && (
+                            <span className="ml-2 text-[10px] font-medium text-[#75ADAF] capitalize">
+                              {(item as unknown as PlaceSuggestion).category!.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                          {isSuggestion &&
+                            (() => {
+                              const s = item as unknown as PlaceSuggestion;
+                              const label = placeAttributionLabel(
+                                s.sources,
+                                s.provider,
+                                s.attributionVisible,
+                              );
+                              return label ? (
+                                <span className="ml-1.5 text-[9px] font-medium text-white/40">
+                                  {label}
+                                </span>
+                              ) : null;
+                            })()}
+                        </p>
+                        {('placeFormatted' in item
+                          ? (item as unknown as PlaceSuggestion).placeFormatted
+                          : item.address) && (
+                          <p className="text-[10px] text-gray-400 truncate mt-1">
+                            {'placeFormatted' in item
+                              ? (item as unknown as PlaceSuggestion).placeFormatted
+                              : item.address}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0 leading-tight">
-                      <p className="text-sm font-semibold text-white truncate">{item.name}</p>
-                      {item.address && (
-                        <p className="text-[10px] text-gray-400 truncate mt-1">{item.address}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : !showTasks ? (
@@ -572,6 +612,7 @@ function DestinationSearch({
   );
 }
 
+
 // ─── OriginSearch ─────────────────────────────────────────────────────────────
 
 function OriginSearch({
@@ -579,17 +620,19 @@ function OriginSearch({
   onQueryChange,
   results,
   destination,
-  onSelect,
+  onSelectSuggestion,
   onUseMyLocation,
   onClose,
+  isResolving,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
-  results: GeocodedPlace[];
+  results: PlaceSuggestion[];
   destination: SelectedDestination | null;
-  onSelect: (place: GeocodedPlace) => void;
+  onSelectSuggestion: (suggestion: PlaceSuggestion) => void;
   onUseMyLocation: () => void;
   onClose: () => void;
+  isResolving?: boolean;
 }) {
   return (
     <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
@@ -605,11 +648,16 @@ function OriginSearch({
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               autoFocus
-              className="flex-1 bg-transparent border-none text-[#09232D] text-sm focus:outline-none placeholder-gray-400 font-semibold p-0"
+              disabled={isResolving}
+              className="flex-1 bg-transparent border-none text-[#09232D] text-base focus:outline-none placeholder-gray-400 font-semibold p-0 disabled:opacity-60"
             />
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
-              <X size={18} />
-            </button>
+            {isResolving ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1D7293] border-t-transparent flex-shrink-0" />
+            ) : (
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 focus:outline-none">
+                <X size={18} />
+              </button>
+            )}
           </div>
 
           <div className="h-[1px] bg-gray-100 my-2.5" />
@@ -638,18 +686,39 @@ function OriginSearch({
           </div>
           {results.length > 0 ? (
             <div className="divide-y divide-white/5">
-              {results.map((item, index) => (
+              {results.map((item) => (
                 <div
-                  key={index}
-                  onClick={() => onSelect(item)}
-                  className="flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70"
+                  key={item.id}
+                  onClick={() => !isResolving && onSelectSuggestion(item)}
+                  className={`flex items-center gap-3.5 px-4 py-3.5 cursor-pointer hover:bg-white/[0.04] transition-colors active:opacity-70 ${
+                    isResolving ? 'opacity-50 pointer-events-none' : ''
+                  }`}
                 >
                   <div className="w-9 h-9 rounded-full bg-[#09232D] flex items-center justify-center flex-shrink-0 border border-white/5">
                     <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
                   </div>
                   <div className="flex-1 min-w-0 leading-tight">
-                    <p className="text-sm font-semibold text-white truncate">{item.name}</p>
-                    <p className="text-[10px] text-gray-400 truncate mt-1">{item.address}</p>
+                    <p className="text-sm font-semibold text-white truncate">
+                      {item.name}
+                      {item.category && (
+                        <span className="ml-2 text-[10px] font-medium text-[#75ADAF] capitalize">
+                          {item.category.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                      {(() => {
+                        const label = placeAttributionLabel(
+                          item.sources,
+                          item.provider,
+                          item.attributionVisible,
+                        );
+                        return label ? (
+                          <span className="ml-1.5 text-[9px] font-medium text-white/40">{label}</span>
+                        ) : null;
+                      })()}
+                    </p>
+                    {item.placeFormatted && item.placeFormatted !== item.name && (
+                      <p className="text-[10px] text-gray-400 truncate mt-1">{item.placeFormatted}</p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -665,173 +734,6 @@ function OriginSearch({
   );
 }
 
-// ─── AddNoteModal ─────────────────────────────────────────────────────────────
-
-function AddNoteModal({
-  visible,
-  taskId,
-  hasArrived,
-  onDone,
-}: {
-  visible: boolean;
-  taskId: number;
-  hasArrived: boolean;
-  onDone: () => void;
-}) {
-  const { getCurrentPosition } = useGeolocation();
-  const { stopTracking } = useActiveTracking();
-  const [note, setNote] = useState('');
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [_previews, setPreviews] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const companyId = getActiveCompanyId() ?? 0;
-
-  const handlePickPhoto = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPhotos((prev) => [...prev, file]);
-      const objectUrl = URL.createObjectURL(file);
-      setPreviews((prev) => [...prev, objectUrl]);
-    }
-  };
-
-  const handleTaskDone = async () => {
-    if (isSubmitting) return;
-    if (!hasArrived) {
-      toast.error('Not arrived yet', 'You must reach the destination before completing this task.');
-      return;
-    }
-    if (photos.length === 0) {
-      toast.error('Photo required', 'Please attach at least one proof photo.');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      try {
-        const db = await getDb();
-        for (const file of photos) {
-          await db.add('proofQueue', {
-            taskId,
-            fileBlob: file,
-            fileName: `proof_${taskId}_${Date.now()}.jpg`,
-            mimeType: file.type || 'image/jpeg',
-            uploaded: 0,
-            createdAt: new Date().toISOString(),
-            attempts: 0,
-            nextAttemptAt: new Date().toISOString(),
-            lastError: null,
-          });
-        }
-      } catch (dbErr) {
-        console.warn('[complete] proofQueue insert failed (non-fatal):', dbErr);
-      }
-      await syncEngine.scheduleSync();
-
-      let position = {
-        latitude: 0,
-        longitude: 0,
-        accuracyMeters: null as number | null,
-        recordedAt: new Date().toISOString(),
-      };
-      try {
-        const pos = await getCurrentPosition();
-        position = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracyMeters: pos.coords.accuracy,
-          recordedAt: new Date(pos.timestamp).toISOString(),
-        };
-      } catch {
-        // best-effort GPS at completion
-      }
-
-      const formData = buildCompleteFormData({
-        companyId,
-        files: photos,
-        notes: note.trim() || undefined,
-        position,
-      });
-
-      await taskApi.completeTask(taskId, formData);
-      await stopTracking();
-
-      toast.success('Task completed', 'Great work — tracking has stopped.');
-
-      setNote('');
-      setPhotos([]);
-      setPreviews([]);
-      onDone();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not complete task. Please try again.';
-      toast.error('Completion failed', msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  if (!visible) return null;
-
-  return (
-    <div className="fixed inset-0 bg-[#051014]/60 backdrop-blur-sm z-[100] flex items-center justify-center p-5 font-sans">
-      <div className="relative bg-[#0B3343] border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl flex flex-col gap-4 text-white">
-        <h3 className="font-bold text-xl text-white">Add Note</h3>
-
-        <div className="bg-white rounded-xl p-3.5 min-h-[120px] flex flex-col">
-          <textarea
-            placeholder="Type your note here ..."
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={4}
-            className="w-full bg-transparent border-none text-[#09232D] placeholder-gray-400 focus:outline-none resize-none text-sm font-semibold p-0"
-          />
-        </div>
-
-        {photos.length > 0 && (
-          <p className="text-[11px] font-bold text-[#75ADAF] uppercase tracking-wider">
-            {photos.length} photo{photos.length > 1 ? 's' : ''} attached
-          </p>
-        )}
-
-        {/* Hidden Camera Input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <div className="flex gap-3 mt-2">
-          <button
-            onClick={handlePickPhoto}
-            disabled={isSubmitting}
-            className="flex-1 h-12 rounded-xl border-1.5 border-white bg-transparent text-white font-bold text-xs hover:bg-white/5 active:scale-95 transition-all"
-          >
-            Upload Photo ⬆
-          </button>
-          <button
-            onClick={handleTaskDone}
-            disabled={isSubmitting || !hasArrived}
-            className="flex-1 h-12 rounded-xl bg-[#75ADAF] hover:bg-[#66989A] text-white font-bold text-xs active:scale-95 transition-all flex items-center justify-center disabled:opacity-40"
-          >
-            {isSubmitting ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              'Task Done'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main Content Component ───────────────────────────────────────────────────
 
@@ -866,14 +768,27 @@ function MapContent() {
   const [isDestSearchOpen, setIsDestSearchOpen] = useState(false);
   const [isOriginSearchOpen, setIsOriginSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [geoDestResults, setGeoDestResults] = useState<RecentDestination[]>([]);
+  const [geoDestResults, setGeoDestResults] = useState<PlaceSuggestion[]>([]);
+  const [isDestResolving, setIsDestResolving] = useState(false);
   const [originQuery, setOriginQuery] = useState('');
-  const [originGeoResults, setOriginGeoResults] = useState<GeocodedPlace[]>([]);
+  const [originGeoResults, setOriginGeoResults] = useState<PlaceSuggestion[]>([]);
+  const [isOriginResolving, setIsOriginResolving] = useState(false);
   const [customOrigin, setCustomOrigin] = useState<GeocodedPlace | null>(null);
   const [recentDestinations, setRecentDestinations] = useState<RecentDestination[]>([]);
   const [hasArrived, setHasArrived] = useState(false);
   const [plannedRoute, setPlannedRoute] = useState<[number, number][]>([]);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
+  // Shared session tokens — rotate after each retrieval (Mapbox billing model)
+  const destSessionTokenRef = useRef(createSearchSessionToken());
+  const originSessionTokenRef = useRef(createSearchSessionToken());
+  const destSearchAbortRef = useRef<AbortController | null>(null);
+  const originSearchAbortRef = useRef<AbortController | null>(null);
+  const destSearchRequestIdRef = useRef(0);
+  const originSearchRequestIdRef = useRef(0);
+  // Debounce place-search so we bill one Autocomplete request per typing pause,
+  // not one per keystroke.
+  const destSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLaunchingRide, setIsLaunchingRide] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>(
     isFromTrackingScreen ? 'live' : 'idle',
@@ -882,9 +797,13 @@ function MapContent() {
   const startRideInFlightRef = useRef(false);
   const nearAlertShownRef = useRef(false);
   const [distanceRemainingM, setDistanceRemainingM] = useState<number | null>(null);
+  /** Baseline distance at navigation start — progress is measured from here, not from a stale route origin. */
+  const [initialDistanceRemainingM, setInitialDistanceRemainingM] = useState<number | null>(null);
   const [routesByMode, setRoutesByMode] = useState<Partial<Record<TransportMode, DirectionsResult>>>({});
   const transportModeRef = useRef<TransportMode>(transportMode);
-  transportModeRef.current = transportMode;
+  useEffect(() => {
+    transportModeRef.current = transportMode;
+  }, [transportMode]);
   // Permission gate overlay for the Start flow: null = hidden.
   const [permGate, setPermGate] = useState<'request' | 'denied' | null>(null);
   const [resumePermBusy, setResumePermBusy] = useState(false);
@@ -892,18 +811,47 @@ function MapContent() {
 
   // Saved organization locations
   const { data: savedLocations = [] } = useSavedLocations();
+  const [showBusinessPins, setShowBusinessPins] = useState(true);
+  const { data: attendanceMapSnapshot } = useQuery({
+    queryKey: ['attendance-map-snapshot'],
+    queryFn: attendanceApi.getMapSnapshot,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const clockInPin = useMemo(() => {
+    const item = attendanceMapSnapshot?.items?.[0] as
+      | {
+          latitude?: number;
+          longitude?: number;
+          agent_name?: string;
+          avatar_url?: string | null;
+          is_late?: boolean;
+        }
+      | undefined;
+    if (!item || typeof item.latitude !== 'number' || typeof item.longitude !== 'number') {
+      return null;
+    }
+    return {
+      latitude: item.latitude,
+      longitude: item.longitude,
+      agentName: item.agent_name ?? 'You',
+      avatarUrl: item.avatar_url ?? null,
+      isLate: Boolean(item.is_late),
+    };
+  }, [attendanceMapSnapshot]);
   const { mutateAsync: createSavedLocation, isPending: isSavingLocation } = useCreateSavedLocation();
   const [pinMode, setPinMode] = useState(false);
   const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number; address: string | null } | null>(null);
   const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
 
-  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching } = useGeolocation();
+  const { lastPosition, getCurrentPosition, resolveCurrentPosition, checkPermission, requestPermission, ensureLocationPermission, retryLocationPermission, startWatching, stopWatching, isWatching } = useGeolocation();
   const { startTracking, stopTracking, activeTaskId } = useActiveTracking();
   const { data: tasks = [] } = useTaskListItems();
   const { mutateAsync: startTaskAsync, isPending: isStarting } = useStartTask();
   const { user } = useAuth();
   const { displayName, profile } = useAgentIdentity();
   const [isOnline, setIsOnline] = useState(true);
+  const { stats: offlineStats } = useOfflineSyncStatus(8_000);
   const currentAgentId = user?.id != null ? Number(user.id) : null;
 
   useEffect(() => {
@@ -978,11 +926,8 @@ function MapContent() {
     if (!trackingTaskId || !taskRoute) return;
     hydrateLiveTaskFromRoute(trackingTaskId, taskRoute);
     if (taskRoute.arrival) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate arrival from persisted route
       setHasArrived(true);
-    }
-    // Restore route trail immediately so resume is not blank while directions load.
-    if (taskRoute.polyline.length >= 2) {
-      setPlannedRoute((prev) => (prev.length >= 2 ? prev : taskRoute.polyline));
     }
     // Seed distance/ETA from last known agent position vs destination.
     const lastPoint =
@@ -995,27 +940,32 @@ function MapContent() {
         taskRoute.destination.longitude,
       );
       setDistanceRemainingM((prev) => (prev == null ? dist : prev));
-    } else if (taskRoute.start && taskRoute.destination) {
-      const dist = haversineMeters(
-        taskRoute.start.latitude,
-        taskRoute.start.longitude,
-        taskRoute.destination.latitude,
-        taskRoute.destination.longitude,
-      );
-      setDistanceRemainingM((prev) => (prev == null ? dist : prev));
     }
   }, [trackingTaskId, taskRoute]);
 
   useEffect(() => {
     if (liveTask?.status === 'arrived' || liveTask?.arrivedAt) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync arrived flag from live task store
       setHasArrived(true);
     }
   }, [liveTask?.status, liveTask?.arrivedAt]);
 
   useEffect(() => {
+    if (phase !== 'activity_started') return;
+    if (distanceRemainingM == null) return;
+    setInitialDistanceRemainingM((prev) => prev ?? distanceRemainingM);
+  }, [phase, distanceRemainingM]);
+
+  useEffect(() => {
     if (!isFromTrackingScreen || !trackingTaskId) return;
     startTracking(trackingTaskId, companyId, {
       onArrived: () => setHasArrived(true),
+      onNearDestination: () => {
+        if (!nearAlertShownRef.current) {
+          nearAlertShownRef.current = true;
+          void notifyTrackingNearDestination(trackingTaskId);
+        }
+      },
       onDistanceRemaining: (m) => setDistanceRemainingM(m),
     });
     useTrackingStore.getState().setActiveTrackingTaskId(trackingTaskId);
@@ -1054,7 +1004,7 @@ function MapContent() {
     if (!trackingTaskId) return;
     setResumePermBusy(true);
     try {
-      let status = await retryLocationPermission();
+      const status = await retryLocationPermission();
       if (status === 'denied') {
         setPermGate('denied');
         return;
@@ -1079,10 +1029,12 @@ function MapContent() {
 
   // Restore destination on resume (e.g. /map?taskId=…) before task detail fetch completes.
   useEffect(() => {
+    if (!isFromTrackingScreen) return;
     if (selectedDestination) return;
     const dest = taskRoute?.destination ?? liveTask?.destination;
     if (!dest) return;
     const taskId = trackingTaskId ?? 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore destination before task detail loads
     setSelectedDestination({
       name: trackingTask?.title ?? activeTask?.title ?? 'Destination',
       address: trackingTask?.address ?? activeTask?.address ?? undefined,
@@ -1092,6 +1044,7 @@ function MapContent() {
       taskStatus: trackingTask?.status ?? activeTask?.status,
     });
   }, [
+    isFromTrackingScreen,
     selectedDestination,
     taskRoute?.destination,
     liveTask?.destination,
@@ -1106,6 +1059,7 @@ function MapContent() {
 
   // Auto-fill destination from resolved task
   useEffect(() => {
+    if (!isFromTrackingScreen) return;
     if (selectedDestination !== null) return;
     if (!activeTask || !taskHasMapLocation(activeTask)) return;
     setTimeout(() => setSelectedDestination({
@@ -1115,7 +1069,7 @@ function MapContent() {
       longitude: activeTask.longitude,
       taskId: Number(activeTask.id),
     }), 0);
-  }, [activeTask, selectedDestination]);
+  }, [isFromTrackingScreen, activeTask, selectedDestination]);
 
   // Advance idle → destination_selected when destination arrives
   useEffect(() => {
@@ -1124,35 +1078,143 @@ function MapContent() {
     }
   }, [phase, selectedDestination]);
 
-  // Load recents on mount
+  // Load recents on mount (local instant + server sync)
   useEffect(() => {
     setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
+    void fetchRecentDestinations().then(setRecentDestinations);
   }, []);
 
   const searchGeoDestPlaces = useCallback(async (query: string): Promise<void> => {
     if (!query.trim()) {
+      destSearchAbortRef.current?.abort();
       setGeoDestResults([]);
       return;
     }
+    destSearchAbortRef.current?.abort();
+    const abort = new AbortController();
+    destSearchAbortRef.current = abort;
+    const requestId = ++destSearchRequestIdRef.current;
+
     try {
-      const places = await searchPlacesWithMapbox(query, { limit: 5 });
-      setGeoDestResults(places);
-    } catch {
-      setGeoDestResults([]);
+      let proximity: [number, number] | undefined = lastPosition
+        ? [lastPosition.coords.longitude, lastPosition.coords.latitude]
+        : undefined;
+      if (proximity) {
+        setCachedSearchProximity(proximity[0], proximity[1]);
+      } else {
+        const cached = getCachedSearchProximity();
+        if (cached) proximity = cached;
+        else warmSearchProximity();
+      }
+      const suggestions = await suggestPlaces(query, {
+        sessionToken: destSessionTokenRef.current,
+        proximity,
+        limit: 12,
+        signal: abort.signal,
+      });
+      if (requestId !== destSearchRequestIdRef.current) return;
+      if (suggestions.length > 0) {
+        setGeoDestResults(suggestions);
+      } else {
+        setGeoDestResults([]);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== destSearchRequestIdRef.current) return;
+      // Keep last good results on hard failure.
     }
+  }, [lastPosition]);
+
+  const handleDestSuggestionSelect = useCallback(async (suggestion: PlaceSuggestion): Promise<void> => {
+    setIsDestResolving(true);
+    const place = await retrievePlace(suggestion);
+    setIsDestResolving(false);
+    // Rotate session token after retrieval (Mapbox billing model)
+    destSessionTokenRef.current = createSearchSessionToken();
+    if (!place) return;
+
+    const newDest: RecentDestination = {
+      name: place.name,
+      address: place.address || undefined,
+      latitude: place.lat,
+      longitude: place.lng,
+    };
+    setSelectedDestination({
+      name: place.name,
+      address: place.address || undefined,
+      latitude: place.lat,
+      longitude: place.lng,
+      taskId: 0,
+    });
+    saveRecentDestination(newDest);
+    void rememberRecentDestination({
+      ...newDest,
+      provider: place.provider,
+      provider_place_id: suggestion.id,
+    });
+    setRecentDestinations(getRecentDestinations());
+    setSearchQuery('');
+    setGeoDestResults([]);
+    setIsDestSearchOpen(false);
   }, []);
 
   const searchOriginPlaces = useCallback(async (query: string): Promise<void> => {
     if (!query.trim()) {
+      originSearchAbortRef.current?.abort();
       setOriginGeoResults([]);
       return;
     }
+    originSearchAbortRef.current?.abort();
+    const abort = new AbortController();
+    originSearchAbortRef.current = abort;
+    const requestId = ++originSearchRequestIdRef.current;
+
     try {
-      const places = await searchPlacesWithMapbox(query, { limit: 5 });
-      setOriginGeoResults(places);
-    } catch {
-      setOriginGeoResults([]);
+      let proximity: [number, number] | undefined = lastPosition
+        ? [lastPosition.coords.longitude, lastPosition.coords.latitude]
+        : undefined;
+      if (proximity) {
+        setCachedSearchProximity(proximity[0], proximity[1]);
+      } else {
+        const cached = getCachedSearchProximity();
+        if (cached) proximity = cached;
+        else warmSearchProximity();
+      }
+      const suggestions = await suggestPlaces(query, {
+        sessionToken: originSessionTokenRef.current,
+        proximity,
+        limit: 12,
+        signal: abort.signal,
+      });
+      if (requestId !== originSearchRequestIdRef.current) return;
+      if (suggestions.length > 0) {
+        setOriginGeoResults(suggestions);
+      } else {
+        setOriginGeoResults([]);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== originSearchRequestIdRef.current) return;
     }
+  }, [lastPosition]);
+
+  const handleOriginSuggestionSelect = useCallback(async (suggestion: PlaceSuggestion): Promise<void> => {
+    setIsOriginResolving(true);
+    const place = await retrievePlace(suggestion);
+    setIsOriginResolving(false);
+    // Rotate session token after retrieval
+    originSessionTokenRef.current = createSearchSessionToken();
+    if (!place) return;
+
+    setCustomOrigin({
+      name: place.name,
+      address: place.address || '',
+      latitude: place.lat,
+      longitude: place.lng,
+    });
+    setOriginQuery('');
+    setOriginGeoResults([]);
+    setIsOriginSearchOpen(false);
   }, []);
 
   // Boot GPS for map preview. We deliberately do NOT force a permission prompt
@@ -1184,7 +1246,11 @@ function MapContent() {
     void bootLocation();
     return () => {
       mounted = false;
-      stopWatching();
+      // Never tear down the shared native FGS while an active ride owns the watch.
+      const activeId = useTrackingStore.getState().activeTrackingTaskId;
+      if (activeId == null && phase !== 'activity_started') {
+        stopWatching();
+      }
     };
   }, [checkPermission, getCurrentPosition, startWatching, stopWatching, phase, isFromTrackingScreen]);
 
@@ -1222,10 +1288,12 @@ function MapContent() {
   useEffect(() => {
     const token = getMapboxPublicToken() || env.MAPBOX_TOKEN;
     if (!token || !selectedDestination) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- route fetch gate
       setIsRouteLoading(false);
       return;
     }
     if (effectiveOriginLng == null || effectiveOriginLat == null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- route fetch gate
       setIsRouteLoading(false);
       return;
     }
@@ -1279,6 +1347,7 @@ function MapContent() {
   useEffect(() => {
     const result = routesByMode[transportMode];
     if (result && result.coords.length > 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- swap cached route geometry for mode
       setPlannedRoute(result.coords);
     }
   }, [transportMode, routesByMode]);
@@ -1307,9 +1376,9 @@ function MapContent() {
     [tasks],
   );
 
-  const searchResults = useMemo((): RecentDestination[] => {
+  const searchResults = useMemo((): (RecentDestination | PlaceSuggestion)[] => {
     const seen = new Set<string>();
-    const combined: RecentDestination[] = [];
+    const combined: (RecentDestination | PlaceSuggestion)[] = [];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -1399,18 +1468,16 @@ function MapContent() {
     });
     setPhase('destination_selected');
     saveRecentDestination(dest);
+    void rememberRecentDestination(dest);
     setTimeout(() => setRecentDestinations(getRecentDestinations()), 0);
     setIsDestSearchOpen(false);
     setSearchQuery('');
     setGeoDestResults([]);
   }, [tasks]);
 
-  const handleSelectOrigin = useCallback((place: GeocodedPlace) => {
-    setCustomOrigin(place);
-    setIsOriginSearchOpen(false);
-    setOriginQuery('');
-    setOriginGeoResults([]);
-  }, []);
+  const handleSelectOrigin = useCallback(async (suggestion: PlaceSuggestion): Promise<void> => {
+    await handleOriginSuggestionSelect(suggestion);
+  }, [handleOriginSuggestionSelect]);
 
   const handleUseMyLocation = useCallback(() => {
     setCustomOrigin(null);
@@ -1436,15 +1503,39 @@ function MapContent() {
     void handleUseMyLocation();
   }, [handleUseMyLocation]);
 
+  const SEARCH_DEBOUNCE_MS = 300;
+  const SEARCH_MIN_CHARS = 2;
+
   const handleDestQueryChange = useCallback((q: string) => {
     setSearchQuery(q);
-    searchGeoDestPlaces(q);
+    if (destSearchDebounceRef.current) clearTimeout(destSearchDebounceRef.current);
+    if (q.trim().length < SEARCH_MIN_CHARS) {
+      setGeoDestResults([]);
+      return;
+    }
+    destSearchDebounceRef.current = setTimeout(() => {
+      void searchGeoDestPlaces(q);
+    }, SEARCH_DEBOUNCE_MS);
   }, [searchGeoDestPlaces]);
 
   const handleOriginQueryChange = useCallback((q: string) => {
     setOriginQuery(q);
-    searchOriginPlaces(q);
+    if (originSearchDebounceRef.current) clearTimeout(originSearchDebounceRef.current);
+    if (q.trim().length < SEARCH_MIN_CHARS) {
+      setOriginGeoResults([]);
+      return;
+    }
+    originSearchDebounceRef.current = setTimeout(() => {
+      void searchOriginPlaces(q);
+    }, SEARCH_DEBOUNCE_MS);
   }, [searchOriginPlaces]);
+
+  useEffect(() => {
+    return () => {
+      if (destSearchDebounceRef.current) clearTimeout(destSearchDebounceRef.current);
+      if (originSearchDebounceRef.current) clearTimeout(originSearchDebounceRef.current);
+    };
+  }, []);
 
   const runStartSession = useCallback(async (permissionRetry = false) => {
     if (!selectedDestination?.taskId) return null;
@@ -1462,6 +1553,7 @@ function MapContent() {
     startRideInFlightRef.current = true;
     setIsLaunchingRide(true);
     setTrackingStatus('connecting');
+    setInitialDistanceRemainingM(null);
     nearAlertShownRef.current = false;
 
     const markTrackingLive = () => {
@@ -1508,11 +1600,20 @@ function MapContent() {
     };
 
     try {
+      const demoSyntheticStart =
+        isDemoOrganization(profile) && selectedDestination
+          ? demoSyntheticStartFromDestination(
+              selectedDestination.latitude,
+              selectedDestination.longitude,
+            )
+          : null;
+
       const result = await startMapTaskSession({
         taskId,
         companyId,
         isResume,
         lastPosition,
+        syntheticStart: demoSyntheticStart,
         customOrigin: customOrigin
           ? { latitude: customOrigin.latitude, longitude: customOrigin.longitude }
           : null,
@@ -1687,19 +1788,15 @@ function MapContent() {
 
   useEffect(() => {
     if (phase !== 'activity_started' || trackingStatus === 'live') return;
-    if (liveTask?.lastUpdatedAt) {
+    if (liveTask?.lastUpdatedAt || isWatching) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- promote connecting to live when GPS resumes
       setTrackingStatus('live');
     }
-  }, [phase, trackingStatus, liveTask?.lastUpdatedAt]);
-
-  useEffect(() => {
-    if (phase !== 'activity_started' || trackingStatus !== 'connecting') return;
-    const timer = setTimeout(() => setTrackingStatus('live'), 3000);
-    return () => clearTimeout(timer);
-  }, [phase, trackingStatus]);
+  }, [phase, trackingStatus, liveTask?.lastUpdatedAt, isWatching]);
 
   // Success feedback when the agent reaches the destination (once per session).
   const arrivedToastShownRef = useRef(false);
+  const autoOpenedCompleteRef = useRef(false);
   useEffect(() => {
     if (phase !== 'activity_started') {
       arrivedToastShownRef.current = false;
@@ -1716,17 +1813,46 @@ function MapContent() {
     }
   }, [phase, hasArrived, trackingTaskId, selectedDestination?.taskId]);
 
+  // Auto-open completion requirements when configured on the task.
+  useEffect(() => {
+    if (!hasArrived) {
+      autoOpenedCompleteRef.current = false;
+      return;
+    }
+    if (autoOpenedCompleteRef.current) return;
+    if (phase !== 'activity_started') return;
+    if (!trackingTask) return;
+    if (!resolveCompletionRequirements(trackingTask).hasConfiguredRequirements) return;
+    autoOpenedCompleteRef.current = true;
+    setPhase('activity_ended');
+  }, [hasArrived, phase, trackingTask]);
+
   const handleEndActivity = useCallback((): void => {
-    void stopTracking();
-    setTrackingStatus('idle');
     if (hasArrived) {
+      // Keep GPS/tracking alive while the completion sheet is open (matches auto-open path).
       setPhase('activity_ended');
       return;
     }
+    const pausedTaskId = trackingTaskId;
+    const company = companyId;
     // Not at destination — pause tracking, do not open completion workflow.
-    setPhase('destination_selected');
-    toast.info('Tracking paused', 'Your task is still in progress. Tap Start when you are ready to continue.');
-  }, [stopTracking, hasArrived]);
+    void (async () => {
+      await stopTracking({ reason: 'paused' });
+      setTrackingStatus('idle');
+      setPhase('destination_selected');
+      if (pausedTaskId && company) {
+        try {
+          const route = await trackingApi.getTaskRoute(pausedTaskId, company);
+          const summary = summarizeTaskRoute(route);
+          toast.info('Tracking paused', formatTripSummaryToast(summary, 'paused'));
+          return;
+        } catch {
+          // fall through to generic copy
+        }
+      }
+      toast.info('Tracking paused', 'Your task is still in progress. Tap Start when you are ready to continue.');
+    })();
+  }, [stopTracking, hasArrived, trackingTaskId, companyId]);
 
   const handleShareDestination = useCallback(() => {
     if (!selectedDestination) return;
@@ -1761,8 +1887,9 @@ function MapContent() {
   // ── Saved locations ──────────────────────────────────────────────────────────
 
   const savedLocationPins = useMemo<SavedLocationPin[]>(
-    () =>
-      savedLocations
+    () => {
+      if (!showBusinessPins) return [];
+      return savedLocations
         .filter((loc) => loc.isActive)
         .map((loc) => ({
           id: loc.id,
@@ -1772,8 +1899,9 @@ function MapContent() {
           latitude: loc.latitude,
           color: getSavedLocationType(loc.type).color,
           selected: loc.id === selectedSavedId,
-        })),
-    [savedLocations, selectedSavedId],
+        }));
+    },
+    [savedLocations, selectedSavedId, showBusinessPins],
   );
 
   const selectedSavedLocation = useMemo<SavedLocation | null>(
@@ -1910,7 +2038,7 @@ function MapContent() {
 
   const selectedDestTask = useMemo(
     () => (selectedDestination?.taskId ? tasks.find((t) => t.id === String(selectedDestination.taskId)) : undefined),
-    [selectedDestination?.taskId, tasks],
+    [selectedDestination, tasks],
   );
 
   const selectedDestLng = selectedDestination?.longitude ?? null;
@@ -1929,6 +2057,7 @@ function MapContent() {
 
   useEffect(() => {
     if (selectedDestination) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- expand sheet when destination is selected
       setSheetSnapIndex(MAP_SHEET_EXPANDED_SNAP_INDEX);
     }
   }, [selectedDestination?.taskId, selectedDestination?.latitude, selectedDestination?.longitude]);
@@ -1950,25 +2079,24 @@ function MapContent() {
           dimmed={phase === 'activity_ended'}
           savedLocations={savedLocationPins}
           onSavedLocationClick={handleSavedLocationClick}
+          clockInPin={phase === 'idle' ? clockInPin : null}
           pinMode={pinMode}
           onMapPin={handleMapPin}
         />
       </div>
 
-      {(isRouteLoading || isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
+      <TrackingConnectionStatus className="absolute left-1/2 -translate-x-1/2 z-[16] pointer-events-none top-[calc(env(safe-area-inset-top,16px)+8px)]" />
+
+      {(isLaunchingRide || isStarting || trackingStatus === 'connecting') && (
         <div className="absolute inset-x-0 top-1/2 z-[15] flex justify-center pointer-events-none px-6">
           <div className="bg-[#09232D]/90 text-white rounded-2xl px-5 py-4 shadow-xl flex items-center gap-3 max-w-sm w-full border border-white/10">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#75ADAF] border-t-transparent flex-shrink-0" />
             <div className="min-w-0">
               <p className="font-sans font-bold text-sm truncate">
-                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
-                  ? 'Starting your ride…'
-                  : 'Calculating route…'}
+                Starting your ride…
               </p>
               <p className="font-sans text-xs text-white/70 truncate">
-                {isLaunchingRide || isStarting || trackingStatus === 'connecting'
-                  ? 'Connecting GPS tracking and task session'
-                  : 'Fetching directions from Mapbox'}
+                Connecting GPS tracking and task session
               </p>
             </div>
           </div>
@@ -2013,6 +2141,19 @@ function MapContent() {
           )}
           <button
             type="button"
+            onClick={() => setShowBusinessPins((visible) => !visible)}
+            className="pointer-events-auto w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border border-gray-100"
+            aria-label={showBusinessPins ? 'Hide business pins' : 'Show business pins'}
+            title={showBusinessPins ? 'Hide Pins' : 'Show Pins'}
+          >
+            {showBusinessPins ? (
+              <EyeOff size={20} className="text-[#1D7293]" />
+            ) : (
+              <Eye size={20} className="text-[#1D7293]" />
+            )}
+          </button>
+          <button
+            type="button"
             onClick={handleSaveCurrentLocation}
             className="pointer-events-auto w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center active:scale-95 transition-transform border border-gray-100"
             aria-label="Save current location"
@@ -2039,14 +2180,16 @@ function MapContent() {
         <DestinationSearch
           searchQuery={searchQuery}
           onQueryChange={handleDestQueryChange}
-          results={searchResults}
+          results={searchResults as RecentDestination[]}
           taskResults={taskDestOptions}
           onSelect={handleSelectDestination}
+          onSelectSuggestion={handleDestSuggestionSelect}
           onClose={() => {
             setIsDestSearchOpen(false);
             setSearchQuery('');
             setGeoDestResults([]);
           }}
+          isResolving={isDestResolving}
         />
       )}
 
@@ -2057,13 +2200,14 @@ function MapContent() {
           onQueryChange={handleOriginQueryChange}
           results={originGeoResults}
           destination={selectedDestination}
-          onSelect={handleSelectOrigin}
+          onSelectSuggestion={handleSelectOrigin}
           onUseMyLocation={handleUseMyLocation}
           onClose={() => {
             setIsOriginSearchOpen(false);
             setOriginQuery('');
             setOriginGeoResults([]);
           }}
+          isResolving={isOriginResolving}
         />
       )}
 
@@ -2075,10 +2219,13 @@ function MapContent() {
               destinationName={selectedDestination?.name ?? 'Destination'}
               etaMinutes={etaByMode[transportMode]}
               distanceRemainingM={distanceRemainingM}
-              totalDistanceM={totalRouteDistanceM}
+              totalDistanceM={initialDistanceRemainingM ?? totalRouteDistanceM}
               trackingStatus={rideTrackingStatus}
               lastUpdatedAt={liveTask?.lastUpdatedAt ?? null}
               hasArrived={hasArrived}
+              arrivedAt={liveTask?.arrivedAt ?? null}
+              isOffline={!isOnline}
+              queuedLocationCount={offlineStats.pendingLocations}
               onEnd={handleEndActivity}
               onOpenGoogleMaps={handleOpenGoogleMaps}
             />
@@ -2144,22 +2291,53 @@ function MapContent() {
           isSubmitting={isSavingLocation}
           onClose={() => setPendingPin(null)}
           onSubmit={handleSubmitSavedLocation}
+          onCoordinatesChange={(lat, lng, address) => {
+            setPendingPin({ lat, lng, address });
+          }}
         />
       )}
 
-      {/* Complete notes modal */}
+      {/* Complete requirements sheet */}
       {selectedDestination && selectedDestination.taskId > 0 && (
-        <AddNoteModal
+        <CompleteRequirementsSheet
           visible={phase === 'activity_ended'}
           taskId={selectedDestination.taskId}
+          task={trackingTask ?? activeTask}
           hasArrived={hasArrived}
           onDone={handleTaskDone}
+          onDismiss={() => {
+            if (hasArrived) {
+              setPhase('activity_started');
+              // Only show Live when GPS is actually running / has a recent fix.
+              if (isWatching || liveTask?.lastUpdatedAt) {
+                setTrackingStatus('live');
+              } else if (activeTaskId != null) {
+                setTrackingStatus('connecting');
+              } else if (trackingTaskId && companyId) {
+                setTrackingStatus('connecting');
+                startTracking(trackingTaskId, companyId, {
+                  onArrived: () => setHasArrived(true),
+                  onNearDestination: () => {
+                    if (!nearAlertShownRef.current) {
+                      nearAlertShownRef.current = true;
+                      void notifyTrackingNearDestination(trackingTaskId);
+                    }
+                  },
+                  onDistanceRemaining: (m) => setDistanceRemainingM(m),
+                });
+              } else {
+                setTrackingStatus('idle');
+              }
+            } else {
+              setPhase('destination_selected');
+            }
+          }}
         />
       )}
 
       {/* Location permission gate for the Start flow */}
       {permGate && (
-        <div className="absolute inset-0 z-[120] bg-[#0A1D25]/95 backdrop-blur-sm">
+        <div className="absolute inset-0 z-[99999] bg-[#0A1D25]/95 backdrop-blur-sm">
           <LocationPermissionGate
             mode={permGate}
             isBusy={isLaunchingRide || resumePermBusy}

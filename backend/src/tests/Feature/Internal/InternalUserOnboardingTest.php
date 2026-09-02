@@ -78,7 +78,7 @@ class InternalUserOnboardingTest extends TestCase
 
                 return in_array('mail', $channels, true)
                     && $mailMessage->mailer === 'resend'
-                    && $mailMessage->subject === 'You are invited to join The Factory'
+                    && $mailMessage->subject === "You're invited to Factory23"
                     && $mailMessage->actionText === 'Complete onboarding'
                     && is_numeric($invitationId)
                     && is_string($token)

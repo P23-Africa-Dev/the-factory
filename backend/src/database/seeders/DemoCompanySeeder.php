@@ -39,6 +39,7 @@ use App\Models\TaskProof;
 use App\Models\TaskReassignment;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
+use App\Services\Avatar\AvatarStorageService;
 use App\Services\Crm\MapSavedLeadBridgeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -137,13 +138,14 @@ class DemoCompanySeeder extends Seeder
                 'team_size' => '11-50',
                 'use_case' => 'Field workforce tracking, CRM and operations for our London service teams.',
                 'status' => 'active',
+                'is_demo' => true,
                 'activated_at' => $this->now->subMonths(4),
                 'subscription_plan_key' => self::PLAN_KEY,
                 'subscription_billing_interval' => 'annual',
-                'subscription_status' => 'active',
+                'subscription_status' => 'grace',
                 'subscription_current_period_start' => $this->now->subMonth(),
                 'subscription_current_period_end' => $this->now->addYears(10),
-                'subscription_grace_ends_at' => null,
+                'subscription_grace_ends_at' => config('demo.grace_ends_at'),
                 'assigned_plan_key' => self::PLAN_KEY,
                 'assigned_billing_interval' => 'annual',
             ],
@@ -154,6 +156,7 @@ class DemoCompanySeeder extends Seeder
     {
         $password = Hash::make(self::DEMO_PASSWORD);
         $weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+        $avatarStorage = app(AvatarStorageService::class);
 
         $roster = [
             // [first, last, company role, internal_role, gender, zone]
@@ -183,9 +186,11 @@ class DemoCompanySeeder extends Seeder
         foreach ($roster as [$first, $last, $companyRole, $internalRole, $gender, $zone]) {
             $localPart = Str::lower($first.'.'.$last);
             $isInternal = $internalRole !== null;
+            $email = $localPart.'@'.self::DEMO_DOMAIN;
+            $avatarKey = $avatarStorage->stableCatalogKeyForGender($gender, $email);
 
             $user = User::query()->updateOrCreate(
-                ['email' => $localPart.'@'.self::DEMO_DOMAIN],
+                ['email' => $email],
                 [
                     'name' => $first.' '.($last === 'OConnor' ? "O'Connor" : $last),
                     'password' => $password,
@@ -209,6 +214,7 @@ class DemoCompanySeeder extends Seeder
                     'commission_enabled' => $companyRole === 'agent',
                     'phone_number' => sprintf('+44 74%02d %06d', 10 + $index, 310000 + ($index * 4211)),
                     'gender' => $gender,
+                    'avatar' => $avatarKey,
                     'is_active' => true,
                 ],
             );

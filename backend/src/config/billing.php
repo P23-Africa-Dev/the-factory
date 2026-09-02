@@ -26,6 +26,34 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost:3000')),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Map Credits
+    |--------------------------------------------------------------------------
+    |
+    | Google (map) API usage is metered against credits allocated to each
+    | organization. These are fallbacks; the live values are stored as
+    | platform settings and are editable by the super admin.
+    |
+    |   credit_allocation_percent  % of a plan's MONTHLY price granted as
+    |                              credits each billing cycle (e.g. 5% of a
+    |                              $99 plan = $4.95 = 495 credits).
+    |   credits_per_usd            Conversion rate (100 credits = $1).
+    |   low_credit_threshold_percent  Balance below this % of the monthly
+    |                              allocation triggers the low-credit prompt.
+    |   credit_enforce             Master switch for hard-blocking Google calls
+    |                              once credits run out.
+    |
+    */
+
+    'credit_allocation_percent' => (float) env('MAP_CREDIT_ALLOCATION_PERCENT', 5),
+
+    'credits_per_usd' => (float) env('MAP_CREDITS_PER_USD', 100),
+
+    'low_credit_threshold_percent' => (float) env('MAP_CREDIT_LOW_THRESHOLD_PERCENT', 15),
+
+    'credit_enforce' => (bool) env('MAP_CREDIT_ENFORCE', true),
+
     'plans' => [
         'up_to_5' => [
             'label' => 'Up to 5 users',

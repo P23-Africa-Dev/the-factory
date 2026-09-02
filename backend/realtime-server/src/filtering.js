@@ -1,4 +1,4 @@
-export const MANAGEMENT_ROLES = new Set(["owner", "admin", "supervisor", "management"]);
+export const MANAGEMENT_ROLES = new Set(["owner", "admin", "supervisor", "management", "manager"]);
 
 export const resolveAccessRole = (companyRole) => {
   if (!companyRole) {

@@ -41,14 +41,27 @@ Return valid JSON only with keys: summary, outcomes (array), opportunities (arra
 Do not invent facts not present in the notes. Use empty arrays when a section has no data.
 PROMPT;
 
-        $raw = $this->aiProviderRouter->generateForPurpose(
+        $userPrompt = "Visit notes:\n" . $notes;
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: $systemPrompt,
-            userPrompt: "Visit notes:\n" . $notes,
-            options: ['max_tokens' => 800, 'temperature' => 0.1],
+            userPrompt: $userPrompt,
+            options: [
+                'max_tokens' => 800,
+                'temperature' => 0.1,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => (int) $user->id,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'crm.visit_assistant',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
+            ],
         );
 
-        $structured = $this->parseStructuredExtraction($raw, $notes);
+        $structured = $this->parseStructuredExtraction($result?->text, $notes);
 
         return [
             'tool' => 'crm.visit_extract',

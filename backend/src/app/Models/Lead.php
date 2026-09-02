@@ -27,6 +27,11 @@ class Lead extends Model
         'email',
         'phone',
         'location',
+        'company_name',
+        'company_email',
+        'website',
+        'position',
+        'profile_urls',
         'source',
         'status',
         'priority',
@@ -46,6 +51,7 @@ class Lead extends Model
             'priority' => LeadPriority::class,
             'budget_amount' => 'decimal:2',
             'meta' => 'array',
+            'profile_urls' => 'array',
             'last_interaction_at' => 'datetime',
             'converted_at' => 'datetime',
         ];
@@ -84,6 +90,11 @@ class Lead extends Model
     public function activities(): HasMany
     {
         return $this->hasMany(LeadActivity::class);
+    }
+
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(LeadContact::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function meetings(): BelongsToMany

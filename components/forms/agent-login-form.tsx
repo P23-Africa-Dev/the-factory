@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { loginAgent } from "@/lib/api/auth";
-import { ApiRequestError, getMe } from "@/lib/api/onboarding";
+import { ApiRequestError } from "@/lib/api/onboarding";
 import { getAccountStatusMessage } from "@/lib/auth/account-status";
 import { clearAuthSession, getAuthTokenFromDocument, setAuthSession, setCompanyId } from "@/lib/auth/session";
 import { useAuthStore } from "@/store/auth";
@@ -78,22 +78,20 @@ export default function AgentLoginForm() {
     try {
       const res = await loginAgent({ email: values.email, password: values.password });
       const token = res.data.token;
+      const profile = res.data.user;
 
-      const me = await getMe(token);
-      // Persist the session using the user's actual onboarding state, not the
-      // remember-me checkbox (which previously caused a false "/complete-onboarding" redirect).
-      setAuthSession(token, Boolean(me.data.onboarding_completed));
+      setAuthSession(token, Boolean(profile.onboarding_completed));
 
-      if (me.data.active_company?.id) {
-        setCompanyId(me.data.active_company.id);
+      if (profile.active_company?.id) {
+        setCompanyId(profile.active_company.id);
       }
       setUser({
-        id: me.data.id,
-        name: me.data.name,
-        email: me.data.email,
-        avatar: me.data.avatar,
+        id: profile.id,
+        name: profile.name,
+        email: profile.email,
+        avatar: profile.avatar,
         access_role: res.data.access_role,
-        active_company: me.data.active_company,
+        active_company: profile.active_company,
       });
 
       toast.success(res.message);

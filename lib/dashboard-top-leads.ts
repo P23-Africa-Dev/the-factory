@@ -8,6 +8,7 @@ export type TopLeadsFilter = (typeof TOP_LEADS_FILTER_OPTIONS)[number];
 export const TOP_LEADS_RING_COLORS = ["#7BB6B8", "#146AFA", "#FD6046"] as const;
 
 export type TopLeadsChartItem = {
+  id: string;
   name: string;
   value: number;
   fill: string;
@@ -98,6 +99,7 @@ export function buildTopLeadsChartData(
 ): TopLeadsChartItem[] {
   if (prospects.length === 0) {
     return TOP_LEADS_RING_COLORS.map((fill, index) => ({
+      id: `placeholder-${index}`,
       name: `Lead ${index + 1}`,
       value: conversionRate,
       fill,
@@ -105,6 +107,7 @@ export function buildTopLeadsChartData(
   }
 
   return prospects.slice(0, 3).map((prospect, index) => ({
+    id: String(prospect.id),
     name: prospect.name,
     value: getLeadStatusProgress(prospect.status),
     fill: TOP_LEADS_RING_COLORS[index] ?? TOP_LEADS_RING_COLORS[0],

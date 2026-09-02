@@ -2,13 +2,14 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class OtpNotification extends Notification
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly string $otp,
@@ -20,26 +21,25 @@ class OtpNotification extends Notification
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        return (new MailMessage)
-            ->mailer('resend')
+        return $this->factory23Mail()
             ->subject($this->resolveSubject())
             ->greeting("Hello {$notifiable->name}!")
             ->line($this->resolveIntroLine())
-            ->line("Your verification code is: **{$this->otp}**")
+            ->line($this->factory23OtpBox($this->otp))
             ->line('This code expires in **10 minutes**.')
             ->line('If you did not request this, please ignore this email.')
-            ->salutation('The Factory Team');
+            ->salutation($this->factory23Salutation());
     }
 
     private function resolveSubject(): string
     {
         return match ($this->type) {
-            'registration' => 'Verify your email address (Factory23)',
-            'login' => 'Your login verification code (Factory23)',
-            'password_reset' => 'Reset your password (Factory23)',
-            default => 'Your verification code (Factory23)',
+            'registration' => 'Verify your email — Factory23',
+            'login' => 'Your login verification code — Factory23',
+            'password_reset' => 'Reset your password — Factory23',
+            default => 'Your verification code — Factory23',
         };
     }
 

@@ -2,7 +2,6 @@ import type { ApiError } from '@/types';
 import { client } from '@/lib/api/client';
 import { getDb } from '@/lib/db/client';
 import type {
-  LocationQueueEntry,
   OfflineActionQueueEntry,
 } from '@/lib/db/schema';
 import {
@@ -16,6 +15,8 @@ import {
 } from '@/lib/offline/queue';
 import { getActiveCompanyId, appStore } from '@/lib/storage/stores';
 import { buildCompleteFormData } from '@/features/tracking/completeTaskForm';
+import { parseRecordLocationResponse } from '@/features/tracking/schema';
+import { applyProximityFromSync } from '@/features/tracking/proximityFromSync';
 import { leadSchema } from '@/features/crm/schema';
 import { putCachedLeadDetail, remapLeadId } from '@/features/crm/cache';
 import { queryClient } from '@/lib/queryClient';
@@ -24,6 +25,7 @@ import { meetingKeys } from '@/features/meetings/queryKeys';
 import { crmKeys } from '@/features/crm/queryKeys';
 import { locationKeys } from '@/features/locations/queryKeys';
 import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
+import { withLocationUploadLock } from '@/lib/sync/locationUploadLock';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
@@ -91,83 +93,181 @@ function isPoorConnection(): boolean {
 }
 
 async function syncLocationQueue(): Promise<void> {
-  const companyId = getActiveCompanyId();
-  if (!companyId) return;
+  const fallbackCompanyId = getActiveCompanyId();
 
-  const db = await getDb();
-  const pending = await db.getAllFromIndex('locationQueue', 'by-synced', 0);
-  const runnable = pending.filter((item) => canRunNow(item.nextAttemptAt));
-  if (runnable.length === 0) return;
+  await withLocationUploadLock(async () => {
+    const db = await getDb();
+    const pending = await db.getAllFromIndex('locationQueue', 'by-synced', 0);
+    const runnable = pending.filter(
+      (item) => canRunNow(item.nextAttemptAt) && item.inFlight !== 1,
+    );
+    if (runnable.length === 0) return;
 
-  const byTask = runnable.reduce<Record<number, LocationQueueEntry[]>>((acc, row) => {
-    const existing = acc[row.taskId];
-    if (existing) existing.push(row);
-    else acc[row.taskId] = [row];
-    return acc;
-  }, {});
+    const fieldRows = runnable.filter(
+      (row) => row.fieldActivitySessionId != null && row.fieldActivitySessionId > 0,
+    );
+    const taskRows = runnable.filter((row) => !row.fieldActivitySessionId);
 
-  for (const [taskIdRaw, rows] of Object.entries(byTask)) {
-    const taskId = Number(taskIdRaw);
-    const batch = rows.slice(0, MAX_BATCH_SIZE);
-    try {
-      await client.post(
-        `/agent/tasks/${taskId}/location`,
-        {
-          company_id: companyId,
-          points: batch.map((r) => ({
-            latitude: r.latitude,
-            longitude: r.longitude,
-            accuracy_meters: r.accuracyMeters ?? null,
-            speed_mps: r.speedMps ?? null,
-            heading_degrees: r.headingDegrees ?? null,
-            recorded_at: r.recordedAt,
-          })),
-        },
-        BACKGROUND_REQUEST,
-      );
+    const byFieldSession = fieldRows.reduce<Record<number, typeof fieldRows>>((acc, row) => {
+      const sid = Number(row.fieldActivitySessionId);
+      const existing = acc[sid];
+      if (existing) existing.push(row);
+      else acc[sid] = [row];
+      return acc;
+    }, {});
 
-      const tx = db.transaction('locationQueue', 'readwrite');
-      for (const row of batch) {
-        if (row.id != null) {
-          await tx.store.put({
-            ...row,
-            synced: 1,
-            attempts: 0,
-            nextAttemptAt: null,
-            lastError: null,
-          });
-        }
-      }
-      await tx.done;
-    } catch (error) {
-      const apiError = error as ApiError;
-      const is422 = apiError.status === 422;
+    for (const [sessionIdRaw, rows] of Object.entries(byFieldSession)) {
+      const sessionId = Number(sessionIdRaw);
+      const batch = rows.slice(0, MAX_BATCH_SIZE);
+      const companyId = batch[0]?.companyId ?? fallbackCompanyId;
+      if (!companyId) continue;
 
-      const tx = db.transaction('locationQueue', 'readwrite');
-      for (const row of batch) {
-        if (row.id != null) {
-          if (is422) {
+      try {
+        await client.post(
+          `/agent/field-activity/sessions/${sessionId}/points`,
+          {
+            company_id: companyId,
+            points: batch.map((r) => ({
+              latitude: r.latitude,
+              longitude: r.longitude,
+              accuracy_meters: r.accuracyMeters ?? null,
+              speed_mps: r.speedMps ?? null,
+              heading_degrees: r.headingDegrees ?? null,
+              recorded_at: r.recordedAt,
+            })),
+          },
+          BACKGROUND_REQUEST,
+        );
+
+        const tx = db.transaction('locationQueue', 'readwrite');
+        for (const row of batch) {
+          if (row.id != null) {
             await tx.store.put({
               ...row,
               synced: 1,
-              attempts: row.attempts ?? 0,
+              inFlight: 0,
+              attempts: 0,
               nextAttemptAt: null,
-              lastError: apiError.message ?? null,
-            });
-          } else {
-            const attempts = (row.attempts ?? 0) + 1;
-            await tx.store.put({
-              ...row,
-              attempts,
-              nextAttemptAt: buildNextAttemptIso(attempts),
-              lastError: apiError.message ?? 'Location sync failed',
+              lastError: null,
             });
           }
         }
+        await tx.done;
+      } catch (error) {
+        const apiError = error as ApiError;
+        const is422 = apiError.status === 422;
+        const tx = db.transaction('locationQueue', 'readwrite');
+        for (const row of batch) {
+          if (row.id != null) {
+            if (is422) {
+              await tx.store.put({
+                ...row,
+                synced: 1,
+                inFlight: 0,
+                attempts: row.attempts ?? 0,
+                nextAttemptAt: null,
+                lastError: apiError.message ?? null,
+              });
+            } else {
+              const attempts = (row.attempts ?? 0) + 1;
+              await tx.store.put({
+                ...row,
+                inFlight: 0,
+                attempts,
+                nextAttemptAt: buildNextAttemptIso(attempts),
+                lastError: apiError.message ?? 'Field activity location sync failed',
+              });
+            }
+          }
+        }
+        await tx.done;
       }
-      await tx.done;
     }
-  }
+
+    const byTask = taskRows.reduce<Record<number, typeof taskRows>>((acc, row) => {
+      const existing = acc[row.taskId];
+      if (existing) existing.push(row);
+      else acc[row.taskId] = [row];
+      return acc;
+    }, {});
+
+    for (const [taskIdRaw, rows] of Object.entries(byTask)) {
+      const taskId = Number(taskIdRaw);
+      if (!taskId) continue;
+      const batch = rows.slice(0, MAX_BATCH_SIZE);
+      const companyId = batch[0]?.companyId ?? fallbackCompanyId;
+      if (!companyId) continue;
+
+      try {
+        const res = await client.post(
+          `/agent/tasks/${taskId}/location`,
+          {
+            company_id: companyId,
+            points: batch.map((r) => ({
+              latitude: r.latitude,
+              longitude: r.longitude,
+              accuracy_meters: r.accuracyMeters ?? null,
+              speed_mps: r.speedMps ?? null,
+              heading_degrees: r.headingDegrees ?? null,
+              recorded_at: r.recordedAt,
+            })),
+          },
+          BACKGROUND_REQUEST,
+        );
+
+        const tx = db.transaction('locationQueue', 'readwrite');
+        for (const row of batch) {
+          if (row.id != null) {
+            await tx.store.put({
+              ...row,
+              synced: 1,
+              inFlight: 0,
+              attempts: 0,
+              nextAttemptAt: null,
+              lastError: null,
+            });
+          }
+        }
+        await tx.done;
+
+        try {
+          const parsed = parseRecordLocationResponse(res.data);
+          applyProximityFromSync(taskId, parsed);
+        } catch (parseErr) {
+          console.warn('[syncEngine] Failed to parse location proximity response:', parseErr);
+        }
+      } catch (error) {
+        const apiError = error as ApiError;
+        const is422 = apiError.status === 422;
+
+        const tx = db.transaction('locationQueue', 'readwrite');
+        for (const row of batch) {
+          if (row.id != null) {
+            if (is422) {
+              await tx.store.put({
+                ...row,
+                synced: 1,
+                inFlight: 0,
+                attempts: row.attempts ?? 0,
+                nextAttemptAt: null,
+                lastError: apiError.message ?? null,
+              });
+            } else {
+              const attempts = (row.attempts ?? 0) + 1;
+              await tx.store.put({
+                ...row,
+                inFlight: 0,
+                attempts,
+                nextAttemptAt: buildNextAttemptIso(attempts),
+                lastError: apiError.message ?? 'Location sync failed',
+              });
+            }
+          }
+        }
+        await tx.done;
+      }
+    }
+  });
 }
 
 async function syncProofQueue(): Promise<void> {
@@ -214,6 +314,32 @@ async function syncProofQueue(): Promise<void> {
 
 async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<void> {
   switch (entry.actionType) {
+    case 'task.create_self': {
+      const payload = parseOfflinePayload<{
+        company_id?: number;
+        title: string;
+        type?: string;
+        description?: string;
+        location?: string;
+        address?: string;
+        latitude?: number;
+        longitude?: number;
+        due_date?: string;
+        required_actions?: string[];
+        priority?: string;
+        minimum_photos_required?: number;
+        visit_verification_required?: boolean;
+      }>(entry);
+      await client.post(
+        '/agent/tasks/self',
+        {
+          ...payload,
+          company_id: payload.company_id ?? getActiveCompanyId() ?? undefined,
+        },
+        BACKGROUND_REQUEST,
+      );
+      return;
+    }
     case 'task.update_status': {
       const payload = parseOfflinePayload<{ id: string | number; status: string; company_id?: number }>(entry);
       await client.patch(
@@ -315,6 +441,30 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
     case 'attendance.clock_out': {
       const payload = parseOfflinePayload<Record<string, unknown>>(entry);
       await client.post('/agent/attendance/clock-out', payload, BACKGROUND_REQUEST);
+      return;
+    }
+    case 'field_activity.classify_stop': {
+      const payload = parseOfflinePayload<{
+        stop_id: number;
+        company_id?: number;
+        classification: string;
+        lead_id?: number;
+        company_location_id?: number;
+        note?: string;
+        source?: string;
+      }>(entry);
+      await client.post(
+        `/agent/field-activity/stops/${payload.stop_id}/classify`,
+        {
+          company_id: payload.company_id,
+          classification: payload.classification,
+          lead_id: payload.lead_id,
+          company_location_id: payload.company_location_id,
+          note: payload.note,
+          source: payload.source ?? 'agent',
+        },
+        BACKGROUND_REQUEST,
+      );
       return;
     }
     case 'location.create': {

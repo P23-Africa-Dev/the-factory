@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Copy,
   MoreVertical,
@@ -11,18 +12,33 @@ import {
   ThumbsUp,
   Trash,
   Trash2,
+  Paperclip,
 } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useAgentIdentity } from '@/features/auth';
 import {
   useAssistantConversation,
   useDynamicSuggestions,
+  assistantApi,
   type AssistantMessage,
 } from '@/features/assistant';
+import {
+  DailyPlanCard,
+  loadPlanEdits,
+  persistPlanEdits,
+  useAcceptDailyPlan,
+  type DailyPlanPayload,
+  type PlanEditsMap,
+} from '@/features/planning';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 
 type LocalAction = 'liked' | 'disliked' | null;
+
+function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined): DailyPlanPayload | null {
+  if (!payload || !Array.isArray(payload.items)) return null;
+  return payload as unknown as DailyPlanPayload;
+}
 
 // Parses <u>...</u> spans (used by some AI replies) into underlined elements.
 function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
@@ -45,19 +61,30 @@ function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
 }
 
 export default function AiAssistantPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, processingLabel, send, clearCurrent, clearAll } =
+  const { messages, isRestoring, isSending, processingLabel, send, runPlanMyDay, clearCurrent, clearAll, threadId } =
     useAssistantConversation();
   const suggestions = useDynamicSuggestions();
+  const acceptPlan = useAcceptDailyPlan();
 
   const [input, setInput] = useState('');
   const [actions, setActions] = useState<Record<string, LocalAction>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<'current' | 'all' | null>(null);
   const [isClearing, setIsClearing] = useState(false);
+  const [acceptedPlanIds, setAcceptedPlanIds] = useState<Set<string>>(new Set());
+  const [dismissedPlanIds, setDismissedPlanIds] = useState<Set<string>>(new Set());
+  const [notifiedPlanIds, setNotifiedPlanIds] = useState<Set<string>>(new Set());
+  const [planEditsByMessage, setPlanEditsByMessage] = useState<Record<string, PlanEditsMap>>({});
+  const [acceptingPlanMessageId, setAcceptingPlanMessageId] = useState<string | null>(null);
+  const planDayTriggeredRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -90,11 +117,56 @@ export default function AiAssistantPage() {
     };
   }, [messages, isRestoring, isSending]);
 
-  const handleSend = (text?: string, withGeolocation = false) => {
+  useEffect(() => {
+    if (isRestoring || isSending || planDayTriggeredRef.current) return;
+    if (searchParams.get('flow') !== 'plan-day') return;
+
+    planDayTriggeredRef.current = true;
+    router.replace('/assistant');
+    void runPlanMyDay();
+  }, [isRestoring, isSending, searchParams, router, runPlanMyDay]);
+
+  useEffect(() => {
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || msg.tool !== 'planning.daily' || notifiedPlanIds.has(msg.id)) {
+        continue;
+      }
+      const payload = msg.payload as DailyPlanPayload | null | undefined;
+      if (!payload?.items?.length) continue;
+
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- mark assistant plan toast as shown once
+      setNotifiedPlanIds((prev) => new Set(prev).add(msg.id));
+      toast.info('Your daily plan is ready', 'Review the plan below and accept to create tasks.');
+    }
+  }, [messages, notifiedPlanIds]);
+
+  const handleSend = (
+    text?: string,
+    withGeolocation = false,
+    context?: { focus?: 'all' | 'visits' | 'followups' | 'tasks'; limit?: number },
+  ) => {
     const content = (text ?? input).trim();
     if (!content) return;
     setInput('');
-    void send(content, { withGeolocation });
+    void send(content, { withGeolocation, context });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsAnalyzingPhoto(true);
+    try {
+      const result = await assistantApi.analyzeFile(file);
+      void send(`File Analysis (${file.name}):\n\n${result.summary}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to analyze file.');
+    } finally {
+      setIsAnalyzingPhoto(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const handleAction = (id: string, action: Exclude<LocalAction, null>) => {
@@ -134,11 +206,48 @@ export default function AiAssistantPage() {
         </div>
       );
     }
+
+    const planPayload =
+      msg.tool === 'planning.daily' ? asDailyPlanPayload(msg.payload) : null;
+    const planStorageKey = `plan-edit:${threadId ?? 'default'}:${msg.id}`;
+    const planEdits =
+      planPayload !== null
+        ? (planEditsByMessage[msg.id] ?? loadPlanEdits(planStorageKey, planPayload))
+        : null;
+
     return (
       <div key={msg.id} className="flex flex-col items-start">
         <div className="max-w-[85%] flex flex-col gap-2">
           <div className="bg-gradient-to-b from-[#333] to-[#16384B] border border-white/10 rounded-[24px] rounded-tl-none p-5 shadow-lg relative">
             <ParsedHtmlText text={msg.content} />
+            {planPayload && planEdits && (
+              <DailyPlanCard
+                payload={planPayload}
+                edits={planEdits}
+                onEditsChange={(nextEdits) => {
+                  setPlanEditsByMessage((prev) => ({ ...prev, [msg.id]: nextEdits }));
+                  persistPlanEdits(planStorageKey, nextEdits);
+                }}
+                accepted={acceptedPlanIds.has(msg.id)}
+                dismissed={dismissedPlanIds.has(msg.id)}
+                isAccepting={acceptPlan.isPending && acceptingPlanMessageId === msg.id}
+                onDismiss={() => setDismissedPlanIds((prev) => new Set(prev).add(msg.id))}
+                onAccept={() => {
+                  setAcceptingPlanMessageId(msg.id);
+                  acceptPlan.mutate(
+                    { payload: planPayload, edits: planEdits },
+                    {
+                      onSuccess: () => {
+                        setAcceptedPlanIds((prev) => new Set(prev).add(msg.id));
+                      },
+                      onSettled: () => {
+                        setAcceptingPlanMessageId(null);
+                      },
+                    },
+                  );
+                }}
+              />
+            )}
           </div>
           {!msg.failed && (
             <div className="flex items-center gap-3 ml-3 select-none">
@@ -185,7 +294,7 @@ export default function AiAssistantPage() {
         />
 
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 pt-6 pb-3 h-20 border-b border-white/10">
+        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-3 border-b border-white/10">
           <div className="flex items-center gap-3.5">
             <img
               src={avatarSrc}
@@ -240,7 +349,7 @@ export default function AiAssistantPage() {
                     <button
                       key={suggestion.id}
                       type="button"
-                      onClick={() => handleSend(suggestion.prompt)}
+                      onClick={() => handleSend(suggestion.prompt, suggestion.withGeolocation ?? false)}
                       className="w-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 rounded-2xl py-4 px-5 text-left text-xs font-semibold text-[#D0E2E3] transition-all active:scale-98 flex items-center gap-3"
                     >
                       <Sparkles size={14} className="text-[#75ADAF] flex-shrink-0" />
@@ -261,6 +370,14 @@ export default function AiAssistantPage() {
               </div>
             )}
 
+            {isAnalyzingPhoto && (
+              <div className="flex items-start">
+                <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
+                  ELY is analyzing your attachment...
+                </div>
+              </div>
+            )}
+
             {!isRestoring && <div className="h-24 flex-shrink-0" />}
           </div>
         </div>
@@ -268,11 +385,20 @@ export default function AiAssistantPage() {
         {/* Input Bar pinned above Bottom Navigation */}
         <div className="fixed bottom-[80px] left-0 right-0 max-w-md mx-auto z-50 pb-1">
           <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-6 gap-3 border border-gray-100">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
             <button
               type="button"
-              className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-[#091519] focus:outline-none flex-shrink-0"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending || isAnalyzingPhoto}
+              className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-800 focus:outline-none flex-shrink-0 disabled:opacity-50 transition-colors"
             >
-              <img src="/assets/ai-camera.png" alt="camera" className="w-[38px] h-[38px] object-contain" />
+              <Paperclip size={20} />
             </button>
 
             <div className="flex-1 bg-gray-100 rounded-full h-12 flex items-center px-4">

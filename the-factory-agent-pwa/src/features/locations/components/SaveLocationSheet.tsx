@@ -1,11 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { SAVED_LOCATION_TYPES } from '@/lib/map/locationTypes';
 import { useCrmLabels } from '@/features/crm';
+import { PlaceAutocompleteField } from './PlaceAutocompleteField';
 import { saveLocationFormSchema } from '../schema';
 import type { CreateSavedLocationInput } from '../types';
+import type { RetrievedPlace } from '@/lib/map/place-search';
 
 export type SaveLocationSheetProps = {
   visible: boolean;
@@ -16,6 +19,8 @@ export type SaveLocationSheetProps = {
   isSubmitting?: boolean;
   onClose: () => void;
   onSubmit: (input: CreateSavedLocationInput) => void;
+  /** Called when the user picks a Google/Mapbox place so the map pin can move. */
+  onCoordinatesChange?: (latitude: number, longitude: number, address: string) => void;
 };
 
 export function SaveLocationSheet({
@@ -27,6 +32,7 @@ export function SaveLocationSheet({
   isSubmitting,
   onClose,
   onSubmit,
+  onCoordinatesChange,
 }: SaveLocationSheetProps) {
   const [name, setName] = useState(initialName ?? '');
   const [type, setType] = useState('office');
@@ -34,12 +40,35 @@ export function SaveLocationSheet({
   const [address, setAddress] = useState(initialAddress ?? '');
   const [contactNumber, setContactNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [pickedCoords, setPickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { data: crmLabels = [] } = useCrmLabels();
   const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? 'newly_lead';
   const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
+  const [mounted, setMounted] = useState(false);
 
-  if (!visible) return null;
+  const resolvedLat = pickedCoords?.lat ?? latitude;
+  const resolvedLng = pickedCoords?.lng ?? longitude;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Keep address in sync when reverse-geocode arrives from the parent.
+  useEffect(() => {
+    if (initialAddress != null && initialAddress !== '') {
+      setAddress(initialAddress);
+    }
+  }, [initialAddress]);
+
+  if (!visible || !mounted) return null;
+
+  const handlePlaceSelect = (place: RetrievedPlace) => {
+    const nextAddress = place.address || place.name;
+    setAddress(nextAddress);
+    setPickedCoords({ lat: place.lat, lng: place.lng });
+    onCoordinatesChange?.(place.lat, place.lng, nextAddress);
+  };
 
   const handleSubmit = (saveToCrm: boolean) => {
     const result = saveLocationFormSchema.safeParse({
@@ -67,8 +96,8 @@ export function SaveLocationSheet({
       type,
       description: description.trim() || null,
       address: address.trim() || null,
-      latitude,
-      longitude,
+      latitude: resolvedLat,
+      longitude: resolvedLng,
       contactNumber: contactNumber.trim() || null,
       email: email.trim() || null,
       saveToCrm,
@@ -76,8 +105,8 @@ export function SaveLocationSheet({
     });
   };
 
-  return (
-    <div className="fixed inset-0 z-[10000] flex items-end justify-center font-sans">
+  return createPortal(
+    <div className="fixed inset-0 z-[60000] flex items-end justify-center font-sans">
       <div className="absolute inset-0 bg-[#051014]/70" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md bg-[#0B3343] rounded-t-3xl border-t border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[#0B3343] px-5 pt-5 pb-3 flex items-center justify-between border-b border-white/10">
@@ -100,9 +129,9 @@ export function SaveLocationSheet({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Lekki Distribution Hub"
-              className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+              className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
             />
-            {errors.name && <p className="text-[11px] text-[#FCA5A5] mt-1">{errors.name}</p>}
+            {errors.name && <p className="text-[#FD6046] text-[10px] mt-1">{errors.name}</p>}
           </div>
 
           <div>
@@ -110,11 +139,11 @@ export function SaveLocationSheet({
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+              className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] focus:outline-none text-sm font-semibold border-none appearance-none cursor-pointer"
             >
-              {SAVED_LOCATION_TYPES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+              {SAVED_LOCATION_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
                 </option>
               ))}
             </select>
@@ -122,13 +151,19 @@ export function SaveLocationSheet({
 
           <div>
             <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5">Address</label>
-            <input
-              type="text"
+            <PlaceAutocompleteField
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Auto-filled from map"
-              className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+              onChange={setAddress}
+              onPlaceSelect={handlePlaceSelect}
+              placeholder="Search address or place…"
+              disabled={isSubmitting}
+              proximity={[longitude, latitude]}
+              inputClassName="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
             />
+            <p className="mt-1 text-[10px] text-white/40">
+              {resolvedLat.toFixed(6)}, {resolvedLng.toFixed(6)}
+            </p>
+            {errors.address && <p className="text-[#FD6046] text-[10px] mt-1">{errors.address}</p>}
           </div>
 
           <div>
@@ -136,47 +171,69 @@ export function SaveLocationSheet({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={3}
               placeholder="Notes about this place..."
-              className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF] resize-none"
+              rows={3}
+              className="w-full bg-white rounded-xl p-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none resize-none"
             />
+            {errors.description && (
+              <p className="text-[#FD6046] text-[10px] mt-1">{errors.description}</p>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div className="flex gap-4">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5">Contact</label>
               <input
-                type="tel"
+                type="text"
                 value={contactNumber}
                 onChange={(e) => setContactNumber(e.target.value)}
-                placeholder="Phone"
-                className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+                placeholder="e.g. +234..."
+                className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
               />
+              {errors.contactNumber && (
+                <p className="text-[#FD6046] text-[10px] mt-1">{errors.contactNumber}</p>
+              )}
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email"
-                className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+                placeholder="e.g. name@..."
+                className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
               />
-              {errors.email && <p className="text-[11px] text-[#FCA5A5] mt-1">{errors.email}</p>}
+              {errors.email && <p className="text-[#FD6046] text-[10px] mt-1">{errors.email}</p>}
             </div>
           </div>
 
-          <p className="text-[11px] text-gray-400">
-            Pinned at {latitude.toFixed(5)}, {longitude.toFixed(5)}
-          </p>
+          <div className="flex items-center gap-2 py-1 select-none">
+            <input
+              type="checkbox"
+              id="saveToCrm"
+              className="h-4 w-4 rounded border-white/20 bg-white/5 text-[#75ADAF] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+              checked={type === 'lead'}
+              onChange={(e) => setType(e.target.checked ? 'lead' : 'office')}
+            />
+            <label htmlFor="saveToCrm" className="text-xs font-semibold text-white cursor-pointer">
+              Also save as a CRM Lead
+            </label>
+          </div>
 
-          {crmLabels.length > 0 && (
+          {type === 'lead' && (
             <div>
-              <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5">CRM Status (when saving to CRM)</label>
+              <label className="block text-xs font-semibold text-[#9FC4C6] mb-1.5 flex justify-between items-center">
+                <span>CRM Lead Status</span>
+                {crmLabels.length === 0 && (
+                  <span className="text-[10px] text-gray-400 normal-case font-normal animate-pulse">
+                    Loading labels...
+                  </span>
+                )}
+              </label>
               <select
                 value={crmStatus}
                 onChange={(e) => setCrmStatus(e.target.value)}
-                className="w-full bg-white rounded-xl px-3.5 py-3 text-sm text-[#09232D] font-semibold focus:outline-none focus:ring-2 focus:ring-[#75ADAF]"
+                className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] focus:outline-none text-sm font-semibold border-none appearance-none cursor-pointer"
               >
                 {crmLabels.map((label) => (
                   <option key={label.slug} value={label.slug}>
@@ -223,6 +280,7 @@ export function SaveLocationSheet({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

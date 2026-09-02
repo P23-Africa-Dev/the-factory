@@ -3,17 +3,25 @@
 use App\Http\Controllers\Admin\AI\AiHealthController;
 use App\Http\Controllers\Admin\AI\AiLogController;
 use App\Http\Controllers\Admin\AI\AiManagementController;
+use App\Http\Controllers\Admin\AI\AiIntentRoutingSettingController;
+use App\Http\Controllers\Admin\AI\AiStackSettingController;
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
 use App\Http\Controllers\Admin\Billing\BillingOverviewController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Controllers\Admin\Billing\BillingPlanController;
+use App\Http\Controllers\Admin\Billing\CompanyDemoController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\Map\MapPoiDisplayController as AdminMapPoiDisplayController;
+use App\Http\Controllers\Admin\MapCredit\MapCreditController as AdminMapCreditController;
+use App\Http\Controllers\Admin\MapCredit\MapCreditSkuController as AdminMapCreditSkuController;
+use App\Http\Controllers\Admin\Places\PlacesAnalyticsController;
 use App\Http\Controllers\Admin\Database\DatabaseLockController;
 use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\SupportAccessController;
 use App\Http\Controllers\Web\InternalOnboardingRedirectController;
 use Illuminate\Support\Facades\Route;
 
@@ -47,9 +55,22 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::get('/health', [AiHealthController::class, 'check'])->name('health');
             Route::post('/health/test/{provider}', [AiHealthController::class, 'testProvider'])->name('health.test');
             Route::post('/alerts/{alert}/resolve', [AiManagementController::class, 'resolveAlert'])->name('alerts.resolve');
+            Route::post('/stack', [AiStackSettingController::class, 'update'])
+                ->name('stack.update')
+                ->middleware('admin.permission:manage_ai');
+            Route::post('/intent-routing', [AiIntentRoutingSettingController::class, 'update'])
+                ->name('intent-routing.update')
+                ->middleware('admin.permission:manage_ai');
         });
 
         // ── Users ──────────────────────────────────────────────
+        Route::post('/users/{user}/support-access', [SupportAccessController::class, 'store'])
+            ->middleware([
+                'admin.permission:impersonate_users',
+                'throttle:support-access',
+            ])
+            ->name('users.support-access.store');
+
         Route::prefix('users')->name('users.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::get('/', [UserManagementController::class, 'index'])->name('index');
             Route::get('/{user}', [UserManagementController::class, 'show'])->name('show');
@@ -123,6 +144,38 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
                 Route::patch('/{plan}', [BillingPlanController::class, 'update'])->name('update');
                 Route::delete('/{plan}', [BillingPlanController::class, 'destroy'])->name('destroy');
             });
+
+            Route::post('/companies/{company}/demo', [CompanyDemoController::class, 'update'])
+                ->name('companies.demo.update');
+        });
+
+        // ── Map Credits (Google API usage & allocation) ────────
+        Route::prefix('map-credits')->name('map-credits.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', [AdminMapCreditController::class, 'index'])->name('index');
+            Route::post('/settings', [AdminMapCreditController::class, 'updateSettings'])->name('settings.update');
+            Route::get('/companies/{company}', [AdminMapCreditController::class, 'show'])->name('companies.show');
+            Route::post('/companies/{company}/adjust', [AdminMapCreditController::class, 'adjust'])->name('companies.adjust');
+
+            Route::prefix('skus')->name('skus.')->group(function (): void {
+                Route::get('/create', [AdminMapCreditSkuController::class, 'create'])->name('create');
+                Route::post('/', [AdminMapCreditSkuController::class, 'store'])->name('store');
+                Route::get('/{sku}/edit', [AdminMapCreditSkuController::class, 'edit'])->name('edit');
+                Route::patch('/{sku}', [AdminMapCreditSkuController::class, 'update'])->name('update');
+                Route::delete('/{sku}', [AdminMapCreditSkuController::class, 'destroy'])->name('destroy');
+            });
+        });
+
+        // ── Map Display (Google business pins on the map) ──────
+        Route::prefix('map-display')->name('map-display.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', [AdminMapPoiDisplayController::class, 'index'])->name('index');
+            Route::post('/global', [AdminMapPoiDisplayController::class, 'updateGlobal'])->name('global.update');
+            Route::post('/companies/{company}', [AdminMapPoiDisplayController::class, 'updateCompany'])->name('companies.update');
+        });
+
+        // ── Places Search analytics (Geoapify / Foursquare / Google) ──
+        Route::prefix('places')->name('places.')->middleware('admin.permission:manage_billing')->group(function (): void {
+            Route::get('/', [PlacesAnalyticsController::class, 'index'])->name('index');
+            Route::post('/settings', [PlacesAnalyticsController::class, 'updateSettings'])->name('settings.update');
         });
     });
 });

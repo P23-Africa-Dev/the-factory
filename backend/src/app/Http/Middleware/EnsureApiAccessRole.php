@@ -12,6 +12,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class EnsureApiAccessRole
 {
+    private const AGENT_READONLY_MANAGEMENT_ENDPOINTS = [
+        'api/v1/admin/crm/labels',
+    ];
+
     /**
      * @param  'management'|'agent'  $scope
      */
@@ -21,6 +25,16 @@ class EnsureApiAccessRole
 
         if (! $user) {
             throw new AuthorizationException('Unauthenticated request context.');
+        }
+
+        if ($request->attributes->has('support_access_session')) {
+            if ($scope === 'agent') {
+                throw new AuthorizationException(
+                    'Support sessions use company management endpoints.'
+                );
+            }
+
+            return $next($request);
         }
 
         $activeRoles = DB::table('company_users')
@@ -39,7 +53,7 @@ class EnsureApiAccessRole
         $isAgent = $user->internal_role === 'agent'
             || ($user->internal_role === null && $hasAgentMembership && ! $hasManagementMembership);
 
-        if ($scope === 'management' && $isAgent) {
+        if ($scope === 'management' && $isAgent && ! $this->isAllowedReadonlyManagementEndpoint($request)) {
             throw new AuthorizationException('Agents cannot access management endpoints.');
         }
 
@@ -48,5 +62,20 @@ class EnsureApiAccessRole
         }
 
         return $next($request);
+    }
+
+    private function isAllowedReadonlyManagementEndpoint(Request $request): bool
+    {
+        if (! $request->isMethod('GET')) {
+            return false;
+        }
+
+        foreach (self::AGENT_READONLY_MANAGEMENT_ENDPOINTS as $pattern) {
+            if ($request->is($pattern)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

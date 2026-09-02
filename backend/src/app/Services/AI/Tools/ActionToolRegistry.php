@@ -8,7 +8,9 @@ use App\Enums\LeadPriority;
 use App\Enums\KpiCategory;
 use App\Enums\KpiPriority;
 use App\Enums\NotificationCategory;
+use App\Enums\NotificationDeliveryType;
 use App\Enums\NotificationPriority;
+use App\Enums\PayrollSalaryType;
 use App\Enums\ProjectPriority;
 use App\Enums\ProjectStatus;
 use App\Enums\ProjectType;
@@ -24,11 +26,14 @@ use App\Services\Calendar\MeetingService;
 use App\Services\Kpi\KpiService;
 use App\Services\Notification\NotificationService;
 use App\Services\Company\CompanyContextService;
+use App\Services\Internal\InternalUserOnboardingService;
 use App\Services\Project\ProjectService;
 use App\Services\Task\TaskReassignmentService;
 use App\Services\Task\TaskService;
+use App\Support\CurrencyCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -44,6 +49,7 @@ class ActionToolRegistry
         private readonly LeadService $leadService,
         private readonly CrmEmailService $crmEmailService,
         private readonly KpiService $kpiService,
+        private readonly InternalUserOnboardingService $internalUserOnboardingService,
         private readonly CompanyContextService $companyContextService,
     ) {}
 
@@ -59,6 +65,8 @@ class ActionToolRegistry
             'crm.create_lead' => $this->createLead($user, $companyId, $args),
             'crm.send_email' => $this->sendLeadEmail($user, $companyId, $args),
             'kpis.create' => $this->createKpi($user, $companyId, $args),
+            'kpis.update' => $this->updateKpi($user, $companyId, $args),
+            'org.users.create' => $this->createOrganizationUser($user, $companyId, $args),
             default => [
                 'tool' => $tool,
                 'summary' => 'Unsupported action tool requested.',
@@ -81,7 +89,10 @@ class ActionToolRegistry
             'assigned_agent_id' => $isAgent
                 ? ['prohibited']
                 : ['nullable', 'integer', 'exists:users,id'],
-            'assigned_agent_ids' => ['prohibited'],
+            'assigned_agent_ids' => $isAgent
+                ? ['prohibited']
+                : ['nullable', 'array', 'max:20'],
+            'assigned_agent_ids.*' => ['integer', 'exists:users,id'],
             'location' => ['nullable', 'string', 'min:2', 'max:255'],
             'address' => ['nullable', 'string', 'min:5', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -95,11 +106,10 @@ class ActionToolRegistry
         ])->validate();
 
         // Agents cannot assign tasks to others; managers/admins may assign,
-        // and TaskService will enforce tenant membership for assigned_agent_id.
+        // and TaskService will enforce tenant membership for assignees.
         if ($isAgent) {
-            unset($validated['assigned_agent_id']);
+            unset($validated['assigned_agent_id'], $validated['assigned_agent_ids']);
         }
-        unset($validated['assigned_agent_ids']);
 
         $payload = [
             ...$validated,
@@ -213,7 +223,18 @@ class ActionToolRegistry
             'user_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'roles' => ['nullable', 'array', 'min:1', 'max:4'],
             'roles.*' => ['string', Rule::in(['owner', 'admin', 'supervisor', 'agent'])],
+            'delivery_types' => ['nullable', 'array', 'min:1', 'max:5'],
+            'delivery_types.*' => ['string', Rule::in(NotificationDeliveryType::values())],
+            'action_url' => ['nullable', 'string', 'max:255'],
         ])->validate();
+
+        if (! isset($validated['delivery_types']) || $validated['delivery_types'] === []) {
+            $validated['delivery_types'] = [
+                NotificationDeliveryType::IN_APP->value,
+                NotificationDeliveryType::PUSH->value,
+                NotificationDeliveryType::EMAIL->value,
+            ];
+        }
 
         $hasUsers = ! empty($validated['user_ids']);
         $hasRoles = ! empty($validated['roles']);
@@ -232,6 +253,8 @@ class ActionToolRegistry
             'message' => (string) $validated['message'],
             'priority' => (string) ($validated['priority'] ?? NotificationPriority::NORMAL->value),
             'created_by_user_id' => (int) $user->id,
+            'delivery_types' => $validated['delivery_types'],
+            'action_url' => $validated['action_url'] ?? '/tasks',
         ];
 
         if ($hasUsers) {
@@ -346,6 +369,23 @@ class ActionToolRegistry
             'company_id' => $companyId,
         ]);
 
+        $lead->update([
+            'last_interaction_at' => now(),
+            'last_interaction' => 'Follow-up email sent: ' . Str::limit((string) $validated['subject'], 120),
+        ]);
+
+        $this->leadService->addActivity($user, $lead, [
+            'type' => 'email',
+            'title' => 'Follow-up email sent',
+            'description' => Str::limit((string) $validated['subject'], 255),
+            'happened_at' => now()->toIso8601String(),
+            'meta' => [
+                'message_id' => (int) $message->id,
+                'subject' => (string) $validated['subject'],
+                'to' => $validated['to'] ?? [],
+            ],
+        ], $companyId);
+
         return [
             'tool' => 'crm.send_email',
             'summary' => "Email to lead '{$lead->name}' was queued for sending.",
@@ -371,6 +411,8 @@ class ActionToolRegistry
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'priority' => ['required', 'string', Rule::in(KpiPriority::values())],
             'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assigned_to_user_ids' => ['nullable', 'array', 'max:20'],
+            'assigned_to_user_ids.*' => ['integer', 'exists:users,id'],
         ])->validate();
 
         $kpi = $this->kpiService->create($user, [
@@ -425,6 +467,91 @@ class ActionToolRegistry
                 'status' => $project->status?->value,
             ],
             'sources' => ['projects.create'],
+        ];
+    }
+
+    private function createOrganizationUser(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'full_name' => ['required', 'string', 'min:2', 'max:255'],
+            'email' => ['required', 'string', 'email:rfc', 'max:255', Rule::unique('users', 'email')->whereNull('deleted_at')],
+            'role' => ['required', 'string', Rule::in(['admin', 'supervisor', 'agent'])],
+            'phone_number' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
+            'gender' => ['nullable', 'string', Rule::in(['male', 'female'])],
+            'avatar_key' => ['nullable', 'string', 'max:50'],
+            'assigned_zone' => ['nullable', 'string', 'min:2', 'max:120'],
+            'assigned_zone_ids' => ['nullable', 'array', 'max:50'],
+            'assigned_zone_ids.*' => ['integer', 'exists:company_zones,id'],
+            'work_days' => ['required', 'array', 'min:1', 'max:7'],
+            'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
+            'base_salary' => ['required', 'numeric', 'min:0'],
+            'salary_type' => ['nullable', 'string', Rule::in(PayrollSalaryType::values())],
+            'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
+            'commission_enabled' => ['nullable', 'boolean'],
+            'supervisor_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assign_agent_ids' => ['nullable', 'array', 'max:100'],
+            'assign_agent_ids.*' => ['integer', 'exists:users,id'],
+        ])->validate();
+
+        $result = $this->internalUserOnboardingService->createByManager($user, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        /** @var User $created */
+        $created = $result['user'];
+
+        return [
+            'tool' => 'org.users.create',
+            'summary' => "Organization {$created->internal_role} '{$created->name}' was created and invited successfully.",
+            'payload' => [
+                'user_id' => (int) $created->id,
+                'name' => (string) $created->name,
+                'email' => (string) $created->email,
+                'role' => (string) ($created->internal_role ?? ''),
+                'onboarding_status' => (string) ($created->onboarding_status ?? ''),
+                'invite_expires_at' => $result['invite_expires_at']?->toIso8601String(),
+            ],
+            'sources' => ['org.users.create'],
+        ];
+    }
+
+    private function updateKpi(User $user, int $companyId, array $args): array
+    {
+        $validated = Validator::make($args, [
+            'kpi_id' => ['required', 'integer', 'exists:kpis,id'],
+            'name' => ['nullable', 'string', 'min:3', 'max:255'],
+            'category' => ['nullable', 'string', Rule::in(KpiCategory::values())],
+            'objective' => ['nullable', 'string', 'min:10', 'max:5000'],
+            'target_value' => ['nullable', 'string', 'max:255'],
+            'expected_outcome' => ['nullable', 'string', 'min:10', 'max:5000'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'priority' => ['nullable', 'string', Rule::in(KpiPriority::values())],
+            'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ])->validate();
+
+        $kpi = \App\Models\Kpi::query()
+            ->where('company_id', $companyId)
+            ->findOrFail((int) $validated['kpi_id']);
+
+        $updated = $this->kpiService->update($user, $kpi, [
+            ...$validated,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'tool' => 'kpis.update',
+            'summary' => "KPI '{$updated->name}' was updated successfully.",
+            'payload' => [
+                'kpi_id' => (int) $updated->id,
+                'name' => (string) $updated->name,
+                'category' => $updated->category?->value,
+                'priority' => $updated->priority?->value,
+                'assigned_to_user_id' => $updated->assigned_to_user_id,
+                'status' => $updated->status?->value,
+            ],
+            'sources' => ['kpis.update'],
         ];
     }
 }

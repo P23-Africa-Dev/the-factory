@@ -5,7 +5,7 @@ import type {
   LeadsListCacheEntry,
 } from '@/lib/db/schema';
 import { appStore } from '@/lib/storage/stores';
-import type { CrmLabel, CrmPipeline, Lead, LeadsResult } from './types';
+import type { CrmLabel, CrmPipeline, Lead, LeadsResult, LeadContact } from './types';
 import { buildCacheId, stableFilterKey } from '@/lib/offline/cacheKeys';
 
 function listKey(companyId: number, filters?: unknown): string {
@@ -227,12 +227,17 @@ export function buildOptimisticLead(params: {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    company_name?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     source?: string | null;
     status?: string;
     priority?: Lead['priority'];
     next_action?: string | null;
     assigned_to_user_id?: number | null;
     meta?: Record<string, unknown> | null;
+    contacts?: LeadContact[];
   };
 }): Lead {
   const userId = getAuthUserId() ?? 0;
@@ -247,6 +252,10 @@ export function buildOptimisticLead(params: {
     email: params.payload.email ?? null,
     phone: params.payload.phone ?? null,
     location: params.payload.location ?? null,
+    companyName: params.payload.company_name ?? null,
+    website: params.payload.website ?? null,
+    position: params.payload.position ?? null,
+    profileUrls: params.payload.profile_urls ?? [],
     source: params.payload.source ?? null,
     status: params.payload.status ?? null,
     priority: params.payload.priority ?? null,
@@ -262,6 +271,7 @@ export function buildOptimisticLead(params: {
     pipeline: null,
     notes: [],
     activities: [],
+    contacts: params.payload.contacts ?? [],
     createdAt: now,
     updatedAt: now,
   };

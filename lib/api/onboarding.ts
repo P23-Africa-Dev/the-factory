@@ -11,6 +11,11 @@ import {
   enqueueOfflineHttpMutation,
   isOfflineQueueSupportedPath,
 } from "@/lib/offline/queue";
+import { formatRateLimitMessage, resolveApiErrorMessage } from "@/lib/api/errors";
+import {
+  getSupportLevelFromDocument,
+  isSupportSessionActiveInDocument,
+} from "@/lib/auth/support-session";
 
 export type ApiEnvelope<TData> = {
   success: boolean;
@@ -34,17 +39,24 @@ export class ApiRequestError extends Error {
   status: number;
   errors: Record<string, string[]> | null;
   code?: string;
+  retryAfter?: number;
 
   constructor(
     message: string,
     status: number,
     errors: Record<string, string[]> | null = null,
-    code?: string
+    code?: string,
+    retryAfter?: number
   ) {
-    super(message);
+    super(
+      status === 429
+        ? formatRateLimitMessage(resolveApiErrorMessage(message, errors), retryAfter)
+        : resolveApiErrorMessage(message, errors)
+    );
     this.status = status;
     this.errors = errors;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -95,11 +107,23 @@ export async function apiRequest<TData>({
   token,
 }: ApiRequestOptions): Promise<ApiEnvelope<TData>> {
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  const supportActive =
+    typeof window !== "undefined" && isSupportSessionActiveInDocument();
+  const supportLevel = supportActive ? getSupportLevelFromDocument() : null;
+
+  if (supportLevel === "read_only" && method !== "GET") {
+    throw new ApiRequestError(
+      "This support session is read-only. End it and create an operational session to make changes.",
+      403,
+      null,
+    );
+  }
 
   if (
     method !== "GET" &&
     !isFormData &&
     typeof window !== "undefined" &&
+    !supportActive &&
     !navigator.onLine &&
     isOfflineQueueSupportedPath(method, path)
   ) {
@@ -109,12 +133,16 @@ export async function apiRequest<TData>({
   let response: Response;
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    const requestUrl = supportActive
+      ? `/api/support/proxy${path}`
+      : `${API_BASE_URL}${path}`;
+
+    response = await fetch(requestUrl, {
       method,
       headers: {
         Accept: "application/json",
         ...(isFormData ? {} : { "Content-Type": "application/json" }),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(!supportActive && token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
     });
@@ -152,20 +180,33 @@ export async function apiRequest<TData>({
     const statusCode = (payload as { code?: string }).code ?? accountStatus;
 
     if (response.status === 402 && isSubscriptionStatusCode(statusCode)) {
-      handleSubscriptionRequired(statusCode, payload.message || undefined);
+      handleSubscriptionRequired(
+        statusCode,
+        resolveApiErrorMessage(payload.message, payload.errors) || undefined
+      );
     }
 
     if (response.status === 403 && isAccountStatusCode(accountStatus) && token) {
-      handleAccountAccessDenied(payload.message || "Your account access has been restricted.", {
-        accountStatus,
-      });
+      handleAccountAccessDenied(
+        resolveApiErrorMessage(
+          payload.message || "Your account access has been restricted.",
+          payload.errors
+        ),
+        {
+          accountStatus,
+        }
+      );
     }
+
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const retryAfter = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : undefined;
 
     throw new ApiRequestError(
       payload.message || "Request failed.",
       response.status,
       payload.errors,
-      accountStatus
+      accountStatus,
+      Number.isFinite(retryAfter) ? retryAfter : undefined
     );
   }
 

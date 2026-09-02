@@ -9,6 +9,7 @@ import { useAttendanceHistory } from '@/hooks/use-attendance';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import type { AgentAttendanceRecord } from '@/lib/api/attendance';
+import { resolveAvatarSrc } from '@/lib/avatar';
 
 type AttendanceItem = {
   id: number | string;
@@ -25,7 +26,7 @@ type AttendanceItem = {
   date: string;
 };
 
-function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceItem {
+function mapRecord(record: AgentAttendanceRecord, userName: string, avatarUrl?: string | null): AttendanceItem {
   const lat = record.metadata?.clock_in_latitude;
   const lng = record.metadata?.clock_in_longitude;
   return {
@@ -52,7 +53,7 @@ function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceI
         ? 'Active'
         : 'Absent',
     active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: '/avatars/male-avatar.png',
+    avatar: resolveAvatarSrc(avatarUrl ?? null),
     date: record.attendance_date,
   };
 }
@@ -230,7 +231,9 @@ export default function AgentAttendanceListPage() {
     per_page: 100,
   });
 
-  const allRecords: AttendanceItem[] = (historyData?.items ?? []).map((r) => mapRecord(r, user?.name ?? 'Me'));
+  const allRecords: AttendanceItem[] = (historyData?.items ?? []).map((r) =>
+    mapRecord(r, user?.name ?? 'Me', user?.avatar),
+  );
 
   const filtered = allRecords.filter((a) =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -286,7 +289,7 @@ export default function AgentAttendanceListPage() {
               type="text"
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search by name or address..."
+              placeholder="Search by name......"
               className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-dark/20 transition-all shadow-sm"
             />
           </div>

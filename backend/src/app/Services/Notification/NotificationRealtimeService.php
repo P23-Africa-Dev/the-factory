@@ -24,7 +24,7 @@ class NotificationRealtimeService
         ];
 
         try {
-            Redis::publish($channel, (string) json_encode($payload, JSON_THROW_ON_ERROR));
+            Redis::connection('pubsub')->publish($channel, (string) json_encode($payload, JSON_THROW_ON_ERROR));
         } catch (Throwable $exception) {
             Log::warning('Failed to publish notification realtime payload.', [
                 'channel' => $channel,

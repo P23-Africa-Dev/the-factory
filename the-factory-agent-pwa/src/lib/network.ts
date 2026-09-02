@@ -16,6 +16,7 @@ export function useNetworkStatus() {
   const [isClientReady, setIsClientReady] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initialize browser connectivity state
     setIsClientReady(true);
     setIsConnected(getBrowserOnlineStatus());
 

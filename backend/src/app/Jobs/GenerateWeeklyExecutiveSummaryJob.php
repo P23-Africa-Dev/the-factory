@@ -32,6 +32,7 @@ class GenerateWeeklyExecutiveSummaryJob implements ShouldQueue
     public function handle(
         ExecutiveReportService $executiveReportService,
         NotificationRealtimeService $notificationRealtimeService,
+        \App\Services\Drive\DriveReportArchiveService $driveReportArchiveService,
     ): void {
         $user = User::query()->findOrFail($this->userId);
 
@@ -52,6 +53,26 @@ class GenerateWeeklyExecutiveSummaryJob implements ShouldQueue
             );
 
             $executiveReportService->markCompleted($this->companyId, $this->userId, $this->reportId, $report);
+
+            try {
+                $archived = $driveReportArchiveService->archiveWeeklyExecutiveSummary(
+                    user: $user,
+                    companyId: $this->companyId,
+                    reportId: $this->reportId,
+                    report: $report,
+                );
+
+                if (isset($archived['id'])) {
+                    $executiveReportService->attachDriveFileId(
+                        $this->companyId,
+                        $this->userId,
+                        $this->reportId,
+                        (int) $archived['id'],
+                    );
+                }
+            } catch (Throwable $archiveException) {
+                report($archiveException);
+            }
 
             $notificationRealtimeService->publishToUser($this->userId, 'copilot.reports.weekly.progress', [
                 'report_id' => $this->reportId,

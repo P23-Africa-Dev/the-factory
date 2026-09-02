@@ -11,6 +11,7 @@ import type { ApiError } from '@/types';
 import { env } from '@/constants/env';
 import { appStore } from '@/lib/storage/stores';
 import { sessionEvents } from '@/lib/auth/sessionEvents';
+import { resolveApiErrorMessage } from '@/lib/api/errors';
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -55,16 +56,17 @@ client.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     const responseData = error.response?.data as Record<string, unknown> | undefined;
+    const errors = responseData?.errors as Record<string, string[]> | undefined;
     const apiError: ApiError = {
       status: error.response?.status ?? 0,
-      message:
-        (responseData?.message as string) ??
-        error.message ??
-        'An unexpected error occurred',
+      message: resolveApiErrorMessage(
+        (responseData?.message as string) ?? error.message ?? 'An unexpected error occurred',
+        errors,
+      ),
       code:
         (responseData?.code as string) ??
         ((responseData?.data as Record<string, unknown> | undefined)?.account_status as string | undefined),
-      errors: responseData?.errors as Record<string, string[]> | undefined,
+      errors,
     };
 
     if (process.env.NODE_ENV === 'development') {

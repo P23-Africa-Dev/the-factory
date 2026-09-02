@@ -38,8 +38,7 @@ export default function OnboardingLayout({
           Factory 23
         </h1>
         <p className="text-white text-[14px] lg:text-[15px] leading-[18px] lg:leading-[16px] max-w-[240px]">
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-          eiusmod
+          Let{"’"}s get your workspace set up in just a few steps.
         </p>
 
         <Image

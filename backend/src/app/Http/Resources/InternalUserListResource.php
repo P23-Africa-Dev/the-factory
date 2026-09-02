@@ -19,8 +19,9 @@ class InternalUserListResource extends JsonResource
     public function toArray(Request $request): array
     {
         $latestInvitation = $this->whenLoaded('latestInternalInvitation');
-        $avatarUrl = AvatarUrlResolver::resolve($this->avatar, $this->gender);
+        $avatarUrl = AvatarUrlResolver::resolveOrDefault($this->avatar, $this->gender);
         $presence = $this->agent_presence ?? app(AgentPresenceService::class)->emptyPresence();
+        $isSuspended = $this->suspended_until !== null && $this->suspended_until->isFuture();
 
         return [
             'id' => $this->id,
@@ -28,7 +29,16 @@ class InternalUserListResource extends JsonResource
             'email' => $this->email,
             'role' => $this->internal_role,
             'internal_role' => $this->internal_role,
+            'supervisor_user_id' => $this->supervisor_user_id,
             'assigned_zone' => $this->assigned_zone,
+            'assigned_zone_ids' => $this->zones->pluck('id')->map(static fn($id): int => (int) $id)->values()->all(),
+            'assigned_zones' => $this->zones->map(static fn($zone): array => [
+                'id' => (int) $zone->id,
+                'name' => (string) $zone->name,
+                'country_code' => (string) $zone->country_code,
+                'state_name' => (string) $zone->state_name,
+                'lga_name' => (string) $zone->lga_name,
+            ])->values()->all(),
             'phone_number' => $this->phone_number,
             'base_salary' => $this->base_salary,
             'payroll_salary_type' => $this->payroll_salary_type,
@@ -37,6 +47,9 @@ class InternalUserListResource extends JsonResource
             'avatar_url' => $avatarUrl,
             'onboarding_status' => $this->onboarding_status,
             'is_active' => (bool) $this->is_active,
+            'is_suspended' => $isSuspended,
+            'suspended_until' => $this->suspended_until?->toIso8601String(),
+            'deleted_at' => $this->deleted_at?->toIso8601String(),
             'internal_onboarding_completed_at' => $this->internal_onboarding_completed_at?->toIso8601String(),
             'invite_sent_at' => $latestInvitation?->sent_at?->toIso8601String(),
             'invite_expires_at' => $latestInvitation?->expires_at?->toIso8601String(),

@@ -2,16 +2,24 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Search, SlidersHorizontal, ChevronLeft, ChevronRight, Download, Clock, ChevronDown, Loader2, CalendarDays, TrendingUp } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, Download, Clock, ChevronDown, Loader2, CalendarDays, TrendingUp } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 import { useAttendanceStats, useAttendanceToday, useClockIn, useClockOut, useAttendanceHistory } from "@/hooks/use-attendance";
+import { useFieldActivityReporter } from "@/components/tracking/field-activity-reporter-provider";
+import { JourneyHistoryPanel } from "@/components/operations/journey-history-panel";
+import {
+  AgentDayReviewModal,
+  AgentPileInboxButton,
+  AgentPileInboxPanel,
+} from "@/components/operations/agent-field-review";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { AgentAttendanceRecord } from "@/lib/api/attendance";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 type AttendanceItem = {
   id: number | string;
@@ -27,7 +35,7 @@ type AttendanceItem = {
   date: string;
 };
 
-function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceItem {
+function mapRecord(record: AgentAttendanceRecord, userName: string, avatarUrl?: string | null): AttendanceItem {
   const lat = record.metadata?.clock_in_latitude;
   const lng = record.metadata?.clock_in_longitude;
   return {
@@ -53,21 +61,29 @@ function mapRecord(record: AgentAttendanceRecord, userName: string): AttendanceI
         ? "Active"
         : "Absent",
     active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: "/avatars/male-avatar.png",
+    avatar: resolveAvatarSrc(avatarUrl ?? null),
     date: record.attendance_date,
   };
 }
 
 async function getCurrentPosition(): Promise<{ latitude: number; longitude: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      resolve({ latitude: 0, longitude: 0 });
+      reject(new Error("Location is required to record attendance."));
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => resolve({ latitude: 0, longitude: 0 }),
-      { timeout: 5000 }
+      (pos) => {
+        const latitude = pos.coords.latitude;
+        const longitude = pos.coords.longitude;
+        if (Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001) {
+          reject(new Error("A valid GPS location is required to record attendance."));
+          return;
+        }
+        resolve({ latitude, longitude });
+      },
+      () => reject(new Error("A valid GPS location is required to record attendance.")),
+      { timeout: 10000, enableHighAccuracy: true }
     );
   });
 }
@@ -275,6 +291,8 @@ export function AttendanceViewAgent() {
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [selectedId, setSelectedId] = useState<number | string | null>(null);
   const [page, setPage] = useState(1);
+  const [dayReviewOpen, setDayReviewOpen] = useState(false);
+  const [pileInboxOpen, setPileInboxOpen] = useState(false);
 
   const { user } = useAuthStore();
   const { apiCompanyId } = getActiveCompanyContext(user);
@@ -292,8 +310,11 @@ export function AttendanceViewAgent() {
 
   const clockInMut = useClockIn();
   const clockOutMut = useClockOut();
+  const fieldActivity = useFieldActivityReporter();
 
-  const attendanceList: AttendanceItem[] = (historyData?.items ?? []).map((r) => mapRecord(r, user?.name ?? "Me"));
+  const attendanceList: AttendanceItem[] = (historyData?.items ?? []).map((r) =>
+    mapRecord(r, user?.name ?? "Me", user?.avatar),
+  );
 
   const filtered = attendanceList.filter(
     (i) =>
@@ -321,8 +342,18 @@ export function AttendanceViewAgent() {
       toast.error("No active company found.");
       return;
     }
-    const { latitude, longitude } = await getCurrentPosition();
-    const recorded_at = format(new Date(), "yyyy-MM-dd HH:mm:ss");
+
+    let latitude: number;
+    let longitude: number;
+    try {
+      ({ latitude, longitude } = await getCurrentPosition());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "A valid GPS location is required.");
+      return;
+    }
+
+    // ISO with timezone — the backend normalizes to the org timezone.
+    const recorded_at = new Date().toISOString();
     const payload = {
       company_id: apiCompanyId,
       recorded_at,
@@ -332,12 +363,29 @@ export function AttendanceViewAgent() {
 
     if (clockIn) {
       clockInMut.mutate(payload, {
-        onSuccess: () => toast.success("Clocked in successfully!"),
+        onSuccess: () => {
+          toast.success("Clocked in successfully!", {
+            action: {
+              label: "View on map",
+              onClick: () => window.location.assign("/agent/map"),
+            },
+          });
+        },
         onError: (err: Error) => toast.error(err.message ?? "Failed to clock in."),
       });
     } else if (clockOut) {
+      // Push any buffered journey points before the session is closed,
+      // otherwise the final leg of the route is rejected and lost.
+      try {
+        await fieldActivity.flush();
+      } catch {
+        // Best effort — clock-out proceeds regardless.
+      }
       clockOutMut.mutate(payload, {
-        onSuccess: () => toast.success("Clocked out successfully!"),
+        onSuccess: () => {
+          toast.success("Clocked out successfully!");
+          setDayReviewOpen(true);
+        },
         onError: (err: Error) => toast.error(err.message ?? "Failed to clock out."),
       });
     } else {
@@ -388,6 +436,7 @@ export function AttendanceViewAgent() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5 shrink-0">
+          <AgentPileInboxButton onClick={() => setPileInboxOpen(true)} />
           {/* Monthly Filter */}
           <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E5E5] rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-all">
             <span>Monthly</span>
@@ -679,85 +728,6 @@ export function AttendanceViewAgent() {
                 records={historyData?.items ?? []}
                 isLoading={historyLoading}
               />
-
-              {/* Tracking card */}
-              {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
-                <div className="flex items-start gap-4 mb-5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
-                    <p className="text-[15px] font-bold text-white">{selected.checkIn}</p>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
-                    <p className="text-[13px] font-medium text-white/70">{selected.checkOut}</p>
-                  </div>
-                  <div
-                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${
-                      selected.active
-                        ? "bg-[#1A452C] text-[#4ADE80]"
-                        : "bg-gray-700 text-gray-300"
-                    }`}
-                  >
-                    {selected.active ? "On-Time" : "Absent"}
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <p className="text-[15px] font-bold text-white mb-0.5">
-                    Location (Check-In)
-                  </p>
-                  <p className="text-[12px] text-gray-400">{selected.address}</p>
-                </div>
-
-                <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
-                    <defs>
-                      <pattern id="attgrid" width="36" height="36" patternUnits="userSpaceOnUse">
-                        <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#attgrid)" />
-                  </svg>
-                  <div className="absolute left-[30%] top-0 bottom-0 w-9 bg-white/60 pointer-events-none" />
-                  <div className="absolute top-[48%] left-0 right-0 h-8 bg-white/60 pointer-events-none" />
-                  <div className="absolute right-0 top-[28%] w-10 h-14 bg-[#A8D5B5]/60 pointer-events-none" />
-                  <div className="absolute pointer-events-none" style={{ left: "28%", top: 6 }}>
-                    <span className="text-[8px] font-semibold text-gray-600 block leading-tight">
-                      Dresd
-                    </span>
-                    <span className="text-[8px] font-semibold text-gray-600 block leading-tight">
-                      Street
-                    </span>
-                  </div>
-                  <div className="absolute right-1 top-[16%] pointer-events-none">
-                    <span className="text-[7px] font-semibold text-gray-500 block leading-tight">
-                      McDow
-                    </span>
-                    <span className="text-[7px] font-semibold text-gray-500 block leading-tight">
-                      ell Str
-                    </span>
-                  </div>
-                  <div className="absolute" style={{ left: "32%", top: "25%" }}>
-                    <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
-                  </div>
-                  <div
-                    className="absolute flex flex-col items-center"
-                    style={{ left: "calc(32% - 14px)", top: "48%" }}
-                  >
-                    <div className="w-7 h-7 rounded-full border-2 border-white shadow-md overflow-hidden">
-                      <img
-                        src={selected.avatar}
-                        className="w-full h-full object-cover"
-                        alt="Agent"
-                      />
-                    </div>
-                    <div className="bg-white px-2 py-0.5 rounded-lg mt-1 whitespace-nowrap shadow-md">
-                      <p className="text-[8px] font-bold text-dash-dark">{selected.name}</p>
-                      <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
-                    </div>
-                  </div>
-                </div>
-              </div> */}
             </>
           ) : (
             <div className="flex items-center justify-center h-40 text-gray-400 text-[13px]">
@@ -768,6 +738,12 @@ export function AttendanceViewAgent() {
       </div>
 
       {showAddAgent && <AddAgentModal onClose={() => setShowAddAgent(false)} />}
+      <AgentDayReviewModal
+        open={dayReviewOpen}
+        onClose={() => setDayReviewOpen(false)}
+        onPile={() => setPileInboxOpen(true)}
+      />
+      <AgentPileInboxPanel open={pileInboxOpen} onClose={() => setPileInboxOpen(false)} />
     </div>
   );
 }

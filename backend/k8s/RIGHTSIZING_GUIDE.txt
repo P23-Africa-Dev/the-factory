@@ -1,0 +1,39 @@
+Weekly CPU Rightsizing (Single Node)
+====================================
+
+Use this process while running on a single small node.
+
+1) Collect 5-7 days of steady-state data
+-----------------------------------------
+- Run:
+  - kubectl top nodes
+  - kubectl top pods -n factory23
+  - ./backend/k8s/rightsize-weekly-check.sh
+- Confirm no sustained user-facing latency or login errors during measurement.
+
+2) Decide whether to tune down or up
+------------------------------------
+- Tune down requests when:
+  - pods are stable,
+  - node CPU usage remains low,
+  - and there are no repeated probe failures or queue lag.
+- Tune up requests when:
+  - FailedScheduling or probe errors reappear,
+  - queue processing slows,
+  - or API latency worsens.
+
+3) Change in small increments
+-----------------------------
+- Adjust cpu requests in 20m to 40m steps only.
+- Keep limits unchanged initially; change requests first.
+- Deploy and observe for at least 24 hours before the next adjustment.
+
+4) Safety checks after each deploy
+----------------------------------
+- kubectl get pods -n factory23 -o wide
+- kubectl get pods -n ingress-nginx -o wide
+- kubectl get endpoints -n ingress-nginx ingress-nginx-controller
+- curl https://api.thefactory23.com/api/v1/health
+
+If ingress has zero endpoints, reduce workload pressure immediately
+(for example keep backend at 1 replica) until scheduling stabilizes.

@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, ApiEnvelope, ApiRequestError, API_BASE_URL } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type ProfileIdentity = {
   id: number;
@@ -142,10 +143,11 @@ export async function uploadAvatarFile(
   if (payload.gender) formData.append("gender", payload.gender);
   if (payload.company_id) formData.append("company_id", payload.company_id);
 
-  const response = await fetch(`${API_BASE_URL}/user/profile/avatar`, {
+  const transport = getSupportAwareApiTransport("/user/profile/avatar", token, API_BASE_URL);
+  const response = await fetch(transport.url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...transport.authorizationHeaders,
       Accept: "application/json",
     },
     body: formData,

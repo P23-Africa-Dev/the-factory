@@ -40,9 +40,9 @@ export function TotalLeadsCard({
     <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85">
       <div className="flex justify-between items-start">
         <h3 className="text-[#34373C] text-sm font-medium">Total Leads in Pipeline</h3>
-        <button className="text-gray-400 hover:text-gray-600">
+        {/* <button className="text-gray-400 hover:text-gray-600">
           <MoreHorizontal size={18} />
-        </button>
+        </button> */}
       </div>
 
       <div className="flex items-center gap-6 mt-4 justify-between">

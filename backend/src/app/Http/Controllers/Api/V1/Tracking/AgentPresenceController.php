@@ -42,6 +42,9 @@ class AgentPresenceController extends Controller
             ->where('user_id', (int) $actor->id)
             ->first();
 
+        // If task tracking is actively updating the snapshot, skip the heartbeat
+        // write. Previously we also blocked when ANY open TaskTrackingSession
+        // existed — that permanently froze map presence for abandoned sessions.
         if (
             $existing?->task_id !== null
             && $existing->last_seen_at !== null

@@ -6,9 +6,10 @@ import happyIcon from "@/assets/images/happy.png";
 import SearchListIcon from "@/assets/images/search-list-icon.png";
 import { FilterSelect } from "@/components/ui/filter-select";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
-import { useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
+import { useCancelMeeting, useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
 import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { DEFAULT_AVATAR } from "@/lib/avatar";
 import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
 import { cn } from "@/lib/utils/sample";
 import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
@@ -17,9 +18,11 @@ import { ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
 import { AIChat } from "@/components/dashboard/ai-chat";
+import type { MeetingItem } from "@/lib/api/meetings";
 
 export function TopCustomers() {
   const customers = [
@@ -324,7 +327,7 @@ export function WeeklyTasks() {
             <div className="w-[20%] h-full bg-[#FD6046] rounded-full shadow-lg relative">
               <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
                 <Image
-                  src="/avatars/male-avatar.png"
+                  src={DEFAULT_AVATAR}
                   alt="Attendee"
                   width={16}
                   height={16}
@@ -377,6 +380,7 @@ export function WeeklyTasksAgents() {
   const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
   const [meetingModalKey, setMeetingModalKey] = useState(0);
   const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
+  const [editingMeeting, setEditingMeeting] = useState<MeetingItem | null>(null);
   const searchParams = useSearchParams();
   const meetingIdParam = searchParams.get('meetingId');
   const meetingIdFromUrl = useMemo(() => {
@@ -388,6 +392,7 @@ export function WeeklyTasksAgents() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const basePath = role === "agent" ? "/agent" : "/admin";
+  const cancelMeetingMutation = useCancelMeeting();
 
   const { data: overview } = useDashboardOverview({
     company_id: companyId ?? undefined,
@@ -423,15 +428,50 @@ export function WeeklyTasksAgents() {
     ? meetingDetailQuery.data ?? selectedMeetingSummary
     : null;
 
+  const canManageSelectedMeeting = Boolean(
+    selectedMeeting
+    && (
+      role === "owner"
+      || role === "admin"
+      || Number(selectedMeeting.created_by_user_id) === Number(user?.id)
+    )
+  );
+
+  const handleCancelSelectedMeeting = () => {
+    if (!selectedMeeting || !companyId) {
+      return;
+    }
+
+    if (!window.confirm("Cancel this meeting? Attendees will be notified on Google Calendar.")) {
+      return;
+    }
+
+    cancelMeetingMutation.mutate(
+      { meetingId: selectedMeeting.id, companyId },
+      {
+        onSuccess: () => {
+          toast.success("Meeting cancelled successfully.");
+          setSelectedMeetingId(null);
+        },
+        onError: (error: unknown) => {
+          const apiError = error as { message?: string };
+          toast.error(apiError.message || "Failed to cancel meeting.");
+        },
+      }
+    );
+  };
+
   const formattedDate = selectedDate.toLocaleDateString("en-US", {
     weekday: "short",
     month: "long",
     day: "numeric",
   });
 
-  const [now] = useState(Date.now);
-
   const upcomingMeetings = useMemo(() => {
+    const dayStart = new Date(selectedDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(selectedDate);
+    dayEnd.setHours(23, 59, 59, 999);
 
     return (meetingsData?.meetings ?? [])
       .filter((meeting) => meeting.status === "scheduled" && Boolean(meeting.start_at))
@@ -442,9 +482,13 @@ export function WeeklyTasksAgents() {
           startsAt: start,
         };
       })
-      .filter(({ startsAt }) => !Number.isNaN(startsAt.getTime()) && startsAt.getTime() >= now)
+      .filter(({ startsAt }) => {
+        if (Number.isNaN(startsAt.getTime())) {
+          return false;
+        }
+        return startsAt.getTime() >= dayStart.getTime() && startsAt.getTime() <= dayEnd.getTime();
+      })
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-      .slice(0, 2)
       .map(({ meeting }, index) => ({
         id: meeting.id,
         time: formatTimeLabel(meeting.start_at),
@@ -458,7 +502,7 @@ export function WeeklyTasksAgents() {
         remaining: formatRemainingTime(meeting.start_at ?? null),
         color: TASK_COLORS[index % TASK_COLORS.length],
       }));
-  }, [meetingsData?.meetings]);
+  }, [meetingsData?.meetings, selectedDate]);
   const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
   const progressPercent = Math.max(
     0,
@@ -672,17 +716,35 @@ export function WeeklyTasksAgents() {
 
       <ScheduleMeetingModal
         key={meetingModalKey}
-        isOpen={showCreateMeetingModal}
-        onClose={() => setShowCreateMeetingModal(false)}
+        isOpen={showCreateMeetingModal || editingMeeting != null}
+        onClose={() => {
+          setShowCreateMeetingModal(false);
+          setEditingMeeting(null);
+        }}
         defaultDate={selectedDate}
-        title="Schedule Meeting"
+        title={editingMeeting ? "Edit Meeting" : "Schedule Meeting"}
         sourcePage="dashboard"
+        initialMeeting={editingMeeting}
+        onUpdated={() => {
+          setEditingMeeting(null);
+          setSelectedMeetingId(null);
+        }}
       />
 
       <MeetingDetailsModal
-        isOpen={activeMeetingId !== null}
+        isOpen={activeMeetingId !== null && editingMeeting == null}
         onClose={() => setSelectedMeetingId(null)}
         meeting={selectedMeeting ?? null}
+        canManage={canManageSelectedMeeting}
+        onEdit={() => {
+          if (!selectedMeeting) {
+            return;
+          }
+          setEditingMeeting(selectedMeeting);
+          setSelectedMeetingId(null);
+        }}
+        onCancelMeeting={handleCancelSelectedMeeting}
+        isCancelling={cancelMeetingMutation.isPending}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { X, MapPin, Route, CheckCircle2, Navigation } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
@@ -14,6 +14,7 @@ import { getCountryFallbackViewport } from '@/lib/map/default-viewport';
 import { useTaskRoute } from '@/hooks/use-tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
+import { RoutePlaybackControls } from '@/components/operations/route-playback-controls';
 
 type RouteGoogleMaps = {
   maps: {
@@ -35,6 +36,7 @@ function RouteMap({
   arrival,
   end,
   destination,
+  playbackIndex = 0,
 }: {
   polyline: [number, number][];
   start: { lat: number; lng: number } | null;
@@ -42,9 +44,11 @@ function RouteMap({
   arrival: { lat: number; lng: number } | null;
   end: { lat: number; lng: number } | null;
   destination: { lat: number; lng: number } | null;
+  playbackIndex?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const playbackMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const googleMapRef = useRef<unknown | null>(null);
   const googleOverlaysRef = useRef<Array<{ setMap: (map: unknown | null) => void }>>([]);
   const mapboxToken = useMemo(() => getMapboxPublicToken(), []);
@@ -265,8 +269,35 @@ function RouteMap({
       cancelled = true;
       map.remove();
       mapRef.current = null;
+      playbackMarkerRef.current = null;
     };
   }, [arrival, destination, effectiveProvider, end, googleApiKey, mapboxToken, near, polyline, start]);
+
+  useEffect(() => {
+    if (polyline.length === 0) return;
+    const idx = Math.min(Math.max(playbackIndex, 0), polyline.length - 1);
+    const point = polyline[idx];
+
+    if (effectiveProvider === 'google') {
+      const map = googleMapRef.current as { maps?: unknown } | null;
+      void map;
+      return;
+    }
+
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!playbackMarkerRef.current) {
+      const el = document.createElement('div');
+      el.style.cssText =
+        'width:16px;height:16px;border-radius:50%;background:#0EA5E9;border:2.5px solid white;box-shadow:0 2px 6px rgba(14,165,233,0.5);';
+      playbackMarkerRef.current = new mapboxgl.Marker({ element: el })
+        .setLngLat(point)
+        .addTo(map);
+    } else {
+      playbackMarkerRef.current.setLngLat(point);
+    }
+  }, [effectiveProvider, playbackIndex, polyline]);
 
   if (effectiveProvider === 'google' && !hasGoogleMapsApiKey) {
     return (
@@ -321,6 +352,13 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
   });
 
   const polyline = (route?.polyline ?? []) as [number, number][];
+  const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [prevRouteKey, setPrevRouteKey] = useState(`${taskId}:${polyline.length}`);
+  const routeKey = `${taskId}:${polyline.length}`;
+  if (routeKey !== prevRouteKey) {
+    setPrevRouteKey(routeKey);
+    setPlaybackIndex(0);
+  }
   const start = route?.start
     ? { lat: route.start.latitude, lng: route.start.longitude }
     : null;
@@ -368,6 +406,7 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
             arrival={arrival}
             end={end}
             destination={destination}
+            playbackIndex={playbackIndex}
           />
         )}
         {providerState.fallbackReason === 'missing_google_api_key' && providerState.requestedProvider === 'google' && (
@@ -381,6 +420,16 @@ export function RouteHistoryPanel({ taskId, taskTitle, onClose }: RouteHistoryPa
           </div>
         )}
       </div>
+
+      {route && polyline.length >= 2 && (
+        <div className="px-3 py-2 border-b border-gray-100 shrink-0">
+          <RoutePlaybackControls
+            pointCount={polyline.length}
+            index={playbackIndex}
+            onIndexChange={setPlaybackIndex}
+          />
+        </div>
+      )}
 
       {/* Stats */}
       {route && (

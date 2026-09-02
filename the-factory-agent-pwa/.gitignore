@@ -45,3 +45,23 @@ next-env.d.ts
 # cursor / agent debug logs
 .cursor/
 debug-*.log
+
+# Capacitor / Android build outputs (source project is committed)
+android/.gradle/
+android/**/build/
+android/app/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Firebase — never commit the real Android config or Admin SDK keys
+android/app/google-services.json
+android/app/fcatory23-apk-*.json
+**/firebase-adminsdk*.json
+**/fcm-service-account*.json
+
+# Allow the published install APK (overwritten by npm run apk:release)
+!public/downloads/
+!public/downloads/.gitkeep
+!public/downloads/factory23-agent.apk

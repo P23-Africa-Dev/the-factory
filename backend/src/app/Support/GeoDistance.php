@@ -10,6 +10,11 @@ final class GeoDistance
 
     public static function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float
     {
+        return round(self::haversineMeters($lat1, $lon1, $lat2, $lon2) / 1000, 2);
+    }
+
+    public static function haversineMeters(float $lat1, float $lon1, float $lat2, float $lon2): float
+    {
         $latFrom = deg2rad($lat1);
         $latTo = deg2rad($lat2);
         $latDelta = deg2rad($lat2 - $lat1);
@@ -19,7 +24,7 @@ final class GeoDistance
             + cos($latFrom) * cos($latTo) * sin($lonDelta / 2) ** 2;
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 
-        return round(self::EARTH_RADIUS_KM * $c, 2);
+        return self::EARTH_RADIUS_KM * 1000 * $c;
     }
 
     public static function isValidCoordinate(?float $latitude, ?float $longitude): bool

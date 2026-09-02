@@ -19,6 +19,7 @@ class AttendanceSettingResource extends JsonResource
             'working_days' => $this->working_days ?? [],
             'clockin_window_minutes' => (int) $this->clockin_window_minutes,
             'auto_clockout_enabled' => (bool) $this->auto_clockout_enabled,
+            'timezone' => $this->timezone,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

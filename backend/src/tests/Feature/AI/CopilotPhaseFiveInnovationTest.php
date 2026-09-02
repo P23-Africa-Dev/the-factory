@@ -62,7 +62,7 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->withArgs(function (string $purpose): bool {
                 return $purpose === 'operational';
             })
-            ->andReturn('Summary: revenue up 12%. Next action: review payroll approvals.');
+            ->andReturn(\Tests\Support\AiGenerationTestFactory::result('Summary: revenue up 12%. Next action: review payroll approvals.'));
         $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
 
         $response = $this
@@ -110,7 +110,7 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->withArgs(function (string $purpose): bool {
                 return $purpose === 'report';
             })
-            ->andReturn('Operations remain stable with focused attention needed on overdue tasks and payroll approvals.');
+            ->andReturn(\Tests\Support\AiGenerationTestFactory::result('Operations remain stable with focused attention needed on overdue tasks and payroll approvals.'));
         $this->app->instance(\App\Services\AI\Providers\AiProviderRouter::class, $mockRouter);
 
         $response = $this

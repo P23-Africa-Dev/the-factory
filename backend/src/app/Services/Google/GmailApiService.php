@@ -28,7 +28,7 @@ class GmailApiService
      * @return array{id:string,threadId:string}
      */
     public function sendMessage(
-        CompanyCalendarConnection|UserCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
         array $to,
         array $cc,
         array $bcc,
@@ -78,7 +78,7 @@ class GmailApiService
      * @return array{messages:array<int,array<string,mixed>>,nextPageToken:?string}
      */
     public function listMessagesForQuery(
-        CompanyCalendarConnection|UserCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
         string $query,
         ?string $pageToken = null,
         int $maxResults = 25,
@@ -110,12 +110,25 @@ class GmailApiService
     /**
      * @return array<string,mixed>
      */
-    public function getMessage(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId, string $format = 'full'): array
+    public function getMessage(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId, string $format = 'full'): array
     {
-        $response = $this->request(
+        $response = $this->rawRequest(
             $connection,
             'GET',
             'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '?format=' . urlencode($format),
+        );
+
+        // Deleted/expired messages referenced in history should not fail the whole sync.
+        if ($response->status() === 404) {
+            throw ValidationException::withMessages([
+                'message' => ['Gmail message not found.'],
+            ]);
+        }
+
+        $this->throwIfFailed(
+            $connection,
+            $response,
+            'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId),
         );
 
         /** @var array<string,mixed> */
@@ -125,7 +138,7 @@ class GmailApiService
     /**
      * @return array<string,mixed>
      */
-    public function getThread(CompanyCalendarConnection|UserCalendarConnection $connection, string $threadId): array
+    public function getThread(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $threadId): array
     {
         $response = $this->request(
             $connection,
@@ -137,7 +150,7 @@ class GmailApiService
         return $response->json();
     }
 
-    public function getAttachment(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId, string $attachmentId): string
+    public function getAttachment(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId, string $attachmentId): string
     {
         $response = $this->request(
             $connection,
@@ -152,33 +165,232 @@ class GmailApiService
         return base64_decode(strtr($encoded, '-_', '+/')) ?: '';
     }
 
-    public function markAsRead(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId): void
+    public function markAsRead(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId): void
     {
-        $this->request(
+        $this->modifyMessageLabels($connection, $messageId, removeLabelIds: ['UNREAD']);
+    }
+
+    public function markAsUnread(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId): void
+    {
+        $this->modifyMessageLabels($connection, $messageId, addLabelIds: ['UNREAD']);
+    }
+
+    /**
+     * @param  list<string>  $addLabelIds
+     * @param  list<string>  $removeLabelIds
+     * @return array<string,mixed>
+     */
+    public function modifyMessageLabels(
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
+        string $messageId,
+        array $addLabelIds = [],
+        array $removeLabelIds = [],
+    ): array {
+        $payload = [];
+        if ($addLabelIds !== []) {
+            $payload['addLabelIds'] = array_values($addLabelIds);
+        }
+        if ($removeLabelIds !== []) {
+            $payload['removeLabelIds'] = array_values($removeLabelIds);
+        }
+
+        $response = $this->request(
             $connection,
             'POST',
             'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '/modify',
-            [
-                'removeLabelIds' => ['UNREAD'],
-            ],
+            $payload,
+        );
+
+        /** @var array<string,mixed> */
+        return $response->json();
+    }
+
+    public function moveMessageToInbox(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId): void
+    {
+        // Restore from Trash/Spam when present, then ensure INBOX is applied.
+        $this->rawRequest(
+            $connection,
+            'POST',
+            'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '/untrash',
+        );
+
+        $this->modifyMessageLabels(
+            $connection,
+            $messageId,
+            addLabelIds: ['INBOX'],
+            removeLabelIds: ['SPAM', 'TRASH'],
         );
     }
 
-    public function trashMessage(CompanyCalendarConnection|UserCalendarConnection $connection, string $messageId): void
+    public function moveMessageToSpam(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId): void
     {
-        $this->request(
+        $this->modifyMessageLabels(
+            $connection,
+            $messageId,
+            addLabelIds: ['SPAM'],
+            removeLabelIds: ['INBOX'],
+        );
+    }
+
+    public function trashMessage(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $messageId): void
+    {
+        $response = $this->rawRequest(
             $connection,
             'POST',
             'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '/trash',
         );
+
+        // Already trashed / missing in this mailbox — treat as success for CRM delete UX.
+        if ($response->status() === 404) {
+            return;
+        }
+
+        $this->throwIfFailed($connection, $response, 'https://www.googleapis.com/gmail/v1/users/me/messages/' . urlencode($messageId) . '/trash');
+    }
+
+    /**
+     * @return list<array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}>
+     */
+    public function listLabels(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection): array
+    {
+        $response = $this->request($connection, 'GET', 'https://www.googleapis.com/gmail/v1/users/me/labels');
+
+        /** @var array<string,mixed> $data */
+        $data = $response->json();
+        $labels = is_array($data['labels'] ?? null) ? $data['labels'] : [];
+
+        $normalized = [];
+        foreach ($labels as $label) {
+            if (! is_array($label)) {
+                continue;
+            }
+
+            $id = trim((string) ($label['id'] ?? ''));
+            $name = trim((string) ($label['name'] ?? ''));
+            if ($id === '' || $name === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'id' => $id,
+                'name' => $name,
+                'type' => trim((string) ($label['type'] ?? 'user')),
+                'messageListVisibility' => isset($label['messageListVisibility'])
+                    ? (string) $label['messageListVisibility']
+                    : null,
+                'labelListVisibility' => isset($label['labelListVisibility'])
+                    ? (string) $label['labelListVisibility']
+                    : null,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    public function createLabel(
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
+        string $name,
+    ): array {
+        $trimmed = trim($name);
+        if ($trimmed === '') {
+            throw ValidationException::withMessages([
+                'name' => ['Label name is required.'],
+            ]);
+        }
+
+        $response = $this->request(
+            $connection,
+            'POST',
+            'https://www.googleapis.com/gmail/v1/users/me/labels',
+            [
+                'name' => $trimmed,
+                'labelListVisibility' => 'labelShow',
+                'messageListVisibility' => 'show',
+            ],
+        );
+
+        return $this->normalizeLabelPayload($response->json());
+    }
+
+    /**
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    public function updateLabel(
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
+        string $labelId,
+        string $name,
+    ): array {
+        $trimmed = trim($name);
+        if ($trimmed === '') {
+            throw ValidationException::withMessages([
+                'name' => ['Label name is required.'],
+            ]);
+        }
+
+        $response = $this->request(
+            $connection,
+            'PATCH',
+            'https://www.googleapis.com/gmail/v1/users/me/labels/' . urlencode($labelId),
+            [
+                'id' => $labelId,
+                'name' => $trimmed,
+            ],
+        );
+
+        return $this->normalizeLabelPayload($response->json());
+    }
+
+    public function deleteLabel(
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
+        string $labelId,
+    ): void {
+        $response = $this->rawRequest(
+            $connection,
+            'DELETE',
+            'https://www.googleapis.com/gmail/v1/users/me/labels/' . urlencode($labelId),
+        );
+
+        if ($response->status() === 404) {
+            return;
+        }
+
+        $this->throwIfFailed(
+            $connection,
+            $response,
+            'https://www.googleapis.com/gmail/v1/users/me/labels/' . urlencode($labelId),
+        );
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $payload
+     * @return array{id:string,name:string,type:string,messageListVisibility:?string,labelListVisibility:?string}
+     */
+    private function normalizeLabelPayload(?array $payload): array
+    {
+        $payload ??= [];
+
+        return [
+            'id' => trim((string) ($payload['id'] ?? '')),
+            'name' => trim((string) ($payload['name'] ?? '')),
+            'type' => trim((string) ($payload['type'] ?? 'user')),
+            'messageListVisibility' => isset($payload['messageListVisibility'])
+                ? (string) $payload['messageListVisibility']
+                : null,
+            'labelListVisibility' => isset($payload['labelListVisibility'])
+                ? (string) $payload['labelListVisibility']
+                : null,
+        ];
     }
 
     /**
      * @return array{history:array<int,array<string,mixed>>,historyId:?string}
      */
-    public function listHistory(CompanyCalendarConnection|UserCalendarConnection $connection, string $startHistoryId): array
+    public function listHistory(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection, string $startHistoryId): array
     {
-        $response = $this->request(
+        $response = $this->rawRequest(
             $connection,
             'GET',
             'https://www.googleapis.com/gmail/v1/users/me/history?' . http_build_query([
@@ -186,6 +398,14 @@ class GmailApiService
                 'historyTypes' => ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'],
             ]),
         );
+
+        if ($response->status() === 404) {
+            throw new StaleGmailHistoryException(
+                'Gmail history cursor is stale. A full resync is required.',
+            );
+        }
+
+        $this->throwIfFailed($connection, $response, 'https://www.googleapis.com/gmail/v1/users/me/history');
 
         /** @var array<string,mixed> $data */
         $data = $response->json();
@@ -196,7 +416,7 @@ class GmailApiService
         ];
     }
 
-    public function getProfile(CompanyCalendarConnection|UserCalendarConnection $connection): array
+    public function getProfile(CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection): array
     {
         $response = $this->request($connection, 'GET', 'https://www.googleapis.com/gmail/v1/users/me/profile');
 
@@ -208,7 +428,22 @@ class GmailApiService
      * @param  array<string,mixed>|null  $json
      */
     private function request(
-        CompanyCalendarConnection|UserCalendarConnection $connection,
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
+        string $method,
+        string $url,
+        ?array $json = null,
+    ): Response {
+        $response = $this->rawRequest($connection, $method, $url, $json);
+        $this->throwIfFailed($connection, $response, $url);
+
+        return $response;
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $json
+     */
+    private function rawRequest(
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
         string $method,
         string $url,
         ?array $json = null,
@@ -217,13 +452,20 @@ class GmailApiService
 
         $pending = Http::withToken($accessToken)->timeout(45)->acceptJson();
 
-        $response = match (strtoupper($method)) {
+        return match (strtoupper($method)) {
             'GET' => $pending->get($url),
             'POST' => $pending->post($url, $json ?? []),
+            'PATCH' => $pending->patch($url, $json ?? []),
             'DELETE' => $pending->delete($url),
             default => $pending->send($method, $url, ['json' => $json]),
         };
+    }
 
+    private function throwIfFailed(
+        CompanyCalendarConnection|UserCalendarConnection|EmailAccountGmailConnection $connection,
+        Response $response,
+        string $url,
+    ): void {
         if ($response->status() === 401 || $response->status() === 403) {
             $connection->update([
                 'status' => 'error',
@@ -253,8 +495,6 @@ class GmailApiService
                 'integration' => ['Gmail API error: ' . $this->responseErrorMessage($response)],
             ]);
         }
-
-        return $response;
     }
 
     private function responseErrorMessage(Response $response): string

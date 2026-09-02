@@ -1,6 +1,7 @@
 "use client";
 
 import { apiRequest, API_BASE_URL, ApiEnvelope } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type NotificationCategory =
   | "task"
@@ -148,12 +149,69 @@ export async function deleteNotification(
   notificationId: number,
   token: string
 ): Promise<void> {
-  await fetch(`${API_BASE_URL}/notifications/${notificationId}`, {
+  const transport = getSupportAwareApiTransport(
+    `/notifications/${notificationId}`,
+    token,
+    API_BASE_URL,
+  );
+  await fetch(transport.url, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      Authorization: `Bearer ${token}`,
+      ...transport.authorizationHeaders,
     },
+  });
+}
+
+export type NotificationPreference = {
+  id: number;
+  user_id: number;
+  company_id: number | null;
+  category: NotificationCategory | "all";
+  is_enabled: boolean;
+  in_app_enabled: boolean;
+  push_enabled: boolean;
+  email_enabled: boolean;
+  muted_until: string | null;
+  quiet_hours: { start: string; end: string } | null;
+  digest_mode: string | null;
+};
+
+export type UpdateNotificationPreferencesPayload = {
+  company_id?: number | string;
+  preferences: Array<{
+    category: NotificationCategory | "all";
+    is_enabled?: boolean;
+    in_app_enabled?: boolean;
+    push_enabled?: boolean;
+    email_enabled?: boolean;
+    muted_until?: string | null;
+    quiet_hours?: { start: string; end: string } | null;
+    digest_mode?: string | null;
+  }>;
+};
+
+export function getNotificationPreferences(
+  token: string,
+  companyId?: number | string
+): Promise<ApiEnvelope<{ items: NotificationPreference[] }>> {
+  const query = buildQuery({ company_id: companyId });
+  return apiRequest<{ items: NotificationPreference[] }>({
+    method: "GET",
+    path: `/notifications/preferences${query}`,
+    token,
+  });
+}
+
+export function updateNotificationPreferences(
+  payload: UpdateNotificationPreferencesPayload,
+  token: string
+): Promise<ApiEnvelope<{ items: NotificationPreference[] }>> {
+  return apiRequest<{ items: NotificationPreference[] }>({
+    method: "PUT",
+    path: "/notifications/preferences",
+    body: payload,
+    token,
   });
 }

@@ -12,8 +12,11 @@ use App\Models\TaskLocationPoint;
 use App\Models\TaskProof;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
+use App\Jobs\SimulateDemoAgentMovementJob;
+use App\Services\Demo\DemoCompanyService;
 use App\Services\Notification\NotificationService;
 use App\Services\Tracking\AgentLocationSnapshotService;
+use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -30,6 +33,7 @@ class TaskTrackingService
         private readonly TaskService $taskService,
         private readonly AgentLocationSnapshotService $agentLocationSnapshotService,
         private readonly NotificationService $notificationService,
+        private readonly DemoCompanyService $demoCompanyService,
     ) {}
 
     public function start(User $user, Task $task, array $data): array
@@ -80,20 +84,10 @@ class TaskTrackingService
             ]);
         }
 
-        $activeSession = TaskTrackingSession::query()
-            ->where('task_id', $task->id)
-            ->whereNull('end_recorded_at')
-            ->first();
-
-        if ($activeSession) {
-            throw ValidationException::withMessages([
-                'tracking' => ['Tracking is already active for this task.'],
-            ]);
-        }
-
-        $recordedAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
+        $recordedAt = $this->parseAndClampRecordedAt($data['recorded_at'] ?? null);
         $latitude = (float) $data['latitude'];
         $longitude = (float) $data['longitude'];
+        $this->assertValidCoordinates($latitude, $longitude);
         $accuracy = array_key_exists('accuracy_meters', $data) && $data['accuracy_meters'] !== null
             ? (float) $data['accuracy_meters']
             : null;
@@ -104,26 +98,55 @@ class TaskTrackingService
             ? (float) $data['heading_degrees']
             : null;
 
-        return DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $speed, $heading, $recordedAt): array {
-            $session = TaskTrackingSession::query()->create([
-                'task_id' => $task->id,
-                'company_id' => $context->company->id,
-                'started_by_user_id' => $user->id,
-                'start_latitude' => $latitude,
-                'start_longitude' => $longitude,
-                'start_accuracy_meters' => $accuracy,
-                'start_recorded_at' => $recordedAt,
-                'last_latitude' => $latitude,
-                'last_longitude' => $longitude,
-                'last_accuracy_meters' => $accuracy,
-                'last_recorded_at' => $recordedAt,
-                'last_persisted_latitude' => $latitude,
-                'last_persisted_longitude' => $longitude,
-                'last_persisted_recorded_at' => $recordedAt,
-                'destination_latitude' => $task->latitude,
-                'destination_longitude' => $task->longitude,
-                'destination_radius_meters' => (int) config('tracking.arrival_radius_meters', 100),
-            ]);
+        $result = DB::transaction(function () use ($user, $task, $context, $latitude, $longitude, $accuracy, $speed, $heading, $recordedAt): array {
+            // Lock any existing open session row for this task so concurrent starts
+            // cannot both pass the "no active session" check.
+            $activeSession = TaskTrackingSession::query()
+                ->where('task_id', $task->id)
+                ->whereNull('end_recorded_at')
+                ->lockForUpdate()
+                ->first();
+
+            if ($activeSession) {
+                throw ValidationException::withMessages([
+                    'tracking' => ['Tracking is already active for this task.'],
+                ]);
+            }
+
+            // Also lock the task row so two concurrent starts serialize even when
+            // neither has an open session yet (first insert wins via unique index).
+            Task::query()->whereKey($task->id)->lockForUpdate()->first();
+
+            try {
+                $session = TaskTrackingSession::query()->create([
+                    'task_id' => $task->id,
+                    'company_id' => $context->company->id,
+                    'started_by_user_id' => $user->id,
+                    'start_latitude' => $latitude,
+                    'start_longitude' => $longitude,
+                    'start_accuracy_meters' => $accuracy,
+                    'start_recorded_at' => $recordedAt,
+                    'last_latitude' => $latitude,
+                    'last_longitude' => $longitude,
+                    'last_accuracy_meters' => $accuracy,
+                    'last_recorded_at' => $recordedAt,
+                    'last_persisted_latitude' => $latitude,
+                    'last_persisted_longitude' => $longitude,
+                    'last_persisted_recorded_at' => $recordedAt,
+                    'destination_latitude' => $task->latitude,
+                    'destination_longitude' => $task->longitude,
+                    'destination_radius_meters' => (int) config('tracking.arrival_radius_meters', 100),
+                ]);
+            } catch (Throwable $e) {
+                // Unique-index race: another request created the open session first.
+                if ($this->isUniqueConstraintViolation($e)) {
+                    throw ValidationException::withMessages([
+                        'tracking' => ['Tracking is already active for this task.'],
+                    ]);
+                }
+
+                throw $e;
+            }
 
             // Evaluate the geofence at start so an agent who begins a task while
             // already standing at (or near) the destination is recognised
@@ -244,8 +267,24 @@ class TaskTrackingService
                     ? round($proximity['distance_remaining_meters'], 2)
                     : null,
                 'movement_started' => $proximity['movement_started'],
+                'demo_simulation_active' => false,
             ];
         });
+
+        $demoSimulationActive = $this->demoCompanyService->isDemo($context->company)
+            && ! $result['arrived'];
+
+        if ($demoSimulationActive) {
+            SimulateDemoAgentMovementJob::dispatch(
+                sessionId: (int) $result['session']->id,
+                taskId: (int) $task->id,
+                userId: (int) $user->id,
+                companyId: (int) $context->company->id,
+            );
+            $result['demo_simulation_active'] = true;
+        }
+
+        return $result;
     }
 
     public function recordLocation(User $user, Task $task, array $data): array
@@ -287,19 +326,67 @@ class TaskTrackingService
         $movementStarted = false;
 
         DB::transaction(function () use ($points, $session, $task, $user, &$persistedCount, &$lastDistanceToDestinationMeters, &$lastDistanceRemainingMeters, &$movementStarted): void {
+            // Re-lock the open session so concurrent writers serialize correctly.
+            $lockedSession = TaskTrackingSession::query()
+                ->whereKey($session->id)
+                ->whereNull('end_recorded_at')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $lockedSession) {
+                throw ValidationException::withMessages([
+                    'tracking' => ['Tracking session is not active for this task.'],
+                ]);
+            }
+
+            $previousPoint = null;
+
             foreach ($points as $point) {
                 $latitude = (float) $point['latitude'];
                 $longitude = (float) $point['longitude'];
+
+                if (! $this->isValidCoordinatePair($latitude, $longitude)) {
+                    Log::warning('[tracking] rejected_invalid_coordinates', [
+                        'task_id' => $task->id,
+                        'tracking_session_id' => $lockedSession->id,
+                        'latitude' => $latitude,
+                        'longitude' => $longitude,
+                    ]);
+                    continue;
+                }
+
                 $accuracy = isset($point['accuracy_meters']) ? (float) $point['accuracy_meters'] : null;
-                $accuracyForProximity = $accuracy ?? ($session->last_accuracy_meters !== null
-                    ? (float) $session->last_accuracy_meters
+                $accuracyForProximity = $accuracy ?? ($lockedSession->last_accuracy_meters !== null
+                    ? (float) $lockedSession->last_accuracy_meters
                     : null);
                 $speed = isset($point['speed_mps']) ? (float) $point['speed_mps'] : null;
                 $heading = isset($point['heading_degrees']) ? (float) $point['heading_degrees'] : null;
-                $recordedAt = isset($point['recorded_at']) ? Carbon::parse((string) $point['recorded_at']) : now();
+                $recordedAt = $this->parseAndClampRecordedAt($point['recorded_at'] ?? null);
+
+                $fromLat = $previousPoint['latitude'] ?? ($lockedSession->last_latitude !== null ? (float) $lockedSession->last_latitude : null);
+                $fromLng = $previousPoint['longitude'] ?? ($lockedSession->last_longitude !== null ? (float) $lockedSession->last_longitude : null);
+                $fromAt = $previousPoint['recorded_at'] ?? $lockedSession->last_recorded_at;
+
+                if ($fromLat !== null && $fromLng !== null && $fromAt instanceof Carbon) {
+                    if (! $this->isPlausibleMovement($fromLat, $fromLng, $fromAt, $latitude, $longitude, $recordedAt)) {
+                        Log::warning('[tracking] rejected_implausible_movement', [
+                            'task_id' => $task->id,
+                            'tracking_session_id' => $lockedSession->id,
+                            'from' => [$fromLat, $fromLng, $fromAt->toIso8601String()],
+                            'to' => [$latitude, $longitude, $recordedAt->toIso8601String()],
+                        ]);
+                        continue;
+                    }
+                }
+
+                $previousPoint = [
+                    'latitude' => $latitude,
+                    'longitude' => $longitude,
+                    'recorded_at' => $recordedAt,
+                ];
 
                 $proximity = $this->buildProximitySnapshot(
-                    session: $session,
+                    session: $lockedSession,
                     latitude: $latitude,
                     longitude: $longitude,
                     accuracyMeters: $accuracyForProximity,
@@ -309,10 +396,10 @@ class TaskTrackingService
                 $lastDistanceRemainingMeters = $proximity['distance_remaining_meters'];
                 $movementStarted = $proximity['movement_started'];
 
-                $session->last_latitude = $latitude;
-                $session->last_longitude = $longitude;
-                $session->last_accuracy_meters = $accuracy;
-                $session->last_recorded_at = $recordedAt;
+                $lockedSession->last_latitude = $latitude;
+                $lockedSession->last_longitude = $longitude;
+                $lockedSession->last_accuracy_meters = $accuracy;
+                $lockedSession->last_recorded_at = $recordedAt;
 
                 $eventType = 'movement';
                 $isCheckpoint = false;
@@ -324,46 +411,46 @@ class TaskTrackingService
                 // back outside the near radius, reset the near state so a fresh
                 // near notification can fire if they approach again.
                 if (
-                    $session->arrival_detected_at === null
-                    && $session->near_detected_at !== null
+                    $lockedSession->arrival_detected_at === null
+                    && $lockedSession->near_detected_at !== null
                     && $proximity['distance_to_destination_meters'] !== null
                     && $proximity['distance_to_destination_meters']
                         > $proximity['near_radius_meters'] * (float) config('tracking.near_reset_hysteresis', 1.5)
                 ) {
-                    $session->near_detected_at = null;
-                    $session->near_latitude = null;
-                    $session->near_longitude = null;
+                    $lockedSession->near_detected_at = null;
+                    $lockedSession->near_latitude = null;
+                    $lockedSession->near_longitude = null;
                 }
 
-                if ($session->arrival_detected_at === null) {
-                    if ($session->near_detected_at === null && $proximity['can_mark_near']) {
+                if ($lockedSession->arrival_detected_at === null) {
+                    if ($lockedSession->near_detected_at === null && $proximity['can_mark_near']) {
                         $justNearDestination = true;
                         $eventType = 'near_destination';
                         $isCheckpoint = true;
 
-                        $session->near_detected_at = $recordedAt;
-                        $session->near_latitude = $latitude;
-                        $session->near_longitude = $longitude;
+                        $lockedSession->near_detected_at = $recordedAt;
+                        $lockedSession->near_latitude = $latitude;
+                        $lockedSession->near_longitude = $longitude;
                     } elseif (
-                        $session->near_detected_at !== null
+                        $lockedSession->near_detected_at !== null
                         && $proximity['can_mark_arrival']
-                        && $this->hasSatisfiedNearDwellTime($session, $recordedAt)
+                        && $this->hasSatisfiedNearDwellTime($lockedSession, $recordedAt)
                     ) {
                         $justArrived = true;
                         $eventType = 'arrival';
                         $isCheckpoint = true;
 
-                        $session->arrival_detected_at = $recordedAt;
-                        $session->arrival_latitude = $latitude;
-                        $session->arrival_longitude = $longitude;
+                        $lockedSession->arrival_detected_at = $recordedAt;
+                        $lockedSession->arrival_latitude = $latitude;
+                        $lockedSession->arrival_longitude = $longitude;
                     }
                 }
 
-                $shouldPersist = $isCheckpoint || $this->shouldPersistMovementPoint($session, $latitude, $longitude, $recordedAt);
+                $shouldPersist = $isCheckpoint || $this->shouldPersistMovementPoint($lockedSession, $latitude, $longitude, $recordedAt);
 
                 if ($shouldPersist) {
                     $this->createLocationPoint(
-                        session: $session,
+                        session: $lockedSession,
                         task: $task,
                         user: $user,
                         latitude: $latitude,
@@ -377,21 +464,21 @@ class TaskTrackingService
                     );
 
                     $persistedCount++;
-                    $session->last_persisted_latitude = $latitude;
-                    $session->last_persisted_longitude = $longitude;
-                    $session->last_persisted_recorded_at = $recordedAt;
+                    $lockedSession->last_persisted_latitude = $latitude;
+                    $lockedSession->last_persisted_longitude = $longitude;
+                    $lockedSession->last_persisted_recorded_at = $recordedAt;
                 }
 
-                $arrived = $session->arrival_detected_at !== null;
-                $nearDestination = $session->near_detected_at !== null && ! $arrived;
+                $arrived = $lockedSession->arrival_detected_at !== null;
+                $nearDestination = $lockedSession->near_detected_at !== null && ! $arrived;
 
                 $payload = $this->upsertSnapshotAndBuildRealtimePayload(
-                    session: $session,
+                    session: $lockedSession,
                     task: $task,
                     userId: $user->id,
                     latitude: $latitude,
                     longitude: $longitude,
-                    accuracyMeters: $accuracyForProximity,
+                    accuracyMeters: $accuracy,
                     speedMps: $speed,
                     headingDegrees: $heading,
                     eventType: $eventType,
@@ -401,22 +488,22 @@ class TaskTrackingService
                     movementStarted: $proximity['movement_started'],
                     distanceToDestinationMeters: $proximity['distance_to_destination_meters'],
                     distanceRemainingMeters: $proximity['distance_remaining_meters'],
-                    proximityState: $this->resolveProximityState($session, $task->status?->value),
+                    proximityState: $this->resolveProximityState($lockedSession, $task->status?->value),
                     recordedAt: $recordedAt,
                 );
 
-                $this->publishTrackingEvent('tracking.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
-                $this->publishTrackingEvent('tracking.agent.location.updated', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                $this->publishTrackingEvent('tracking.location.updated', $lockedSession->company_id, $task->id, $lockedSession->id, $user->id, $payload, $recordedAt);
+                $this->publishTrackingEvent('tracking.agent.location.updated', $lockedSession->company_id, $task->id, $lockedSession->id, $user->id, $payload, $recordedAt);
 
                 if ($justNearDestination) {
                     $this->logLifecycle('near_destination', [
                         'task_id' => $task->id,
-                        'tracking_session_id' => $session->id,
+                        'tracking_session_id' => $lockedSession->id,
                         'user_id' => $user->id,
                         'distance_to_destination_meters' => $proximity['distance_to_destination_meters'],
                     ]);
 
-                    $this->publishTrackingEvent('tracking.task.near_destination', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                    $this->publishTrackingEvent('tracking.task.near_destination', $lockedSession->company_id, $task->id, $lockedSession->id, $user->id, $payload, $recordedAt);
 
                     $this->notifyTrackingEvent(
                         task: $task,
@@ -431,12 +518,12 @@ class TaskTrackingService
                 if ($justArrived) {
                     $this->logLifecycle('arrived', [
                         'task_id' => $task->id,
-                        'tracking_session_id' => $session->id,
+                        'tracking_session_id' => $lockedSession->id,
                         'user_id' => $user->id,
                         'distance_to_destination_meters' => $proximity['distance_to_destination_meters'],
                     ]);
 
-                    $this->publishTrackingEvent('tracking.task.arrived', $session->company_id, $task->id, $session->id, $user->id, $payload, $recordedAt);
+                    $this->publishTrackingEvent('tracking.task.arrived', $lockedSession->company_id, $task->id, $lockedSession->id, $user->id, $payload, $recordedAt);
 
                     $this->notifyTrackingEvent(
                         task: $task,
@@ -449,7 +536,7 @@ class TaskTrackingService
                 }
             }
 
-            $session->save();
+            $lockedSession->save();
         });
 
         $freshSession = $session->fresh();
@@ -506,13 +593,35 @@ class TaskTrackingService
 
         $latitude = (float) $data['latitude'];
         $longitude = (float) $data['longitude'];
+        $this->assertValidCoordinates($latitude, $longitude);
         $accuracy = array_key_exists('accuracy_meters', $data) && $data['accuracy_meters'] !== null
             ? (float) $data['accuracy_meters']
             : null;
         $accuracyForProximity = $accuracy ?? ($session->last_accuracy_meters !== null
             ? (float) $session->last_accuracy_meters
             : null);
-        $recordedAt = isset($data['recorded_at']) ? Carbon::parse((string) $data['recorded_at']) : now();
+        $recordedAt = $this->parseAndClampRecordedAt($data['recorded_at'] ?? null);
+
+        // Re-verify the agent is still near the destination at completion time so
+        // a prior arrival mark cannot be abused from an arbitrary location.
+        $completionProximity = $this->buildProximitySnapshot(
+            session: $session,
+            latitude: $latitude,
+            longitude: $longitude,
+            accuracyMeters: $accuracyForProximity,
+        );
+        $completionNearRadius = max(
+            (float) ($session->destination_radius_meters ?? config('tracking.arrival_radius_meters', 100)),
+            (float) config('tracking.near_radius_meters', 250),
+        );
+        if (
+            $completionProximity['distance_to_destination_meters'] === null
+            || $completionProximity['distance_to_destination_meters'] > $completionNearRadius
+        ) {
+            throw ValidationException::withMessages([
+                'location' => ['You must still be near the destination to complete this task.'],
+            ]);
+        }
 
         return DB::transaction(function () use ($user, $task, $context, $session, $data, $latitude, $longitude, $accuracy, $accuracyForProximity, $recordedAt): array {
             $proofs = [];
@@ -749,14 +858,10 @@ class TaskTrackingService
             ]);
         }
 
-        $session = TaskTrackingSession::query()
-            ->with(['points' => function ($query) use ($filters): void {
-                $query->orderBy('recorded_at', 'asc');
+        $includePoints = (bool) ($filters['include_points'] ?? true);
+        $pointLimit = isset($filters['limit']) ? max(1, (int) $filters['limit']) : null;
 
-                if (isset($filters['limit']) && is_int($filters['limit'])) {
-                    $query->limit($filters['limit']);
-                }
-            }])
+        $session = TaskTrackingSession::query()
             ->where('task_id', $task->id)
             // A task may have multiple sessions; show the most recent (the active
             // one if tracking is live, otherwise the last completed session).
@@ -769,8 +874,28 @@ class TaskTrackingService
             ]);
         }
 
-        $includePoints = (bool) ($filters['include_points'] ?? true);
-        $points = $session->points;
+        $pointsQuery = TaskLocationPoint::query()
+            ->where('tracking_session_id', $session->id)
+            ->orderBy('recorded_at', 'asc');
+
+        if ($pointLimit !== null) {
+            // Take the latest N points, then re-order ascending for polyline replay.
+            $latestIds = TaskLocationPoint::query()
+                ->where('tracking_session_id', $session->id)
+                ->orderByDesc('recorded_at')
+                ->limit($pointLimit)
+                ->pluck('id');
+
+            $pointsQuery->whereIn('id', $latestIds);
+        }
+
+        $totalPointsCount = TaskLocationPoint::query()
+            ->where('tracking_session_id', $session->id)
+            ->count();
+
+        // Always load the (optionally limited) trail for summary/speed; omit from
+        // the response payload when include_points is false.
+        $points = $pointsQuery->get();
         $lastSpeedMps = $points->last()?->speed_mps;
         $distanceToDestination = $session->last_latitude !== null && $session->last_longitude !== null
             ? $this->calculateDistanceToDestination(
@@ -850,7 +975,8 @@ class TaskTrackingService
                 'operational_status' => $operationalStatus,
             ],
             'summary' => [
-                'points_count' => $points->count(),
+                'points_count' => $totalPointsCount,
+                'returned_points_count' => $points->count(),
                 'total_distance_meters' => round($this->calculateTotalDistanceMeters($points), 2),
             ],
             'points' => $includePoints
@@ -883,6 +1009,17 @@ class TaskTrackingService
                     'heading_degrees' => $point['heading_degrees'] ?? null,
                     'recorded_at' => $point['recorded_at'] ?? null,
                 ])
+                ->sortBy(function (array $point): int {
+                    if (empty($point['recorded_at'])) {
+                        return PHP_INT_MAX;
+                    }
+
+                    try {
+                        return Carbon::parse((string) $point['recorded_at'])->getTimestamp();
+                    } catch (Throwable) {
+                        return PHP_INT_MAX;
+                    }
+                })
                 ->values();
         }
 
@@ -1094,7 +1231,80 @@ class TaskTrackingService
             return (bool) config('tracking.allow_unknown_accuracy', true);
         }
 
-        return $accuracyMeters > 0 && $accuracyMeters <= max(1.0, $maxAccuracyMeters);
+        // Some devices report accuracy as 0 when the fix is excellent. Treat
+        // zero as "best possible" rather than rejecting the proximity gate.
+        if ($accuracyMeters <= 0) {
+            return true;
+        }
+
+        return $accuracyMeters <= max(1.0, $maxAccuracyMeters);
+    }
+
+    private function parseAndClampRecordedAt(mixed $value): Carbon
+    {
+        $now = now();
+
+        $recordedAt = \App\Support\ClientTime::parse($value);
+
+        $maxFutureSkewSeconds = max(0, (int) config('tracking.max_recorded_at_future_skew_seconds', 120));
+        $maxPastSkewSeconds = max(60, (int) config('tracking.max_recorded_at_past_skew_seconds', 86400));
+
+        if ($recordedAt->greaterThan($now->copy()->addSeconds($maxFutureSkewSeconds))) {
+            return $now->copy();
+        }
+
+        if ($recordedAt->lessThan($now->copy()->subSeconds($maxPastSkewSeconds))) {
+            return $now->copy()->subSeconds($maxPastSkewSeconds);
+        }
+
+        return $recordedAt;
+    }
+
+    private function assertValidCoordinates(float $latitude, float $longitude): void
+    {
+        if (! $this->isValidCoordinatePair($latitude, $longitude)) {
+            throw ValidationException::withMessages([
+                'location' => ['Latitude/longitude are invalid or look like a null-island GPS fix.'],
+            ]);
+        }
+    }
+
+    private function isValidCoordinatePair(float $latitude, float $longitude): bool
+    {
+        if ($latitude < -90.0 || $latitude > 90.0 || $longitude < -180.0 || $longitude > 180.0) {
+            return false;
+        }
+
+        // Reject near (0,0) — almost always a bad/default GPS fix.
+        return abs($latitude) > 0.0001 || abs($longitude) > 0.0001;
+    }
+
+    private function isPlausibleMovement(
+        float $fromLat,
+        float $fromLng,
+        Carbon $fromAt,
+        float $toLat,
+        float $toLng,
+        Carbon $toAt,
+    ): bool {
+        $seconds = abs($toAt->diffInSeconds($fromAt));
+        $distance = $this->distanceMeters($fromLat, $fromLng, $toLat, $toLng);
+        $maxSpeedMps = max(1.0, (float) config('tracking.max_plausible_speed_mps', 70)); // ~252 km/h
+        $graceMeters = max(0.0, (float) config('tracking.teleport_grace_meters', 75));
+
+        // Allow short time gaps with GPS jitter; enforce max speed otherwise.
+        $allowedDistance = $graceMeters + ($maxSpeedMps * max(1, $seconds));
+
+        return $distance <= $allowedDistance;
+    }
+
+    private function isUniqueConstraintViolation(Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'unique')
+            || str_contains($message, 'duplicate')
+            || (int) $e->getCode() === 23000;
     }
 
     private function createLocationPoint(
@@ -1314,7 +1524,10 @@ class TaskTrackingService
             'agent' => [
                 'id' => $snapshot->user_id,
                 'name' => $snapshot->agent?->name,
-                'avatar_url' => $snapshot->agent?->avatar,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault(
+                    $snapshot->agent?->avatar,
+                    $snapshot->agent?->gender,
+                ),
                 'internal_role' => $snapshot->agent?->internal_role,
             ],
             'location' => [
@@ -1480,7 +1693,10 @@ class TaskTrackingService
 
         try {
             foreach ($channels as $channel) {
-                Redis::publish($channel, json_encode($payload, JSON_THROW_ON_ERROR));
+                // Use the unprefixed pubsub connection so the channel name is
+                // published exactly as built (the default connection's key
+                // prefix would otherwise rewrite it and break the WS relay).
+                Redis::connection('pubsub')->publish($channel, json_encode($payload, JSON_THROW_ON_ERROR));
             }
         } catch (Throwable $e) {
             Log::warning('Failed to publish tracking event to Redis.', [
@@ -1504,7 +1720,7 @@ class TaskTrackingService
     ): void {
         $recipientIds = DB::table('company_users')
             ->where('company_id', $task->company_id)
-            ->whereIn('role', ['owner', 'admin', 'supervisor'])
+            ->whereIn('role', ['owner', 'admin', 'supervisor', 'manager', 'management'])
             ->pluck('user_id')
             ->map(static fn(mixed $id): int => (int) $id)
             ->merge([(int) $task->created_by_user_id, (int) ($task->assigned_agent_id ?? 0)])
@@ -1523,8 +1739,8 @@ class TaskTrackingService
                 'message' => $message,
                 'reference_type' => Task::class,
                 'reference_id' => (int) $task->id,
-                'action_url' => '/tasks/' . $task->id,
-                'action_route' => 'tasks.show',
+                'action_url' => '/map?taskId='.$task->id,
+                'action_route' => 'map.show',
                 'priority' => $priority,
                 'created_by_user_id' => (int) $actor->id,
                 'metadata' => [
@@ -1532,7 +1748,7 @@ class TaskTrackingService
                     'task_status' => $task->status?->value,
                     'actor_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => $type . ':' . $task->id . ':' . $recipientId,
+                'dedupe_key' => $type.':'.$task->id.':'.$recipientId,
             ]);
         }
     }

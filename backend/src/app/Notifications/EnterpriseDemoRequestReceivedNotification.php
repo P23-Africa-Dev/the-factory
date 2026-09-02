@@ -2,13 +2,14 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class EnterpriseDemoRequestReceivedNotification extends Notification
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly string $fullName,
@@ -20,15 +21,16 @@ class EnterpriseDemoRequestReceivedNotification extends Notification
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        return (new MailMessage)
-            ->mailer('resend')
-            ->subject('Demo request received - The Factory')
+        return $this->factory23Mail()
+            ->subject('Demo request received — Factory23')
             ->greeting("Hello {$this->fullName},")
             ->line('Your enterprise demo request has been received successfully.')
-            ->line("Company: {$this->companyName}")
+            ->line($this->factory23DetailTable([
+                'Company' => $this->companyName,
+            ]))
             ->line('Our team will review your request and contact you shortly.')
-            ->salutation('The Factory Team');
+            ->salutation($this->factory23Salutation());
     }
 }

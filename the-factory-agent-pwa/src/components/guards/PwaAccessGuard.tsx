@@ -29,6 +29,7 @@ export function PwaAccessGuard({ children }: { children: React.ReactNode }) {
     ) {
       const hasInstallIntent = new URLSearchParams(window.location.search).get('install') === 'true';
       if (!hasInstallIntent) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- redirect non-install traffic away from install path
         setAllowed(false);
         router.replace(getAppLaunchPath());
         return;

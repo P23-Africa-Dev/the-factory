@@ -13,6 +13,7 @@ use App\Http\Requests\Crm\StoreLeadNoteRequest;
 use App\Http\Requests\Crm\StoreLeadRequest;
 use App\Http\Requests\Crm\UpdateLeadRequest;
 use App\Http\Resources\LeadActivityResource;
+use App\Http\Resources\LeadAssigneeResource;
 use App\Http\Resources\LeadNoteResource;
 use App\Http\Resources\LeadResource;
 use App\Models\Lead;
@@ -38,6 +39,7 @@ class LeadController extends Controller
             'source' => $request->string('source')->toString(),
             'assigned_to_user_id' => $request->input('assigned_to_user_id'),
             'per_page' => $request->input('per_page'),
+            'uncategorized' => $request->boolean('uncategorized'),
         ]);
 
         return $this->success(
@@ -64,6 +66,19 @@ class LeadController extends Controller
             message: 'CRM lead created successfully.',
             data: ['lead' => new LeadResource($lead)],
             status: 201,
+        );
+    }
+
+    public function assignees(Request $request): JsonResponse
+    {
+        $assignees = $this->leadService->listAssignees(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'CRM assignees fetched successfully.',
+            data: ['items' => LeadAssigneeResource::collection($assignees)],
         );
     }
 
@@ -223,6 +238,64 @@ class LeadController extends Controller
 
         return $this->success(
             message: 'CRM pipeline updated successfully.',
+            data: ['pipeline' => $updated],
+        );
+    }
+
+    public function deletePipeline(Request $request, int $pipeline): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'force' => ['sometimes', 'boolean'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $result = $this->leadService->deletePipeline($request->user(), $pipeline, $validated);
+
+        return $this->success(
+            message: 'CRM pipeline deleted successfully.',
+            data: $result,
+        );
+    }
+
+    public function preferences(Request $request): JsonResponse
+    {
+        $companyId = $this->resolveCompanyContextId($request->input('company_id'));
+        $preferences = $this->leadService->getCrmPreferences($request->user(), $companyId);
+
+        return $this->success(
+            message: 'CRM preferences fetched successfully.',
+            data: $preferences,
+        );
+    }
+
+    public function setPreferredPipeline(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'pipeline_id' => ['required', 'integer', 'exists:lead_pipelines,id'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $preferences = $this->leadService->setPreferredPipeline($request->user(), $validated);
+
+        return $this->success(
+            message: 'Preferred pipeline updated successfully.',
+            data: $preferences,
+        );
+    }
+
+    public function setCompanyDefaultPipeline(Request $request, int $pipeline): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+        ]);
+        $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+
+        $updated = $this->leadService->setCompanyDefaultPipeline($request->user(), $pipeline, $validated);
+
+        return $this->success(
+            message: 'Company default pipeline updated successfully.',
             data: ['pipeline' => $updated],
         );
     }

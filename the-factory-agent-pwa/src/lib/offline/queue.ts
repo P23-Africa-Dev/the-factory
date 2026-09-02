@@ -288,6 +288,8 @@ export function describeOfflineAction(entry: OfflineActionQueueEntry): string {
       return 'Update task status';
     case 'task.complete':
       return 'Complete task';
+    case 'task.create_self':
+      return 'Create daily task';
     case 'project.create':
       return 'Create project';
     case 'project.update':

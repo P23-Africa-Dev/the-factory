@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,6 +18,10 @@ class AttendanceRecordResource extends JsonResource
             'user_id' => $this->user_id,
             'agent_name' => $this->whenLoaded('user', fn() => $this->user?->name),
             'avatar' => $this->whenLoaded('user', fn() => $this->user?->avatar),
+            'avatar_url' => $this->whenLoaded('user', fn() => AvatarUrlResolver::resolveOrDefault(
+                $this->user?->avatar,
+                $this->user?->gender,
+            )),
             'attendance_date' => $this->attendance_date?->toDateString(),
             'clock_in_at' => $this->clock_in_at?->toIso8601String(),
             'clock_out_at' => $this->clock_out_at?->toIso8601String(),

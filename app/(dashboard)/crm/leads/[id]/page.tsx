@@ -26,9 +26,7 @@ import {
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useRef, useState, useEffect } from "react";
-import PhoneNumberInput from "@/components/ui/phone-number-input";
-import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity } from "@/hooks/use-crm";
-import { useInternalUsers } from "@/hooks/use-internal-users";
+import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmAssignees } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -38,11 +36,15 @@ import {
   LeadApiItem,
   LeadNote,
   LeadActivity,
+  LeadContact,
   UpdateLeadPayload,
 } from "@/lib/api/crm";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
+import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
+import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
+import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -398,7 +400,7 @@ function PillDropdown({
 
 /* --- Map Preview Component ------------------------------- */
 
-function MapPreview({ name }: { name: string }) {
+function MapPreview({ name, location }: { name: string; location: string }) {
   return (
     <div className="relative w-full h-full bg-[#E8F0E8] rounded-[14px] overflow-hidden">
       {/* Fake map grid lines */}
@@ -462,19 +464,15 @@ function MapPreview({ name }: { name: string }) {
         <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white shadow-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/avatars/male-avatar.png"
+            src="/avatars/default-ghost.svg"
             alt={name}
             className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src =
-                "https://i.pravatar.cc/150?u=lane-wade";
-            }}
           />
         </div>
         <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 shadow-sm">
           <p className="text-[9px] font-semibold text-[#0B1215]">{name}</p>
           <p className="text-[7px] text-gray-500 font-normal">
-            14, Adeola Road, Ikeja GRA
+            {location}
           </p>
         </div>
       </div>
@@ -489,9 +487,11 @@ function MapPreview({ name }: { name: string }) {
 
 
 type EditLeadForm = {
-  name: string;
-  phone: string;
-  location: string;
+  contacts: LeadContact[];
+  companyName: string;
+  website: string;
+  position: string;
+  profileUrls: string[];
   status: ApiLeadStatus;
   source: string;
   priority: ApiLeadPriority;
@@ -507,7 +507,7 @@ export default function LeadDetailsPage() {
   const leadId = params.id as string;
   const { user } = useAuthStore();
   const companyId = user?.active_company?.id;
-  
+
   // Real data fetching
   const { data: leadData, isLoading } = useLead(leadId, companyId, "/admin");
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
@@ -518,25 +518,39 @@ export default function LeadDetailsPage() {
   });
 
   // Assignees list
-  const { data: usersData } = useInternalUsers({ company_id: companyId });
+  const { data: usersData } = useCrmAssignees(companyId, "/admin");
   const internalUsers = usersData || [];
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditLeadForm>({
-    name: "",
-    phone: "",
-    location: "",
+    contacts: [{ name: "", email: "", phone: "", location: "", sort_order: 0 }],
+    companyName: "",
+    website: "",
+    position: "",
+    profileUrls: [""],
     status: "new",
     source: "",
     priority: "medium",
     assigned_to_user_id: "",
     next_action: "",
   });
+  const [activeContactIndex, setActiveContactIndex] = useState(0);
+  const [contactErrors, setContactErrors] = useState<LeadContactErrors[]>([]);
 
   const buildEditForm = (lead: LeadApiItem): EditLeadForm => ({
-    name: lead.name || "",
-    phone: lead.phone || "",
-    location: lead.location || "",
+    contacts: lead.contacts?.length
+      ? lead.contacts.map((contact, index) => ({ ...contact, sort_order: index }))
+      : [{
+          name: lead.name || "",
+          email: lead.email || "",
+          phone: lead.phone || "",
+          location: lead.location || "",
+          sort_order: 0,
+        }],
+    companyName: lead.company_name || "",
+    website: lead.website || "",
+    position: lead.position || "",
+    profileUrls: lead.profile_urls?.length ? lead.profile_urls : [""],
     status: lead.status || "new",
     source: lead.source || "",
     priority: lead.priority || "medium",
@@ -547,6 +561,8 @@ export default function LeadDetailsPage() {
   const startEditing = () => {
     if (!leadData) return;
     setEditForm(buildEditForm(leadData));
+    setActiveContactIndex(0);
+    setContactErrors([]);
     setIsEditing(true);
   };
 
@@ -554,11 +570,81 @@ export default function LeadDetailsPage() {
     setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const updateContact = (index: number, contact: LeadContact) => {
+    setEditForm((current) => ({
+      ...current,
+      contacts: current.contacts.map((item, itemIndex) => itemIndex === index ? contact : item),
+    }));
+    setContactErrors((current) => current.map((item, itemIndex) => itemIndex === index ? {} : item));
+  };
+
+  const addContact = () => {
+    setEditForm((current) => ({
+      ...current,
+      contacts: [
+        ...current.contacts,
+        { name: "", email: "", phone: "", location: "", sort_order: current.contacts.length },
+      ],
+    }));
+    setActiveContactIndex(editForm.contacts.length);
+  };
+
+  const removeContact = (index: number) => {
+    setEditForm((current) => ({
+      ...current,
+      contacts: current.contacts
+        .filter((_, itemIndex) => itemIndex !== index)
+        .map((contact, sortOrder) => ({ ...contact, sort_order: sortOrder })),
+    }));
+    setContactErrors((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setActiveContactIndex((current) => Math.max(0, Math.min(current, editForm.contacts.length - 2)));
+  };
+
   const handleSave = () => {
+    const nextContactErrors = editForm.contacts.map<LeadContactErrors>((contact) => {
+      const errors: LeadContactErrors = {};
+      if (!contact.name.trim()) errors.name = "Name is required.";
+      if (contact.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
+        errors.email = "Enter a valid email address.";
+      }
+      return errors;
+    });
+    const firstContactError = nextContactErrors.findIndex((errors) => Object.keys(errors).length > 0);
+    if (firstContactError >= 0) {
+      setContactErrors(nextContactErrors);
+      setActiveContactIndex(firstContactError);
+      toast.error(`Check Contact ${firstContactError + 1}.`);
+      return;
+    }
+
+    const cleanedProfileUrls = parseProfileUrls(editForm.profileUrls);
+    if (editForm.website.trim() && !isValidUrl(editForm.website)) {
+      toast.error("Enter a valid website URL.");
+      return;
+    }
+    if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
+      toast.error("One or more profile URLs are invalid.");
+      return;
+    }
+
+    const contacts = editForm.contacts.map((contact, index) => ({
+      name: contact.name.trim(),
+      email: contact.email?.trim() || null,
+      phone: contact.phone?.trim() || null,
+      location: contact.location?.trim() || null,
+      sort_order: index,
+    }));
+    const primaryContact = contacts[0];
     const payload: UpdateLeadPayload = {
-      name: editForm.name,
-      phone: editForm.phone,
-      location: editForm.location,
+      name: primaryContact.name,
+      email: primaryContact.email,
+      phone: primaryContact.phone,
+      location: primaryContact.location,
+      contacts,
+      company_name: editForm.companyName.trim() || null,
+      website: editForm.website.trim() ? normalizeWebsite(editForm.website) : null,
+      position: editForm.position.trim() || null,
+      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       status: editForm.status,
       source: editForm.source,
       priority: editForm.priority,
@@ -594,6 +680,16 @@ export default function LeadDetailsPage() {
 
   const currentAssignee = internalUsers.find(u => u.id === leadData.assigned_to_user_id);
   const currentAssigneeLabel = currentAssignee ? currentAssignee.name : "Unassigned";
+  const leadDisplay = getLeadDetailDisplay(leadData);
+  const leadContacts = leadData.contacts?.length
+    ? leadData.contacts
+    : [{
+        name: leadData.name,
+        email: leadData.email,
+        phone: leadData.phone,
+        location: leadData.location,
+        sort_order: 0,
+      }];
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-10">
@@ -656,16 +752,12 @@ export default function LeadDetailsPage() {
                 <div className="bg-white rounded-[24px] sm:rounded-[28px] p-4 shadow-xl flex flex-col items-center w-full">
                   <div className="relative w-24 sm:w-full aspect-square mb-4">
                     <div className="absolute inset-0 bg-black/20 rounded-[22px] blur-xl translate-y-4" />
-                    <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-[#FFC58E]">
+                    <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-[#E8ECF1]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src="/avatars/male-avatar.png"
+                        src="/avatars/default-ghost.svg"
                         alt={leadData.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src =
-                            `https://i.pravatar.cc/150?u=${leadData.id}`;
-                        }}
                       />
                     </div>
                   </div>
@@ -681,80 +773,172 @@ export default function LeadDetailsPage() {
                 </div>
                 {/* Action icons */}
                 <div className="flex items-center gap-4">
-                  <button className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
-                    <MessageSquare size={20} className="text-[#0B1215]" />
-                  </button>
-                  <a href={`tel:${leadData.phone}`} className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100">
-                    <Phone size={20} className="text-[#0B1215]" />
-                  </a>
+                  {leadData.email ? (
+                    <a
+                      href={`mailto:${leadData.email}`}
+                      className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title={`Email ${leadData.email}`}
+                    >
+                      <MessageSquare size={20} className="text-[#0B1215]" />
+                    </a>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-12 h-12 rounded-full bg-white/50 flex items-center justify-center opacity-50 cursor-not-allowed shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title="No email available"
+                    >
+                      <MessageSquare size={20} className="text-[#0B1215]" />
+                    </button>
+                  )}
+                  {leadData.phone ? (
+                    <a
+                      href={`tel:${leadData.phone}`}
+                      className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:bg-gray-50 transition-all shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title={`Call ${leadData.phone}`}
+                    >
+                      <Phone size={20} className="text-[#0B1215]" />
+                    </a>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-12 h-12 rounded-full bg-white/50 flex items-center justify-center opacity-50 cursor-not-allowed shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100"
+                      title="No phone available"
+                    >
+                      <Phone size={20} className="text-[#0B1215]" />
+                    </button>
+                  )}
                 </div>
               </div>
 
               {/* Right Part: Fields & Map */}
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
+                {isEditing ? (
+                  <div className="rounded-[20px] bg-white p-4 sm:p-5">
+                    <LeadContactsSlider
+                      contacts={editForm.contacts}
+                      activeIndex={activeContactIndex}
+                      errors={contactErrors}
+                      onActiveIndexChange={setActiveContactIndex}
+                      onChange={updateContact}
+                      onAdd={addContact}
+                      onRemove={removeContact}
+                    />
+                  </div>
+                ) : (
+                  <LeadContactHeroSlider contacts={leadContacts} />
+                )}
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-6 sm:gap-x-8 gap-y-4">
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Name
+                      Company Name
                     </label>
                     {isEditing ? (
                       <input
                         type="text"
-                        value={editForm.name}
-                        onChange={(e) => updateField("name", e.target.value)}
+                        value={editForm.companyName}
+                        onChange={(e) => updateField("companyName", e.target.value)}
                         className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
                       <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.name}
+                        {leadData.company_name || "N/A"}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Phone Number
+                      Website
                     </label>
                     {isEditing ? (
-                      <PhoneNumberInput
-                        variant="dark"
-                        value={editForm.phone}
-                        onChange={(value) => updateField("phone", value)}
+                      <input
+                        type="url"
+                        value={editForm.website}
+                        onChange={(e) => updateField("website", e.target.value)}
+                        className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
+                    ) : leadData.website ? (
+                      <a
+                        href={leadData.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#7DD3FC] text-[16px] font-semibold truncate hover:underline"
+                      >
+                        {leadData.website}
+                      </a>
                     ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.phone || "N/A"}
-                      </p>
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
                     )}
                   </div>
+
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Location
+                      Position
                     </label>
                     {isEditing ? (
                       <input
                         type="text"
-                        value={editForm.location}
-                        onChange={(e) => updateField("location", e.target.value)}
+                        value={editForm.position}
+                        onChange={(e) => updateField("position", e.target.value)}
                         className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
                     ) : (
                       <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.location || "N/A"}
+                        {leadData.position || "N/A"}
                       </p>
                     )}
                   </div>
+
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Status
+                      Profile URLs
                     </label>
-                    <p className="text-white text-[16px] font-semibold capitalize">
-                      {(leadData.status || "New Lead").replace('_', ' ')}
-                    </p>
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        {(editForm.profileUrls.length ? editForm.profileUrls : [""]).map((url, index) => (
+                          <div key={index} className="flex gap-2">
+                            <input
+                              type="url"
+                              value={url}
+                              onChange={(e) => {
+                                const next = [...(editForm.profileUrls.length ? editForm.profileUrls : [""])];
+                                next[index] = e.target.value;
+                                updateField("profileUrls", next);
+                              }}
+                              className="flex-1 bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                              placeholder="https://linkedin.com/in/username"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => updateField("profileUrls", [...editForm.profileUrls, ""])}
+                          className="text-[11px] font-semibold text-[#7DD3FC] hover:text-white"
+                        >
+                          + Add another URL
+                        </button>
+                      </div>
+                    ) : (leadData.profile_urls?.length ?? 0) > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        {leadData.profile_urls?.map((url) => (
+                          <a
+                            key={url}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#7DD3FC] text-[14px] font-semibold truncate hover:underline"
+                          >
+                            {url}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
+                    )}
                   </div>
                 </div>
                 {/* Map */}
                 <div className="w-full h-[160px] sm:flex-1 rounded-[24px] overflow-hidden shadow-inner">
-                  <MapPreview name={leadData.name} />
+                  <MapPreview name={leadData.name} location={leadDisplay.mapLocationLabel} />
                 </div>
               </div>
             </div>
@@ -780,18 +964,26 @@ export default function LeadDetailsPage() {
                     color={STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === (isEditing ? editForm.status : leadData.status))?.color || "#2563EB"}
                     options={STATUS_OPTIONS}
                     onChange={(label) => {
-                       const value = label.toLowerCase().replace(' ', '_');
-                        updateField("status", value as ApiLeadStatus);
+                      const value = label.toLowerCase().replace(' ', '_');
+                      updateField("status", value as ApiLeadStatus);
                     }}
                     disabled={!isEditing}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Pipeline
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.pipelineName}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Uploaded By
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold">
-                    {leadData.creator?.name || "System"}
+                    {leadDisplay.creatorName}
                   </p>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -799,7 +991,15 @@ export default function LeadDetailsPage() {
                     Last Interaction
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadData.last_interaction || "None"}
+                    {leadDisplay.lastInteraction}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Interaction Date
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.lastInteractionAt}
                   </p>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -815,7 +1015,7 @@ export default function LeadDetailsPage() {
                     />
                   ) : (
                     <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                      {leadData.source || "Unknown"}
+                      {leadDisplay.source}
                     </p>
                   )}
                 </div>
@@ -824,14 +1024,14 @@ export default function LeadDetailsPage() {
                     Assign to
                   </label>
                   {isEditing ? (
-                     <SearchableSelect
-                       value={editForm.assigned_to_user_id || ""}
-                       onChange={(v) => updateField("assigned_to_user_id", v)}
-                       options={assignOptions}
-                       className="bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-[14px] min-w-40"
-                     />
+                    <SearchableSelect
+                      value={editForm.assigned_to_user_id || ""}
+                      onChange={(v) => updateField("assigned_to_user_id", v)}
+                      options={assignOptions}
+                      className="bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-[14px] min-w-40"
+                    />
                   ) : (
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium w-fit" style={{backgroundColor: currentAssignee ? "#3B82F6" : "#EF4444"}}>
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium w-fit" style={{ backgroundColor: currentAssignee ? "#3B82F6" : "#EF4444" }}>
                       {currentAssigneeLabel}
                     </div>
                   )}
@@ -849,7 +1049,7 @@ export default function LeadDetailsPage() {
                     />
                   ) : (
                     <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                      {leadData.next_action || "None"}
+                      {leadDisplay.nextAction}
                     </p>
                   )}
                 </div>
@@ -862,31 +1062,65 @@ export default function LeadDetailsPage() {
                     color={PRIORITY_OPTIONS.find(o => o.label.toLowerCase() === (isEditing ? editForm.priority : leadData.priority))?.color || "#3B82F6"}
                     options={PRIORITY_OPTIONS}
                     onChange={(label) => {
-                       updateField("priority", label.toLowerCase() as ApiLeadPriority);
+                      updateField("priority", label.toLowerCase() as ApiLeadPriority);
                     }}
                     disabled={!isEditing}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Budget
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.budget}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Map Link
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                    {leadDisplay.mapLinkState}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Created
                   </label>
                   <p className="text-[#0B1215] text-[16px] font-semibold">
-                    {leadData.created_at ? new Date(leadData.created_at).toLocaleDateString() : "Unknown"}
+                    {leadDisplay.createdAt}
                   </p>
                 </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                    Updated
+                  </label>
+                  <p className="text-[#0B1215] text-[16px] font-semibold">
+                    {leadDisplay.updatedAt}
+                  </p>
+                </div>
+                {leadDisplay.convertedAt ? (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
+                      Converted
+                    </label>
+                    <p className="text-[#0B1215] text-[16px] font-semibold">
+                      {leadDisplay.convertedAt}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
 
           {/* -- RIGHT COLUMN: Interaction Panel ------- */}
-          <LeadInteractionPanel 
-            leadId={leadId} 
+          <LeadInteractionPanel
+            leadId={leadId}
             leadName={leadData.name}
             leadEmail={leadData.email}
             companyId={companyId}
-            notes={leadData.notes || []} 
-            activities={leadData.activities || []} 
+            notes={leadData.notes || []}
+            activities={leadData.activities || []}
             basePath="/admin"
           />
         </div>

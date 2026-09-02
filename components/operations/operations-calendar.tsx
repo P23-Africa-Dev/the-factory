@@ -2,12 +2,15 @@
 
 import React, { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, MoreVertical } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
-import { useMeetings } from '@/hooks/use-meetings';
+import { useCancelMeeting, useMeetingDetail, useMeetings } from '@/hooks/use-meetings';
 import { useCalendarIntegrationStatus } from '@/hooks/use-calendar-integration';
 import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from '@/lib/calendar-permissions';
 import { CalendarTooltip } from '@/components/ui/calendar-tooltip';
+import { MeetingDetailsModal } from '@/components/dashboard/meeting-details-modal';
+import type { MeetingItem } from '@/lib/api/meetings';
 import { ScheduleMeetingModal } from './schedule-meeting-modal';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -65,6 +68,9 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
     const [year, setYear] = useState(selectedDate.getFullYear());
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [createModalKey, setCreateModalKey] = useState(0);
+    const [selectedMeetingId, setSelectedMeetingId] = useState<number | null>(null);
+    const [editingMeeting, setEditingMeeting] = useState<MeetingItem | null>(null);
+    const cancelMeetingMutation = useCancelMeeting();
 
     // Fetch integration status so the calendar can reflect organization-level setup state
     const integrationStatusQuery = useCalendarIntegrationStatus(
@@ -158,6 +164,47 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
             .sort((a, b) => new Date(a.start_at ?? '').getTime() - new Date(b.start_at ?? '').getTime())
             .slice(0, 2);
     }, [selfMeetings]);
+
+    const meetingDetailQuery = useMeetingDetail(selectedMeetingId ?? 0, companyId ?? undefined);
+    const selectedMeetingSummary = useMemo(
+        () => selfMeetings.find((meeting) => meeting.id === selectedMeetingId) ?? null,
+        [selfMeetings, selectedMeetingId]
+    );
+    const selectedMeeting = selectedMeetingId != null
+        ? meetingDetailQuery.data ?? selectedMeetingSummary
+        : null;
+    const canManageSelectedMeeting = Boolean(
+        selectedMeeting
+        && (
+            role === 'owner'
+            || role === 'admin'
+            || Number(selectedMeeting.created_by_user_id) === Number(user?.id)
+        )
+    );
+
+    const handleCancelSelectedMeeting = () => {
+        if (!selectedMeeting || !companyId) {
+            return;
+        }
+
+        if (!window.confirm('Cancel this meeting? Attendees will be notified on Google Calendar.')) {
+            return;
+        }
+
+        cancelMeetingMutation.mutate(
+            { meetingId: selectedMeeting.id, companyId },
+            {
+                onSuccess: () => {
+                    toast.success('Meeting cancelled successfully.');
+                    setSelectedMeetingId(null);
+                },
+                onError: (error: unknown) => {
+                    const apiError = error as { message?: string };
+                    toast.error(apiError.message || 'Failed to cancel meeting.');
+                },
+            }
+        );
+    };
 
     const modalSourcePage = taskId != null ? 'task' : projectId != null ? 'project' : 'operations';
 
@@ -274,6 +321,7 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
                         dayTasks.map((item) => (
                             <div
                                 key={item.id}
+                                onClick={() => setSelectedMeetingId(item.id)}
                                 className="flex cursor-pointer items-center rounded-[24px] px-6 py-2 transition-transform hover:scale-[1.01]"
                                 style={{ backgroundColor: item.bg, boxShadow: `0 10px 20px ${item.shadow}` }}
                             >
@@ -298,7 +346,11 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
                     {upcomingMeetings.length > 0 ? (
                         <div className="space-y-2">
                             {upcomingMeetings.map((meeting) => (
-                                <div key={meeting.id} className="rounded-[16px] bg-[#F8FAFB] px-4 py-3">
+                                <div
+                                    key={meeting.id}
+                                    onClick={() => setSelectedMeetingId(meeting.id)}
+                                    className="cursor-pointer rounded-[16px] bg-[#F8FAFB] px-4 py-3 transition-colors hover:bg-gray-100"
+                                >
                                     <p className="text-[12px] font-bold text-[#0B1215]">{meeting.title}</p>
                                     <p className="mt-1 text-[11px] text-gray-500">
                                         {formatDateLabel(meeting.start_at)} • {formatStatusLabel(meeting.status)}
@@ -335,13 +387,45 @@ export function OperationsCalendar({ projectId, taskId }: OperationsCalendarProp
 
             <ScheduleMeetingModal
                 key={createModalKey}
-                isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
+                isOpen={showCreateModal || editingMeeting != null}
+                onClose={() => {
+                    setShowCreateModal(false);
+                    setEditingMeeting(null);
+                }}
                 defaultDate={selectedDate}
-                title={projectId != null ? 'Schedule Project Meeting' : taskId != null ? 'Schedule Task Meeting' : 'Schedule Meeting'}
+                title={
+                    editingMeeting
+                        ? 'Edit Meeting'
+                        : projectId != null
+                            ? 'Schedule Project Meeting'
+                            : taskId != null
+                                ? 'Schedule Task Meeting'
+                                : 'Schedule Meeting'
+                }
                 sourcePage={modalSourcePage}
                 projectId={projectId}
                 taskId={taskId}
+                initialMeeting={editingMeeting}
+                onUpdated={() => {
+                    setEditingMeeting(null);
+                    setSelectedMeetingId(null);
+                }}
+            />
+
+            <MeetingDetailsModal
+                isOpen={selectedMeetingId != null && editingMeeting == null}
+                onClose={() => setSelectedMeetingId(null)}
+                meeting={selectedMeeting ?? null}
+                canManage={canManageSelectedMeeting}
+                onEdit={() => {
+                    if (!selectedMeeting) {
+                        return;
+                    }
+                    setEditingMeeting(selectedMeeting);
+                    setSelectedMeetingId(null);
+                }}
+                onCancelMeeting={handleCancelSelectedMeeting}
+                isCancelling={cancelMeetingMutation.isPending}
             />
         </>
     );

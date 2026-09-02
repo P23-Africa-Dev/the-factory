@@ -7,6 +7,7 @@ namespace App\Services\Territory;
 use App\Models\AgentTerritory;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Support\AvatarUrlResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -228,6 +229,7 @@ class TerritoryService
                 'users.name',
                 'users.email',
                 'users.avatar',
+                'users.gender',
                 'users.assigned_zone',
             ])
             ->keyBy('id');
@@ -351,6 +353,7 @@ class TerritoryService
                 'name' => $agent->name,
                 'email' => $agent->email,
                 'avatar' => $agent->avatar,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($agent->avatar, $agent->gender ?? null),
                 'assigned_zone' => $agent->assigned_zone,
             ] : null,
             'name' => $territory->name ?? $agent?->name,

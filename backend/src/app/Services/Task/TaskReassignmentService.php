@@ -494,7 +494,7 @@ class TaskReassignmentService
 
         foreach ($channels as $channel) {
             try {
-                Redis::publish($channel, $encoded);
+                Redis::connection('pubsub')->publish($channel, $encoded);
             } catch (Throwable $exception) {
                 Log::warning('Task reassignment realtime publish failed.', [
                     'channel' => $channel,

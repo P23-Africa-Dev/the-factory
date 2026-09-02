@@ -33,6 +33,7 @@ interface TrackingStore {
   liveTaskMap: Record<number, LiveTaskState>;
   activeTrackingTaskId: number | null;
   wsStatus: WsStatus;
+  serverSimulatesMovement: boolean;
 
   upsertTask: (taskId: number, partial: Partial<LiveTaskState>) => void;
   appendPolylinePoint: (taskId: number, point: [number, number]) => void;
@@ -42,6 +43,7 @@ interface TrackingStore {
   hydrateTasks: (tasks: LiveTaskState[]) => void;
   setActiveTrackingTaskId: (taskId: number | null) => void;
   setWsStatus: (status: WsStatus) => void;
+  setServerSimulatesMovement: (active: boolean) => void;
 }
 
 const POLYLINE_CAP = 2000; // prevent unbounded growth during long shifts
@@ -50,6 +52,7 @@ export const useTrackingStore = create<TrackingStore>((set) => ({
   liveTaskMap: {},
   activeTrackingTaskId: null,
   wsStatus: 'idle',
+  serverSimulatesMovement: false,
 
   upsertTask: (taskId, partial) =>
     set((state) => ({
@@ -124,4 +127,6 @@ export const useTrackingStore = create<TrackingStore>((set) => ({
   setActiveTrackingTaskId: (taskId) => set({ activeTrackingTaskId: taskId }),
 
   setWsStatus: (status) => set({ wsStatus: status }),
+
+  setServerSimulatesMovement: (active) => set({ serverSimulatesMovement: active }),
 }));

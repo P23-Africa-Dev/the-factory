@@ -8,14 +8,26 @@ import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
+import {
+  DayReviewSheet,
+  FieldActivitySummaryCard,
+  PendingReviewSoftBanner,
+  PileInboxBadge,
+  PileInboxSheet,
+} from '@/features/field-activity';
 import { NotificationPanel, useUnreadCount } from '@/features/notifications';
 import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
-import { getRecentDestinations, saveRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
-import { searchPlacesWithMapbox } from '@/lib/map/geocoding';
+import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
+import {
+  createSearchSessionToken,
+  retrievePlace,
+  suggestPlaces,
+} from '@/lib/map/place-search';
+import { placeAttributionLabel, type PlaceSourceRef } from '@/lib/map/place-attribution';
+import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
 import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
-import { AnimatePresence, motion } from 'framer-motion';
-
+import { toast } from '@/lib/toast';
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -24,8 +36,19 @@ export default function AgentDashboardPage() {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [locationResults, setLocationResults] = useState<
-    Array<{ name: string; address: string; latitude: number; longitude: number }>
+    Array<{
+      suggestionId: string;
+      provider: string;
+      name: string;
+      address: string;
+      sessionToken: string;
+      sources?: PlaceSourceRef[];
+      attributionVisible?: boolean;
+      latitude?: number | null;
+      longitude?: number | null;
+    }>
   >([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
@@ -33,7 +56,6 @@ export default function AgentDashboardPage() {
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [meetingModalDate, setMeetingModalDate] = useState<Date | undefined>(undefined);
   const [isViewMeetingsOpen, setIsViewMeetingsOpen] = useState(false);
-  const [showTooltip, setShowTooltip] = useState(false);
   const [recentLocations, setRecentLocations] = useState<RecentDestination[]>([]);
 
   // Swipable panel states
@@ -44,6 +66,7 @@ export default function AgentDashboardPage() {
   const dragStartY = useRef(0);
   const dragDistance = useRef(0);
   const currentTranslateY = useRef(0);
+  const calendarScrollRef = useRef<HTMLDivElement>(null);
 
   const { gateVisible, gateMode, isGateBusy, dismissGate, retryGate } =
     useLocationPermissionBootstrap();
@@ -118,12 +141,15 @@ export default function AgentDashboardPage() {
   const { count: unreadCount = 0 } = useUnreadCount();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load persisted recent destinations on mount
     setRecentLocations(getRecentDestinations());
+    void fetchRecentDestinations().then(setRecentLocations);
   }, []);
 
   const handleSelectLocation = useCallback(
     (item: { name: string; address: string; latitude: number; longitude: number }) => {
       saveRecentDestination(item);
+      void rememberRecentDestination(item);
       setRecentLocations(getRecentDestinations());
       goToMapScreen({
         name: item.name,
@@ -153,14 +179,6 @@ export default function AgentDashboardPage() {
     return all.filter((m) => isSameDay(m.startAt, selectedDate) && m.status !== 'cancelled');
   }, [meetingsData, selectedDate, isSameDay]);
 
-  // Tooltip auto-hide timer
-  useEffect(() => {
-    if (showTooltip) {
-      const timer = setTimeout(() => setShowTooltip(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [showTooltip]);
-
   // Offline status tracking
   useEffect(() => {
     setTimeout(() => setIsOffline(!navigator.onLine), 0);
@@ -176,46 +194,151 @@ export default function AgentDashboardPage() {
     };
   }, []);
 
-  const searchMapboxPlaces = useCallback(async (query: string) => {
+  const placeSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeSearchSessionRef = useRef(createSearchSessionToken());
+  const placeSearchAbortRef = useRef<AbortController | null>(null);
+  const placeSearchRequestIdRef = useRef(0);
+
+  const searchPlaces = useCallback(async (query: string) => {
     if (!query.trim()) {
+      placeSearchAbortRef.current?.abort();
       setLocationResults([]);
+      setIsSearchingPlaces(false);
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast.error("You're offline — place search needs a connection.");
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    placeSearchAbortRef.current?.abort();
+    const abort = new AbortController();
+    placeSearchAbortRef.current = abort;
+    const requestId = ++placeSearchRequestIdRef.current;
+
+    setIsSearchingPlaces(true);
     try {
-      const places = await searchPlacesWithMapbox(query, { limit: 5 });
-      setLocationResults(
-        places.map((place) => ({
-          name: place.name,
-          address: place.address,
-          longitude: place.longitude,
-          latitude: place.latitude,
-        })),
-      );
-    } catch {
-      // Geocoding is non-critical — silent failure is acceptable
+      const cached = getCachedSearchProximity();
+      const proximity: [number, number] | undefined = cached ?? undefined;
+      if (!proximity) warmSearchProximity();
+
+      const suggestions = await suggestPlaces(query, {
+        sessionToken: placeSearchSessionRef.current,
+        proximity,
+        limit: 12,
+        signal: abort.signal,
+      });
+
+      if (requestId !== placeSearchRequestIdRef.current) return;
+
+      if (suggestions.length > 0) {
+        setLocationResults(
+          suggestions.map((suggestion) => ({
+            suggestionId: suggestion.id,
+            provider: suggestion.provider,
+            name: suggestion.name,
+            address: suggestion.placeFormatted || suggestion.name,
+            sessionToken: suggestion.sessionToken,
+            sources: suggestion.sources,
+            attributionVisible: suggestion.attributionVisible,
+            latitude: suggestion.latitude,
+            longitude: suggestion.longitude,
+          })),
+        );
+      } else {
+        setLocationResults([]);
+        if (query.trim().length >= 2) {
+          toast.error('No places found — try a fuller address.');
+        }
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (requestId !== placeSearchRequestIdRef.current) return;
+      toast.error('Place search failed. Please try again.');
+    } finally {
+      if (requestId === placeSearchRequestIdRef.current) {
+        setIsSearchingPlaces(false);
+      }
     }
   }, []);
 
   const handleLocationQueryChange = (text: string) => {
     setLocationQuery(text);
-    searchMapboxPlaces(text);
+    if (placeSearchTimerRef.current) clearTimeout(placeSearchTimerRef.current);
+    if (!text.trim()) {
+      placeSearchAbortRef.current?.abort();
+      setLocationResults([]);
+      setIsSearchingPlaces(false);
+      placeSearchSessionRef.current = createSearchSessionToken();
+      return;
+    }
+    placeSearchTimerRef.current = setTimeout(() => {
+      void searchPlaces(text);
+    }, 300);
   };
 
-  // Weekly calendar strip mapping
-  const calendarDays = useMemo(() => {
-    const today = new Date();
-    const currentDayOfWeek = today.getDay();
-    const distanceToMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + distanceToMonday);
-    const daysOfWeek = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-    return daysOfWeek.map((dayName, index) => {
-      const dateObj = new Date(monday);
-      dateObj.setDate(monday.getDate() + index);
-      return { day: dayName, date: dateObj.getDate(), fullDate: dateObj };
+  const handleSelectPlaceSuggestion = async (item: (typeof locationResults)[number]) => {
+    const place = await retrievePlace({
+      id: item.suggestionId,
+      provider: item.provider,
+      name: item.name,
+      placeFormatted: item.address,
+      category: null,
+      sessionToken: item.sessionToken,
+      latitude: item.latitude,
+      longitude: item.longitude,
     });
+
+    if (!place) {
+      toast.error("Couldn't load that place. Pick another suggestion.");
+      return;
+    }
+
+    handleSelectLocation({
+      name: place.name,
+      address: place.address || place.name,
+      latitude: place.lat,
+      longitude: place.lng,
+    });
+  };
+
+  // 30-day calendar strip mapping (-14 days to +15 days)
+  const calendarDays = useMemo(() => {
+    const days = [];
+    const today = new Date();
+    const daysOfWeek = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    for (let i = -14; i <= 15; i++) {
+      const dateObj = new Date();
+      dateObj.setDate(today.getDate() + i);
+      const dayName = daysOfWeek[dateObj.getDay()];
+      days.push({ day: dayName, date: dateObj.getDate(), fullDate: dateObj });
+    }
+    return days;
   }, []);
+
+  const CARD_WIDTH = 42;
+  const CARD_GAP = 8; // gap-2
+  const CARD_OUTER_WIDTH = CARD_WIDTH + CARD_GAP;
+
+  const todayIndex = useMemo(() => {
+    return calendarDays.findIndex(
+      (item) => item.fullDate.toDateString() === new Date().toDateString()
+    );
+  }, [calendarDays]);
+
+  useEffect(() => {
+    if (todayIndex !== -1 && calendarScrollRef.current) {
+      const containerWidth = calendarScrollRef.current.clientWidth || 350;
+      const offset = todayIndex * CARD_OUTER_WIDTH - containerWidth / 2 + CARD_WIDTH / 2;
+      setTimeout(() => {
+        if (calendarScrollRef.current) {
+          calendarScrollRef.current.scrollLeft = Math.max(0, offset);
+        }
+      }, 150);
+    }
+  }, [todayIndex]);
 
   const handleConfirmLogout = () => {
     logoutMutate(undefined, {
@@ -245,7 +368,7 @@ export default function AgentDashboardPage() {
         </div>
 
         {/* Scroll Content container */}
-        <div className="relative z-10 flex flex-col flex-1 px-5 pt-6 pb-[290px]">
+        <div className="relative z-10 flex flex-col flex-1 px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] pb-[290px]">
           {/* Header */}
           <div className="relative flex items-center justify-between mb-4 h-16">
             {isSearching ? (
@@ -253,7 +376,7 @@ export default function AgentDashboardPage() {
                 <div className="flex-1 flex items-center bg-white/[0.08] rounded-full px-4 h-12">
                   <input
                     type="text"
-                    placeholder="Search tasks, leads..."
+                    placeholder="Search tasks......"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus
@@ -338,6 +461,17 @@ export default function AgentDashboardPage() {
                   <button
                     onClick={() => {
                       setIsProfileMenuOpen(false);
+                      router.push('/field-activity/journeys');
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] text-white text-sm text-left focus:outline-none"
+                  >
+                    <span>🧭</span>
+                    <span>Journey history</span>
+                  </button>
+                  <div className="h-px bg-white/5 mx-3" />
+                  <button
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
                       setIsLogoutModalOpen(true);
                     }}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.04] text-[#FD6046] text-sm text-left focus:outline-none font-semibold"
@@ -351,7 +485,10 @@ export default function AgentDashboardPage() {
           </div>
 
           {/* Calendar strip */}
-          <div className="w-full flex items-center justify-between px-2 mb-5 overflow-visible">
+          <div
+            ref={calendarScrollRef}
+            className="w-full flex gap-2 overflow-x-auto no-scrollbar scroll-smooth pb-2 px-1 mb-3 select-none justify-start"
+          >
             {calendarDays.map((item, index) => {
               const isActive = selectedDate.toDateString() === item.fullDate.toDateString();
               const hasTasks = tasks.some((t) => isSameDay(t.dueDate, item.fullDate));
@@ -362,7 +499,7 @@ export default function AgentDashboardPage() {
                     setSelectedDate(item.fullDate);
                     setIsViewMeetingsOpen(true);
                   }}
-                  className={`flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
+                  className={`flex-shrink-0 flex flex-col items-center justify-center w-[42px] h-[65px] rounded-[16px] transition-all active:scale-95 ${isActive ? 'bg-[#7BB6B8]' : 'bg-transparent'
                     }`}
                 >
                   <span className={`text-[10px] font-semibold uppercase tracking-wider ${isActive ? 'text-[#B4DBFF]' : 'text-[#8F9098]'}`}>
@@ -413,25 +550,11 @@ export default function AgentDashboardPage() {
               <div className="relative flex-[1.6] z-10">
                 <button
                   type="button"
-                  onClick={() => setShowTooltip(true)}
-                  className="w-full h-[44px] bg-[#FD6046] rounded-[20px] flex items-center justify-center text-white text-[10px] font-semibold tracking-wide opacity-50 cursor-pointer active:scale-95 transition-transform shadow-[0_16px_36px_rgba(253,96,70,0.6)]"
+                  onClick={() => router.push('/assistant?flow=plan-day')}
+                  className="w-full h-[44px] bg-[#FD6046] rounded-[20px] flex items-center justify-center text-white text-[10px] font-semibold tracking-wide cursor-pointer active:scale-95 transition-transform shadow-[0_16px_36px_rgba(253,96,70,0.6)]"
                 >
                   Plan my day
                 </button>
-                <AnimatePresence>
-                  {showTooltip && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 4, scale: 0.95 }}
-                      transition={{ duration: 0.12, ease: 'easeOut' }}
-                      className="absolute bottom-[54px] left-1/2 -translate-x-1/2 z-[100] bg-black/90 backdrop-blur-md border border-white/10 px-3.5 py-1.5 rounded-xl shadow-xl flex items-center justify-center whitespace-nowrap gap-1.5"
-                    >
-                      <span className="text-[11px] font-bold text-[#FD6046]">✨ coming soon!</span>
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black/95 rotate-45 border-r border-b border-white/10" />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
 
             <button
@@ -478,6 +601,14 @@ export default function AgentDashboardPage() {
 
             {/* Attendance card */}
             <AttendanceCard />
+          </div>
+
+          {/* Field activity blocks are full-width; the -mx-4 cancels their own
+              mx-4 so they align with the dashboard cards above. */}
+          <div className="-mx-4 mb-5 empty:hidden">
+            <PendingReviewSoftBanner />
+            <PileInboxBadge />
+            <FieldActivitySummaryCard />
           </div>
 
           {/* Meetings Calendar Widget */}
@@ -577,6 +708,12 @@ export default function AgentDashboardPage() {
                         ))}
                       </div>
                     )
+                  ) : isSearchingPlaces ? (
+                    <div className="flex items-center justify-center py-6 select-none">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        Searching…
+                      </span>
+                    </div>
                   ) : locationResults.length === 0 ? (
                     <div className="flex items-center justify-center py-6 select-none">
                       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
@@ -585,17 +722,12 @@ export default function AgentDashboardPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3.5">
-                      {locationResults.map((item, index) => (
+                      {locationResults.map((item) => (
                         <div
-                          key={index}
-                          onClick={() =>
-                            handleSelectLocation({
-                              name: item.name,
-                              address: item.address,
-                              latitude: item.latitude,
-                              longitude: item.longitude,
-                            })
-                          }
+                          key={`${item.provider}-${item.suggestionId}`}
+                          onClick={() => {
+                            void handleSelectPlaceSuggestion(item);
+                          }}
                           className="flex items-center cursor-pointer active:opacity-75 transition-opacity"
                         >
                           <img
@@ -604,7 +736,21 @@ export default function AgentDashboardPage() {
                             className="w-[38px] h-[38px] mr-3 object-contain flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0 leading-tight">
-                            <p className="text-sm font-semibold text-[#09232D] truncate">{item.name}</p>
+                            <p className="text-sm font-semibold text-[#09232D] truncate">
+                              {item.name}
+                              {(() => {
+                                const label = placeAttributionLabel(
+                                  item.sources,
+                                  item.provider,
+                                  item.attributionVisible,
+                                );
+                                return label ? (
+                                  <span className="ml-1.5 text-[9px] font-medium text-[#09232D]/50">
+                                    {label}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </p>
                             <p className="text-[10px] font-light text-[#09232D]/60 truncate mt-1">{item.address}</p>
                           </div>
                         </div>
@@ -671,7 +817,7 @@ export default function AgentDashboardPage() {
         </div>
       )}
       {gateVisible && (
-        <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/50 backdrop-blur-sm">
           <div className="relative w-full max-w-md rounded-t-3xl bg-[#0A1D25] border-t border-white/10 pb-[env(safe-area-inset-bottom,0px)]">
             <LocationPermissionGate
               mode={gateMode}
@@ -682,6 +828,8 @@ export default function AgentDashboardPage() {
           </div>
         </div>
       )}
+      <DayReviewSheet />
+      <PileInboxSheet />
     </ScreenErrorBoundary>
   );
 }

@@ -23,6 +23,10 @@ class BillingOverviewController extends Controller
         $stats = [
             'active_plan_count' => $plans->where('is_active', true)->count(),
             'total_plan_count' => $plans->count(),
+            'misconfigured_active_plans' => $plans
+                ->where('is_active', true)
+                ->filter(static fn (array $plan): bool => $plan['monthly_price_id'] === null || $plan['annual_price_id'] === null)
+                ->count(),
             'active_subscription_companies' => Company::query()
                 ->where('subscription_status', SubscriptionStatus::ACTIVE->value)
                 ->count(),

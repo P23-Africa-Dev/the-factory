@@ -6,6 +6,10 @@ import { MapPin, Search, SlidersHorizontal, BookmarkPlus, ChevronLeft, ChevronRi
 import { toast } from "sonner";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useAttendanceSettings, useUpdateAttendanceSettings } from "@/hooks/use-attendance";
+import {
+  AttendanceTimezoneSelect,
+  DEFAULT_ATTENDANCE_TIMEZONE,
+} from "@/components/attendance/attendance-timezone-select";
 import { endOfMonth, endOfWeek, format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { AddAgentModal } from "./add-agent-modal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
@@ -13,57 +17,13 @@ import { useAttendanceMetrics, useAttendanceRecords, useAgentAttendanceHistory }
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { ManagementAttendanceRecord, AgentAttendanceRecord } from "@/lib/api/attendance";
+import type { AgentAttendanceRecord } from "@/lib/api/attendance";
+import {
+  mapManagementAttendanceRecord,
+  type ManagementAttendanceListItem,
+} from "@/lib/attendance-management-ui";
 
-type AttendanceItem = {
-  id: number | string;
-  name: string;
-  address: string;
-  checkIn: string;
-  checkOut: string;
-  role: string;
-  zone: string;
-  status: string;
-  subText: string;
-  active: boolean;
-  avatar: string;
-};
-
-function resolveAvatar(avatar: string | null): string {
-  if (!avatar) return "/avatars/male-avatar.png";
-  if (avatar.startsWith("http")) return avatar;
-  if (avatar.startsWith("/")) return avatar;
-  return "/avatars/male-avatar.png";
-}
-
-function mapRecord(record: ManagementAttendanceRecord): AttendanceItem {
-  return {
-    id: record.user_id,
-    name: record.agent_name,
-    address: record.zone ?? "—",
-    zone: record.zone ?? "—",
-    checkIn: record.clock_in_at
-      ? format(parseISO(record.clock_in_at), "h:mma")
-      : "No check-in record",
-    checkOut: record.clock_out_at
-      ? format(parseISO(record.clock_out_at), "h:mma")
-      : record.status !== "absent"
-        ? "Still Active"
-        : "No check-out record",
-    role: record.role ?? "Field Agent",
-    status: record.status === "present" || record.status === "late" || record.status === "auto_clocked_out" ? "Present" : "Absent",
-    subText:
-      record.is_late
-        ? "Late"
-        : record.clock_out_at
-          ? "Checked Out"
-          : record.status !== "absent"
-            ? "Active"
-            : "Absent",
-    active: !!record.clock_in_at && !record.clock_out_at,
-    avatar: resolveAvatar(record.avatar_url ?? record.avatar),
-  };
-}
+type AttendanceItem = ManagementAttendanceListItem;
 
 const SPARK_PRESENT = [{ v: 8 }, { v: 14 }, { v: 10 }, { v: 18 }, { v: 12 }, { v: 16 }, { v: 20 }];
 const SPARK_ABSENT = [{ v: 20 }, { v: 14 }, { v: 18 }, { v: 10 }, { v: 16 }, { v: 12 }, { v: 8 }];
@@ -230,7 +190,7 @@ function AttendanceHistoryPanel({
   const toDate = format(new Date(), "yyyy-MM-dd");
   const fromDate = format(subDays(new Date(), 29), "yyyy-MM-dd");
 
-  const { data, isLoading } = useAgentAttendanceHistory(selected.id, {
+  const { data, isLoading } = useAgentAttendanceHistory(selected.userId, {
     company_id: companyId,
     from_date: fromDate,
     to_date: toDate,
@@ -355,8 +315,9 @@ function AttendanceSettingsModal({
   const [openingTime, setOpeningTime] = useState("09:00");
   const [closingTime, setClosingTime] = useState("17:00");
   const [workingDays, setWorkingDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
-  const [windowMinutes, setWindowMinutes] = useState(30);
-  const [autoClockout, setAutoClockout] = useState(false);
+  const [windowMinutes, setWindowMinutes] = useState(15);
+  const [autoClockout, setAutoClockout] = useState(true);
+  const [timezone, setTimezone] = useState(DEFAULT_ATTENDANCE_TIMEZONE);
 
   useEffect(() => {
     if (settings) {
@@ -366,6 +327,7 @@ function AttendanceSettingsModal({
         if (settings.working_days) setWorkingDays(settings.working_days);
         if (settings.clockin_window_minutes !== undefined) setWindowMinutes(settings.clockin_window_minutes);
         if (settings.auto_clockout_enabled !== undefined) setAutoClockout(settings.auto_clockout_enabled);
+        if (settings.timezone) setTimezone(settings.timezone);
       });
     }
   }, [settings]);
@@ -385,6 +347,7 @@ function AttendanceSettingsModal({
         working_days: workingDays,
         clockin_window_minutes: windowMinutes,
         auto_clockout_enabled: autoClockout,
+        timezone,
       },
       {
         onSuccess: () => {
@@ -481,6 +444,16 @@ function AttendanceSettingsModal({
               </div>
 
               {/* Auto-clockout */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                  Timezone
+                </label>
+                <AttendanceTimezoneSelect value={timezone} onChange={setTimezone} />
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  Opening and closing times are interpreted in this timezone.
+                </p>
+              </div>
+
               <div className="flex items-center justify-between py-4 px-4 bg-gray-50 rounded-2xl border border-gray-100">
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark">Auto Clock-out</p>
@@ -531,7 +504,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
   const [showFilters, setShowFilters] = useState(false);
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [selectedId, setSelectedId] = useState<number | string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [date, setDate] = useState(today);
   const [statusFilter, setStatusFilter] = useState<"all" | "present" | "late" | "clocked_out" | "absent">("all");
@@ -589,7 +562,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
     page,
   });
 
-  const attendanceList: AttendanceItem[] = (recordsData?.items ?? []).map(mapRecord);
+  const attendanceList: AttendanceItem[] = (recordsData?.items ?? []).map(mapManagementAttendanceRecord);
   const pagination = recordsData?.pagination;
   const totalPages = Math.max(1, pagination?.last_page ?? 1);
   const currentPage = pagination?.current_page ?? page;
@@ -685,6 +658,15 @@ export function AttendanceView({ basePath }: { basePath: string }) {
               Filter
             </span>
           </button>
+
+          <Link
+            href="/map?tab=clocked-in"
+            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0"
+            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+          >
+            <MapPin size={14} strokeWidth={2} />
+            <span className="hidden sm:inline">Clocked-In Map</span>
+          </Link>
 
           <button
             onClick={() => setShowSettings(true)}
@@ -1032,88 +1014,6 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
               {/* Attendance history panel */}
               <AttendanceHistoryPanel selected={selected} companyId={apiCompanyId ?? undefined} />
-
-              {/* Tracking card */}
-              {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
-                <div className="flex items-start gap-4 mb-5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
-                    <p className="text-[15px] font-bold text-white">{selected.checkIn}</p>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
-                    <p className="text-[13px] font-medium text-white/70">{selected.checkOut}</p>
-                  </div>
-                  <div
-                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${selected.active
-                      ? "bg-[#1A452C] text-[#4ADE80]"
-                      : "bg-gray-700 text-gray-300"
-                      }`}
-                  >
-                    {selected.active ? "On-Time" : "Absent"}
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <p className="text-[15px] font-bold text-white mb-0.5">
-                    Location (Check-In)
-                  </p>
-                  <p className="text-[12px] text-gray-400">{selected.address}</p>
-                </div>
-
-              
-                <div className="relative h-44 w-full rounded-[18px] bg-[#e8ecef] overflow-hidden">
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-50">
-                    <defs>
-                      <pattern id="attgrid" width="36" height="36" patternUnits="userSpaceOnUse">
-                        <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#CBD5E1" strokeWidth="0.8" />
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#attgrid)" />
-                  </svg>
-                  <div className="absolute left-[30%] top-0 bottom-0 w-9 bg-white/60 pointer-events-none" />
-                  <div className="absolute top-[48%] left-0 right-0 h-8 bg-white/60 pointer-events-none" />
-                  <div className="absolute right-0 top-[28%] w-10 h-14 bg-[#A8D5B5]/60 pointer-events-none" />
-                  <div
-                    className="absolute pointer-events-none"
-                    style={{ left: "28%", top: 6 }}
-                  >
-                    <span className="text-[8px] font-semibold text-gray-600 block leading-tight">
-                      Dresd
-                    </span>
-                    <span className="text-[8px] font-semibold text-gray-600 block leading-tight">
-                      Street
-                    </span>
-                  </div>
-                  <div className="absolute right-1 top-[16%] pointer-events-none">
-                    <span className="text-[7px] font-semibold text-gray-500 block leading-tight">
-                      McDow
-                    </span>
-                    <span className="text-[7px] font-semibold text-gray-500 block leading-tight">
-                      ell Str
-                    </span>
-                  </div>
-                  <div className="absolute" style={{ left: "32%", top: "25%" }}>
-                    <MapPin size={20} className="text-red-500 fill-red-500 drop-shadow-md" />
-                  </div>
-                  <div
-                    className="absolute flex flex-col items-center"
-                    style={{ left: "calc(32% - 14px)", top: "48%" }}
-                  >
-                    <div className="w-7 h-7 rounded-full border-2 border-white shadow-md overflow-hidden">
-                      <img
-                        src={selected.avatar}
-                        className="w-full h-full object-cover"
-                        alt="Agent"
-                      />
-                    </div>
-                    <div className="bg-white px-2 py-0.5 rounded-lg mt-1 whitespace-nowrap shadow-md">
-                      <p className="text-[8px] font-bold text-dash-dark">{selected.name}</p>
-                      <p className="text-[7px] text-gray-400">Active at Kemsi Street</p>
-                    </div>
-                  </div>
-                </div>
-              </div> */}
             </>
           ) : (
             <div className="flex items-center justify-center h-40 text-gray-400 text-[13px]">

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1\Attendance;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Attendance\AttendanceListRequest;
+use App\Http\Requests\Attendance\AttendanceMapSnapshotRequest;
 use App\Http\Requests\Attendance\AttendanceMetricsRequest;
 use App\Http\Requests\Attendance\AttendancePayrollGenerateRequest;
 use App\Http\Requests\Attendance\AttendancePayrollSummaryRequest;
@@ -93,6 +94,19 @@ class AttendanceManagementController extends Controller
         return $this->success(
             message: 'Attendance payroll summaries generated successfully.',
             data: $result,
+        );
+    }
+
+    public function mapSnapshots(AttendanceMapSnapshotRequest $request): JsonResponse
+    {
+        $snapshot = $this->attendanceService->mapSnapshotsForManagement(
+            user: $request->user(),
+            filters: $request->validated(),
+        );
+
+        return $this->success(
+            message: 'Attendance map snapshots fetched successfully.',
+            data: $snapshot,
         );
     }
 }

@@ -4,14 +4,33 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useTrackingStore } from '@/store/tracking';
 import { useNotificationStore } from '@/store/notifications';
 import { trackingApi } from '@/features/tracking/api';
+import { hydrateLiveTaskFromRoute } from '@/features/tracking/hydrateRoute';
 import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { queryClient } from '@/lib/queryClient';
 import { env } from '@/constants/env';
+import { notifyTrackingNearDestination } from '@/lib/notifications/trackingAlerts';
 
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 const WS_DISCONNECT_POLL_THRESHOLD_MS = 30_000;
 const POLL_INTERVAL_MS = 25_000;
+
+function readAgentFields(data: Record<string, unknown>): {
+  agentId?: number;
+  agentName?: string;
+  agentAvatar?: string | null;
+} {
+  const agent = data.agent as
+    | { id?: number; name?: string; avatar_url?: string | null }
+    | undefined;
+  if (!agent) return {};
+
+  return {
+    ...(typeof agent.id === 'number' ? { agentId: agent.id } : {}),
+    ...(typeof agent.name === 'string' ? { agentName: agent.name } : {}),
+    ...(agent.avatar_url != null ? { agentAvatar: agent.avatar_url } : {}),
+  };
+}
 
 export const useTrackingWebSocket = (): void => {
   const setUnreadCount = useNotificationStore((s) => s.setUnreadCount);
@@ -55,24 +74,13 @@ export const useTrackingWebSocket = (): void => {
       for (const taskId of activeTaskIds) {
         try {
           const route = await trackingApi.getTaskRoute(taskId, companyId);
-          const lastPoint = route.points.length > 0 ? route.points[route.points.length - 1] : null;
-          upsertTask(taskId, {
-            polyline: route.polyline,
-            lastPosition: lastPoint
-              ? [lastPoint.longitude, lastPoint.latitude]
-              : undefined,
-            destination: {
-              latitude: route.destination.latitude,
-              longitude: route.destination.longitude,
-              radiusMeters: route.destination.radius_meters,
-            },
-          });
+          hydrateLiveTaskFromRoute(taskId, route);
         } catch {
           // Silent — polling is best-effort fallback
         }
       }
     }, POLL_INTERVAL_MS);
-  }, [upsertTask]);
+  }, []);
 
   const handleEvent = useCallback(
     (message: Record<string, unknown>) => {
@@ -98,6 +106,7 @@ export const useTrackingWebSocket = (): void => {
               data.longitude != null && data.latitude != null
                 ? [data.longitude as number, data.latitude as number]
                 : null,
+            ...readAgentFields(data),
           });
           break;
 
@@ -112,20 +121,37 @@ export const useTrackingWebSocket = (): void => {
           upsertTask(taskId, {
             lastPosition: point,
             lastUpdatedAt: occurredAt,
+            ...readAgentFields(data),
             ...(data.heading_degrees != null
               ? { lastHeadingDegrees: data.heading_degrees as number }
               : {}),
             ...(data.speed_mps != null ? { lastSpeedMps: data.speed_mps as number } : {}),
           });
-          if (data.arrived) {
+          if (data.arrived && data.proximity_state !== 'completed' && data.task_status !== 'completed') {
             markArrived(taskId, occurredAt);
           }
+          if (data.proximity_state === 'completed' || data.task_status === 'completed') {
+            markCompleted(taskId);
+            setTimeout(() => removeTask(taskId), 5_000);
+          }
+          break;
+        }
+
+        case 'tracking.task.reassigned': {
+          if (taskId == null) break;
+          const toUserId = data.to_user_id as number | undefined;
+          upsertTask(taskId, {
+            ...(typeof toUserId === 'number' ? { agentId: toUserId } : {}),
+            agentAvatar: null,
+            lastUpdatedAt: occurredAt,
+          });
           break;
         }
 
         case 'tracking.task.near_destination':
           if (taskId == null) break;
           upsertTask(taskId, { status: 'tracking', lastUpdatedAt: occurredAt });
+          void notifyTrackingNearDestination(taskId);
           break;
 
         case 'tracking.task.arrived':

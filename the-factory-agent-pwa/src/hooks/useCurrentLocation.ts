@@ -73,6 +73,7 @@ export function useCurrentLocation(): UseCurrentLocationReturn {
   }, [ensureLocationPermission, resolveCurrentPosition]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch location on mount
     void fetchLocation();
   }, [fetchLocation]);
 

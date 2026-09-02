@@ -218,7 +218,7 @@ export function AttendeeSection({
               {/* Search bar */}
               <input
                 type="text"
-                placeholder="Search by name or email…"
+                placeholder="Search by name......"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus

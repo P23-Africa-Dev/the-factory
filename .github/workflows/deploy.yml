@@ -2,7 +2,7 @@
 # Factory23 — Production Deploy Workflow
 #
 # Triggers:
-#   push to `space`  → full build + deploy to production
+#   push to `main`  → full build + deploy to production
 #   pull_request      → lint + test only (no deploy)
 #
 # Required GitHub Secrets (Settings → Secrets and variables → Actions → New secret):
@@ -15,10 +15,10 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [space]
+    branches: [main]
   workflow_dispatch:
   pull_request:
-    branches: [space]
+    branches: [main]
     paths:
       - 'backend/src/**'
       - 'backend/Dockerfile'
@@ -80,7 +80,15 @@ jobs:
           restore-keys: composer-
 
       - name: Install dependencies
-        run: composer install --optimize-autoloader --prefer-dist --no-interaction
+        env:
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"}}'
+        run: |
+          for attempt in 1 2 3; do
+            composer install --optimize-autoloader --prefer-dist --no-interaction && exit 0
+            echo "composer install attempt ${attempt} failed; retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+          exit 1
 
       - name: Copy .env for testing
         run: cp .env.example .env
@@ -109,7 +117,7 @@ jobs:
     name: Build & Push
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/space'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
       image_digest: ${{ steps.build.outputs.digest }}
@@ -133,7 +141,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/space' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -150,6 +158,8 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
           platforms: linux/amd64
+          secrets: |
+            composer_auth={"github-oauth":{"github.com":"${{ secrets.COMPOSER_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"}}
 
   # ── Job 3: Deploy to Production ───────────────────────────────────────────
   deploy:
@@ -221,8 +231,13 @@ jobs:
           # Delete old migration job if exists
           kubectl delete job laravel-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found=true
 
+          # Pin autoscaling during migration so HPA does not surge replicas while we
+          # scale down for CPU headroom on small clusters.
+          echo "Temporarily constraining backend HPA for migration window..."
+          kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
+            -p '{"spec":{"minReplicas":1,"maxReplicas":1}}' || true
+
           # Free CPU on small single-node clusters so the migrate pod can schedule.
-          # Pending pods do not consume node CPU, but their requests still block scheduling.
           echo "Scaling backend to 1 replica to free cluster CPU for migration..."
           kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1
           kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=180s || true
@@ -249,20 +264,62 @@ jobs:
           kubectl apply -f backend/k8s/queue-worker-deployment.yaml -n ${{ env.K8S_NAMESPACE }}
           kubectl apply -f backend/k8s/scheduler-deployment.yaml -n ${{ env.K8S_NAMESPACE }}
 
+          # Replace one pod at a time on small clusters (no extra surge capacity needed).
+          kubectl patch deployment/backend -n ${{ env.K8S_NAMESPACE }} --type=strategic \
+            -p '{"spec":{"strategy":{"rollingUpdate":{"maxUnavailable":1,"maxSurge":0}}}}' || true
+
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/backend \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+          rollout_failed=0
+
+          if ! kubectl rollout status deployment/backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=600s; then
+            rollout_failed=1
+            echo "=== Backend rollout timed out — collecting diagnostics ==="
+            kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=backend -o wide || true
+            kubectl describe pods -n ${{ env.K8S_NAMESPACE }} -l app=backend || true
+            for pod in $(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=backend \
+              -o jsonpath='{.items[?(@.status.phase!="Running")].metadata.name}'); do
+              echo "--- logs: $pod (init-app) ---"
+              kubectl logs -n ${{ env.K8S_NAMESPACE }} "$pod" -c init-app --tail=80 || true
+              echo "--- logs: $pod (nginx) ---"
+              kubectl logs -n ${{ env.K8S_NAMESPACE }} "$pod" -c nginx --tail=80 || true
+            done
+          fi
+
           kubectl rollout status deployment/queue-worker \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+            -n ${{ env.K8S_NAMESPACE }} --timeout=180s || rollout_failed=1
           kubectl rollout status deployment/scheduler \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+            -n ${{ env.K8S_NAMESPACE }} --timeout=180s || rollout_failed=1
+
+          # Guardrail: on single-node clusters, ingress can become unschedulable
+          # under CPU pressure. Fail early with diagnostics if no endpoints exist.
+          INGRESS_ENDPOINTS=$(kubectl get endpoints ingress-nginx-controller -n ingress-nginx \
+            -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+          if [ -z "$INGRESS_ENDPOINTS" ]; then
+            rollout_failed=1
+            echo "=== ingress-nginx-controller has zero endpoints ==="
+            kubectl get pods -n ingress-nginx -o wide || true
+            kubectl describe svc ingress-nginx-controller -n ingress-nginx || true
+            kubectl describe deployment ingress-nginx-controller -n ingress-nginx || true
+          fi
+
+          if [ "$rollout_failed" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Restore backend autoscaling
+        if: always()
+        run: |
+          kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
+            -p '{"spec":{"minReplicas":1,"maxReplicas":10}}' || true
+          kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1 || true
 
       - name: Smoke test — health endpoint
         run: |
-          echo "Waiting for backend pods to be ready..."
-          kubectl wait --for=condition=ready pod -l app=backend \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+          echo "Waiting for backend deployment to be available..."
+          kubectl wait --for=condition=available deployment/backend \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=150s
 
           # In-cluster check — validates the deployed app without depending on
           # public LB/DNS (which can lag or be down during node recovery).

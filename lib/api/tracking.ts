@@ -4,6 +4,7 @@ import {
   ApiRequestError,
   API_BASE_URL,
 } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 import type { TaskApiItem } from "./tasks";
 import type {
   StartTrackingPayload,
@@ -95,13 +96,18 @@ export async function completeTaskTracking(
   formData: FormData,
   token: string
 ): Promise<ApiEnvelope<CompleteTrackingResponse>> {
+  const transport = getSupportAwareApiTransport(
+    `/agent/tasks/${taskId}/complete`,
+    token,
+    API_BASE_URL,
+  );
   const response = await fetch(
-    `${API_BASE_URL}/agent/tasks/${taskId}/complete`,
+    transport.url,
     {
       method: "POST",
       headers: {
         Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...transport.authorizationHeaders,
       },
       body: formData,
     }

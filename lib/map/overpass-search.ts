@@ -1,5 +1,5 @@
 export type PoiResult = {
-  id: number;
+  id: string;
   lat: number;
   lng: number;
   name: string;
@@ -108,7 +108,7 @@ export async function fetchBusinessesInBbox(
           el.tags['addr:city'],
         ].filter(Boolean);
         return {
-          id: el.id,
+          id: String(el.id),
           lat: el.lat,
           lng: el.lon,
           name: el.tags.name,
@@ -172,7 +172,7 @@ export async function fetchBusinessesNearPoint(
           el.tags['addr:city'],
         ].filter(Boolean);
         return {
-          id: el.id,
+          id: String(el.id),
           lat: el.lat,
           lng: el.lon,
           name: el.tags.name,

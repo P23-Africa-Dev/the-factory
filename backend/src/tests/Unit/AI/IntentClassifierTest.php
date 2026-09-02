@@ -123,6 +123,14 @@ final class IntentClassifierTest extends TestCase
         }
     }
 
+    public function test_classifies_create_org_user_prompt(): void
+    {
+        $intent = (new IntentClassifier())->classify('Create me a new agent with name Ella Star');
+
+        $this->assertSame('action', $intent['type']);
+        $this->assertSame('org.users.create', $intent['tool']);
+    }
+
     public function test_classifies_crm_leads_list_phrases(): void
     {
         $classifier = new IntentClassifier();
@@ -153,6 +161,49 @@ final class IntentClassifierTest extends TestCase
 
             $this->assertSame('tool', $intent['type'], "Failed for message: {$message}");
             $this->assertSame('org.users', $intent['tool'], "Failed for message: {$message}");
+        }
+    }
+
+    public function test_classifies_task_list_queries_without_create_action(): void
+    {
+        $classifier = new IntentClassifier();
+
+        $intent = $classifier->classify('Give me the list of tasks created by Agent John');
+
+        $this->assertSame('tool', $intent['type']);
+        $this->assertSame('tasks.list', $intent['tool']);
+    }
+
+    public function test_classifies_attendance_and_map_and_kpi_prompts(): void
+    {
+        $classifier = new IntentClassifier();
+
+        $cases = [
+            ['so, how many of my agent was present yesterday?', 'attendance.today_summary'],
+            ['did john wick clock in yesterday?', 'attendance.today_summary'],
+            ['how many businesses were pinned on the map?', 'map.pinned_locations_count'],
+            ['which agent added the most businesses?', 'map.pinned_locations_count'],
+            ['How many leads were added today?', 'crm.leads_analytics'],
+            ['What was the conversion rate today?', 'crm.leads_analytics'],
+            ['Which agent logged the most calls?', 'crm.calls_count'],
+            ['Show KPI assigned to John', 'kpi.list'],
+            ['Update John\'s KPI to 50 calls', 'kpis.update'],
+            ['Where did John go yesterday?', 'tracking.agent_history'],
+            ['Which businesses did John visit yesterday?', 'field.agent_visits'],
+            ["Show me today's tracking", 'field.daily_summary'],
+            ['What about today\'s field activities?', 'field.daily_summary'],
+            ['Tell me about the tracking system today', 'field.daily_summary'],
+            ['Who is currently tracking?', 'tracking.active_agents'],
+            ['Show me task tracking after clock in', 'field.daily_summary'],
+            ['John\'s tracking today', 'field.daily_summary'],
+            ['What\'s Taraji\'s tracking activities for today before clock out', 'field.daily_summary'],
+            ['What\'s the Journey history for Taraji', 'field.journey_history'],
+            ['Check for agent Taraji Henson', 'field.daily_summary'],
+        ];
+
+        foreach ($cases as [$message, $tool]) {
+            $intent = $classifier->classify($message);
+            $this->assertSame($tool, $intent['tool'], "Failed for: {$message}");
         }
     }
 }

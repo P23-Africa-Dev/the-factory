@@ -23,6 +23,7 @@ export type DemoRequestResponse = {
 export type CountryOption = {
   label: string;
   value: string;
+  code?: string;
 };
 
 export function submitDemoRequest(payload: DemoRequestPayload) {

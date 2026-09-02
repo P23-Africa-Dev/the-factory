@@ -7,15 +7,36 @@ export const proximityStateSchema = z.enum([
   'completed',
 ]);
 
-export const trackingSessionSchema = z.object({
-  id: z.number(),
-  task_id: z.number(),
-  started_by_user_id: z.number(),
-  start_latitude: z.number(),
-  start_longitude: z.number(),
-  arrival_detected_at: z.string().nullable(),
-  end_recorded_at: z.string().nullable(),
-});
+/** Matches TaskTrackingController::trackingSessionPayload (nested start/arrival/end). */
+const trackingCoordPayloadSchema = z
+  .object({
+    latitude: z.number().nullable().optional(),
+    longitude: z.number().nullable().optional(),
+    accuracy_meters: z.number().nullable().optional(),
+    recorded_at: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const trackingSessionSchema = z
+  .object({
+    id: z.coerce.number(),
+    task_id: z.coerce.number(),
+    company_id: z.coerce.number().optional(),
+    start: trackingCoordPayloadSchema.optional(),
+    arrival: trackingCoordPayloadSchema.optional(),
+    near: trackingCoordPayloadSchema.optional(),
+    end: trackingCoordPayloadSchema.optional(),
+    destination: z
+      .object({
+        latitude: z.number().nullable().optional(),
+        longitude: z.number().nullable().optional(),
+        radius_meters: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .optional(),
+    updated_at: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const locationPointSchema = z.object({
   latitude: z.number(),
@@ -67,6 +88,7 @@ const proximityFieldsSchema = z.object({
   distance_to_destination_meters: z.number().nullable().optional(),
   distance_remaining_meters: z.number().nullable().optional(),
   movement_started: z.boolean().optional(),
+  demo_simulation_active: z.boolean().optional(),
 });
 
 export const startTaskResponseSchema = z

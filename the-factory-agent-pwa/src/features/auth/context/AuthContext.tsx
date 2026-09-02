@@ -47,6 +47,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       setTimeout(() => setToken(storedToken), 0);
       setTimeout(() => setUser(storedUser), 0);
+      if (storedToken) {
+        void import('@/lib/offline/syncCredentials')
+          .then((m) => m.writeSyncCredentials(storedToken))
+          .catch(() => {});
+      }
     } catch (err) {
       console.error('[Auth] Hydration error:', err);
     } finally {
@@ -67,6 +72,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       setToken(newToken);
       setUser(newUser ?? null);
+      void import('@/lib/offline/syncCredentials')
+        .then((m) => m.writeSyncCredentials(newToken))
+        .catch(() => {});
     } catch (err) {
       console.error('[Auth] Login error:', err);
     }
@@ -82,6 +90,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!changed) return prev;
       try {
         appStore.set('auth_user', JSON.stringify(next));
+        if (typeof next.company_id === 'number') {
+          setActiveCompanyId(next.company_id);
+        }
+        const storedToken = appStore.getString('auth_token');
+        if (storedToken) {
+          void import('@/lib/offline/syncCredentials')
+            .then((m) => m.writeSyncCredentials(storedToken))
+            .catch(() => {});
+        }
       } catch (err) {
         console.error('[Auth] updateUser error:', err);
       }
@@ -91,6 +108,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     try {
+      // Best-effort: deactivate FCM / clear native push listeners before wiping auth.
+      void import('@/features/tracking/native/nativePushNotifications')
+        .then((m) => m.unregisterNativePush())
+        .catch(() => {});
+
+      // Best-effort: unsubscribe Web Push so this device stops receiving pushes.
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        void navigator.serviceWorker.ready
+          .then((reg) => reg.pushManager?.getSubscription())
+          .then(async (sub) => {
+            if (!sub) return;
+            try {
+              const { client } = await import('@/lib/api/client');
+              await client.delete('/notifications/push-subscriptions', {
+                data: { device_token: sub.endpoint },
+              });
+            } catch {
+              // ignore
+            }
+            try {
+              await sub.unsubscribe();
+            } catch {
+              // ignore
+            }
+          })
+          .catch(() => {});
+      }
+
       // 1. Clear PWA appStore and trackingStore
       appStore.clearAll();
       trackingStore.clearAll();

@@ -24,6 +24,7 @@ export function PwaInstallBanner() {
     const urlParams = new URLSearchParams(window.location.search);
     const intent = urlParams.get('install') === 'true' || sessionStorage.getItem('pwa-auto-install') === 'true';
     
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read install intent from URL/session on mount
     setHasIntent(intent);
     
     // If they came with explicit intent, we force showing the banner (override prior dismissal in session)
@@ -110,7 +111,7 @@ export function PwaInstallBanner() {
               </div>
               <ol className="list-decimal pl-4 space-y-1 text-[11px] text-white/70 leading-relaxed">
                 <li>
-                  Tap the <span className="font-semibold text-white">Share button 📤</span> in Safari's navigation bar.
+                  Tap the <span className="font-semibold text-white">Share button 📤</span> in Safari&apos;s navigation bar.
                 </li>
                 <li>
                   Scroll down the options list and select <span className="font-semibold text-white">Add to Home Screen ➕</span>.

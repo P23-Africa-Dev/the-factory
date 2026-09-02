@@ -16,6 +16,7 @@ import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
+import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 
@@ -378,6 +379,14 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
               onStatusDrop={handleStatusDrop}
               onDragStateChange={handleDragStateChange}
               onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
+              onViewMap={(item) => {
+                const url = buildTaskMapUrl(item, role);
+                if (!url) {
+                  toast.error("This task has no map coordinates yet.");
+                  return;
+                }
+                router.push(url);
+              }}
             />
           )}
         </div>
@@ -518,7 +527,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     id: String(apiTask.id),
     label: assigneeLabel,
     description: apiTask.title,
-    location: formatTaskLocationLabel(apiTask.location, apiTask.address),
+    location: formatTaskLocationLabel(apiTask.location, apiTask.address, "No location set", apiTask.created_at),
     latitude: apiTask.latitude ?? null,
     longitude: apiTask.longitude ?? null,
     hasTrackableLocation: hasTrackableTaskLocation(apiTask),
@@ -526,6 +535,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     avatar: apiTask.assignee?.avatar_url || undefined,
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
+    createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
     statusLabel,

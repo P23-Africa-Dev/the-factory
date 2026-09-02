@@ -6,8 +6,9 @@ namespace App\Http\Controllers\Api\V1\Agent;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Agent\AgentLoginRequest;
-use App\Http\Resources\InternalUserResource;
+use App\Http\Resources\UserResource;
 use App\Services\Agent\AgentAuthService;
+use App\Support\LoginRateLimiter;
 use Illuminate\Http\JsonResponse;
 
 class AgentLoginController extends Controller
@@ -25,12 +26,16 @@ class AgentLoginController extends Controller
         );
 
         if (! $result) {
+            LoginRateLimiter::recordFailedAttempt($request);
+
             return $this->error(
                 message: 'Invalid credentials or onboarding not completed.',
                 errors: ['email' => ['Credentials are invalid or onboarding is not complete.']],
                 status: 401,
             );
         }
+
+        LoginRateLimiter::clear($request);
 
         return $this->success(
             message: 'Login successful.',
@@ -40,7 +45,7 @@ class AgentLoginController extends Controller
                 'dashboard_path' => '/agent/dashboard',
                 'internal_role' => $result['internal_role'],
                 'access_role' => $result['access_role'],
-                'user' => new InternalUserResource($result['user']),
+                'user' => new UserResource($result['user']),
             ],
         );
     }

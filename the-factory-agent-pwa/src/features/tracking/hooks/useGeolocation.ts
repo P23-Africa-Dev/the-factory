@@ -1,6 +1,22 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { isNativeAndroid } from '../native/capacitorPlatform';
+import {
+  startNativeBackgroundWatch,
+  stopNativeBackgroundWatch,
+  forceRestartNativeBackgroundWatch,
+  buildLiveTrackingTitle,
+  buildLiveTrackingMessage,
+  isNativeBackgroundWatching,
+} from '../native/nativeBackgroundGeolocation';
+import { useTrackingStore } from '@/store/tracking';
+import {
+  beginLiveTrackingIndicator,
+  buildMapTaskUrl,
+  endLiveTrackingIndicator,
+} from '@/lib/notifications/trackingAlerts';
+import { recordBackgroundLocationFix } from '@/lib/tracking/background-tracking-watchdog';
 
 export type PermissionStatus = 'unknown' | 'prompt' | 'granted' | 'denied';
 
@@ -58,6 +74,101 @@ const RECENT_POSITION_MS = 60_000;
 let cachedLastPosition: LocationObject | null = null;
 let cachedPermissionStatus: PermissionStatus = 'unknown';
 
+/**
+ * Shared watch ownership — map preview, location reporter, and field activity
+ * all call useGeolocation. Stopping one instance must NOT tear down the native
+ * Android FGS / browser watch while another instance still needs it.
+ */
+type WatchSubscriber = {
+  onUpdate: (loc: LocationObject) => void;
+  rememberPosition: (loc: LocationObject) => void;
+  setError: (message: string) => void;
+  setIsWatching: (watching: boolean) => void;
+};
+
+const watchSubscribers = new Map<symbol, WatchSubscriber>();
+let sharedBrowserWatchId: number | null = null;
+let sharedNativeOwned = false;
+let sharedLowAccuracy = false;
+
+function dispatchSharedLocation(loc: LocationObject): void {
+  recordBackgroundLocationFix();
+  for (const sub of watchSubscribers.values()) {
+    sub.rememberPosition(loc);
+    sub.onUpdate(loc);
+  }
+}
+
+function dispatchSharedError(message: string): void {
+  for (const sub of watchSubscribers.values()) {
+    sub.setError(message);
+  }
+}
+
+function clearSharedBrowserWatch(): void {
+  if (typeof window === 'undefined' || !navigator.geolocation) return;
+  if (sharedBrowserWatchId !== null) {
+    navigator.geolocation.clearWatch(sharedBrowserWatchId);
+    sharedBrowserWatchId = null;
+  }
+}
+
+function beginSharedBrowserWatch(): void {
+  if (typeof window === 'undefined' || !navigator.geolocation) return;
+  if (isNativeAndroid()) return;
+  if (watchSubscribers.size === 0) return;
+
+  clearSharedBrowserWatch();
+
+  const options = sharedLowAccuracy ? LOW_ACCURACY_OPTIONS : HIGH_ACCURACY_OPTIONS;
+  const maxAccuracy = sharedLowAccuracy
+    ? MAX_STREAMING_ACCURACY_LOW_M
+    : MAX_STREAMING_ACCURACY_HIGH_M;
+
+  sharedBrowserWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const loc = toLocationObject(pos);
+      if (!isValidReading(loc, maxAccuracy)) return;
+      dispatchSharedLocation(loc);
+    },
+    (err) => dispatchSharedError(err.message),
+    options,
+  );
+}
+
+async function ensureSharedNativeWatch(): Promise<void> {
+  if (!isNativeAndroid()) return;
+  if (watchSubscribers.size === 0) return;
+  if (sharedNativeOwned && isNativeBackgroundWatching()) return;
+
+  const taskId = useTrackingStore.getState().activeTrackingTaskId;
+  const live = taskId != null ? useTrackingStore.getState().liveTaskMap[taskId] : null;
+  const title = buildLiveTrackingTitle(live?.taskTitle ?? null);
+  const message = buildLiveTrackingMessage(null);
+
+  await startNativeBackgroundWatch(
+    (loc) => {
+      if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
+      dispatchSharedLocation(loc);
+    },
+    (messageText) => dispatchSharedError(messageText),
+    { title, message },
+  );
+  sharedNativeOwned = true;
+}
+
+async function releaseSharedWatchIfIdle(): Promise<void> {
+  if (watchSubscribers.size > 0) return;
+
+  if (sharedNativeOwned || isNativeBackgroundWatching()) {
+    sharedNativeOwned = false;
+    await stopNativeBackgroundWatch();
+  } else {
+    void endLiveTrackingIndicator();
+  }
+  clearSharedBrowserWatch();
+}
+
 function toLocationObject(pos: GeolocationPosition): LocationObject {
   return {
     coords: {
@@ -93,14 +204,60 @@ function readPosition(options: PositionOptions): Promise<LocationObject> {
   });
 }
 
+/** True when any hook instance holds an active shared watch. */
+export function isSharedGeolocationWatching(): boolean {
+  return watchSubscribers.size > 0;
+}
+
+/**
+ * Restart the shared browser or native watch without dropping subscribers.
+ * Used by the background tracking watchdog when fixes go stale.
+ */
+export async function restartSharedGeolocationWatch(): Promise<void> {
+  if (watchSubscribers.size === 0) return;
+
+  if (isNativeAndroid()) {
+    if (isNativeBackgroundWatching()) {
+      await forceRestartNativeBackgroundWatch();
+    } else {
+      await ensureSharedNativeWatch();
+    }
+    return;
+  }
+
+  beginSharedBrowserWatch();
+}
+
+/**
+ * One-shot GPS read while the page is foregrounded — helps recover browser
+ * tracking when watchPosition stalls after a lock/unlock cycle.
+ */
+export async function probeSharedGeolocationFix(): Promise<void> {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  if (watchSubscribers.size === 0) return;
+
+  try {
+    const loc = await readPosition(HIGH_ACCURACY_OPTIONS);
+    if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
+    dispatchSharedLocation(loc);
+  } catch {
+    try {
+      const loc = await readPosition(LOW_ACCURACY_OPTIONS);
+      if (!isValidReading(loc, MAX_STREAMING_ACCURACY_LOW_M)) return;
+      dispatchSharedLocation(loc);
+    } catch {
+      // Non-fatal — watchdog may force a full watcher restart next tick.
+    }
+  }
+}
+
 export const useGeolocation = (): GeolocationState & GeolocationActions => {
   const [permissionStatus, setPermissionStatus] = useState<PermissionStatus>(cachedPermissionStatus);
   const [isWatching, setIsWatching] = useState(false);
   const [lastPosition, setLastPosition] = useState<LocationObject | null>(cachedLastPosition);
   const [error, setError] = useState<string | null>(null);
-  const watcherRef = useRef<number | null>(null);
+  const ownerTokenRef = useRef<symbol>(Symbol('geolocation-owner'));
   const onUpdateRef = useRef<((loc: LocationObject) => void) | null>(null);
-  const lowAccuracyRef = useRef(false);
   const lastPositionRef = useRef<LocationObject | null>(cachedLastPosition);
 
   const rememberPosition = useCallback((loc: LocationObject) => {
@@ -114,41 +271,6 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
     cachedPermissionStatus = status;
     setPermissionStatus(status);
   }, []);
-
-  const clearWatcher = useCallback(() => {
-    if (typeof window === 'undefined' || !navigator.geolocation) return;
-    if (watcherRef.current !== null) {
-      navigator.geolocation.clearWatch(watcherRef.current);
-      watcherRef.current = null;
-    }
-    setIsWatching(false);
-  }, []);
-
-  const beginWatch = useCallback(() => {
-    if (typeof window === 'undefined' || !navigator.geolocation) return;
-    if (!onUpdateRef.current) return;
-
-    clearWatcher();
-
-    const options = lowAccuracyRef.current ? LOW_ACCURACY_OPTIONS : HIGH_ACCURACY_OPTIONS;
-    const maxAccuracy = lowAccuracyRef.current
-      ? MAX_STREAMING_ACCURACY_LOW_M
-      : MAX_STREAMING_ACCURACY_HIGH_M;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const loc = toLocationObject(pos);
-        if (!isValidReading(loc, maxAccuracy)) return;
-        rememberPosition(loc);
-        onUpdateRef.current?.(loc);
-      },
-      (err) => setError(err.message),
-      options,
-    );
-
-    watcherRef.current = watchId;
-    setIsWatching(true);
-  }, [clearWatcher, rememberPosition]);
 
   const checkPermission = useCallback(async (): Promise<PermissionStatus> => {
     if (typeof window === 'undefined' || !navigator.permissions) {
@@ -282,28 +404,80 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
   const startWatching = useCallback(
     async (onUpdate: (loc: LocationObject) => void): Promise<void> => {
       onUpdateRef.current = onUpdate;
-      beginWatch();
+      const token = ownerTokenRef.current;
+
+      watchSubscribers.set(token, {
+        onUpdate: (loc) => onUpdateRef.current?.(loc),
+        rememberPosition,
+        setError,
+        setIsWatching,
+      });
+      setIsWatching(true);
+
+      if (isNativeAndroid()) {
+        try {
+          await ensureSharedNativeWatch();
+          setPermission('granted');
+        } catch (err) {
+          watchSubscribers.delete(token);
+          setIsWatching(false);
+          const message = err instanceof Error ? err.message : 'Failed to start native tracking';
+          setError(message);
+          throw err;
+        }
+        return;
+      }
+
+      beginSharedBrowserWatch();
+      const taskId = useTrackingStore.getState().activeTrackingTaskId;
+      const live = taskId != null ? useTrackingStore.getState().liveTaskMap[taskId] : null;
+      void beginLiveTrackingIndicator({
+        label: live?.taskTitle ?? 'Live session',
+        url: taskId != null ? buildMapTaskUrl(taskId) : '/map',
+      });
     },
-    [beginWatch],
+    [rememberPosition, setPermission],
   );
 
   const stopWatching = useCallback(() => {
+    const token = ownerTokenRef.current;
+    // Only release ownership if THIS instance started/subscribed a watch.
+    if (!watchSubscribers.has(token)) {
+      onUpdateRef.current = null;
+      setIsWatching(false);
+      return;
+    }
+
+    watchSubscribers.delete(token);
     onUpdateRef.current = null;
-    clearWatcher();
-  }, [clearWatcher]);
+    setIsWatching(false);
+    void releaseSharedWatchIfIdle();
+  }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
+    // Native Android keeps high-accuracy FGS; no visibility downgrade.
+    if (isNativeAndroid()) return;
 
     const handler = () => {
       const hidden = document.visibilityState === 'hidden';
-      lowAccuracyRef.current = hidden;
-      if (onUpdateRef.current) beginWatch();
+      sharedLowAccuracy = hidden;
+      if (watchSubscribers.size > 0) beginSharedBrowserWatch();
     };
 
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
-  }, [beginWatch]);
+  }, []);
+
+  // Drop this instance's claim on unmount without tearing down others.
+  useEffect(() => {
+    const token = ownerTokenRef.current;
+    return () => {
+      if (!watchSubscribers.has(token)) return;
+      watchSubscribers.delete(token);
+      void releaseSharedWatchIfIdle();
+    };
+  }, []);
 
   return {
     permissionStatus,

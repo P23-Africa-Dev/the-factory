@@ -1,6 +1,7 @@
 export type {
   Lead,
   LeadActor,
+  LeadContact,
   LeadNote,
   LeadActivity,
   CrmLabel,
@@ -31,3 +32,5 @@ export { leadSchema, leadListSchema, crmLabelSchema, crmPipelineSchema } from '.
 
 export { LeadCard } from './components/LeadCard';
 export { AddLeadModal } from './components/AddLeadModal';
+export { LeadContactsStack } from './components/LeadContactsStack';
+

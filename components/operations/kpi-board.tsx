@@ -21,6 +21,9 @@ import { KpiCard } from "./kpi-card";
 interface KpiBoardProps {
   containers: DndContainer[];
   onKpiClick?: (item: DndItem, containerId: string) => void;
+  onKpiEdit?: (item: DndItem, containerId: string) => void;
+  onKpiDelete?: (item: DndItem, containerId: string) => void;
+  canManageCards?: boolean;
   findContainer: (id: string) => DndContainer | undefined;
   moveItem: (activeId: string, overId: string, containerId: string) => void;
   moveToContainer: (activeId: string, overContainerId: string) => void;
@@ -37,6 +40,9 @@ interface KpiBoardProps {
 export function KpiBoard({
   containers,
   onKpiClick,
+  onKpiEdit,
+  onKpiDelete,
+  canManageCards = false,
   findContainer,
   moveItem,
   moveToContainer,
@@ -130,6 +136,8 @@ export function KpiBoard({
             color={container.color}
             items={container.items}
             onKpiClick={(item) => onKpiClick?.(item, container.id)}
+            onKpiEdit={canManageCards ? (item) => onKpiEdit?.(item, container.id) : undefined}
+            onKpiDelete={canManageCards ? (item) => onKpiDelete?.(item, container.id) : undefined}
           />
         ))}
       </div>

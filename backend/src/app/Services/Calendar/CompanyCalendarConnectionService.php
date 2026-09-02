@@ -49,7 +49,6 @@ class CompanyCalendarConnectionService
         }
 
         $gmailEnabled = $connected && GoogleScopeHelper::connectionHasGmailScopes($connection);
-        $requiresGmailReconnect = $connected && ! $gmailEnabled;
 
         return [
             'connected' => $connected,
@@ -62,8 +61,9 @@ class CompanyCalendarConnectionService
             'can_manage_connection' => in_array($role, ['owner', 'admin'], true),
             'token_valid' => $tokenValid,
             'requires_reauthentication' => $connected && ! $tokenValid,
+            // Informational only — CRM mailbox lives under Email Accounts now.
             'gmail_enabled' => $gmailEnabled,
-            'requires_gmail_reconnect' => $requiresGmailReconnect,
+            'requires_gmail_reconnect' => false,
             'gmail_last_synced_at' => $connection?->gmail_last_synced_at?->toIso8601String(),
             'connection_health_status' => $healthStatus,
             'last_error_message' => $connection?->last_error_message,
@@ -83,7 +83,7 @@ class CompanyCalendarConnectionService
 
         $resolvedCompanyId = (int) $context['company']->id;
 
-        return $this->oauthService->buildAuthorizationUrl($resolvedCompanyId, (int) $user->id);
+        return $this->oauthService->buildAuthorizationUrl($resolvedCompanyId, (int) $user->id, 'company', true);
     }
 
     public function disconnect(User $user, ?int $companyId = null): array
@@ -226,7 +226,7 @@ class CompanyCalendarConnectionService
             'token_valid' => $this->isTokenValid($connection),
             'requires_reauthentication' => false,
             'gmail_enabled' => $gmailEnabled,
-            'requires_gmail_reconnect' => ! $gmailEnabled,
+            'requires_gmail_reconnect' => false,
             'connection_health_status' => 'healthy',
             'last_error_message' => null,
             'last_token_refresh_at' => $connection->last_token_refresh_at?->toIso8601String(),

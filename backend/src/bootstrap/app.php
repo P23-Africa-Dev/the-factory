@@ -4,10 +4,12 @@ use App\Exceptions\AccountAccessDeniedException;
 use App\Http\Middleware\EnsureAdminHasPermission;
 use App\Http\Middleware\EnsureAdminIsActive;
 use App\Http\Middleware\EnsureDatabaseManagerUnlocked;
+use App\Http\Middleware\EnforceSupportAccessSession;
 use App\Http\Middleware\EnsureApiAccessRole;
 use App\Http\Middleware\EnsureCompanyHasActiveSubscription;
 use App\Http\Middleware\EnsureUserAccountIsActive;
 use App\Http\Middleware\NormalizeRequestPath;
+use App\Http\Middleware\ThrottleLoginAttempts;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -32,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(NormalizeRequestPath::class);
+        $middleware->trustProxies(at: '*');
 
         $middleware->redirectGuestsTo(function (Request $request): string {
             if ($request->is('admin/*')) {
@@ -47,9 +50,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.active' => EnsureAdminIsActive::class,
             'admin.permission' => EnsureAdminHasPermission::class,
             'admin.db.unlocked' => EnsureDatabaseManagerUnlocked::class,
+            'support.access' => EnforceSupportAccessSession::class,
             'access.role' => EnsureApiAccessRole::class,
             'account.active' => EnsureUserAccountIsActive::class,
             'subscription.active' => EnsureCompanyHasActiveSubscription::class,
+            'throttle.login' => ThrottleLoginAttempts::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -61,9 +66,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // For admin/* web routes, fall through (return null) so Laravel renders HTML.
         $isApiRequest = static fn(Request $request): bool => $request->is('api/*');
 
-        $exceptions->render(function (ValidationException $e, Request $request) use ($jsonError, $isApiRequest): ?JsonResponse {
+        $validationMessage = static function (array $errors): string {
+            $messages = collect($errors)->flatten()->filter()->values();
+
+            return $messages->isNotEmpty()
+                ? $messages->implode(' ')
+                : 'The given data was invalid.';
+        };
+
+        $exceptions->render(function (ValidationException $e, Request $request) use ($jsonError, $isApiRequest, $validationMessage): ?JsonResponse {
             if ($isApiRequest($request) || $request->expectsJson()) {
-                return $jsonError('The given data was invalid.', $e->errors(), 422);
+                $errors = $e->errors();
+
+                return $jsonError($validationMessage($errors), $errors, 422);
             }
             return null;
         });
@@ -75,7 +90,13 @@ return Application::configure(basePath: dirname(__DIR__))
         });
         $exceptions->render(function (AuthorizationException $e, Request $request) use ($jsonError, $isApiRequest): ?JsonResponse {
             if ($isApiRequest($request) || $request->expectsJson()) {
-                return $jsonError('You do not have permission to perform this action.', null, 403);
+                $message = trim($e->getMessage());
+
+                return $jsonError(
+                    $message !== '' ? $message : 'You do not have permission to perform this action.',
+                    null,
+                    403
+                );
             }
             return null;
         });

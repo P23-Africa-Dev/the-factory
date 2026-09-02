@@ -24,32 +24,38 @@ class LeadResource extends JsonResource
             'email' => $this->email,
             'phone' => $this->phone,
             'location' => $this->location,
+            'contacts' => LeadContactResource::collection($this->whenLoaded('contacts')),
+            'company_name' => $this->company_name,
+            'company_email' => $this->company_email,
+            'website' => $this->website,
+            'position' => $this->position,
+            'profile_urls' => $this->profile_urls ?? [],
             'source' => $this->source,
             'status' => $this->status,
             'priority' => $this->priority?->value,
             'budget_amount' => $this->budget_amount !== null ? (float) $this->budget_amount : null,
             'budget_currency' => $this->budget_currency,
             'budget' => $this->budget_amount !== null
-                ? trim(($this->budget_currency ?? 'USD') . ' ' . number_format((float) $this->budget_amount, 2, '.', ''))
+                ? trim(($this->budget_currency ?? 'USD').' '.number_format((float) $this->budget_amount, 2, '.', ''))
                 : null,
             'next_action' => $this->next_action,
             'last_interaction' => $this->last_interaction,
             'last_interaction_at' => $this->last_interaction_at?->toIso8601String(),
             'meta' => $this->meta,
             'converted_at' => $this->converted_at?->toIso8601String(),
-            'creator' => $this->whenLoaded('creator', fn(): ?array => $this->creator ? [
+            'creator' => $this->whenLoaded('creator', fn (): ?array => $this->creator ? [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->creator->avatar, $this->creator->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->creator->avatar, $this->creator->gender),
             ] : null),
-            'assignee' => $this->whenLoaded('assignee', fn(): ?array => $this->assignee ? [
+            'assignee' => $this->whenLoaded('assignee', fn (): ?array => $this->assignee ? [
                 'id' => $this->assignee->id,
                 'name' => $this->assignee->name,
                 'email' => $this->assignee->email,
-                'avatar_url' => AvatarUrlResolver::resolve($this->assignee->avatar, $this->assignee->gender),
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($this->assignee->avatar, $this->assignee->gender),
             ] : null),
-            'pipeline' => $this->whenLoaded('pipeline', fn(): ?array => $this->pipeline ? [
+            'pipeline' => $this->whenLoaded('pipeline', fn (): ?array => $this->pipeline ? [
                 'id' => $this->pipeline->id,
                 'name' => $this->pipeline->name,
                 'currency_code' => $this->pipeline->currency_code,

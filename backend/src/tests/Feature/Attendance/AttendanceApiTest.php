@@ -13,6 +13,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AttendanceApiTest extends TestCase
@@ -49,6 +50,57 @@ class AttendanceApiTest extends TestCase
         ]);
     }
 
+    public function test_management_can_fetch_persisted_attendance_settings(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        AttendanceSetting::query()->create([
+            'company_id' => $company->id,
+            'opening_time' => '08:30:00',
+            'closing_time' => '18:00:00',
+            'working_days' => ['monday', 'wednesday', 'friday'],
+            'clockin_window_minutes' => 20,
+            'auto_clockout_enabled' => false,
+            'timezone' => 'Europe/London',
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/settings?company_id=' . $company->id);
+
+        $response->assertOk()
+            ->assertJsonPath('data.settings.company_id', $company->id)
+            ->assertJsonPath('data.settings.opening_time', '08:30:00')
+            ->assertJsonPath('data.settings.closing_time', '18:00:00')
+            ->assertJsonPath('data.settings.working_days', ['monday', 'wednesday', 'friday'])
+            ->assertJsonPath('data.settings.clockin_window_minutes', 20)
+            ->assertJsonPath('data.settings.auto_clockout_enabled', false)
+            ->assertJsonPath('data.settings.timezone', 'Europe/London');
+    }
+
+    public function test_management_can_upsert_attendance_settings_with_timezone(): void
+    {
+        [$company, $owner] = $this->seedCompanyUsers();
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->putJson('/api/v1/attendance/settings', [
+                'company_id' => $company->company_id,
+                'opening_time' => '09:00',
+                'closing_time' => '17:00',
+                'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                'clockin_window_minutes' => 15,
+                'auto_clockout_enabled' => true,
+                'timezone' => 'Europe/London',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.settings.timezone', 'Europe/London');
+
+        $this->assertDatabaseHas('attendance_settings', [
+            'company_id' => $company->id,
+            'timezone' => 'Europe/London',
+        ]);
+    }
+
     public function test_agent_can_clock_in_and_clock_out_with_duration_tracking(): void
     {
         [$company,,, $agent] = $this->seedCompanyUsers();
@@ -58,6 +110,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-in', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 08:50:00',
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
             ]);
 
         $clockInResponse->assertCreated()
@@ -68,6 +122,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-out', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 16:30:00',
+                'latitude' => 6.5250,
+                'longitude' => 3.3800,
             ]);
 
         $clockOutResponse->assertOk()
@@ -91,6 +147,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-in', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 08:50:00',
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
             ])
             ->assertCreated();
 
@@ -98,6 +156,8 @@ class AttendanceApiTest extends TestCase
             ->postJson('/api/v1/attendance/clock-in', [
                 'company_id' => $company->id,
                 'recorded_at' => '2026-06-01 09:05:00',
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
             ]);
 
         $response->assertStatus(422)
@@ -168,6 +228,9 @@ class AttendanceApiTest extends TestCase
 
     public function test_management_records_support_role_and_expanded_status_filters_and_avatar_url(): void
     {
+        Storage::disk('avatars')->put('avatar/male/male_01.png', 'avatar');
+        Storage::disk('avatars')->put('avatar/female/female_01.png', 'avatar');
+
         [$company, $owner, $supervisor, $agentA, $agentB] = $this->seedCompanyUsers();
         $this->createAttendanceSetting($company);
 
@@ -247,6 +310,77 @@ class AttendanceApiTest extends TestCase
             ->assertJsonCount(1, 'data.items')
             ->assertJsonPath('data.items.0.user_id', $agentB->id)
             ->assertJsonPath('data.items.0.status', 'absent');
+    }
+
+    public function test_management_range_records_include_attendance_record_id_and_avatar_url_per_row(): void
+    {
+        Storage::disk('avatars')->put('avatar/male/male_01.png', 'avatar');
+        Storage::disk('avatars')->put('avatar/female/female_01.png', 'avatar');
+
+        [$company, $owner,, $agentA, $agentB] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        $agentA->update(['avatar' => 'male_01', 'gender' => 'male']);
+        $agentB->update(['avatar' => 'female_01', 'gender' => 'female']);
+
+        $recordA = AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:00:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $recordB = AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-02',
+            'clock_in_at' => '2026-06-02 09:00:00',
+            'clock_out_at' => '2026-06-02 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:00:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'present',
+            'work_duration_minutes' => 480,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/records?company_id=' . $company->id
+                . '&from_date=2026-06-01&to_date=2026-06-02&per_page=10');
+
+        $response->assertOk()
+            ->assertJsonCount(3, 'data.items');
+
+        $items = collect($response->json('data.items'));
+
+        $this->assertSame(
+            [$recordA->id, $recordB->id],
+            $items->where('user_id', $agentA->id)->pluck('attendance_record_id')->sort()->values()->all(),
+        );
+
+        $agentAAvatar = (string) $items->firstWhere('user_id', $agentA->id)['avatar_url'];
+        $agentBAvatar = (string) $items->firstWhere('user_id', $agentB->id)['avatar_url'];
+
+        $this->assertNotSame('', $agentAAvatar);
+        $this->assertNotSame('', $agentBAvatar);
+        $this->assertNotSame($agentAAvatar, $agentBAvatar);
+        $this->assertStringContainsString('male_01', $agentAAvatar);
+        $this->assertStringContainsString('female_01', $agentBAvatar);
     }
 
     public function test_attendance_payroll_generation_respects_attendance_affects_pay(): void
@@ -434,6 +568,103 @@ class AttendanceApiTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonPath('success', false)
             ->assertJsonStructure(['errors' => ['user_id']]);
+    }
+
+    public function test_management_can_fetch_attendance_map_snapshots_for_clocked_in_agents(): void
+    {
+        [$company, $owner,, $agentA, $agentB] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentA->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 08:55:00',
+            'clock_out_at' => null,
+            'status' => 'present',
+            'work_duration_minutes' => null,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+            'metadata' => [
+                'clock_in_latitude' => 6.5244,
+                'clock_in_longitude' => 3.3792,
+                'clock_in_address' => 'Lagos Island, Lagos',
+            ],
+        ]);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agentB->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 09:20:00',
+            'clock_out_at' => '2026-06-01 17:00:00',
+            'status' => 'late',
+            'work_duration_minutes' => 460,
+            'is_late' => true,
+            'is_auto_clocked_out' => false,
+            'metadata' => [
+                'clock_in_latitude' => 6.6018,
+                'clock_in_longitude' => 3.3515,
+            ],
+        ]);
+
+        $response = $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/map-snapshots?company_id=' . $company->id . '&date=2026-06-01');
+
+        $response->assertOk()
+            ->assertJsonPath('data.date', '2026-06-01')
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agentA->id)
+            ->assertJsonPath('data.items.0.latitude', 6.5244)
+            ->assertJsonPath('data.items.0.longitude', 3.3792)
+            ->assertJsonPath('data.items.0.address', 'Lagos Island, Lagos');
+    }
+
+    public function test_agent_can_fetch_own_attendance_map_snapshot(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        AttendanceRecord::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+            'attendance_date' => '2026-06-01',
+            'clock_in_at' => '2026-06-01 08:55:00',
+            'clock_out_at' => null,
+            'status' => 'present',
+            'work_duration_minutes' => null,
+            'is_late' => false,
+            'is_auto_clocked_out' => false,
+            'metadata' => [
+                'clock_in_latitude' => 6.5244,
+                'clock_in_longitude' => 3.3792,
+            ],
+        ]);
+
+        $response = $this->actingAs($agent, 'sanctum')
+            ->getJson('/api/v1/agent/attendance/map-snapshot?company_id=' . $company->id . '&date=2026-06-01');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.user_id', $agent->id);
+    }
+
+    public function test_clock_in_requires_valid_coordinates(): void
+    {
+        [$company,,, $agent] = $this->seedCompanyUsers();
+        $this->createAttendanceSetting($company);
+
+        $response = $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/attendance/clock-in', [
+                'company_id' => $company->id,
+                'recorded_at' => '2026-06-01 08:50:00',
+                'latitude' => 0,
+                'longitude' => 0,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonStructure(['errors' => ['location']]);
     }
 
     private function seedCompanyUsers(): array

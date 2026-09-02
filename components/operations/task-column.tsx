@@ -17,6 +17,9 @@ interface TaskColumnProps {
   items: DndItem[];
   onAddCard: (item: DndItem) => void;
   onTaskClick?: (item: DndItem) => void;
+  onTaskEdit?: (item: DndItem) => void;
+  onTaskDelete?: (item: DndItem) => void;
+  onViewMap?: (item: DndItem) => void;
 }
 
 export function TaskColumn({
@@ -26,6 +29,9 @@ export function TaskColumn({
   items,
   onAddCard,
   onTaskClick,
+  onTaskEdit,
+  onTaskDelete,
+  onViewMap,
 }: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [showForm, setShowForm] = useState(false);
@@ -90,7 +96,14 @@ export function TaskColumn({
         >
           <div className="pt-2">
             {items.map((item) => (
-              <TaskCard key={item.id} item={item} onClick={onTaskClick} />
+              <TaskCard
+                key={item.id}
+                item={item}
+                onClick={onTaskClick}
+                onEdit={onTaskEdit}
+                onDelete={onTaskDelete}
+                onViewMap={onViewMap}
+              />
             ))}
           </div>
         </SortableContext>

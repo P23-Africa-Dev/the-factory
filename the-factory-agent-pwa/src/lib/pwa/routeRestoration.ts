@@ -57,6 +57,7 @@ export function useRouteRestoration(): { isRestoring: boolean } {
     if (saved && saved !== LAUNCH_PATH && isRestorableRoute(saved)) {
       router.replace(saved);
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- end restoration when no saved route
       setIsRestoring(false);
     }
     // Run once on mount; the lazy initializer captured the launch-time pathname.
@@ -66,6 +67,7 @@ export function useRouteRestoration(): { isRestoring: boolean } {
   // Restoration is complete once we have navigated away from the launch path.
   useEffect(() => {
     if (isRestoring && pathname !== LAUNCH_PATH) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- route restoration completed after navigation
       setIsRestoring(false);
     }
   }, [pathname, isRestoring]);

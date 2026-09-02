@@ -3,15 +3,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import {
+    createGmailLabel,
+    deleteGmailLabel,
     deleteLeadEmail,
     getCrmEmailActivity,
     getLeadEmailThread,
+    listGmailLabels,
     listLeadEmails,
     markLeadEmailRead,
+    markLeadEmailUnread,
+    modifyLeadEmailLabels,
+    moveLeadEmail,
     replyLeadEmail,
     sendLeadEmail,
+    updateGmailLabel,
     uploadLeadEmailAttachment,
     type CrmEmailMessage,
+    type GmailLabel,
     type SendCrmEmailPayload,
 } from "@/lib/api/crm-emails";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
@@ -31,6 +39,8 @@ export const CRM_EMAIL_KEYS = {
     ) => ["crm-emails", "thread", basePath, leadId, threadId, companyId] as const,
     activity: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm-emails", "activity", basePath, companyId] as const,
+    labels: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
+        ["crm-emails", "gmail-labels", basePath, companyId] as const,
 };
 
 export function useLeadEmails(
@@ -164,6 +174,178 @@ export function useMarkLeadEmailRead(
     });
 }
 
+export function useMarkLeadEmailUnread(
+    leadId: number | string,
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = getAuthTokenFromDocument();
+
+    return useMutation({
+        mutationFn: async (messageId: number | string) => {
+            const response = await markLeadEmailUnread(
+                basePath,
+                leadId,
+                messageId,
+                { company_id: companyId },
+                token!,
+            );
+            return response.data.message;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: CRM_EMAIL_KEYS.lead(leadId, companyId, basePath),
+            });
+        },
+    });
+}
+
+export function useMoveLeadEmail(
+    leadId: number | string,
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = getAuthTokenFromDocument();
+
+    return useMutation({
+        mutationFn: async (payload: { messageId: number | string; destination: "inbox" | "spam" }) => {
+            const response = await moveLeadEmail(
+                basePath,
+                leadId,
+                payload.messageId,
+                payload.destination,
+                { company_id: companyId },
+                token!,
+            );
+            return response.data.message;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: CRM_EMAIL_KEYS.lead(leadId, companyId, basePath),
+            });
+        },
+    });
+}
+
+export function useGmailLabels(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+    enabled = true,
+) {
+    const token = getAuthTokenFromDocument();
+
+    return useQuery({
+        queryKey: CRM_EMAIL_KEYS.labels(companyId, basePath),
+        enabled: Boolean(token && companyId && enabled),
+        queryFn: async () => {
+            const response = await listGmailLabels(basePath, { company_id: companyId }, token!);
+            return response.data.items as GmailLabel[];
+        },
+    });
+}
+
+export function useCreateGmailLabel(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = getAuthTokenFromDocument();
+
+    return useMutation({
+        mutationFn: async (name: string) => {
+            const response = await createGmailLabel(basePath, name, { company_id: companyId }, token!);
+            return response.data.label;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: CRM_EMAIL_KEYS.labels(companyId, basePath),
+            });
+        },
+    });
+}
+
+export function useUpdateGmailLabel(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = getAuthTokenFromDocument();
+
+    return useMutation({
+        mutationFn: async (payload: { labelId: string; name: string }) => {
+            const response = await updateGmailLabel(
+                basePath,
+                payload.labelId,
+                payload.name,
+                { company_id: companyId },
+                token!,
+            );
+            return response.data.label;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: CRM_EMAIL_KEYS.labels(companyId, basePath),
+            });
+        },
+    });
+}
+
+export function useDeleteGmailLabel(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = getAuthTokenFromDocument();
+
+    return useMutation({
+        mutationFn: async (labelId: string) => {
+            await deleteGmailLabel(basePath, labelId, { company_id: companyId }, token!);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: CRM_EMAIL_KEYS.labels(companyId, basePath),
+            });
+        },
+    });
+}
+
+export function useModifyLeadEmailLabels(
+    leadId: number | string,
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = getAuthTokenFromDocument();
+
+    return useMutation({
+        mutationFn: async (payload: {
+            messageId: number | string;
+            add?: string[];
+            remove?: string[];
+        }) => {
+            const response = await modifyLeadEmailLabels(
+                basePath,
+                leadId,
+                payload.messageId,
+                {
+                    add: payload.add,
+                    remove: payload.remove,
+                    company_id: companyId,
+                },
+                token!,
+            );
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: CRM_EMAIL_KEYS.lead(leadId, companyId, basePath),
+            });
+        },
+    });
+}
+
 export function useDeleteLeadEmail(
     leadId: number | string,
     companyId: number | string | undefined,
@@ -179,6 +361,9 @@ export function useDeleteLeadEmail(
         onSuccess: () => {
             queryClient.invalidateQueries({
                 queryKey: CRM_EMAIL_KEYS.lead(leadId, companyId, basePath),
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["crm-emails", "thread", basePath, leadId],
             });
         },
     });

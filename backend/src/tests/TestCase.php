@@ -5,6 +5,7 @@ namespace Tests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\Storage;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -29,5 +30,15 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutMiddleware(ThrottleRequests::class);
+
+        Storage::fake('avatars');
+        Storage::disk('avatars')->put('avatar/default/ghost.svg', '<svg></svg>');
+
+        Storage::fake('drive');
+
+        config([
+            'filesystems.avatar_public_base_url' => 'https://factory23-storage.lon1.digitaloceanspaces.com',
+            'filesystems.drive_disk' => 'drive',
+        ]);
     }
 }

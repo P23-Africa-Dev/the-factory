@@ -1,9 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import Logo from "@/assets/images/logo.png";
+import FactoryLogo from "@/components/layout/FactoryLogo";
 
 export default function Footer() {
   const [email, setEmail] = useState("");
@@ -19,24 +18,18 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto flex flex-col gap-10">
         
         {/* Top Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+        <div className="flex flex-col md:flex-row justify-between items-center md:items-start gap-10 text-center md:text-left w-full">
           
           {/* Logo and Navigation Links */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col items-center md:items-start gap-6">
             {/* Logo + Brand Name */}
-            <div className="flex items-center gap-3">
-              <Image
-                src={Logo}
-                alt="Factory 23 Logo"
-                width={48}
-                height={48}
-                className="object-contain"
-              />
+            <div className="flex items-center justify-center md:justify-start gap-3">
+              <FactoryLogo className="w-12 h-auto" />
               <span className="text-2xl font-bold tracking-tight">Factory 23</span>
             </div>
             
             {/* Nav Menu */}
-            <nav className="flex flex-wrap gap-x-8 gap-y-2">
+            <nav className="flex flex-wrap justify-center md:justify-start gap-x-8 gap-y-2">
               <Link href="#" className="text-sm font-semibold hover:opacity-80 transition-opacity">
                 About
               </Link>
@@ -46,16 +39,21 @@ export default function Footer() {
               <Link href="#" className="text-sm font-semibold hover:opacity-80 transition-opacity">
                 Reviews
               </Link>
-              <Link href="#" className="text-sm font-semibold hover:opacity-80 transition-opacity font-semibold">
+              {/* <a
+                href="https://p23africa.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-semibold hover:opacity-80 transition-opacity"
+              >
                 P23 Africa
-              </Link>
+              </a> */}
             </nav>
           </div>
 
           {/* Newsletter Form */}
-          <div className="flex flex-col gap-3 w-full md:w-auto min-w-[300px] lg:min-w-[360px]">
+          <div className="flex flex-col items-center md:items-start gap-3 w-full md:w-auto min-w-[280px] sm:min-w-[300px] lg:min-w-[360px]">
             <span className="text-sm font-semibold">Get the freshest news from us</span>
-            <form onSubmit={handleSubscribe} className="flex gap-3 w-full">
+            <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-3 w-full">
               <input
                 type="email"
                 placeholder="Your email address..."
@@ -66,7 +64,7 @@ export default function Footer() {
               />
               <button
                 type="submit"
-                className="px-6 py-3 bg-[#0B252C] text-white text-sm font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
+                className="w-full sm:w-auto px-6 py-3 bg-[#0B252C] text-white text-sm font-bold rounded-lg hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer whitespace-nowrap"
               >
                 Subscribe
               </button>

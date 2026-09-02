@@ -235,8 +235,10 @@ function buildDynamicFallbackViewport(context: {
     return getCountryFallbackViewport(context.countryCode);
 }
 
-export async function resolvePrivacySafeViewport(): Promise<ResolvedMapViewport> {
-    if (cachedViewport) {
+export async function resolvePrivacySafeViewport(options?: { preferFreshGps?: boolean }): Promise<ResolvedMapViewport> {
+    const preferFreshGps = options?.preferFreshGps === true;
+
+    if (cachedViewport && (!preferFreshGps || cachedViewport.granularity === "gps")) {
         return cachedViewport;
     }
 

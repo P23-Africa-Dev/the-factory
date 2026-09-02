@@ -1,14 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { MapPin } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import type { AgentItem } from './agent-list';
 import { getAgentSessionBadgeClass } from '@/lib/agent-presence';
 import { useUpdateInternalUser } from '@/hooks/use-internal-users';
+import { useCompanyZones } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { UserLifecycleActions, DeleteUserIconButton } from '@/components/operations/user-lifecycle-actions';
+import { useUserManagementPermissions } from '@/hooks/use-user-management-permissions';
 
 interface AgentSidebarProps {
   agent: AgentItem | null;
@@ -28,12 +31,23 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(agent.name);
   const [zone, setZone] = useState(agent.zone === 'Unassigned' ? '' : agent.zone);
+  const [zoneIds, setZoneIds] = useState<number[]>(agent.zoneIds ?? []);
   const [phone, setPhone] = useState(agent.phone);
   const [role, setRole] = useState(agent.role);
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const updateMutation = useUpdateInternalUser();
+  const { data: zones = [] } = useCompanyZones(companyId ?? undefined);
+  const permissions = useUserManagementPermissions({
+    internalRole: agent.internalRole ?? agent.role,
+    supervisorUserId: agent.supervisorUserId,
+    isSuspended: agent.isSuspended,
+  });
+
+  const roleOptions = permissions.role === 'owner' || permissions.role === 'admin'
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter((option) => option.value === 'agent');
 
   // Reset local state when a new agent is selected
   const agentId = agent.id;
@@ -41,6 +55,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
   const handleEdit = () => {
     setName(agent.name);
     setZone(agent.zone === 'Unassigned' ? '' : agent.zone);
+    setZoneIds(agent.zoneIds ?? []);
     setPhone(agent.phone);
     setRole(agent.role);
     setEditing(true);
@@ -66,6 +81,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
           full_name: name.trim(),
           role: role as 'admin' | 'supervisor' | 'agent',
           assigned_zone: zone.trim() || null,
+          assigned_zone_ids: zoneIds,
           phone_number: phone.trim() || null,
         },
       },
@@ -111,12 +127,31 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               {/* Zone */}
               <div>
                 <p className="text-[11px] font-bold text-dash-dark mb-1">Zone</p>
-                <input
-                  value={zone}
-                  onChange={(e) => setZone(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
-                  placeholder="E.g Ikeja"
-                />
+                <div className="flex flex-wrap gap-1.5">
+                  {zones.map((zoneOption) => {
+                    const selected = zoneIds.includes(zoneOption.id);
+                    return (
+                      <button
+                        key={zoneOption.id}
+                        type="button"
+                        onClick={() => {
+                          setZoneIds((prev) => selected
+                            ? prev.filter((id) => id !== zoneOption.id)
+                            : [...prev, zoneOption.id]);
+                          if (!selected) {
+                            setZone((prev) => prev || zoneOption.name);
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-full border text-[11px] ${selected
+                          ? 'bg-dash-dark text-white border-dash-dark'
+                          : 'bg-white text-gray-500 border-gray-200'
+                          }`}
+                      >
+                        {zoneOption.name}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Phone */}
@@ -131,16 +166,18 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               </div>
 
               {/* Role */}
-              <div>
-                <p className="text-[11px] font-bold text-dash-dark mb-1">Role</p>
-                <SearchableSelect
-                  value={role}
-                  onChange={setRole}
-                  options={ROLE_OPTIONS}
-                  placeholder="Select role"
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
-                />
-              </div>
+              {(permissions.role === 'owner' || permissions.role === 'admin') && (
+                <div>
+                  <p className="text-[11px] font-bold text-dash-dark mb-1">Role</p>
+                  <SearchableSelect
+                    value={role}
+                    onChange={setRole}
+                    options={roleOptions}
+                    placeholder="Select role"
+                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
+                  />
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex gap-2 pt-1">
@@ -180,6 +217,23 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                 <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
                 <p className="text-[12px] text-gray-400">{agent.role}</p>
               </div>
+              {agent.isSuspended && (
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Status</p>
+                  <p className="text-[12px] text-amber-700">
+                    Suspended{agent.suspendedUntil ? ` until ${new Date(agent.suspendedUntil).toLocaleDateString()}` : ''}
+                  </p>
+                </div>
+              )}
+              <UserLifecycleActions
+                userId={agentId}
+                userName={agent.name}
+                companyId={companyId ?? undefined}
+                internalRole={agent.internalRole ?? agent.role}
+                supervisorUserId={agent.supervisorUserId}
+                isSuspended={agent.isSuspended}
+                suspendedUntil={agent.suspendedUntil}
+              />
             </>
           )}
         </div>
@@ -224,24 +278,34 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
             </svg>
 
             {/* Edit — toggles inline form */}
-            <svg
-              onClick={() => (editing ? handleCancel() : handleEdit())}
-              className="cursor-pointer"
-              width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg"
-            >
-              <circle
-                cx="16.2378" cy="16.2378" r="15.9878"
-                fill={editing ? '#09232D' : '#EAEAEA'}
-                stroke="#DFDFDF"
-                strokeWidth="0.5"
-              />
-              <path
-                d="M19.5 10.5L22.5 13.5M10.5 22.5H13.5L21.5 14.5L18.5 11.5L10.5 19.5V22.5Z"
-                stroke={editing ? '#ffffff' : '#2F5E71'}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            {permissions.canEdit && (
+              <svg
+                onClick={() => (editing ? handleCancel() : handleEdit())}
+                className="cursor-pointer"
+                width="33" height="33" viewBox="0 0 33 33" fill="none" xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="16.2378" cy="16.2378" r="15.9878"
+                  fill={editing ? '#09232D' : '#EAEAEA'}
+                  stroke="#DFDFDF"
+                  strokeWidth="0.5"
+                />
+                <path
+                  d="M19.5 10.5L22.5 13.5M10.5 22.5H13.5L21.5 14.5L18.5 11.5L10.5 19.5V22.5Z"
+                  stroke={editing ? '#ffffff' : '#2F5E71'}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+            <DeleteUserIconButton
+              userId={agentId}
+              userName={agent.name}
+              companyId={companyId ?? undefined}
+              internalRole={agent.internalRole ?? agent.role}
+              supervisorUserId={agent.supervisorUserId}
+              isSuspended={agent.isSuspended}
+            />
           </div>
         </div>
       </div>
@@ -250,134 +314,70 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
 }
 
 export function AgentLiveDetails({ agent }: { agent: AgentItem }) {
-  const hasLocation = Boolean(
-    agent.isMapActive &&
-      (agent.location || agent.latitude || agent.longitude),
-  );
-  const locationLabel = agent.presence?.activeTaskTitle
-    ? `Active at ${agent.presence.activeTaskTitle}`
-    : agent.isMapActive
-      ? 'Sharing live location'
-      : 'Active at Kemsi Street';
+  const mapHref = (() => {
+    const params = new URLSearchParams({ agent: String(agent.id) });
+    const taskId = agent.presence?.activeTaskId;
+    if (taskId != null && Number.isFinite(taskId) && taskId > 0) {
+      params.set('taskId', String(taskId));
+    }
+    return `/map?${params.toString()}`;
+  })();
+
+  const hasCoords =
+    typeof agent.latitude === 'number' &&
+    typeof agent.longitude === 'number' &&
+    Number.isFinite(agent.latitude) &&
+    Number.isFinite(agent.longitude);
+
+  const lastSeenLabel = agent.presence?.lastSeenAt
+    ? new Date(agent.presence.lastSeenAt).toLocaleString()
+    : agent.time || null;
+
+  const locationSummary = agent.presence?.activeTaskTitle
+    ? agent.presence.activeTaskTitle
+    : agent.location || (agent.isMapActive ? 'Sharing live location' : null);
 
   return (
     <div className="bg-[#0A1A22] rounded-[28px] p-6 shadow-2xl">
       <h3 className="text-[16px] font-extrabold text-white mb-5">Live Details</h3>
 
-      {/* Map preview */}
-      <div className="relative h-48 w-full rounded-[20px] bg-[#EDF0F3] overflow-hidden shadow-inner">
-
-        {/* Background map grid */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ opacity: 0.3 }}>
-          <defs>
-            <pattern id="mapgrid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#B0BEC5" strokeWidth="0.6" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#mapgrid)" />
-        </svg>
-
-        {/* Main vertical road */}
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            left: '32%',
-            top: 0,
-            bottom: 0,
-            width: 38,
-            background: 'linear-gradient(to right, #F5F5F5 2px, #FFFFFF 2px, #FFFFFF 36px, #F5F5F5 36px)',
-          }}
-        />
-        {/* Main horizontal road */}
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            top: '50%',
-            left: 0,
-            right: 0,
-            height: 28,
-            transform: 'translateY(-50%)',
-            background: 'linear-gradient(to bottom, #F5F5F5 2px, #FFFFFF 2px, #FFFFFF 26px, #F5F5F5 26px)',
-          }}
-        />
-
-        {/* Park/green area */}
-        <div
-          className="absolute pointer-events-none rounded-md"
-          style={{ right: 4, top: '26%', width: 44, height: 60, background: 'rgba(168, 213, 181, 0.5)' }}
-        />
-
-        {/* Street label — "Dresd Street" rotated vertically */}
-        <div
-          className="absolute pointer-events-none"
-          style={{ left: '36%', top: 10, transform: 'rotate(-90deg)', transformOrigin: 'left top' }}
-        >
-          <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap tracking-wide">
-            Dresd Street
-          </span>
-        </div>
-
-        {/* Street label — "McDo ell Str" on the right */}
-        <div className="absolute pointer-events-none" style={{ right: 6, top: '16%' }}>
-          <span className="text-[9px] font-bold text-gray-500 block leading-tight">McDo</span>
-          <span className="text-[9px] font-bold text-gray-500 block leading-tight">ell Str</span>
-        </div>
-
-        {/* Red location pin */}
-        <div className="absolute" style={{ left: '28%', top: '22%' }}>
-          <div className="relative">
-            <MapPin size={22} className="text-red-500 fill-red-500 drop-shadow-lg" />
-            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-1 bg-black/15 rounded-full blur-sm" />
+      <div className="relative w-full rounded-[20px] bg-[#122632] border border-white/10 px-5 py-6">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 shrink-0">
+            <img src={agent.avatar} className="w-full h-full object-cover" alt={agent.name} />
           </div>
-        </div>
-
-        {/* Agent avatar with purple ring + label */}
-        <div className="absolute flex flex-col items-center" style={{ left: 'calc(26%)', top: '48%' }}>
-          <div className="w-10 h-10 rounded-full border-[3px] border-[#9D4EDD] shadow-lg overflow-hidden bg-white">
-            <img src={agent.avatar} className="w-full h-full object-cover" alt="Agent" />
-          </div>
-          <div className="bg-white px-2.5 py-1 rounded-lg mt-1.5 whitespace-nowrap shadow-lg border border-gray-100/50">
-            <p className="text-[9px] font-bold text-dash-dark">{agent.name}</p>
-            <p className="text-[7px] text-gray-400">{locationLabel}</p>
-          </div>
-        </div>
-
-        {/* Purple radius indicator */}
-        <div className="absolute" style={{ left: '58%', top: '24%' }}>
-          <div className="w-10 h-10 rounded-full bg-[#C77DFF]/15 flex items-center justify-center border-[3px] border-[#C77DFF]/40">
-            <div className="w-3.5 h-3.5 bg-[#9D4EDD] rounded-full shadow-sm" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-bold text-white truncate">{agent.name}</p>
+            <p className="text-[11px] text-white/55 mt-1">
+              {agent.isMapActive ? 'Live on map' : 'Not actively sharing location'}
+            </p>
+            {locationSummary && (
+              <p className="text-[11px] text-white/70 mt-2 truncate">{locationSummary}</p>
+            )}
+            {hasCoords && (
+              <p className="text-[10px] text-white/40 mt-2 font-mono">
+                {agent.latitude!.toFixed(5)}, {agent.longitude!.toFixed(5)}
+              </p>
+            )}
+            {lastSeenLabel && (
+              <p className="text-[10px] text-white/40 mt-1">{lastSeenLabel}</p>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Progress bars - commented out per user request */}
-      {/*
-      <div className="mt-6 px-1">
-        <div className="flex gap-1 h-3.5">
-          <div className="w-[55%] bg-[#4FD1C5] rounded-full" />
-          <div className="w-[45%] bg-[#EF5350] rounded-full" />
-        </div>
-        <div className="flex mt-2.5 gap-8">
-          <p className="text-[12px] text-gray-400 font-medium">Completed</p>
-          <p className="text-[12px] text-gray-400 font-medium">Pending</p>
-        </div>
-      </div>
-      */}
-
-      {/* CTA button + status */}
       <div className="mt-6">
-        {hasLocation && (
-          <button
-            className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${
-              agent.isMapActive
-                ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
-                : 'bg-gray-600 text-white hover:bg-gray-500'
-            }`}
-          >
-            {agent.isMapActive ? 'Active (View on Map)' : 'Offline'}
-            {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-          </button>
-        )}
+        <Link
+          href={mapHref}
+          className={`px-6 py-2.5 rounded-full text-[12px] font-bold transition-all inline-flex items-center gap-2 cursor-pointer ${
+            agent.isMapActive
+              ? 'bg-[#9333EA] text-white hover:bg-[#7E22CE]'
+              : 'bg-white/10 text-white hover:bg-white/15'
+          }`}
+        >
+          {agent.isMapActive ? 'Active (View on Map)' : 'Open live map'}
+          {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+        </Link>
         <p className="text-[11px] text-gray-500 mt-2.5 ml-1">{agent.time}</p>
       </div>
     </div>

@@ -14,6 +14,14 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'api.thefactory23.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'factory23-storage.lon1.cdn.digitaloceanspaces.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'factory23-storage.lon1.digitaloceanspaces.com',
+      },
     ],
   },
   async headers() {
@@ -23,6 +31,24 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Service-Worker-Allowed", value: "/" },
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+      {
+        // Agent APK — never let CDN/browsers keep a stale package for hours.
+        source: "/downloads/:path*.apk",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+          {
+            key: "Content-Type",
+            value: "application/vnd.android.package-archive",
+          },
+          {
+            key: "Content-Disposition",
+            value: 'attachment; filename="factory23-agent.apk"',
+          },
         ],
       },
     ];

@@ -4,7 +4,10 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/features/auth';
+import { usePushSubscription } from '@/features/notifications/hooks/usePushSubscription';
+import { useDeviceNotificationBridge } from '@/features/notifications/hooks/useDeviceNotificationBridge';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
+import { FieldActivityProvider } from '@/features/field-activity';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
 import { warmAgentRoutes } from '@/lib/pwa/routeWarming';
@@ -21,14 +24,17 @@ function AgentShellContent({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <OfflineSyncBanner />
       <div className={`flex flex-col flex-1 ${isHidden ? '' : 'pb-[100px]'}`}>{children}</div>
       {!isHidden && <BottomNavBar />}
+      {!isHidden && <OfflineSyncBanner />}
     </>
   );
 }
 
 function AgentShell({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  usePushSubscription(user?.id);
+  useDeviceNotificationBridge();
   useTrackingWebSocket();
   const { isRestoring } = useRouteRestoration();
 
@@ -107,7 +113,9 @@ export default function AgentLayout({
 
   return (
     <ActiveTrackingProvider>
-      <AgentShell>{children}</AgentShell>
+      <FieldActivityProvider>
+        <AgentShell>{children}</AgentShell>
+      </FieldActivityProvider>
     </ActiveTrackingProvider>
   );
 }

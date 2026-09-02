@@ -10,6 +10,7 @@ use App\Models\LeadPipeline;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class LeadInferenceService
@@ -59,13 +60,13 @@ class LeadInferenceService
             $this->extractLabeledValue($message, ['priority']),
         );
 
-        $pipelineId = $this->resolveDefaultPipelineId($companyId);
+        $pipelineId = $this->resolveDefaultPipelineId($companyId, $userId);
 
         $assignedToUserId = $role === 'agent' ? $userId : $this->resolveAssignedUserId($message, $companyId, $entities);
 
         $usedDefaultName = ! is_string($name) || trim($name) === '';
         if ($usedDefaultName) {
-            $name = $this->generateLeadNameFallback($message, $conversationSummary);
+            $name = $this->generateLeadNameFallback($message, $conversationSummary, $companyId, $userId);
         }
 
         $nextAction = $this->buildNextAction($notes, $industry, $location);
@@ -113,7 +114,7 @@ class LeadInferenceService
         }
 
         if (! isset($normalized['pipeline_id']) || (int) ($normalized['pipeline_id'] ?? 0) <= 0) {
-            $normalized['pipeline_id'] = $this->resolveDefaultPipelineId($companyId);
+            $normalized['pipeline_id'] = $this->resolveDefaultPipelineId($companyId, $userId);
         }
 
         if (! is_string($normalized['status'] ?? null) || trim((string) $normalized['status']) === '') {
@@ -233,9 +234,26 @@ class LeadInferenceService
         return null;
     }
 
-    private function resolveDefaultPipelineId(int $companyId): int
+    private function resolveDefaultPipelineId(int $companyId, ?int $userId = null): int
     {
         try {
+            if ($userId !== null) {
+                $preferredId = DB::table('company_users')
+                    ->where('company_id', $companyId)
+                    ->where('user_id', $userId)
+                    ->value('preferred_pipeline_id');
+
+                if ($preferredId !== null) {
+                    $exists = LeadPipeline::query()
+                        ->where('company_id', $companyId)
+                        ->where('id', (int) $preferredId)
+                        ->exists();
+                    if ($exists) {
+                        return (int) $preferredId;
+                    }
+                }
+            }
+
             $pipelineId = LeadPipeline::query()
                 ->where('company_id', $companyId)
                 ->orderByDesc('is_default')
@@ -316,16 +334,29 @@ class LeadInferenceService
         return $userId !== null ? (int) $userId : null;
     }
 
-    private function generateLeadNameFallback(string $message, string $conversationSummary): string
+    private function generateLeadNameFallback(string $message, string $conversationSummary, int $companyId, int $userId): string
     {
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $userPrompt = trim("Conversation:\n{$conversationSummary}\n\nMessage:\n{$message}");
+        $result = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: 'You extract a concise CRM lead business name from user text. Respond with plain text only, no markdown, max 80 characters. If no name is present, respond with: New Lead',
-            userPrompt: trim("Conversation:\n{$conversationSummary}\n\nMessage:\n{$message}"),
-            options: ['max_tokens' => 60, 'temperature' => 0.1],
+            userPrompt: $userPrompt,
+            options: [
+                'max_tokens' => 60,
+                'temperature' => 0.1,
+                'company_id' => $companyId,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'intent_type' => 'inference',
+                    'tool_name' => 'crm.create_lead',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $userPrompt,
+                ],
+            ],
         );
 
-        $candidate = is_string($providerText) ? trim($providerText) : '';
+        $candidate = $result?->text !== null ? trim($result->text) : '';
         if ($candidate === '' || strtolower($candidate) === 'new lead') {
             return 'New Lead';
         }

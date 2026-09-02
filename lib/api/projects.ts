@@ -2,6 +2,7 @@
 
 import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
 import { enqueueOfflineHttpMutation } from "@/lib/offline/queue";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type TaskSummary = {
   total_tasks: number;
@@ -211,11 +212,12 @@ export function createProject(
     }));
   }
 
-  return fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1"}/projects`, {
+  const transport = getSupportAwareApiTransport("/projects", token);
+  return fetch(transport.url, {
     method: "POST",
     headers: {
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...transport.authorizationHeaders,
     },
     body: toFormData(payload),
   }).then(async (response) => {
@@ -258,13 +260,14 @@ export function updateProject(
     }));
   }
 
+  const transport = getSupportAwareApiTransport(`/projects/${id}`, token);
   return fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.thefactory23.com/api/v1"}/projects/${id}`,
+    transport.url,
     {
       method: "PATCH",
       headers: {
         Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...transport.authorizationHeaders,
       },
       body: toFormData(payload),
     }

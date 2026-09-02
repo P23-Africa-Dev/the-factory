@@ -7,6 +7,7 @@ test("resolveAccessRole classifies management roles", () => {
   assert.equal(resolveAccessRole("admin"), "management");
   assert.equal(resolveAccessRole("owner"), "management");
   assert.equal(resolveAccessRole("supervisor"), "management");
+  assert.equal(resolveAccessRole("manager"), "management");
   assert.equal(resolveAccessRole("agent"), "agent");
   assert.equal(resolveAccessRole(null), "agent");
 });

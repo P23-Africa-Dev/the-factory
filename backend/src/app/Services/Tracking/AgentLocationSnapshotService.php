@@ -7,6 +7,7 @@ namespace App\Services\Tracking;
 use App\Models\AgentLocationSnapshot;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Support\AvatarUrlResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -17,9 +18,14 @@ class AgentLocationSnapshotService
 
     public function upsertFromTrackingEvent(array $payload): AgentLocationSnapshot
     {
-        $recordedAt = isset($payload['recorded_at']) && $payload['recorded_at'] !== null
-            ? Carbon::parse((string) $payload['recorded_at'])
-            : now();
+        $recordedAt = \App\Support\ClientTime::parse($payload['recorded_at'] ?? null);
+
+        // `last_seen_at` answers "when did the server last hear from this agent"
+        // and drives the is_online / operational_status freshness signal. It must
+        // use server receive time, not the device-supplied recorded_at, otherwise
+        // clock skew between the agent device and the server makes live events look
+        // stale (is_online=false) and the agent never appears as actively tracking.
+        $seenAt = now();
 
         AgentLocationSnapshot::query()->updateOrCreate(
             [
@@ -38,13 +44,13 @@ class AgentLocationSnapshotService
                 'task_status' => $payload['task_status'] !== null ? (string) $payload['task_status'] : null,
                 'arrived' => (bool) ($payload['arrived'] ?? false),
                 'recorded_at' => $recordedAt,
-                'last_seen_at' => $recordedAt,
+                'last_seen_at' => $seenAt,
             ],
         );
 
         return AgentLocationSnapshot::query()
             ->with([
-                'agent:id,name,email,avatar,internal_role',
+                'agent:id,name,email,avatar,gender,internal_role',
                 'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
                 'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
@@ -63,7 +69,7 @@ class AgentLocationSnapshotService
 
         $query = AgentLocationSnapshot::query()
             ->with([
-                'agent:id,name,email,avatar,internal_role',
+                'agent:id,name,email,avatar,gender,internal_role',
                 'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
                 'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
@@ -72,8 +78,16 @@ class AgentLocationSnapshotService
 
         if ($role === 'agent') {
             $query->where('user_id', $actor->id);
-        } elseif (! empty($filters['user_id'])) {
-            $query->where('user_id', (int) $filters['user_id']);
+        } else {
+            if ($role === 'supervisor') {
+                $query->whereHas('agent', function (\Illuminate\Database\Eloquent\Builder $agentQuery) use ($actor): void {
+                    $agentQuery->where('supervisor_user_id', $actor->id);
+                });
+            }
+
+            if (! empty($filters['user_id'])) {
+                $query->where('user_id', (int) $filters['user_id']);
+            }
         }
 
         if (! empty($filters['task_id'])) {
@@ -114,6 +128,12 @@ class AgentLocationSnapshotService
             ]);
         }
 
+        if ($role === 'supervisor' && (int) $targetUser->supervisor_user_id !== (int) $actor->id) {
+            throw ValidationException::withMessages([
+                'authorization' => ['Supervisors can only access location snapshots of agents assigned to them.'],
+            ]);
+        }
+
         $memberExists = DB::table('company_users')
             ->where('company_id', $companyId)
             ->where('user_id', $targetUser->id)
@@ -127,7 +147,7 @@ class AgentLocationSnapshotService
 
         $snapshot = AgentLocationSnapshot::query()
             ->with([
-                'agent:id,name,email,avatar,internal_role',
+                'agent:id,name,email,avatar,gender,internal_role',
                 'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
                 'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
             ])
@@ -213,6 +233,10 @@ class AgentLocationSnapshotService
                 'name' => $snapshot->agent?->name,
                 'email' => $snapshot->agent?->email,
                 'avatar' => $snapshot->agent?->avatar,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault(
+                    $snapshot->agent?->avatar,
+                    $snapshot->agent?->gender,
+                ),
                 'internal_role' => $snapshot->agent?->internal_role,
             ],
             'task' => [

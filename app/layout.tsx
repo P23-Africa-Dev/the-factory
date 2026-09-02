@@ -20,14 +20,15 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "Factory 23",
-  description: "Factory 23 - Africa's Factory",
+  title: "Factory 23 | Field Agent Tracking & CRM Platform",
+  description:
+    "Factory 23 is a field operations management and CRM platform. Track field agents in real time, manage territories, tasks, and customer relationships - even offline.",
   applicationName: "Factory 23 Workforce",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Factory23",
+    title: "Factory 23",
   },
 };
 

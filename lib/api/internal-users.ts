@@ -9,7 +9,8 @@ export type CreateInternalUserPayload = {
   full_name: string;
   email: string;
   role: InternalUserRole;
-  assigned_zone: string;
+  assigned_zone?: string;
+  assigned_zone_ids?: number[];
   work_days: string[];
   base_salary: number;
   salary_type?: "daily" | "monthly" | "weekly";
@@ -40,6 +41,8 @@ export type InternalUserListItem = {
   role: InternalUserRole;
   internal_role?: InternalUserRole;
   assigned_zone?: string | null;
+  assigned_zone_ids?: number[];
+  assigned_zones?: CompanyZoneOption[];
   base_salary?: number | null;
   payroll_salary_type?: "daily" | "monthly" | "weekly" | null;
   salary_currency?: string | null;
@@ -48,6 +51,10 @@ export type InternalUserListItem = {
   avatar_url?: string | null;
   onboarding_status?: "active" | "pending_onboarding" | "inactive";
   is_active?: boolean;
+  is_suspended?: boolean;
+  suspended_until?: string | null;
+  deleted_at?: string | null;
+  supervisor_user_id?: number | null;
   internal_onboarding_completed_at?: string | null;
   invite_sent_at?: string | null;
   invite_expires_at?: string | null;
@@ -72,6 +79,7 @@ export type ListInternalUsersParams = {
   status?: "active" | "offline" | "pending_onboarding" | "inactive";
   search?: string;
   zone?: string;
+  zone_id?: number;
   include_inactive?: 0 | 1;
   per_page?: number;
   page?: number;
@@ -158,6 +166,7 @@ export function listInternalUsersPaginated(
     status: params.status,
     search: params.search,
     zone: params.zone,
+    zone_id: params.zone_id,
     include_inactive: params.include_inactive,
     per_page: params.per_page,
     page: params.page,
@@ -217,6 +226,17 @@ export type UpdateInternalUserPayload = {
   role?: InternalUserRole;
   phone_number?: string | null;
   assigned_zone?: string | null;
+  assigned_zone_ids?: number[] | null;
+};
+
+export type CompanyZoneOption = {
+  id: number;
+  company_id: number;
+  name: string;
+  country_code: string;
+  state_name: string;
+  lga_name: string;
+  is_active: boolean;
 };
 
 export function updateInternalUser(
@@ -228,6 +248,178 @@ export function updateInternalUser(
     method: "PATCH",
     path: `/internal-users/${userId}`,
     body: payload,
+    token,
+  });
+}
+
+export function listCompanyZones(
+  params: { company_id?: number | string; q?: string; is_active?: 0 | 1 },
+  token: string,
+): Promise<ApiEnvelope<CompanyZoneOption[]>> {
+  const query = buildQuery({
+    company_id: params.company_id,
+    q: params.q,
+    is_active: params.is_active,
+  });
+
+  return apiRequest<CompanyZoneOption[]>({
+    method: "GET",
+    path: `/internal-users/zones${query}`,
+    token,
+  });
+}
+
+export type CreateCompanyZonePayload = {
+  company_id?: number | string;
+  name?: string;
+  country_code: string;
+  state_name: string;
+  lga_name: string;
+  is_active?: boolean;
+};
+
+export type UpdateCompanyZonePayload = {
+  company_id?: number | string;
+  name?: string;
+  country_code?: string;
+  state_name?: string;
+  lga_name?: string;
+  is_active?: boolean;
+};
+
+export function createCompanyZone(
+  payload: CreateCompanyZonePayload,
+  token: string,
+): Promise<ApiEnvelope<{ zone: CompanyZoneOption }>> {
+  return apiRequest<{ zone: CompanyZoneOption }>({
+    method: "POST",
+    path: "/internal-users/zones",
+    body: payload,
+    token,
+  });
+}
+
+export function updateCompanyZone(
+  zoneId: number | string,
+  payload: UpdateCompanyZonePayload,
+  token: string,
+): Promise<ApiEnvelope<{ zone: CompanyZoneOption }>> {
+  return apiRequest<{ zone: CompanyZoneOption }>({
+    method: "PATCH",
+    path: `/internal-users/zones/${zoneId}`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteCompanyZone(
+  zoneId: number | string,
+  companyId: number | string,
+  token: string,
+): Promise<ApiEnvelope<{ deleted_zone_id: number }>> {
+  const query = buildQuery({ company_id: companyId });
+
+  return apiRequest<{ deleted_zone_id: number }>({
+    method: "DELETE",
+    path: `/internal-users/zones/${zoneId}${query}`,
+    token,
+  });
+}
+
+export type SuspendInternalUserPayload = {
+  company_id?: number | string;
+  suspend_type: "duration" | "date" | "permanent";
+  suspend_days?: number;
+  suspend_until?: string;
+};
+
+export type InternalUserLifecyclePayload = {
+  company_id?: number | string;
+};
+
+export type InternalUserAuditLogItem = {
+  id: number;
+  action: string;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string | null;
+  actor?: {
+    id?: number;
+    name?: string;
+    email?: string;
+  };
+  target?: {
+    id?: number;
+    name?: string;
+    email?: string;
+    internal_role?: string | null;
+  };
+};
+
+export type PaginatedAuditLogsData = {
+  items: InternalUserAuditLogItem[];
+  pagination: {
+    next_page_url: string | null;
+    prev_page_url: string | null;
+    per_page: number;
+    current_page?: number;
+    last_page?: number;
+    total?: number;
+  };
+};
+
+export function suspendInternalUser(
+  userId: number | string,
+  payload: SuspendInternalUserPayload,
+  token: string,
+): Promise<ApiEnvelope<InternalUserSimpleData>> {
+  return apiRequest<InternalUserSimpleData>({
+    method: "POST",
+    path: `/internal-users/${userId}/suspend`,
+    body: payload,
+    token,
+  });
+}
+
+export function reactivateInternalUser(
+  userId: number | string,
+  payload: InternalUserLifecyclePayload,
+  token: string,
+): Promise<ApiEnvelope<InternalUserSimpleData>> {
+  return apiRequest<InternalUserSimpleData>({
+    method: "POST",
+    path: `/internal-users/${userId}/reactivate`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteInternalUser(
+  userId: number | string,
+  payload: InternalUserLifecyclePayload,
+  token: string,
+): Promise<ApiEnvelope<null>> {
+  const query = buildQuery({ company_id: payload.company_id });
+
+  return apiRequest<null>({
+    method: "DELETE",
+    path: `/internal-users/${userId}${query}`,
+    token,
+  });
+}
+
+export function listInternalUserAuditLogs(
+  params: { company_id?: number | string; per_page?: number; page?: number },
+  token: string,
+): Promise<ApiEnvelope<PaginatedAuditLogsData>> {
+  const query = buildQuery({
+    company_id: params.company_id,
+    per_page: params.per_page,
+    page: params.page,
+  });
+
+  return apiRequest<PaginatedAuditLogsData>({
+    method: "GET",
+    path: `/internal-users/audit-logs${query}`,
     token,
   });
 }

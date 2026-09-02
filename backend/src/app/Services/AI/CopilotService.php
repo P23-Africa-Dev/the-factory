@@ -6,19 +6,26 @@ namespace App\Services\AI;
 
 use App\Enums\TaskType;
 use App\Models\User;
+use App\Services\AI\Crm\CrmLeadReadArgsResolver;
 use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\Crm\LeadInferenceService;
+use App\Services\AI\Crm\VisitLogInferenceService;
 use App\Services\AI\Kpi\KpiInferenceService;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Policy\ActionConfirmationPolicyService;
 use App\Services\AI\Policy\ToolPolicyService;
+use App\Services\AI\Providers\AiGenerationResult;
 use App\Services\AI\Providers\AiProviderRouter;
 use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
+use App\Enums\NotificationCategory;
+use App\Services\Demo\DemoCompanyService;
+use App\Services\Notification\NotificationService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use App\Services\AI\AiLoggingService;
+use App\Services\AI\Support\LocalDateTimeContext;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -28,7 +35,6 @@ class CopilotService
     public function __construct(
         private readonly AiLoggingService $aiLoggingService,
         private readonly CompanyContextService $companyContextService,
-        private readonly IntentClassifier $intentClassifier,
         private readonly ToolPolicyService $toolPolicyService,
         private readonly ActionConfirmationPolicyService $actionConfirmationPolicyService,
         private readonly ReadToolRegistry $readToolRegistry,
@@ -39,6 +45,19 @@ class CopilotService
         private readonly LeadInferenceService $leadInferenceService,
         private readonly EmailInferenceService $emailInferenceService,
         private readonly KpiInferenceService $kpiInferenceService,
+        private readonly NotificationInferenceService $notificationInferenceService,
+        private readonly InternalUserInferenceService $internalUserInferenceService,
+        private readonly TaskInferenceService $taskInferenceService,
+        private readonly TaskReassignInferenceService $taskReassignInferenceService,
+        private readonly VisitLogInferenceService $visitLogInferenceService,
+        private readonly ActionDraftStore $actionDraftStore,
+        private readonly NotificationService $notificationService,
+        private readonly DemoCompanyService $demoCompanyService,
+        private readonly ReadToolSynthesisService $readToolSynthesisService,
+        private readonly CrmLeadReadArgsResolver $crmLeadReadArgsResolver,
+        private readonly ReadToolArgsResolver $readToolArgsResolver,
+        private readonly LocalDateTimeContext $localDateTimeContext,
+        private readonly CopilotIntentResolver $intentResolver,
     ) {}
 
     public function chat(
@@ -82,87 +101,37 @@ class CopilotService
             );
         }
 
-        $intent = $this->intentClassifier->classify($message);
-        $resolvedActionTool = $this->resolveActionToolFromMessage(
-            $message,
-            $threadId,
-            $resolvedCompanyId,
-            (int) $user->id,
+        $resolution = $this->intentResolver->resolve(
+            message: $message,
+            role: $role,
+            threadId: $threadId,
+            companyId: $resolvedCompanyId,
+            userId: (int) $user->id,
+            actionArgs: $actionArgs,
+            actionConfirmed: $actionConfirmed,
         );
 
-        if (($intent['type'] ?? 'general') === 'general' && $resolvedActionTool !== null) {
-            $intent = [
-                'type' => 'action',
-                'tool' => $resolvedActionTool,
-                'confidence' => 0.85,
-            ];
-        } elseif (($intent['type'] ?? 'general') === 'action' && ! is_string($intent['tool'] ?? null) && $resolvedActionTool !== null) {
-            $intent['tool'] = $resolvedActionTool;
-        }
-
-        $resolvedReadTool = $this->resolveReadToolFromMessage($message);
-        if (($intent['type'] ?? 'general') === 'general' && $resolvedReadTool !== null) {
-            $intent = [
-                'type' => 'tool',
-                'tool' => $resolvedReadTool,
-                'confidence' => 0.85,
-            ];
-        }
-
-        if ($this->isNaturalLanguageConfirmation($message)) {
-            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $resolvedCompanyId, (int) $user->id)
-                ?? $this->resolveContextualActionToolFromThread($threadId, $resolvedCompanyId, (int) $user->id);
-
-            if (is_string($pendingTool) && $pendingTool !== '') {
-                $intent = [
-                    'type' => 'action',
-                    'tool' => $pendingTool,
-                    'confidence' => 0.95,
-                ];
-                $actionConfirmed = true;
-            }
-        }
-
-        if (($intent['type'] ?? 'general') === 'general' && $this->isTaskConversationFollowUp($message, $threadId, $resolvedCompanyId, (int) $user->id)) {
-            $intent = [
-                'type' => 'action',
-                'tool' => 'tasks.create',
-                'confidence' => 0.85,
-            ];
-        }
-
-        if ($actionConfirmed && $actionArgs !== []) {
-            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $resolvedCompanyId, (int) $user->id);
-            if (is_string($pendingTool) && $pendingTool !== '') {
-                $intent = [
-                    'type' => 'action',
-                    'tool' => $pendingTool,
-                    'confidence' => 1.0,
-                ];
-            }
-        }
-
-        $actionMessage = $this->buildActionableMessage($message, $threadId, $resolvedCompanyId, (int) $user->id);
+        $intent = $resolution['intent'];
+        $actionConfirmed = $resolution['action_confirmed'];
+        $actionArgs = $resolution['action_args'];
+        $actionMessage = $resolution['action_message'];
+        $resolvedActionTool = $resolution['resolved_action_tool'];
+        $resolvedReadTool = $resolution['resolved_read_tool'];
 
         $intentType = (string) ($intent['type'] ?? 'general');
+        $intentTool = is_string($intent['tool'] ?? null) ? (string) $intent['tool'] : null;
+        if ($intentTool !== null && in_array($intentType, ['tool', 'action'], true)) {
+            $intentType = $this->toolPolicyService->normalizeIntentType($intentType, $intentTool);
+            $intent['type'] = $intentType;
+        }
 
-        $assistantText = 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."';
+        $assistantText = $this->degradedModeMessage();
         $toolResult = null;
         $resolvedTool = null;
 
         if (($intentType === 'tool' || $intentType === 'action') && is_string($intent['tool'] ?? null)) {
             $candidateTool = (string) $intent['tool'];
-            $aiLog = $this->aiLoggingService->begin(
-                companyId: $resolvedCompanyId,
-                userId: (int) $user->id,
-                sessionId: $threadId,
-                provider: (string) config('services.ai.provider', 'openai'),
-                model: (string) config('services.ai.exec_model', config('services.ai.default_model', 'gpt-4.1-mini')),
-                userPrompt: $message,
-                sanitizedPrompt: $this->redactSensitiveText($message),
-                intentType: $intentType,
-                toolName: $candidateTool,
-            );
+            $routing = $this->aiProviderRouter->routingMetadata('operational');
 
             if ($intentType === 'action' && ! (bool) config('services.ai.enable_actions', true)) {
                 $assistantText = 'ELY write actions are currently disabled by configuration. Read-only answers are still available.';
@@ -188,76 +157,138 @@ class CopilotService
                             $role,
                             $clientTimezone,
                             $companyCountry,
+                            $message,
                         );
                         $validationWarningCodes = $this->inferActionWarningCodes($candidateTool, $inferredArgs, $role);
                         $validationWarnings = $this->inferActionWarnings($candidateTool, $inferredArgs, $role);
                         $blockingWarningCodes = $this->determineBlockingWarningCodes($validationWarningCodes);
                         $blockingConfirmation = $blockingWarningCodes !== [];
+                        $sanitizedArgs = $this->sanitizeActionArgs($inferredArgs);
+
+                        if (is_string($threadId) && $threadId !== '') {
+                            $draftId = is_string($actionArgs['draft_id'] ?? null) ? (string) $actionArgs['draft_id'] : null;
+                            $draft = $this->actionDraftStore->put(
+                                companyId: $resolvedCompanyId,
+                                userId: (int) $user->id,
+                                threadId: $threadId,
+                                tool: $candidateTool,
+                                actionArgs: $sanitizedArgs,
+                                warningCodes: $validationWarningCodes,
+                                blockingWarningCodes: $blockingWarningCodes,
+                                draftId: $draftId,
+                            );
+                            $sanitizedArgs['draft_id'] = $draft['draft_id'];
+                            $sanitizedArgs['draft_version'] = $draft['draft_version'];
+                        }
+
                         $toolResult = [
                             'summary' => $this->buildActionPreviewSummary($candidateTool, $inferredArgs, $validationWarnings, $blockingConfirmation),
                             'sources' => [$candidateTool],
                             'payload' => [
                                 'confirmation_required' => true,
                                 'tool' => $candidateTool,
-                                'action_args' => $this->sanitizeActionArgs($inferredArgs),
+                                'action_args' => $sanitizedArgs,
                                 'validation_warnings' => $validationWarnings,
                                 'validation_warning_codes' => $validationWarningCodes,
                                 'blocking_warning_codes' => $blockingWarningCodes,
                                 'blocking_confirmation' => $blockingConfirmation,
-                                'execution_model' => (string) config('services.ai.exec_model', config('services.ai.default_model')),
+                                'execution_model' => $routing['model'],
                             ],
                         ];
                     } else {
-                        $resolvedActionArgs = $this->sanitizeActionArgs(
-                            $this->inferActionArgs(
-                                $actionMessage,
-                                $candidateTool,
-                                $resolvedCompanyId,
-                                $actionArgs,
-                                $threadId,
-                                (int) $user->id,
-                                $role,
-                                $clientTimezone,
-                                $companyCountry,
-                            )
+                        $inferredForExecution = $this->inferActionArgs(
+                            $actionMessage,
+                            $candidateTool,
+                            $resolvedCompanyId,
+                            $actionArgs,
+                            $threadId,
+                            (int) $user->id,
+                            $role,
+                            $clientTimezone,
+                            $companyCountry,
+                            $message,
                         );
-                        try {
-                            $toolResult = $this->executeActionWithIdempotency(
-                                user: $user,
-                                companyId: $resolvedCompanyId,
-                                tool: $candidateTool,
-                                actionArgs: $resolvedActionArgs,
-                                idempotencyKey: $idempotencyKey,
-                            );
-                        } catch (ValidationException $e) {
-                            $this->aiLoggingService->fail(
-                                $aiLog,
-                                'action_validation_failed',
-                                $e->getMessage(),
-                                $e,
-                            );
+                        $resolvedActionArgs = $this->sanitizeActionArgs($inferredForExecution);
 
-                            // Bubble validation issues so HTTP API returns 422 and
-                            // clients can render field-level validation errors.
-                            throw $e;
-                        } catch (Throwable $e) {
-                            $assistantText = $this->mapActionFailureMessage($e, $candidateTool);
+                        // Server-side blocker revalidation — frontend disabled buttons are UX only.
+                        $revalidationCodes = $this->inferActionWarningCodes($candidateTool, $inferredForExecution, $role);
+                        $revalidationBlocking = $this->determineBlockingWarningCodes($revalidationCodes);
+                        if ($actionConfirmed && $actionArgs !== []) {
+                            $revalidationBlocking = $this->filterConfirmedExecutionBlockers(
+                                $candidateTool,
+                                $revalidationBlocking,
+                                $actionArgs,
+                            );
+                        }
+                        if ($actionConfirmed && $revalidationBlocking !== []) {
+                            $revalidationWarnings = $this->inferActionWarnings($candidateTool, $inferredForExecution, $role);
+                            if (is_string($threadId) && $threadId !== '') {
+                                $draftId = is_string($resolvedActionArgs['draft_id'] ?? null)
+                                    ? (string) $resolvedActionArgs['draft_id']
+                                    : null;
+                                $draft = $this->actionDraftStore->put(
+                                    companyId: $resolvedCompanyId,
+                                    userId: (int) $user->id,
+                                    threadId: $threadId,
+                                    tool: $candidateTool,
+                                    actionArgs: $resolvedActionArgs,
+                                    warningCodes: $revalidationCodes,
+                                    blockingWarningCodes: $revalidationBlocking,
+                                    draftId: $draftId,
+                                );
+                                $resolvedActionArgs['draft_id'] = $draft['draft_id'];
+                                $resolvedActionArgs['draft_version'] = $draft['draft_version'];
+                            }
+
                             $toolResult = [
-                                'summary' => $assistantText,
+                                'summary' => $this->buildActionPreviewSummary($candidateTool, $resolvedActionArgs, $revalidationWarnings, true),
                                 'sources' => [$candidateTool],
                                 'payload' => [
-                                    'error' => true,
+                                    'confirmation_required' => true,
                                     'tool' => $candidateTool,
-                                    'action_args' => $this->redactValue($resolvedActionArgs),
+                                    'action_args' => $resolvedActionArgs,
+                                    'validation_warnings' => $revalidationWarnings,
+                                    'validation_warning_codes' => $revalidationCodes,
+                                    'blocking_warning_codes' => $revalidationBlocking,
+                                    'blocking_confirmation' => true,
+                                    'execution_model' => $routing['model'],
                                 ],
                             ];
-
-                            $this->aiLoggingService->fail(
-                                $aiLog,
-                                'action_execution_failed',
-                                $e->getMessage(),
-                                $e,
-                            );
+                        } else {
+                            try {
+                                $toolResult = $this->executeActionWithIdempotency(
+                                    user: $user,
+                                    companyId: $resolvedCompanyId,
+                                    tool: $candidateTool,
+                                    actionArgs: $resolvedActionArgs,
+                                    idempotencyKey: $idempotencyKey,
+                                );
+                                if (is_string($threadId) && $threadId !== '') {
+                                    $this->actionDraftStore->markConsumed(
+                                        $resolvedCompanyId,
+                                        (int) $user->id,
+                                        $threadId,
+                                        is_string($resolvedActionArgs['draft_id'] ?? null)
+                                            ? (string) $resolvedActionArgs['draft_id']
+                                            : null,
+                                    );
+                                }
+                            } catch (ValidationException $e) {
+                                // Bubble validation issues so HTTP API returns 422 and
+                                // clients can render field-level validation errors.
+                                throw $e;
+                            } catch (Throwable $e) {
+                                $assistantText = $this->mapActionFailureMessage($e, $candidateTool);
+                                $toolResult = [
+                                    'summary' => $assistantText,
+                                    'sources' => [$candidateTool],
+                                    'payload' => [
+                                        'error' => true,
+                                        'tool' => $candidateTool,
+                                        'action_args' => $this->redactValue($resolvedActionArgs),
+                                    ],
+                                ];
+                            }
                         }
                     }
                 } else {
@@ -267,13 +298,39 @@ class CopilotService
                         $resolvedCompanyId,
                         array_merge(
                             $this->buildReadToolArgs($candidateTool, $chatContext),
-                            $this->buildReadToolMessageArgs($candidateTool, $message),
+                            $this->buildReadToolMessageArgs(
+                                $candidateTool,
+                                $message,
+                                $role,
+                                $threadId,
+                                $resolvedCompanyId,
+                                (int) $user->id,
+                            ),
                         ),
                     );
                 }
 
                 $assistantText = (string) ($toolResult['summary'] ?? $assistantText);
+                if ($intentType === 'tool' && is_array($toolResult)) {
+                    $synthesized = $this->readToolSynthesisService->synthesize(
+                        tool: $candidateTool,
+                        toolResult: $toolResult,
+                        userMessage: $message,
+                        role: $role,
+                        companyName: (string) ($companyContext['company']->name ?? 'your active organization'),
+                        companyId: $resolvedCompanyId,
+                        userId: (int) $user->id,
+                    );
+                    if (is_string($synthesized) && trim($synthesized) !== '') {
+                        $assistantText = $synthesized;
+                    }
+                }
+
                 $resolvedTool = $candidateTool;
+
+                if ($resolvedTool === 'planning.daily') {
+                    $this->notifyDailyPlanReady($user, $resolvedCompanyId, is_array($toolResult['payload'] ?? null) ? $toolResult['payload'] : []);
+                }
             } else {
                 $assistantText = 'You are not permitted to access that information with your current role and scope.';
                 $resolvedTool = $candidateTool;
@@ -287,21 +344,7 @@ class CopilotService
                 ];
             }
         } else {
-            $routing = $this->aiProviderRouter->routingMetadata('operational');
-            $aiLog = $this->aiLoggingService->begin(
-                companyId: $resolvedCompanyId,
-                userId: (int) $user->id,
-                sessionId: $threadId,
-                provider: $routing['provider'],
-                model: $routing['model'],
-                userPrompt: $message,
-                sanitizedPrompt: $this->redactSensitiveText($message),
-                intentType: 'general',
-                toolName: null,
-                routingPurpose: $routing['purpose'],
-            );
-            $startMs = microtime(true);
-            $assistantText = $this->resolveGeneralResponse(
+            $generalResponse = $this->resolveGeneralResponse(
                 user: $user,
                 role: $role,
                 companyId: $resolvedCompanyId,
@@ -309,25 +352,28 @@ class CopilotService
                 userId: (int) $user->id,
                 threadId: $threadId,
                 message: $message,
+                clientTimezone: $clientTimezone,
+                companyCountry: $companyCountry,
             );
-            $execMs = (int) round((microtime(true) - $startMs) * 1000);
-            // Approximate token estimate: 1 token ≈ 4 chars
-            $inputEst = (int) ceil(mb_strlen($message) / 4);
-            $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
-            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst, $routing['provider'], $routing['model']);
-        }
-
-        // Complete AI log for tool/action paths (general path completes its own log inline above)
-        if (isset($aiLog) && $aiLog instanceof \App\Models\AiLog && $aiLog->status === 'success' && $aiLog->ended_at === null) {
-            $inputEst = (int) ceil(mb_strlen($message) / 4);
-            $outputEst = (int) ceil(mb_strlen($assistantText) / 4);
-            $this->aiLoggingService->complete($aiLog, $inputEst, $outputEst);
+            $assistantText = $generalResponse['text'];
         }
 
         if ((bool) config('services.ai.pii_redaction_enabled', true)) {
             $assistantText = $this->redactSensitiveText($assistantText);
             if (is_array($toolResult)) {
-                $toolResult['payload'] = $this->redactValue($toolResult['payload'] ?? null);
+                if ($resolvedTool !== 'planning.daily') {
+                    $payload = $toolResult['payload'] ?? null;
+                    if (is_array($payload) && ($payload['confirmation_required'] ?? false) === true) {
+                        $actionArgs = is_array($payload['action_args'] ?? null) ? $payload['action_args'] : null;
+                        $redactedPayload = $this->redactValue($payload);
+                        if (is_array($redactedPayload) && is_array($actionArgs)) {
+                            $redactedPayload['action_args'] = $actionArgs;
+                        }
+                        $toolResult['payload'] = $redactedPayload;
+                    } else {
+                        $toolResult['payload'] = $this->redactValue($payload);
+                    }
+                }
                 $toolResult['summary'] = $this->redactSensitiveText((string) ($toolResult['summary'] ?? ''));
             }
         }
@@ -343,7 +389,7 @@ class CopilotService
             tool: $resolvedTool,
             sources: $toolResult['sources'] ?? [],
             payload: $toolResult['payload'] ?? null,
-            creditsConsumed: 1,
+            creditsConsumed: $this->demoCompanyService->isDemo($resolvedCompanyId) ? 0 : 1,
         );
     }
 
@@ -426,6 +472,9 @@ class CopilotService
         );
     }
 
+    /**
+     * @return array{text: string, result: ?AiGenerationResult}
+     */
     private function resolveGeneralResponse(
         User $user,
         string $role,
@@ -434,22 +483,25 @@ class CopilotService
         int $userId,
         ?string $threadId,
         string $message,
-    ): string {
+        ?string $clientTimezone = null,
+        ?string $companyCountry = null,
+    ): array {
         $normalized = strtolower(trim($message));
         $resolvedCompanyName = trim($companyName) !== '' ? $companyName : 'your active organization';
+        $resolvedTimezone = $this->localDateTimeContext->resolveTimezone($clientTimezone, $companyCountry);
         $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $contextEntities = is_array($promptContext['entities'] ?? null) ? $promptContext['entities'] : [];
 
-        if ($this->looksLikeActionRequest($message) && $this->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
+        if ($this->intentResolver->looksLikeActionRequest($message) && $this->intentResolver->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
             if (preg_match('/\b(lead|crm|business)\b/i', $message) === 1) {
-                return 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.';
+                return ['text' => 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.', 'result' => null];
             }
 
             if (preg_match('/\bkpi\b/i', $message) === 1) {
-                return 'I can create that KPI. Share the KPI name, objective, target value, expected outcome, dates, and assignee (for example: KPI name: Retail Visits, Objective: Increase field visits, Target value: 50 visits, Expected outcome: Reach 50 qualified visits this month, Assign to: John Wick), then I will prepare a confirmation form for you.';
+                return ['text' => 'I can create that KPI. Share the KPI name, objective, target value, expected outcome, dates, and assignee (for example: KPI name: Retail Visits, Objective: Increase field visits, Target value: 50 visits, Expected outcome: Reach 50 qualified visits this month, Assign to: John Wick), then I will prepare a confirmation form for you.', 'result' => null];
             }
 
-            return 'This looks like a write action request, but I could not confidently map it to a supported tool. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.';
+            return ['text' => 'This looks like a write action request, but I could not confidently map it to a supported tool. Try phrasing it like "Create a meeting with [name] tomorrow at 2 PM" so I can prepare the confirmation form for you.', 'result' => null];
         }
 
         if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
@@ -463,7 +515,7 @@ class CopilotService
             || str_contains($normalized, 'what is my name')
             || str_contains($normalized, 'who am i')
         ) {
-            return "Your name is {$user->name}.";
+            return ['text' => "Your name is {$user->name}.", 'result' => null];
         }
 
         if (
@@ -471,50 +523,130 @@ class CopilotService
             || str_contains($normalized, 'my role')
             || str_contains($normalized, 'about my account')
         ) {
-            return sprintf(
-                'You are signed in as %s in %s. I can help you with CRM, tasks, projects, meetings, attendance, tracking, and dashboard operations.',
-                $role,
-                $resolvedCompanyName,
-            );
+            return [
+                'text' => sprintf(
+                    'You are signed in as %s in %s. I can help you with CRM, tasks, projects, meetings, attendance, tracking, and dashboard operations.',
+                    $role,
+                    $resolvedCompanyName,
+                ),
+                'result' => null,
+            ];
         }
 
-        if (str_contains($normalized, 'this software') || str_contains($normalized, 'what is factory23') || str_contains($normalized, 'what does this do')) {
-            return ElySystemPrompt::intro() . ' I can help with CRM summaries, overdue tasks, project risk status, attendance snapshots, meetings, and role-scoped live tracking insights.';
+        if ($this->localDateTimeContext->looksLikeDateTimeQuestion($message)) {
+            return [
+                'text' => $this->localDateTimeContext->answer($resolvedTimezone, $resolvedCompanyName),
+                'result' => null,
+            ];
         }
 
-        $systemPrompt = ElySystemPrompt::core();
+        if ($this->looksLikeProductQuestion($normalized)) {
+            return ['text' => ElySystemPrompt::productOverview(), 'result' => null];
+        }
+
+        $systemPrompt = ElySystemPrompt::core()
+            . "\n\n" . ElySystemPrompt::productKnowledge()
+            . "\n\n" . ElySystemPrompt::fewShotExamples();
         $userPrompt = sprintf(
-            "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
+            "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\n%s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
             $companyId,
             $this->redactSensitiveText($user->name),
             $role,
+            $this->localDateTimeContext->promptLine($resolvedTimezone),
             (string) ($promptContext['summary'] ?? ''),
             $this->formatRecentMessagesForPrompt($promptContext['recent_messages'] ?? []),
             json_encode($contextEntities),
             $this->redactSensitiveText($message),
         );
 
-        $providerText = $this->aiProviderRouter->generateForPurpose(
+        $generationResult = $this->aiProviderRouter->generateForPurpose(
             purpose: 'operational',
             systemPrompt: $systemPrompt,
             userPrompt: $userPrompt,
             options: [
+                'company_id' => $companyId,
                 'max_tokens' => max(64, (int) config('services.ai.max_tokens', 4000)),
                 'temperature' => 0.2,
+                '_log' => [
+                    'company_id' => $companyId,
+                    'user_id' => $userId,
+                    'session_id' => $threadId,
+                    'intent_type' => 'general',
+                    'routing_purpose' => 'operational',
+                    'user_prompt' => $message,
+                    'sanitized_prompt' => $this->redactSensitiveText($message),
+                ],
             ],
         );
 
-        if (is_string($providerText) && trim($providerText) !== '') {
-            $trimmed = trim($providerText);
+        if ($generationResult instanceof AiGenerationResult && $generationResult->isSuccessful()) {
+            $trimmed = trim((string) $generationResult->text);
             if ($this->responseClaimsExecutedAction($trimmed)) {
-                return 'I have not executed that action yet. ELY only confirms task, meeting, KPI, lead, or project creation after the platform action engine succeeds. Please use the Confirm Action button when the confirmation form appears, or provide the required details so I can prepare the action for confirmation.';
+                return [
+                    'text' => 'I have not executed that action yet. ELY only confirms task, meeting, KPI, lead, or project creation after the platform action engine succeeds. Please use the Confirm Action button when the confirmation form appears, or provide the required details so I can prepare the action for confirmation.',
+                    'result' => $generationResult,
+                ];
             }
 
-            return $trimmed;
+            return ['text' => $trimmed, 'result' => $generationResult];
         }
 
-        return 'I can help with leads, tasks, projects, meetings, attendance, tracking, and dashboard summaries. Ask things like "How many leads are in my CRM?" or "Show overdue tasks."';
+        return [
+            'text' => $this->degradedModeMessage(
+                $generationResult instanceof AiGenerationResult ? $generationResult : null
+            ),
+            'result' => null,
+        ];
+    }
+
+    private function looksLikeProductQuestion(string $normalizedMessage): bool
+    {
+        $normalized = trim($normalizedMessage);
+        if ($normalized === '') {
+            return false;
+        }
+
+        if (preg_match('/\bfactory\s*23\b/i', $normalized) === 1
+            && preg_match('/\b(what|which|tell|about|explain|describe|features?|do|does|used?|use|purpose|capabilit)/i', $normalized) === 1
+        ) {
+            return true;
+        }
+
+        if (preg_match('/\b(what|which|tell me about|explain|describe|about)\b.{0,40}\bthis\s+(software|platform|app|application|system|tool|product|service)\b/i', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\bwhat\s+(?:can|does|do)\s+(?:this|the)\s+(?:software|platform|app|application|system|tool)\b/i', $normalized) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\b(what|which)\s+(features?|modules?|capabilities)\b/i', $normalized) === 1
+            && preg_match('/\b(this|factory\s*23|the (?:software|platform|app|system|product)|available|are there|do (?:we|you) have)\b/i', $normalized) === 1
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function degradedModeMessage(?AiGenerationResult $result = null): string
+    {
+        $errorClass = strtolower(trim((string) ($result?->errorClass ?? '')));
+        $isNvidiaTimeout = $result?->provider === 'nvidia'
+            && in_array($errorClass, ['timeout', 'unreachable'], true);
+        $isGlmTimeout = $result?->provider === 'glm'
+            && in_array($errorClass, ['timeout', 'unreachable'], true);
+
+        if ($isNvidiaTimeout) {
+            return 'NVIDIA NIM took too long to respond — the hosted API catalog can be slow under load. Try again in a moment, or switch the AI stack to OpenAI + Claude in Admin → AI for faster day-to-day chat. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
+        }
+
+        if ($isGlmTimeout) {
+            return 'GLM took too long to respond. Try again in a moment, or switch the AI stack in Admin → AI (OpenAI + Claude or NVIDIA NIM). I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
+        }
+
+        return 'ELY is running in limited mode right now because the AI provider is temporarily unavailable. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
     }
 
     private function responseClaimsExecutedAction(string $text): bool
@@ -550,295 +682,6 @@ class CopilotService
             ->implode("\n");
     }
 
-    private function looksLikeActionRequest(string $message): bool
-    {
-        $normalized = strtolower(trim($message));
-        if ($normalized === '') {
-            return false;
-        }
-
-        return preg_match('/\b(create|add|start|open|schedule|book|setup|set\s*up|arrange|plan|send|notify|assign|reassign|transfer|move|update|change|cancel|delete|register|save|define)\b/i', $normalized) === 1
-            && preg_match('/\b(task|project|meeting|notification|alert|lead|crm|business|kpi)\b/i', $normalized) === 1;
-    }
-
-    private function resolveReadToolFromMessage(string $message): ?string
-    {
-        $normalized = strtolower(trim($message));
-        if ($normalized === '') {
-            return null;
-        }
-
-        if ($this->looksLikeActionRequest($message)) {
-            return null;
-        }
-
-        if (
-            preg_match('/\b(lead|leads|crm|pipeline)\b/i', $normalized) === 1
-            && preg_match('/\b(list|show|get|give|provide|pull|fetch|display|retrieve|view|how many|crm|leads?)\b/i', $normalized) === 1
-        ) {
-            return 'crm.top_leads';
-        }
-
-        if (
-            preg_match('/\b(user|users|member|members|staff|workforce|team|agents?)\b/i', $normalized) === 1
-            && preg_match('/\b(list|show|get|who|under|organization|organisation|company|members?)\b/i', $normalized) === 1
-        ) {
-            return 'org.users';
-        }
-
-        return null;
-    }
-
-    private function resolveActionToolFromMessage(
-        string $message,
-        ?string $threadId,
-        int $companyId,
-        int $userId,
-    ): ?string {
-        $actionableMessage = $this->buildActionableMessage($message, $threadId, $companyId, $userId);
-        $intent = $this->intentClassifier->classify($actionableMessage);
-        if (($intent['type'] ?? '') === 'action' && is_string($intent['tool'] ?? null)) {
-            return (string) $intent['tool'];
-        }
-
-        $normalized = strtolower(trim($actionableMessage));
-        if ($normalized === '') {
-            return null;
-        }
-
-        if (preg_match('/\b(task)\b/i', $normalized) && preg_match('/\b(create|add|new|open|assign|set|give)\b/i', $normalized) === 1) {
-            return 'tasks.create';
-        }
-
-        if (preg_match('/\btask\b/i', $normalized) && preg_match('/\bfor\b/i', $normalized) === 1) {
-            return 'tasks.create';
-        }
-
-        if (preg_match('/\bmeeting\b/i', $normalized) && preg_match('/\b(create|schedule|book|setup|set\s*up|arrange|plan|with|at|on|for|\d{1,2}\s*(?:am|pm)|reminder)\b/i', $normalized) === 1) {
-            return 'meetings.schedule';
-        }
-
-        if (preg_match('/\b(task)\b/i', $normalized) && preg_match('/\b(create|add|new|open|assign)\b/i', $normalized) === 1) {
-            return 'tasks.create';
-        }
-
-        if (preg_match('/\b(project)\b/i', $normalized) && preg_match('/\b(create|start|new|open)\b/i', $normalized) === 1) {
-            return 'projects.create';
-        }
-
-        if (preg_match('/\b(notification|alert)\b/i', $normalized) && preg_match('/\b(send|notify|broadcast)\b/i', $normalized) === 1) {
-            return 'notifications.send';
-        }
-
-        if (preg_match('/\b(lead|crm)\b/i', $normalized) && preg_match('/\b(create|add|new|register|save)\b/i', $normalized) === 1) {
-            return 'crm.create_lead';
-        }
-
-        if (preg_match('/\b(email|mail|message)\b/i', $normalized) && preg_match('/\b(send|draft|write|follow[\s-]?up)\b/i', $normalized) === 1) {
-            return 'crm.send_email';
-        }
-
-        if (preg_match('/\bkpi\b/i', $normalized) && preg_match('/\b(create|add|new|set|define)\b/i', $normalized) === 1) {
-            return 'kpis.create';
-        }
-
-        if (
-            preg_match('/\b(name|objective|target\s*value|expected\s*outcome|kpi\s*name)\s*:/i', $normalized) === 1
-            && preg_match('/\bkpi\b/i', $normalized) === 1
-        ) {
-            return 'kpis.create';
-        }
-
-        if (preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $normalized) === 1) {
-            return 'crm.create_lead';
-        }
-
-        if (preg_match('/^\s*confirm\b/i', $normalized) === 1 || $this->isNaturalLanguageConfirmation($message)) {
-            $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId)
-                ?? $this->resolveContextualActionToolFromThread($threadId, $companyId, $userId);
-            if ($pendingTool !== null) {
-                return $pendingTool;
-            }
-        }
-
-        return null;
-    }
-
-    private function isNaturalLanguageConfirmation(string $message): bool
-    {
-        $normalized = strtolower(trim($message));
-        if ($normalized === '') {
-            return false;
-        }
-
-        return preg_match('/^\s*(go\s+ahead|yes|yeah|yep|sure|ok|okay|proceed|do\s+it|create\s+it|please\s+create|please\s+proceed|confirm|approved?)\b/i', $normalized) === 1
-            || preg_match('/\b(go\s+ahead|please\s+create|create\s+it\s+now|proceed\s+to\s+create)\b/i', $normalized) === 1;
-    }
-
-    private function resolveContextualActionToolFromThread(?string $threadId, int $companyId, int $userId): ?string
-    {
-        $lines = $this->collectRecentConversationLines($threadId, $companyId, $userId, 16);
-        if ($lines === []) {
-            return null;
-        }
-
-        $blob = strtolower(implode(' ', $lines));
-
-        if (
-            preg_match('/\b(task|assign)\b/i', $blob) === 1
-            && preg_match('/\b(set|create|assign|visit|due|tomorrow|priority|description|title)\b/i', $blob) === 1
-        ) {
-            return 'tasks.create';
-        }
-
-        if (preg_match('/\bkpi\b/i', $blob) === 1 && preg_match('/\b(create|set|define|target|objective|assign)\b/i', $blob) === 1) {
-            return 'kpis.create';
-        }
-
-        if (preg_match('/\bmeeting\b/i', $blob) === 1 && preg_match('/\b(schedule|create|book|setup|set\s*up|arrange|attendee|calendar)\b/i', $blob) === 1) {
-            return 'meetings.schedule';
-        }
-
-        if (preg_match('/\b(lead|crm|business\s+name)\b/i', $blob) === 1 && preg_match('/\b(create|add|register|phone|location)\b/i', $blob) === 1) {
-            return 'crm.create_lead';
-        }
-
-        return null;
-    }
-
-    private function isTaskConversationFollowUp(string $message, ?string $threadId, int $companyId, int $userId): bool
-    {
-        $lines = $this->collectRecentConversationLines($threadId, $companyId, $userId, 16);
-        $blob = strtolower(implode(' ', [...$lines, $message]));
-
-        if (preg_match('/\b(task|set\s+a\s+task|assign)\b/i', $blob) !== 1) {
-            return false;
-        }
-
-        return preg_match('/\b(for\s+[a-z]|visit|tomorrow|priority|description|due|title|shoprite|kelvin)\b/i', $blob) === 1;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function collectRecentConversationLines(?string $threadId, int $companyId, int $userId, int $limit = 12): array
-    {
-        if (! is_string($threadId) || trim($threadId) === '') {
-            return [];
-        }
-
-        $context = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
-        $recentMessages = is_array($context['recent_messages'] ?? null) ? $context['recent_messages'] : [];
-
-        return collect($recentMessages)
-            ->take(-$limit)
-            ->map(static fn(array $entry): string => trim((string) ($entry['content'] ?? '')))
-            ->filter(static fn(string $line): bool => $line !== '')
-            ->values()
-            ->all();
-    }
-
-    private function resolvePendingActionToolFromThread(?string $threadId, int $companyId, int $userId): ?string
-    {
-        if (! is_string($threadId) || trim($threadId) === '') {
-            return null;
-        }
-
-        $thread = $this->conversationMemoryService->getThread($companyId, $userId, $threadId);
-        if (! is_array($thread)) {
-            return null;
-        }
-
-        $messages = is_array($thread['messages'] ?? null) ? $thread['messages'] : [];
-        for ($i = count($messages) - 1; $i >= 0; $i--) {
-            $msg = $messages[$i] ?? null;
-            if (! is_array($msg) || (string) ($msg['role'] ?? '') !== 'assistant') {
-                continue;
-            }
-
-            $payload = is_array($msg['payload'] ?? null) ? $msg['payload'] : [];
-            if (($payload['confirmation_required'] ?? false) === true && is_string($payload['tool'] ?? null)) {
-                return (string) $payload['tool'];
-            }
-        }
-
-        return null;
-    }
-
-    private function buildActionableMessage(
-        string $message,
-        ?string $threadId,
-        int $companyId,
-        int $userId,
-    ): string {
-        $promptContext = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
-        $recentMessages = is_array($promptContext['recent_messages'] ?? null) ? $promptContext['recent_messages'] : [];
-        $userLines = collect($recentMessages)
-            ->filter(static fn(array $entry): bool => (string) ($entry['role'] ?? '') === 'user')
-            ->map(static fn(array $entry): string => trim((string) ($entry['content'] ?? '')))
-            ->filter(static fn(string $line): bool => $line !== '')
-            ->values()
-            ->all();
-
-        if ($userLines === []) {
-            return trim($message);
-        }
-
-        $normalized = strtolower(trim($message));
-        $isFollowUp = preg_match('/\b(setup|set\s*up|schedule|use\s+this|here\s+are|the\s+details|confirm|proceed|using\s+this|go\s+ahead|tomorrow|priority|description|medium|high|low)\b/i', $normalized) === 1
-            || preg_match('/^\s*meeting\s+(is\s+)?(at|on|for)\b/i', $normalized) === 1
-            || (str_contains($normalized, 'meeting') && preg_match('/\b\d{1,2}\s*(?:am|pm)\b/i', $normalized) === 1);
-
-        $meetingContext = collect($userLines)
-            ->filter(static fn(string $line): bool => preg_match('/\bmeeting\b/i', $line) === 1)
-            ->implode(' ');
-
-        $leadContext = collect($userLines)
-            ->filter(static fn(string $line): bool => preg_match('/\b(lead|business\s+name|phone\s+number|location|crm)\b/i', $line) === 1)
-            ->implode(' ');
-
-        $taskContext = collect($userLines)
-            ->filter(static fn(string $line): bool => preg_match('/\b(task|assign|visit|due|priority|tomorrow|title|description)\b/i', $line) === 1)
-            ->implode(' ');
-
-        $hasLeadDetails = preg_match('/\b(business\s+name|business\/lead\s+name|lead\s+name|phone\s+number|phone|location)\s*:/i', $message) === 1;
-        $hasTaskIntent = preg_match('/\b(task|assign|visit|due|priority|tomorrow)\b/i', $message) === 1
-            || preg_match('/\b(task|set\s+a\s+task|assign)\b/i', implode(' ', $userLines)) === 1;
-
-        if ($hasLeadDetails) {
-            $leadLines = collect($userLines)
-                ->filter(static fn(string $line): bool => preg_match('/\b(lead|business\s+name|phone|location|crm)\b/i', $line) === 1 || preg_match('/\b(business\s+name|phone|location)\s*:/i', $line) === 1)
-                ->push($message)
-                ->unique()
-                ->implode(' ');
-
-            return trim($leadLines);
-        }
-
-        if ($hasTaskIntent) {
-            $taskLines = collect($userLines)
-                ->filter(static fn(string $line): bool => preg_match('/\b(task|assign|visit|due|priority|tomorrow|title|description|for\s+\w+)\b/i', $line) === 1)
-                ->push($message)
-                ->unique()
-                ->implode(' ');
-
-            return trim($taskLines);
-        }
-
-        if ($isFollowUp && $meetingContext !== '') {
-            return trim($meetingContext . ' ' . $message);
-        }
-
-        if ($isFollowUp && $leadContext !== '') {
-            return trim($leadContext . ' ' . $message);
-        }
-
-        if ($isFollowUp && $taskContext !== '') {
-            return trim($taskContext . ' ' . $message);
-        }
-
-        return trim($message);
-    }
 
     private function inferActionArgs(
         string $message,
@@ -850,10 +693,14 @@ class CopilotService
         string $role,
         ?string $clientTimezone = null,
         ?string $companyCountry = null,
+        ?string $rawUserMessage = null,
     ): array {
         $context = $this->conversationMemoryService->buildPromptContext($companyId, $userId, $threadId);
         $entities = is_array($context['entities'] ?? null) ? $context['entities'] : [];
         $normalized = trim($message);
+        $correctionMessage = is_string($rawUserMessage) && trim($rawUserMessage) !== ''
+            ? trim($rawUserMessage)
+            : $normalized;
 
         if ($actionArgs !== []) {
             return $this->normalizeProvidedActionArgs(
@@ -869,13 +716,100 @@ class CopilotService
             );
         }
 
+        // Patch the latest unconfirmed draft when the user sends a conversational correction.
+        if (is_string($threadId) && $threadId !== '') {
+            if ($tool === 'crm.send_email' && $this->emailInferenceService->looksLikeEmailReset($correctionMessage)) {
+                $this->actionDraftStore->clear($companyId, $userId, $threadId);
+            }
+
+            $pendingDraft = $this->actionDraftStore->get($companyId, $userId, $threadId);
+            if (
+                is_array($pendingDraft)
+                && ($pendingDraft['tool'] ?? null) === $tool
+            ) {
+                if ($tool === 'crm.send_email') {
+                    // Fresh send/draft asks must re-infer — do not sticky-reuse old body/lead.
+                    if ($this->emailInferenceService->looksLikeFreshEmailRequest($correctionMessage)
+                        || $this->emailInferenceService->looksLikeEmailReset($correctionMessage)
+                    ) {
+                        // fall through to fresh infer below
+                    } elseif ($this->emailInferenceService->looksLikeEmailFieldCorrection($correctionMessage)) {
+                        return $this->emailInferenceService->patchFromCorrection(
+                            $correctionMessage,
+                            is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [],
+                            $companyId,
+                            $userId,
+                        );
+                    }
+                } elseif ($this->taskInferenceService->looksLikeCorrection($correctionMessage)) {
+                    if ($tool === 'tasks.create') {
+                        $patched = $this->taskInferenceService->patchFromCorrection(
+                            $correctionMessage,
+                            is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [],
+                            $companyId,
+                            $role,
+                        );
+
+                        return $this->taskInferenceService->normalizeProvidedArgs(
+                            $correctionMessage,
+                            $companyId,
+                            $entities,
+                            $patched,
+                            $role,
+                        );
+                    }
+
+                    // Generic field overlays for other tools (location/title/reason style corrections).
+                    $patched = is_array($pendingDraft['action_args'] ?? null) ? $pendingDraft['action_args'] : [];
+                    if (preg_match('/\b(?:change|update|set)\s+(?:the\s+)?title\s*(?:to|=|:)?\s*(.+)$/i', $correctionMessage, $m) === 1) {
+                        $patched['title'] = trim((string) $m[1]);
+                        $patched['name'] = $patched['title'];
+                    }
+                    if ($tool === 'tasks.reassign') {
+                        return $this->taskReassignInferenceService->normalizeProvidedArgs(
+                            $companyId,
+                            array_merge($patched, $this->taskReassignInferenceService->infer($correctionMessage, $companyId, $entities)),
+                        );
+                    }
+                    if ($tool === 'crm.log_visit') {
+                        return $this->visitLogInferenceService->normalizeProvidedArgs(
+                            $companyId,
+                            array_merge($patched, $this->visitLogInferenceService->infer($correctionMessage, $companyId, $entities)),
+                        );
+                    }
+
+                    return $this->normalizeProvidedActionArgs(
+                        $tool,
+                        $correctionMessage,
+                        $companyId,
+                        $entities,
+                        $patched,
+                        $clientTimezone,
+                        $companyCountry,
+                        $role,
+                        $userId,
+                    );
+                }
+            }
+        }
+
+        $emailSummary = (string) ($context['summary'] ?? '');
+        if ($tool === 'crm.send_email' && $this->emailInferenceService->looksLikeEmailReset($correctionMessage)) {
+            $emailSummary = '';
+        }
+
         return match ($tool) {
-            'tasks.create' => $this->inferTaskCreateArgs($message, $companyId, $entities, $role),
-            'projects.create' => [
-                'name' => $normalized !== '' ? $normalized : 'New Project',
-                'description' => $normalized !== '' ? $normalized : 'Project created by ELY',
-                'start_date' => now()->toDateString(),
-            ],
+            'tasks.create' => $this->taskInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                entities: $entities,
+                role: $role,
+                userId: $userId,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+            ),
+            'tasks.reassign' => $this->taskReassignInferenceService->infer($message, $companyId, $entities),
+            'crm.log_visit' => $this->visitLogInferenceService->infer($message, $companyId, $entities),
+            'projects.create' => $this->inferProjectCreateArgs($message, $entities),
             'meetings.schedule' => $this->meetingInferenceService->infer(
                 message: $message,
                 companyId: $companyId,
@@ -884,12 +818,14 @@ class CopilotService
                 clientTimezone: $clientTimezone,
                 companyCountry: $companyCountry,
             ),
-            'notifications.send' => [
-                'title' => 'ELY Notification',
-                'message' => $normalized !== '' ? $normalized : 'New notification from ELY',
-                'category' => 'system',
-                'user_ids' => [$userId],
-            ],
+            'notifications.send' => $this->notificationInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                userId: $userId,
+                threadId: $threadId,
+                conversationSummary: (string) ($context['summary'] ?? ''),
+                companyName: (string) (\App\Models\Company::query()->find($companyId)?->name ?? 'your organization'),
+            ),
             'crm.create_lead' => $this->leadInferenceService->infer(
                 message: $message,
                 companyId: $companyId,
@@ -899,16 +835,23 @@ class CopilotService
                 conversationSummary: (string) ($context['summary'] ?? ''),
             ),
             'crm.send_email' => $this->emailInferenceService->infer(
-                message: $message,
+                message: is_string($rawUserMessage) && trim($rawUserMessage) !== '' ? trim($rawUserMessage) : $message,
                 companyId: $companyId,
                 entities: $entities,
-                conversationSummary: (string) ($context['summary'] ?? ''),
+                conversationSummary: $emailSummary,
+                userId: $userId,
+                threadId: $threadId,
             ),
             'kpis.create' => $this->kpiInferenceService->infer(
                 message: $message,
                 companyId: $companyId,
                 entities: $entities,
                 conversationSummary: (string) ($context['summary'] ?? ''),
+            ),
+            'org.users.create' => $this->internalUserInferenceService->infer(
+                message: $message,
+                companyId: $companyId,
+                entities: $entities,
             ),
             default => $actionArgs,
         };
@@ -931,7 +874,19 @@ class CopilotService
         int $userId = 0,
     ): array {
         if ($tool === 'tasks.create') {
-            return $this->normalizeProvidedActionArgsForTask($message, $companyId, $entities, $actionArgs, $role);
+            return $this->taskInferenceService->normalizeProvidedArgs($message, $companyId, $entities, $actionArgs, $role);
+        }
+
+        if ($tool === 'tasks.reassign') {
+            return $this->taskReassignInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+        }
+
+        if ($tool === 'crm.log_visit') {
+            return $this->visitLogInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+        }
+
+        if ($tool === 'projects.create') {
+            return $this->normalizeProjectCreateArgs($actionArgs);
         }
 
         if ($tool === 'meetings.schedule') {
@@ -954,7 +909,7 @@ class CopilotService
         }
 
         if ($tool === 'crm.send_email') {
-            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+            return $this->emailInferenceService->normalizeProvidedArgs($companyId, $actionArgs, $userId);
         }
 
         if ($tool === 'kpis.create') {
@@ -964,86 +919,93 @@ class CopilotService
             );
         }
 
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+        }
+
+        if ($tool === 'org.users.create') {
+            return $this->internalUserInferenceService->normalizeProvidedArgs($companyId, $actionArgs);
+        }
+
         return $actionArgs;
     }
 
     /**
-     * @param array<string,string> $entities
-     * @param array<string,mixed> $actionArgs
-     * @return array<string,mixed>
+     * @param  array<string, string>  $entities
+     * @return array<string, mixed>
      */
-    private function normalizeProvidedActionArgsForTask(
-        string $message,
-        int $companyId,
-        array $entities,
-        array $actionArgs,
-        string $role = 'admin',
-    ): array {
+    private function inferProjectCreateArgs(string $message, array $entities = []): array
+    {
+        $name = $this->extractLabeledValue($message, ['project name', 'name'])
+            ?? (preg_match('/\b(?:create|add|new)\s+(?:a\s+)?project\s+(?:called|named)?\s*[\"\']?(.+?)[\"\']?(?=\s+(?:with|for|starting|from|type|status|priority|description|due|and)\b|[.,;]|$)/i', $message, $m) === 1
+                ? trim((string) $m[1])
+                : null);
+
+        if (! is_string($name) || trim($name) === '') {
+            $name = 'New Project';
+        }
+
+        $description = $this->extractLabeledValue($message, ['description', 'notes'])
+            ?? 'Project created by ELY';
+
+        $type = $this->extractLabeledValue($message, ['type', 'project type']);
+        $status = $this->extractLabeledValue($message, ['status']);
+        $priority = $this->extractLabeledValue($message, ['priority']);
+        $startDate = $this->extractLabeledValue($message, ['start date', 'starts']);
+        $endDate = $this->extractLabeledValue($message, ['end date', 'ends', 'due']);
+
+        return array_filter([
+            'name' => Str::limit(trim($name), 255, ''),
+            'description' => Str::limit(trim((string) $description), 5000, ''),
+            'type' => is_string($type) ? Str::limit(trim($type), 100, '') : null,
+            'status' => is_string($status) ? Str::limit(trim($status), 100, '') : null,
+            'priority' => is_string($priority) ? Str::limit(trim($priority), 50, '') : null,
+            'start_date' => is_string($startDate) && trim($startDate) !== ''
+                ? $this->resolveDueDate(trim($startDate))
+                : now()->toDateString(),
+            'end_date' => is_string($endDate) && trim($endDate) !== '' ? $this->resolveDueDate(trim($endDate)) : null,
+            'notes' => $this->extractLabeledValue($message, ['notes']),
+            'territory_zone' => $this->extractLabeledValue($message, ['zone', 'territory', 'territory zone']),
+            'assigned_team' => isset($entities['team']) ? (string) $entities['team'] : $this->extractLabeledValue($message, ['team', 'assigned team']),
+        ], static fn ($value): bool => $value !== null && $value !== '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $actionArgs
+     * @return array<string, mixed>
+     */
+    private function normalizeProjectCreateArgs(array $actionArgs): array
+    {
         $normalized = $actionArgs;
-        $isAgent = $role === 'agent';
 
-        if ($isAgent) {
-            unset($normalized['assigned_agent_id'], $normalized['assigned_agent_ids'], $normalized['assignee']);
-        }
-
-        if (is_string($normalized['title'] ?? null)) {
-            $title = Str::limit(trim((string) $normalized['title']), 255, '');
-            if ($title !== '') {
-                $normalized['title'] = $title;
+        foreach (['name', 'type', 'status', 'priority', 'territory_zone'] as $field) {
+            if (is_string($normalized[$field] ?? null)) {
+                $normalized[$field] = Str::limit(trim((string) $normalized[$field]), $field === 'name' ? 255 : 100, '');
             }
         }
 
-        if (is_string($normalized['description'] ?? null)) {
-            $description = Str::limit(trim((string) $normalized['description']), 5000, '');
-            if ($description !== '') {
-                $normalized['description'] = $description;
+        foreach (['description', 'notes', 'assigned_team'] as $field) {
+            if (is_string($normalized[$field] ?? null)) {
+                $normalized[$field] = Str::limit(trim((string) $normalized[$field]), 5000, '');
             }
         }
 
-        if (is_string($normalized['type'] ?? null)) {
-            $typeResolution = $this->resolveTaskType((string) $normalized['type']);
-            $normalized['type'] = $typeResolution['value'];
+        if (is_string($normalized['start_date'] ?? null) && trim((string) $normalized['start_date']) !== '') {
+            $normalized['start_date'] = $this->resolveDueDate(trim((string) $normalized['start_date']));
+        } elseif (! isset($normalized['start_date'])) {
+            $normalized['start_date'] = now()->toDateString();
         }
 
-        if (is_string($normalized['location'] ?? null)) {
-            $location = Str::limit(trim((string) $normalized['location']), 255, '');
-            if ($location !== '') {
-                $normalized['location'] = $location;
-            }
+        if (is_string($normalized['end_date'] ?? null) && trim((string) $normalized['end_date']) !== '') {
+            $normalized['end_date'] = $this->resolveDueDate(trim((string) $normalized['end_date']));
         }
 
-        if (is_string($normalized['address'] ?? null)) {
-            $address = Str::limit(trim((string) $normalized['address']), 1000, '');
-            if ($address !== '') {
-                $normalized['address'] = $address;
-            }
+        if (isset($normalized['project_manager_user_id']) && is_numeric($normalized['project_manager_user_id'])) {
+            $normalized['project_manager_user_id'] = (int) $normalized['project_manager_user_id'];
         }
 
-        if (is_string($normalized['due_date'] ?? null)) {
-            $dueDateText = trim((string) $normalized['due_date']);
-            if ($dueDateText !== '') {
-                $normalized['due_date'] = $this->resolveDueDate($dueDateText);
-            }
-        }
-
-        if (! $isAgent) {
-            if (is_string($normalized['assignee'] ?? null)) {
-                $assigneeToken = trim((string) $normalized['assignee']);
-                unset($normalized['assignee']);
-
-                if ($assigneeToken !== '') {
-                    $normalized['assigned_agent_id'] = $this->resolveAgentIdFromAssigneeToken($assigneeToken, $companyId);
-                }
-            } elseif (is_string($normalized['assigned_agent_id'] ?? null) && is_numeric($normalized['assigned_agent_id'])) {
-                $normalized['assigned_agent_id'] = (int) $normalized['assigned_agent_id'];
-            }
-
-            if (($normalized['assigned_agent_id'] ?? null) === null) {
-                $fallbackAgent = $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
-                if ($fallbackAgent !== null) {
-                    $normalized['assigned_agent_id'] = $fallbackAgent;
-                }
-            }
+        if (! is_string($normalized['name'] ?? null) || trim((string) $normalized['name']) === '') {
+            $normalized['name'] = 'New Project';
         }
 
         return $normalized;
@@ -1073,99 +1035,6 @@ class CopilotService
         return $sanitized;
     }
 
-    /**
-     * @param array<string,string> $entities
-     * @return array<string,mixed>
-     */
-    private function inferTaskCreateArgs(string $message, int $companyId, array $entities, string $role = 'admin'): array
-    {
-        $normalized = trim($message);
-        $isAgent = $role === 'agent';
-
-        $rawTitle = $this->extractLabeledValue($message, ['task title', 'title'])
-            ?? $this->extractTaskTitleFromSentence($message)
-            ?? 'Task created by ELY';
-        $title = Str::limit(trim($rawTitle), 255, '');
-        $usedDefaultTitle = strtolower($title) === 'task created by ely';
-
-        $rawDescription = $this->extractLabeledValue($message, ['description']);
-        if (! is_string($rawDescription) || trim($rawDescription) === '') {
-            if (preg_match('/\bgenerate\b/i', $message) === 1) {
-                $rawDescription = $this->generateTaskDescription($message, $title);
-            } else {
-                $rawDescription = $this->buildTaskDescriptionFallback($message, $title);
-            }
-        }
-        $description = Str::limit(trim((string) $rawDescription), 5000, '');
-
-        $rawType = $this->extractLabeledValue($message, ['task type', 'type']);
-        if (! is_string($rawType) || trim($rawType) === '') {
-            $rawType = preg_match('/\bvisit\b/i', $message) === 1 ? 'sales visit' : null;
-        }
-        $typeResolution = $this->resolveTaskType($rawType);
-        $type = $typeResolution['value'];
-
-        $address = $this->extractLabeledValue($message, ['location & address', 'address', 'location'])
-            ?? $this->extractVisitLocationFromSentence($message)
-            ?? 'Operations Center';
-        $location = trim((string) Str::of($address)->before(','));
-        if ($location === '') {
-            $location = 'Operations Center';
-        }
-
-        $dueDateText = $this->extractLabeledValue($message, ['due date', 'due'])
-            ?? $this->extractDueDateHintFromSentence($message);
-        $dueAt = $this->resolveDueDate($dueDateText);
-        $usedDefaultDueDate = ! is_string($dueDateText) || trim($dueDateText) === '';
-
-        $assignedAgentId = $isAgent ? null : $this->resolveAgentIdForTaskMessage($message, $companyId, $entities);
-
-        return [
-            'title' => $title,
-            'description' => $description,
-            'type' => $type,
-            'location' => Str::limit($location, 255, ''),
-            'address' => Str::limit($address, 1000, ''),
-            'due_date' => $dueAt,
-            ...($isAgent ? [] : ['assigned_agent_id' => $assignedAgentId]),
-            '__inference' => [
-                'used_default_title' => $usedDefaultTitle,
-                'used_default_due_date' => $usedDefaultDueDate,
-                'raw_type_unrecognized' => $typeResolution['raw_unrecognized'],
-                'assignee_unresolved' => ! $isAgent && $assignedAgentId === null,
-            ],
-        ];
-    }
-
-    private function generateTaskDescription(string $message, string $title): string
-    {
-        $providerText = $this->aiProviderRouter->generateForPurpose(
-            purpose: 'operational',
-            systemPrompt: 'Write one concise operational task description (minimum 20 characters) for a field workforce platform. Plain text only, no markdown.',
-            userPrompt: trim("Task title: {$title}\nUser request:\n{$message}"),
-            options: ['max_tokens' => 160, 'temperature' => 0.3],
-        );
-
-        $candidate = is_string($providerText) ? trim($providerText) : '';
-        if (mb_strlen($candidate) >= 10) {
-            return Str::limit($candidate, 5000, '');
-        }
-
-        return $this->buildTaskDescriptionFallback($message, $title);
-    }
-
-    private function buildTaskDescriptionFallback(string $message, string $title): string
-    {
-        if (preg_match('/\bvisit\s+(.+?)(?=[\.,;]|$)/i', $message, $match) === 1) {
-            $target = trim((string) $match[1]);
-
-            return "Complete the assigned visit to {$target}, document observations, engage relevant contacts, and log outcomes in the CRM.";
-        }
-
-        $fallback = trim($message) !== '' ? trim($message) : $title;
-
-        return Str::limit($fallback, 5000, '');
-    }
 
     private function extractVisitLocationFromSentence(string $message): ?string
     {
@@ -1284,6 +1153,18 @@ class CopilotService
     {
         if (is_string($dueDateText) && trim($dueDateText) !== '') {
             $text = strtolower(trim($dueDateText));
+
+            if (preg_match('/\bnext\s+week\b/i', $text) === 1) {
+                return now()->addWeek()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0)->toDateTimeString();
+            }
+
+            if (preg_match('/\bthis\s+week\b/i', $text) === 1) {
+                $thisFriday = now()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0);
+                if ($thisFriday->lessThanOrEqualTo(now())) {
+                    $thisFriday = $thisFriday->addWeek();
+                }
+                return $thisFriday->toDateTimeString();
+            }
 
             if (preg_match('/\btomorrow(?:\s+(morning|afternoon|evening|night))?\b/i', $text, $m) === 1) {
                 $candidate = now()->addDay();
@@ -1505,6 +1386,44 @@ class CopilotService
             return $base;
         }
 
+        if ($tool === 'tasks.reassign') {
+            $taskId = (string) ($args['task_id'] ?? 'unknown');
+            $toUser = (string) ($args['to_user_id'] ?? 'unassigned');
+            $base = sprintf('ELY action ready: reassign task #%s to user %s. Click Confirm Action to proceed.', $taskId, $toUser);
+            if ($warnings !== []) {
+                $base .= ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings));
+            }
+            if ($blockingConfirmation) {
+                $base .= ' Confirmation is currently blocked until task and assignee are set.';
+            }
+
+            return $base;
+        }
+
+        if ($tool === 'crm.log_visit') {
+            $leadId = (string) ($args['lead_id'] ?? 'unknown');
+            $summary = Str::limit((string) ($args['summary'] ?? ''), 80, '…');
+            $base = sprintf('ELY action ready: log visit for lead #%s (%s). Click Confirm Action to proceed.', $leadId, $summary !== '' ? $summary : 'no summary');
+            if ($warnings !== []) {
+                $base .= ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings));
+            }
+            if ($blockingConfirmation) {
+                $base .= ' Confirmation is currently blocked until lead and summary are set.';
+            }
+
+            return $base;
+        }
+
+        if ($tool === 'projects.create') {
+            $name = (string) ($args['name'] ?? 'New Project');
+            $base = sprintf('ELY action ready: create project "%s". Click Confirm Action to proceed.', $name);
+            if ($warnings !== []) {
+                $base .= ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings));
+            }
+
+            return $base;
+        }
+
         if ($tool === 'meetings.schedule') {
             return $this->meetingInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
@@ -1515,6 +1434,14 @@ class CopilotService
 
         if ($tool === 'kpis.create') {
             return $this->kpiInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
+        }
+
+        if ($tool === 'org.users.create') {
+            return $this->internalUserInferenceService->buildPreviewSummary($args, $warnings, $blockingConfirmation);
         }
 
         return 'ELY prepared an action. Review and click Confirm Action to proceed.';
@@ -1547,6 +1474,17 @@ class CopilotService
             'missing_target_value' => 'Target value was not detected. Add a measurable target before confirming.',
             'missing_expected_outcome' => 'Expected outcome is required and must be at least 10 characters.',
             'used_default_dates' => 'Start or end date was not clear and defaulted to the next month.',
+            'recipients_unresolved' => 'No matching recipients were found. Please verify agent names or select recipients before confirming.',
+            'message_too_generic' => 'The reminder message is too generic. Edit it to describe the overdue tasks before confirming.',
+            'lead_unresolved' => 'No matching CRM lead was found. Select the correct lead before confirming.',
+            'recipient_email_missing' => 'This lead does not have a recipient email yet. Add an email address before confirming.',
+            'missing_full_name' => 'Full name is required to create this organization user.',
+            'missing_email' => 'A valid email address is required to create this organization user.',
+            'missing_supervisor' => 'Agents must be assigned to a supervisor before confirming.',
+            'missing_zone' => 'At least one assigned zone is required for this organization user.',
+            'missing_summary' => 'Visit summary is required before this visit can be logged.',
+            'task_unresolved' => 'Task ID could not be resolved. Provide a valid task before confirming.',
+            'assignee_ambiguous' => 'Multiple assignees matched that name. Choose the exact agent before confirming.',
         ];
 
         return collect($codes)
@@ -1573,30 +1511,31 @@ class CopilotService
             return $this->kpiInferenceService->warningCodes($args);
         }
 
-        if ($tool !== 'tasks.create') {
-            return [];
+        if ($tool === 'notifications.send') {
+            return $this->notificationInferenceService->warningCodes($args);
         }
 
-        $warningCodes = [];
-        $inference = is_array($args['__inference'] ?? null) ? $args['__inference'] : [];
-
-        if ($role !== 'agent' && (($inference['assignee_unresolved'] ?? false) === true || ($args['assigned_agent_id'] ?? null) === null)) {
-            $warningCodes[] = 'assignee_unresolved';
+        if ($tool === 'org.users.create') {
+            return $this->internalUserInferenceService->warningCodes($args);
         }
 
-        if (($inference['raw_type_unrecognized'] ?? false) === true) {
-            $warningCodes[] = 'raw_type_unrecognized';
+        if ($tool === 'crm.send_email') {
+            return $this->emailInferenceService->warningCodes($args);
         }
 
-        if (($inference['used_default_due_date'] ?? false) === true) {
-            $warningCodes[] = 'used_default_due_date';
+        if ($tool === 'tasks.create') {
+            return $this->taskInferenceService->warningCodes($args, $role);
         }
 
-        if (($inference['used_default_title'] ?? false) === true) {
-            $warningCodes[] = 'used_default_title';
+        if ($tool === 'tasks.reassign') {
+            return $this->taskReassignInferenceService->warningCodes($args);
         }
 
-        return $warningCodes;
+        if ($tool === 'crm.log_visit') {
+            return $this->visitLogInferenceService->warningCodes($args);
+        }
+
+        return [];
     }
 
     /**
@@ -1635,6 +1574,50 @@ class CopilotService
             $blockingCodes[] = 'missing_kpi_name';
         }
 
+        if (in_array('recipients_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'recipients_unresolved';
+        }
+
+        if (in_array('message_too_generic', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'message_too_generic';
+        }
+
+        if (in_array('lead_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'lead_unresolved';
+        }
+
+        if (in_array('recipient_email_missing', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'recipient_email_missing';
+        }
+
+        if (in_array('missing_full_name', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_full_name';
+        }
+
+        if (in_array('missing_email', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_email';
+        }
+
+        if (in_array('missing_supervisor', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_supervisor';
+        }
+
+        if (in_array('missing_zone', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_zone';
+        }
+
+        if (in_array('missing_summary', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'missing_summary';
+        }
+
+        if (in_array('task_unresolved', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'task_unresolved';
+        }
+
+        if (in_array('assignee_ambiguous', $validationWarningCodes, true)) {
+            $blockingCodes[] = 'assignee_ambiguous';
+        }
+
         if ((bool) config('services.ai.strict_confirmation_blocking', false)) {
             $strictCodes = config('services.ai.strict_confirmation_blocking_codes', ['used_default_title', 'used_default_due_date']);
             if (is_array($strictCodes)) {
@@ -1647,6 +1630,46 @@ class CopilotService
         }
 
         return array_values(array_unique($blockingCodes));
+    }
+
+    /**
+     * Soft inference blockers should not abort an explicit confirmed payload when the
+     * confirmer did not attempt the related field (e.g. optional assignee / unresolved zone name).
+     *
+     * @param  array<int, string>  $blockingCodes
+     * @param  array<string, mixed>  $providedArgs
+     * @return array<int, string>
+     */
+    private function filterConfirmedExecutionBlockers(string $tool, array $blockingCodes, array $providedArgs): array
+    {
+        $filtered = $blockingCodes;
+
+        if ($tool === 'tasks.create' || $tool === 'tasks.reassign') {
+            $attemptedAssignee = (is_string($providedArgs['assignee'] ?? null) && trim((string) $providedArgs['assignee']) !== '')
+                || (isset($providedArgs['assigned_agent_id']) && $providedArgs['assigned_agent_id'] !== null && $providedArgs['assigned_agent_id'] !== '')
+                || (isset($providedArgs['to_user_id']) && $providedArgs['to_user_id'] !== null && $providedArgs['to_user_id'] !== '');
+
+            if (! $attemptedAssignee) {
+                $filtered = array_values(array_filter(
+                    $filtered,
+                    static fn (string $code): bool => ! in_array($code, ['assignee_unresolved', 'assignee_ambiguous'], true),
+                ));
+            }
+        }
+
+        if ($tool === 'org.users.create') {
+            $attemptedZone = (is_string($providedArgs['assigned_zone'] ?? null) && trim((string) $providedArgs['assigned_zone']) !== '')
+                || (is_array($providedArgs['assigned_zone_ids'] ?? null) && $providedArgs['assigned_zone_ids'] !== []);
+
+            if ($attemptedZone) {
+                $filtered = array_values(array_filter(
+                    $filtered,
+                    static fn (string $code): bool => $code !== 'missing_zone',
+                ));
+            }
+        }
+
+        return $filtered;
     }
 
     /**
@@ -1697,8 +1720,11 @@ class CopilotService
         array $actionArgs,
         ?string $idempotencyKey,
     ): array {
+        $executionArgs = $actionArgs;
+        unset($executionArgs['draft_id'], $executionArgs['draft_version'], $executionArgs['assignee']);
+
         if ($idempotencyKey === null || trim($idempotencyKey) === '') {
-            return $this->actionToolRegistry->execute($tool, $user, $companyId, $actionArgs);
+            return $this->actionToolRegistry->execute($tool, $user, $companyId, $executionArgs);
         }
 
         $cacheKey = sprintf(
@@ -1719,7 +1745,7 @@ class CopilotService
             return $cached;
         }
 
-        $result = $this->actionToolRegistry->execute($tool, $user, $companyId, $actionArgs);
+        $result = $this->actionToolRegistry->execute($tool, $user, $companyId, $executionArgs);
         $result['payload'] = [
             ...(is_array($result['payload'] ?? null) ? $result['payload'] : []),
             'idempotent_replay' => false,
@@ -1788,6 +1814,9 @@ class CopilotService
                     ->on('company_users.user_id', '=', 'users.id')
                     ->where('company_users.company_id', '=', $resolvedCompanyId)
             )
+            ->when($context['role'] === 'supervisor', function ($query) use ($user): void {
+                $query->where('users.supervisor_user_id', $user->id);
+            })
             ->when($search !== '', function ($query) use ($search): void {
                 $like = '%' . $search . '%';
                 $query->where(static function ($nested) use ($like): void {
@@ -1841,30 +1870,44 @@ class CopilotService
     /**
      * @return array<string, mixed>
      */
-    private function buildReadToolMessageArgs(string $tool, string $message): array
-    {
+    private function buildReadToolMessageArgs(
+        string $tool,
+        string $message,
+        string $role = 'admin',
+        ?string $threadId = null,
+        ?int $companyId = null,
+        ?int $userId = null,
+    ): array {
         if ($tool === 'crm.visit_extract') {
             return ['notes' => $message];
         }
 
+        $args = $this->readToolArgsResolver->resolve($tool, $message, $role, $threadId, $companyId, $userId);
+
+        if ($tool === 'attendance.today_summary' && ! isset($args['date'])) {
+            $priorDate = $this->readToolArgsResolver->latestAttendanceDateFromThread($threadId, $companyId, $userId);
+            if ($priorDate !== null) {
+                $args['date'] = $priorDate;
+            }
+        }
+
         if ($tool === 'crm.top_leads') {
-            $normalized = strtolower(trim($message));
-            $wantsFullList = preg_match('/\b(all|full|complete|entire)\b.{0,30}\b(leads?|list|crm)\b/i', $normalized) === 1
-                || preg_match('/\b(leads?|list|crm)\b.{0,30}\b(all|full|complete|entire)\b/i', $normalized) === 1
-                || preg_match('/\b(list|provide|show)\b.{0,40}\b(leads?|crm)\b/i', $normalized) === 1;
-
-            return $wantsFullList ? ['limit' => 20] : [];
+            return array_merge($args, $this->crmLeadReadArgsResolver->resolveFilters($message));
         }
 
-        if ($tool === 'org.users') {
-            return ['limit' => 50];
+        if ($tool === 'drive.files') {
+            return array_merge($args, ['message' => $message]);
         }
 
-        return [];
+        return $args;
     }
 
     private function canConsumeCredits(int $companyId): bool
     {
+        if ($this->demoCompanyService->isDemo($companyId)) {
+            return true;
+        }
+
         $limit = (int) config('services.ai.monthly_org_credit_limit', 0);
         if ($limit <= 0) {
             return true;
@@ -1875,6 +1918,10 @@ class CopilotService
 
     private function registerCreditUsage(int $companyId, int $credits): void
     {
+        if ($this->demoCompanyService->isDemo($companyId)) {
+            return;
+        }
+
         if ($credits <= 0) {
             return;
         }
@@ -1900,10 +1947,47 @@ class CopilotService
             return $text;
         }
 
-        $redacted = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '[redacted-email]', $text);
-        $redacted = preg_replace('/\+?\d[\d\s\-()]{7,}\d/', '[redacted-phone]', (string) $redacted);
+        if ($this->isIsoDateLikeString($text)) {
+            return $text;
+        }
 
-        return (string) $redacted;
+        // Protect ISO dates so phone redaction does not treat 2026-08-07 as a phone number.
+        $datePlaceholders = [];
+        $protected = preg_replace_callback(
+            '/\b\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/',
+            static function (array $matches) use (&$datePlaceholders): string {
+                $token = '{{SAFE_DATE_' . count($datePlaceholders) . '}}';
+                $datePlaceholders[$token] = $matches[0];
+
+                return $token;
+            },
+            $text,
+        );
+
+        // Omit sensitive values silently — never show [redacted-*] tokens to users.
+        $redacted = preg_replace('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', '', (string) $protected);
+        $redacted = preg_replace('/\+?\d[\d\s\-()]{7,}\d/', '', (string) $redacted);
+        $redacted = preg_replace('/https?:\/\/[^\s<>"\']+/i', '', (string) $redacted);
+        $redacted = preg_replace('/\[redacted-[a-z0-9_-]+\]/i', '', (string) $redacted);
+
+        if ($datePlaceholders !== []) {
+            $redacted = str_replace(array_keys($datePlaceholders), array_values($datePlaceholders), (string) $redacted);
+        }
+
+        $cleaned = preg_replace('/\s{2,}/', ' ', (string) $redacted) ?? (string) $redacted;
+        $cleaned = preg_replace('/\s+([,.;:])/', '$1', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/\(\s*\)/', '', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/\bon\s*([,.;)]|$)/i', '$1', $cleaned) ?? $cleaned;
+        $cleaned = preg_replace('/,\s*,/', ',', $cleaned) ?? $cleaned;
+
+        return trim($cleaned);
+    }
+
+    private function isIsoDateLikeString(string $text): bool
+    {
+        $trimmed = trim($text);
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/', $trimmed) === 1;
     }
 
     private function redactValue(mixed $value): mixed
@@ -1915,6 +1999,11 @@ class CopilotService
         if (is_array($value)) {
             $result = [];
             foreach ($value as $key => $item) {
+                if (is_string($key) && $this->isRedactionExemptKey($key)) {
+                    $result[$key] = $item;
+                    continue;
+                }
+
                 $result[$key] = $this->redactValue($item);
             }
 
@@ -1922,5 +2011,47 @@ class CopilotService
         }
 
         return $value;
+    }
+
+    private function isRedactionExemptKey(string $key): bool
+    {
+        return in_array($key, [
+            'plan_date',
+            'due_date',
+            'due_at',
+            'scheduled_start',
+            'scheduled_end',
+            'meeting_start_at',
+            'kpi_end_date',
+            'dedupe_key',
+            'created_at',
+            'updated_at',
+        ], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function notifyDailyPlanReady(User $user, int $companyId, array $payload): void
+    {
+        $itemCount = is_array($payload['items'] ?? null) ? count($payload['items']) : 0;
+        $creatableCount = (int) ($payload['acceptance']['creatable_count'] ?? 0);
+
+        $this->notificationService->notifyUser((int) $user->id, [
+            'company_id' => $companyId,
+            'type' => 'daily_plan.ready',
+            'category' => NotificationCategory::SYSTEM->value,
+            'title' => 'Your daily plan is ready',
+            'message' => $itemCount === 0
+                ? 'ELY reviewed your schedule. Open the assistant to see your plan.'
+                : sprintf(
+                    'ELY planned %d item%s for today%s. Review and accept to add tasks.',
+                    $itemCount,
+                    $itemCount === 1 ? '' : 's',
+                    $creatableCount > 0 ? " ({$creatableCount} can become tasks)" : '',
+                ),
+            'action_url' => '/assistant',
+            'dedupe_key' => 'daily-plan-ready:' . $user->id . ':' . ($payload['plan_date'] ?? now()->toDateString()),
+        ]);
     }
 }

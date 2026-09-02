@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\UsesFactory23MailBranding;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class PayrollStatusNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+    use UsesFactory23MailBranding;
 
     public function __construct(
         private readonly string $status,
@@ -25,19 +26,24 @@ class PayrollStatusNotification extends Notification implements ShouldQueue
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
-        $message = (new MailMessage)
-            ->subject('Payroll status updated')
-            ->greeting("Hello {$notifiable->name},")
-            ->line("Your payroll for {$this->periodLabel} is now {$this->status}.")
-            ->line("Amount: {$this->amount}");
+        $rows = [
+            'Period' => $this->periodLabel,
+            'Status' => $this->status,
+            'Amount' => $this->amount,
+        ];
 
         if ($this->reason !== null && $this->reason !== '') {
-            $message->line("Reason: {$this->reason}");
+            $rows['Reason'] = $this->reason;
         }
 
-        return $message->line('You can review the updated payroll status from your payroll page.')
-            ->salutation('Factory 23 Team');
+        return $this->factory23Mail()
+            ->subject('Payroll update — Factory23')
+            ->greeting("Hello {$notifiable->name},")
+            ->line('Your payroll status has been updated.')
+            ->line($this->factory23DetailTable($rows))
+            ->action('View payroll', $this->factory23FrontendUrl('payroll'))
+            ->salutation($this->factory23Salutation());
     }
 }

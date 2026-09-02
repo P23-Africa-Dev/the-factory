@@ -10,6 +10,8 @@ use App\Models\User;
 use App\Services\Notification\Contracts\PushProvider;
 use App\Services\Notification\PushProviders\FcmPushProvider;
 use App\Services\Notification\PushProviders\LogPushProvider;
+use App\Services\Notification\PushProviders\WebPushPushProvider;
+use App\Services\Notification\PushProviders\ExpoPushPushProvider;
 
 class PushNotificationService
 {
@@ -96,6 +98,8 @@ class PushNotificationService
     {
         return match ($provider) {
             'fcm' => app(FcmPushProvider::class),
+            'web-push' => app(WebPushPushProvider::class),
+            'expo' => app(ExpoPushPushProvider::class),
             default => app(LogPushProvider::class),
         };
     }

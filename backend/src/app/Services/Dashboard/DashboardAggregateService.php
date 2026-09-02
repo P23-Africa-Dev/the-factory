@@ -636,7 +636,7 @@ class DashboardAggregateService
                 'agent' => [
                     'id' => $assignedAgent?->id,
                     'name' => $agentName,
-                    'avatar_url' => AvatarUrlResolver::resolve($assignedAgent?->avatar, $assignedAgent?->gender),
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($assignedAgent?->avatar, $assignedAgent?->gender),
                     'initials' => $initials,
                 ],
             ];
@@ -716,8 +716,7 @@ class DashboardAggregateService
                 ->whereBetween('created_at', [$dayStart, $dayEnd])
                 ->count();
             $converted = (int) (clone $query)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->whereNotNull('converted_at')
+                ->whereBetween('converted_at', [$dayStart, $dayEnd])
                 ->count();
 
             $points[] = [

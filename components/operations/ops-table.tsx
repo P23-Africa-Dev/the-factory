@@ -24,7 +24,7 @@ export function OpsTableRow({ isSelected, onClick, avatar, avatarAlt, children }
 
       {/* Avatar */}
       <div className="w-14 h-14 mt-3.5 mb-3 rounded-full overflow-hidden shrink-0">
-        <img src={avatar} className="w-full h-full object-cover" alt={avatarAlt} />
+        <img key={avatar} src={avatar} className="w-full h-full object-cover" alt={avatarAlt} />
       </div>
 
       {children}

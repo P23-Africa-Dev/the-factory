@@ -1,21 +1,20 @@
-import { apiRequest, ApiEnvelope } from "./onboarding";
+import { apiRequest, ApiEnvelope, type MeResponse } from "./onboarding";
 
 export type LoginPayload = {
   email: string;
   password: string;
 };
 
+export type LoginUser = MeResponse;
+
 export type LoginResponseData = {
   token: string;
   token_type: "Bearer";
+  dashboard_path?: string;
   user_type: "self-serve" | "enterprise" | "admin" | "supervisor" | "agent";
   access_role: "admin" | "supervisor" | "agent";
   internal_role: "admin" | "supervisor" | null;
-  user: {
-    id: number;
-    name: string;
-    email: string;
-  };
+  user: LoginUser;
 };
 
 export type ForgotPasswordPayload = {
@@ -94,8 +93,10 @@ export function loginUser(
 export type AgentLoginResponseData = {
   token: string;
   token_type: "Bearer";
+  dashboard_path?: string;
   internal_role: "agent";
   access_role: "agent";
+  user: LoginUser;
 };
 
 export function loginAgent(
