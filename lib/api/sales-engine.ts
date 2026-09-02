@@ -308,6 +308,16 @@ export type ChatLead = {
   source: string;
   score: number;
   summary: string;
+  title?: string | null;
+  company?: string | null;
+  source_url?: string | null;
+  save_status?: "draft" | "saved";
+  crm_synced?: boolean;
+  f23_lead_id?: string | number | null;
+  low_confidence?: boolean;
+  icp_recommended?: boolean;
+  icp_fit_score?: number;
+  query_match?: boolean;
 };
 
 export type ChatMessageApi = {
@@ -325,6 +335,7 @@ export type SendChatMessageResult = {
   assistant_message?: ChatMessageApi | null;
   discovery_run_id?: number | null;
   status?: "processing" | "completed";
+  pending?: boolean;
 };
 
 export type ChatSessionApi = {
@@ -335,6 +346,13 @@ export type ChatSessionApi = {
   updated_at?: string;
 };
 
+export type DiscoveryRunProgress = {
+  step?: number;
+  total_steps?: number;
+  sources_checked?: number;
+  candidates_found?: number;
+};
+
 export type DiscoveryRunApi = {
   id: number;
   status: string;
@@ -342,31 +360,88 @@ export type DiscoveryRunApi = {
   intent?: string | null;
   stages?: string[] | null;
   result_summary?: unknown;
+  progress?: DiscoveryRunProgress | null;
   error?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+};
+
+export type DiscoveryStageInfo = {
+  label: string;
+  stepIndex: number;
+  totalSteps: number;
+  stageKey: string;
+  progress?: DiscoveryRunProgress | null;
 };
 
 const ASYNC_CHAT_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
 const CHAT_OUTREACH_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_CHAT_OUTREACH_TIMEOUT_MS) || 120_000;
 const CHAT_POLL_INTERVAL_MS = 2_000;
-const CHAT_POLL_MAX_MS = 300_000;
+const CHAT_POLL_MAX_MS = 600_000;
 
 const DISCOVERY_STAGE_LABELS: Record<string, string> = {
-  queued: "Queued…",
   analyzing_brief: "Analyzing your brief…",
+  analyzing_icp: "Analyzing your ICP…",
   searching_sources: "Scanning web & social signals…",
   extracting: "Extracting buying intent…",
+  enriching: "Enriching signal data…",
   synthesizing: "Synthesizing insights…",
   compiling_results: "Compiling ranked results…",
+  completed: "Finalizing results…",
 };
 
-export function formatDiscoveryStage(stages?: string[] | null): string {
-  if (!stages?.length) return "Processing…";
-  const last = stages[stages.length - 1];
+const STAGE_TO_STEP: Record<string, number> = {
+  queued: 0,
+  analyzing_brief: 0,
+  analyzing_icp: 0,
+  searching_sources: 1,
+  extracting: 2,
+  enriching: 2,
+  synthesizing: 2,
+  compiling_results: 3,
+  completed: 3,
+};
 
-  return DISCOVERY_STAGE_LABELS[last] ?? last.replace(/_/g, " ");
+const TOTAL_PIPELINE_STEPS = 4;
+
+function humanizeStageKey(stageKey: string, intent?: ChatIntent): string {
+  if (stageKey === "queued") {
+    if (intent === "quick_research") return "Reviewing your question…";
+    if (intent === "generate_leads") return "Parsing your ICP brief…";
+    if (intent === "create_outreach") return "Reading target context…";
+    return "Starting your request…";
+  }
+
+  return (
+    DISCOVERY_STAGE_LABELS[stageKey] ??
+    stageKey.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) + "…"
+  );
+}
+
+export function mapDiscoveryStage(
+  stages?: string[] | null,
+  intent?: ChatIntent,
+  progress?: DiscoveryRunProgress | null
+): DiscoveryStageInfo {
+  const stageKey = stages?.length ? stages[stages.length - 1] : "analyzing_brief";
+  const stepIndex =
+    typeof progress?.step === "number"
+      ? Math.min(Math.max(progress.step - 1, 0), TOTAL_PIPELINE_STEPS - 1)
+      : (STAGE_TO_STEP[stageKey] ?? 0);
+
+  return {
+    label: humanizeStageKey(stageKey, intent),
+    stepIndex,
+    totalSteps: progress?.total_steps ?? TOTAL_PIPELINE_STEPS,
+    stageKey,
+    progress: progress ?? null,
+  };
+}
+
+/** @deprecated Use mapDiscoveryStage for structured stage info. */
+export function formatDiscoveryStage(stages?: string[] | null, intent?: ChatIntent): string {
+  return mapDiscoveryStage(stages, intent).label;
 }
 
 export function createChatSession(icpProfileId?: string): Promise<ChatSessionApi> {
@@ -407,30 +482,48 @@ export function fetchDiscoveryRun(id: number): Promise<DiscoveryRunApi> {
 
 export async function pollDiscoveryRunUntilComplete(
   runId: number,
-  options?: { onStage?: (label: string) => void; maxMs?: number }
-): Promise<DiscoveryRunApi> {
+  options?: {
+    onStage?: (info: DiscoveryStageInfo) => void;
+    intent?: ChatIntent;
+    maxMs?: number;
+    signal?: AbortSignal;
+  }
+): Promise<{ run: DiscoveryRunApi; timedOut: boolean; aborted?: boolean }> {
   const maxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
   const started = Date.now();
 
   while (Date.now() - started < maxMs) {
+    if (options?.signal?.aborted) {
+      const run = await fetchDiscoveryRun(runId);
+      return { run, timedOut: true, aborted: true };
+    }
+
     const run = await fetchDiscoveryRun(runId);
-    options?.onStage?.(formatDiscoveryStage(run.stages));
+    const intent = options?.intent ?? (run.intent as ChatIntent | undefined);
+    const stageInfo = mapDiscoveryStage(run.stages, intent, run.progress ?? null);
+    options?.onStage?.(stageInfo);
 
     if (run.status === "completed") {
-      return run;
+      return { run, timedOut: false };
     }
 
     if (run.status === "failed") {
       throw new SalesEngineApiError(run.error ?? "Discovery run failed.", 422);
     }
 
+    if (options?.signal?.aborted) {
+      return { run, timedOut: true, aborted: true };
+    }
+
     await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
   }
 
-  throw new SalesEngineApiError(
-    "This request is still running. Refresh the page to see results when ready.",
-    408
-  );
+  const run = await fetchDiscoveryRun(runId);
+  return { run, timedOut: true };
+}
+
+function findLatestAssistantMessage(messages: ChatMessageApi[]): ChatMessageApi | undefined {
+  return [...messages].reverse().find((message) => message.role === "assistant");
 }
 
 export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
@@ -445,7 +538,11 @@ export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
 export async function sendChatMessage(
   sessionId: number,
   payload: { body: string; intent: ChatIntent },
-  options?: { onStage?: (label: string) => void }
+  options?: {
+    onStage?: (info: DiscoveryStageInfo) => void;
+    icpContext?: { industries?: string[]; territories?: string[]; name?: string };
+    signal?: AbortSignal;
+  }
 ): Promise<SendChatMessageResult> {
   return withSessionRetry(async () => {
     const timeoutMs = payload.intent === "create_outreach" ? CHAT_OUTREACH_TIMEOUT_MS : undefined;
@@ -462,11 +559,40 @@ export async function sendChatMessage(
       initial.status === "processing" &&
       initial.discovery_run_id
     ) {
-      await pollDiscoveryRunUntilComplete(initial.discovery_run_id, options);
-      const messages = await listChatMessages(sessionId);
-      const assistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+      let messages = await listChatMessages(sessionId);
+      let placeholder = findLatestAssistantMessage(messages);
 
-      if (!assistantMessage) {
+      const pollResult = await pollDiscoveryRunUntilComplete(initial.discovery_run_id, {
+        intent: payload.intent,
+        onStage: options?.onStage,
+        signal: options?.signal,
+      });
+
+      messages = await listChatMessages(sessionId);
+      const assistantMessage =
+        findLatestAssistantMessage(messages.filter((message) => !message.meta?.pending)) ??
+        findLatestAssistantMessage(messages) ??
+        placeholder;
+
+      if (pollResult.aborted) {
+        return {
+          ...initial,
+          assistant_message: assistantMessage ?? null,
+          status: "processing",
+          pending: true,
+        };
+      }
+
+      if (pollResult.timedOut && pollResult.run.status !== "completed") {
+        return {
+          ...initial,
+          assistant_message: assistantMessage ?? null,
+          status: "processing",
+          pending: true,
+        };
+      }
+
+      if (!assistantMessage || assistantMessage.meta?.pending) {
         throw new SalesEngineApiError("Assistant response was not found after processing.", 500);
       }
 
@@ -474,6 +600,7 @@ export async function sendChatMessage(
         ...initial,
         assistant_message: assistantMessage,
         status: "completed",
+        pending: false,
       };
     }
 
@@ -489,6 +616,8 @@ export async function sendChatMessage(
 
 export type SalesEngineMetrics = {
   leads_discovered: number;
+  leads_pending_review: number;
+  leads_in_crm: number;
   qualified_leads: number;
   companies_cached: number;
   outreach_drafts: number;
@@ -849,11 +978,57 @@ export function updateOutreachSenderSettings(
   );
 }
 
-export function pushLeadToCrm(leadId: number): Promise<{ lead_id: number; f23_lead_id?: number | null }> {
+export type Factory23IntegrationStatus = {
+  configured: boolean;
+  global_enabled: boolean;
+  organization_enabled: boolean;
+  f23_company_id?: string | number | null;
+  linked: boolean;
+  can_sync: boolean;
+  block_reason?: string | null;
+  block_message?: string | null;
+};
+
+export function fetchFactory23IntegrationStatus(): Promise<Factory23IntegrationStatus> {
   return withSessionRetry(async () =>
-    seRequest<{ lead_id: number; f23_lead_id?: number | null }>({
+    seRequest<Factory23IntegrationStatus>({
+      method: "GET",
+      path: "/integrations/factory23/status",
+    })
+  );
+}
+
+export function pushLeadToCrm(leadId: number): Promise<{
+  lead_id: number;
+  save_status?: string;
+  synced?: boolean;
+  f23_lead_id?: string | number | null;
+}> {
+  return withSessionRetry(async () =>
+    seRequest<{
+      lead_id: number;
+      save_status?: string;
+      synced?: boolean;
+      f23_lead_id?: string | number | null;
+    }>({
       method: "POST",
       path: `/leads/${leadId}/sync-to-crm`,
+    })
+  );
+}
+
+export function syncLeadsBatch(leadIds: number[]): Promise<{
+  synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+  errors: string[];
+}> {
+  return withSessionRetry(async () =>
+    seRequest<{
+      synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+      errors: string[];
+    }>({
+      method: "POST",
+      path: "/leads/sync-to-crm",
+      body: { lead_ids: leadIds },
     })
   );
 }

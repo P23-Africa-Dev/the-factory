@@ -7,22 +7,42 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ProcessingPanel } from "./processing-panel";
 import { IcpBuilderModal } from "./icp-builder-modal";
+import { SocialScanPanel } from "./social-scan-panel";
+import {
+  SocialOpportunityEmptyState,
+  SocialSignalsEmptyState,
+} from "./social-listening-empty-states";
+import {
+  SocialOpportunityDetailSkeleton,
+  SocialSignalsTableSkeleton,
+} from "./social-scan-skeletons";
 import { ChatMessageBody } from "./chat-message-body";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
-import { isMissingActiveIcp, mapApiMessagesToUi, useChatHistory, useClearChatHistory, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
+import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
+import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration-status";
+import { usePendingChatDiscovery } from "@/hooks/use-pending-chat-discovery";
+import {
+  isForegroundChatWaiting,
+  isMissingActiveIcp,
+  mapApiMessagesToUi,
+  useChatHistory,
+  useClearChatHistory,
+  useSendChatMessage,
+} from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import {
   useCreateSignalOutreach,
-  getSocialListeningEmptyMessage,
   useSetSignalReminder,
   useSocialListeningBootstrap,
   useSocialListeningSignals,
   useSyncSignalToCrm,
   useTriggerSocialListeningRun,
 } from "@/hooks/use-sales-engine-social-listening";
+import { getSocialListeningEmptyState } from "@/lib/social-listening-empty-state";
 import {
   useSocialListeningSettings,
   useUpdateSocialListeningSettings,
@@ -32,6 +52,11 @@ import {
   useUpdateOutreachSenderSettings,
 } from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
+import {
+  hasMixedIcpRecommendations,
+  icpBadgeLabel,
+  showIcpAdvisoryBanner,
+} from "@/lib/icp-advisory-leads";
 import {
   formatRelativeTime,
   type ChatIntent,
@@ -69,6 +94,7 @@ type ChatMessage = {
   body: string;
   intent?: ChatIntent;
   leads?: ChatLead[];
+  meta?: Record<string, unknown> | null;
 };
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
@@ -112,27 +138,6 @@ const INTENT_MODE_CONFIG: Record<
     chipTint: "bg-[#dfffc8] text-[#09232d]",
     icon: <Lightbulb size={12} className="shrink-0" />,
   },
-};
-
-const thinkingStagesByIntent: Record<ChatIntent, readonly string[]> = {
-  freeform: ["Thinking…"],
-  quick_research: [
-    "Decomposing your research question…",
-    "Scanning web & registries…",
-    "Cross-referencing signals…",
-    "Synthesizing insights…",
-  ],
-  generate_leads: [
-    "Analyzing your brief…",
-    "Scanning web & social signals…",
-    "Extracting buying intent…",
-    "Compiling ranked results…",
-  ],
-  create_outreach: [
-    "Reviewing target context…",
-    "Drafting message…",
-    "Checking compliance tone…",
-  ],
 };
 
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
@@ -191,18 +196,20 @@ function MetricCard({
   percent,
   active = false,
   unit = "Leads",
+  isScanning = false,
 }: {
   title: string;
   value: string;
   percent: string;
   active?: boolean;
   unit?: string;
+  isScanning?: boolean;
 }) {
   return (
     <section
       className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] ${
         active ? "bg-[#0b242e] text-white" : "bg-white text-[#0b242e]"
-      }`}
+      } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""}`}
     >
       <div className="flex items-start justify-between">
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
@@ -219,19 +226,19 @@ function MetricCard({
           </p>
         </div>
         <p className={`mt-[-4px] text-[8px] leading-[16px] ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
-          {percent}% increase this week
+          {isScanning ? "Scan in progress…" : `${percent}% increase this week`}
         </p>
       </div>
 
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
         <div
-          className={`sales-gauge-spin absolute size-[84px] rounded-full border-[7px] ${
+          className={`absolute size-[84px] rounded-full border-[7px] ${
             active ? "border-[#3E7210]" : "border-[#ff604c]"
-          } border-l-transparent rotate-[-24deg]`}
+          } border-l-transparent rotate-[-24deg] ${isScanning ? "sales-gauge-spin" : ""}`}
         />
         <div className={`absolute size-[49px] rounded-full ${active ? "bg-[#14343e]" : "bg-[#f9f9f9]"}`} />
         <p className={`relative text-[8px] font-semibold ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
-          {percent}%
+          {isScanning ? "…" : `${percent}%`}
         </p>
       </div>
     </section>
@@ -361,44 +368,146 @@ function PromptButton({
   );
 }
 
-function ThinkingBubble({ stage }: { stage: string }) {
-  return (
-    <div className="max-w-[430px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
-      <div className="flex items-center gap-3">
-        <div className="relative grid size-8 place-items-center rounded-full bg-[#09232d] text-white">
-          <Sparkles size={14} className="animate-pulse" />
-          <span className="absolute inset-[-4px] rounded-full border border-[#16b37d]/40 animate-ping" />
-        </div>
-        <div className="min-w-0">
-          <p key={stage} className="animate-in fade-in slide-in-from-bottom-1 text-[11px] font-semibold duration-300">
-            {stage}
-          </p>
-          <div className="mt-1.5 flex gap-1">
-            <span className="h-1.5 w-8 animate-pulse rounded-full bg-[#16b37d]" />
-            <span className="h-1.5 w-5 animate-pulse rounded-full bg-[#16b37d]/60 [animation-delay:150ms]" />
-            <span className="h-1.5 w-3 animate-pulse rounded-full bg-[#16b37d]/30 [animation-delay:300ms]" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+function LeadInlineResults({
+  leads,
+  onLeadsChange,
+}: {
+  leads: ChatLead[];
+  onLeadsChange?: (leads: ChatLead[]) => void;
+}) {
+  const syncLead = useSyncLeadToCrm();
+  const syncBatch = useSyncLeadsBatchToCrm();
+  const { data: integrationStatus } = useFactory23IntegrationStatus();
+  const canSyncToCrm = integrationStatus?.can_sync ?? true;
+  const crmBlockMessage =
+    integrationStatus?.block_message ??
+    "CRM sync is unavailable. Sign out and sign back in to link Factory23, or contact your admin.";
+  const unsavedIds = leads.filter((lead) => !lead.crm_synced && lead.save_status !== "saved").map((lead) => lead.id);
 
-function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
+  function markSynced(ids: number[]) {
+    onLeadsChange?.(
+      leads.map((lead) =>
+        ids.includes(lead.id)
+          ? { ...lead, crm_synced: true, save_status: "saved" as const }
+          : lead
+      )
+    );
+  }
+
+  const showAdvisoryBanner = showIcpAdvisoryBanner(leads);
+  const mixedRecommendations = hasMixedIcpRecommendations(leads);
+
   return (
-    <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
-      {leads.map((lead) => (
-        <div key={lead.id ?? lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-            <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
-              {lead.score}
-            </span>
-          </div>
-          <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
-          <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+    <div className="mt-3 max-w-[640px]">
+      {!canSyncToCrm && (
+        <p className="mb-2 rounded-[12px] bg-[#fef2f2] px-3 py-2 text-[8px] leading-[11px] text-[#991b1b]">
+          {crmBlockMessage}
+        </p>
+      )}
+      {showAdvisoryBanner && (
+        <p className="mb-2 rounded-[12px] bg-[#fff7ed] px-3 py-2 text-[8px] leading-[11px] text-[#92400e]">
+          {mixedRecommendations
+            ? "These answer your search. Leads marked ICP match align with your profile; Outside ICP leads still match what you asked for."
+            : "These answer your search but may fall outside your ICP — you can still review and save any lead below."}
+        </p>
+      )}
+      {unsavedIds.length > 0 && (
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[9px] font-medium text-[#616263]">
+            Review leads below — save the ones you want in CRM.
+          </p>
+          <button
+            type="button"
+            disabled={syncBatch.isPending || !canSyncToCrm}
+            title={!canSyncToCrm ? crmBlockMessage : undefined}
+            onClick={() => {
+              syncBatch.mutate(unsavedIds, {
+                onSuccess: (result) => {
+                  const syncedIds = result.synced.map((item) => item.lead_id);
+                  markSynced(syncedIds);
+                  toast.success(`Saved ${syncedIds.length} lead${syncedIds.length === 1 ? "" : "s"} to CRM.`);
+                  if (result.errors.length > 0) {
+                    toast.error(result.errors[0]);
+                  }
+                },
+                onError: (error) =>
+                  toast.error(getApiErrorMessage(error, "Could not save leads to CRM.")),
+              });
+            }}
+            className="shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
+          >
+            {syncBatch.isPending ? "Saving…" : "Save all"}
+          </button>
         </div>
-      ))}
+      )}
+      <div className="grid gap-2 sm:grid-cols-3">
+        {leads.map((lead) => {
+          const isSynced = lead.crm_synced || lead.save_status === "saved";
+          const badge = icpBadgeLabel(lead);
+
+          return (
+            <div
+              key={lead.id ?? lead.name}
+              className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
+                <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
+                  {lead.score}
+                </span>
+              </div>
+              {badge && (
+                <span
+                  className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
+                    badge === "ICP match"
+                      ? "bg-[#16b37d]/10 text-[#087652]"
+                      : "bg-[#fef3c7] text-[#92400e]"
+                  }`}
+                >
+                  {badge}
+                </span>
+              )}
+              <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
+              {(lead.title || lead.company) && (
+                <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">
+                  {[lead.title, lead.company].filter(Boolean).join(" at ")}
+                </p>
+              )}
+              <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+              {lead.low_confidence && (
+                <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
+              )}
+              <div className="mt-2">
+                {isSynced ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]">
+                    <CircleCheck size={10} />
+                    In CRM
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={syncLead.isPending || !canSyncToCrm}
+                    title={!canSyncToCrm ? crmBlockMessage : undefined}
+                    onClick={() => {
+                      syncLead.mutate(lead.id, {
+                        onSuccess: () => {
+                          markSynced([lead.id]);
+                          toast.success(`Saved "${lead.name}" to CRM.`);
+                        },
+                        onError: (error) =>
+                          toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
+                      });
+                    }}
+                    className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] hover:bg-[#09232d]/5 disabled:opacity-60"
+                  >
+                    Save to CRM
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -417,19 +526,17 @@ function ChatWorkspace({
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
-  const [thinkingStage, setThinkingStage] = useState<string>(thinkingStagesByIntent.freeform[0]);
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const thinkingIntervalRef = useRef<number | null>(null);
-  const timersRef = useRef<number[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const nextMessageIdRef = useRef(2);
   function nextMessageId() {
     return nextMessageIdRef.current++;
   }
+  const [backgroundRunIds, setBackgroundRunIds] = useState<Set<number>>(new Set());
   const icpMenuRef = useRef<HTMLDivElement>(null);
   const icpTriggerRef = useRef<HTMLButtonElement>(null);
 
@@ -456,6 +563,17 @@ function ChatWorkspace({
     nextMessageIdRef.current = chatHistory.messages.length + 2;
   }, [activeIcpId, chatHistory, isHistoryLoading]);
 
+  const hasPendingDiscovery = useMemo(
+    () => chatHistory?.messages.some((message) => Boolean(message.meta?.pending)) ?? false,
+    [chatHistory]
+  );
+
+  usePendingChatDiscovery(activeIcpId, chatHistory?.messages, ({ intent }) => {
+    toast.success(
+      intent === "quick_research" ? "Research results are ready." : "Lead results are ready."
+    );
+  });
+
   useLayoutEffect(() => {
     if (!isIcpMenuOpen || !icpTriggerRef.current) return;
     const rect = icpTriggerRef.current.getBoundingClientRect();
@@ -480,17 +598,29 @@ function ChatWorkspace({
   }, [isIcpMenuOpen]);
 
   const sendMessage = useSendChatMessage(activeIcpId, {
-    onSuccess: ({ assistant_message }) => {
+    onSuccess: ({ assistant_message, pending }) => {
       if (!assistant_message) return;
-      setMessages((current) => [
-        ...current,
-        {
-          id: nextMessageId(),
-          role: "assistant",
-          body: assistant_message.body,
-          leads: assistant_message.leads ?? undefined,
-        },
-      ]);
+      setMessages((current) => {
+        const alreadyPresent = current.some(
+          (message) =>
+            message.role === "assistant" &&
+            message.body === assistant_message.body &&
+            (pending ? true : Boolean(message.leads?.length))
+        );
+        if (alreadyPresent) return current;
+
+        return [
+          ...current,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            body: assistant_message.body,
+            intent: assistant_message.intent,
+            leads: assistant_message.leads ?? undefined,
+            meta: assistant_message.meta ?? undefined,
+          },
+        ];
+      });
     },
     onError: (error) => {
       toast.error(
@@ -500,29 +630,17 @@ function ChatWorkspace({
       );
     },
   });
-  const isThinking = sendMessage.isPending;
-  const displayedThinkingStage = sendMessage.processingStage ?? thinkingStage;
-  const showWelcomeMessage = messages.length > 0 && messages[0]?.id === 1;
 
-  function stopThinkingCycle() {
-    if (thinkingIntervalRef.current != null) {
-      window.clearInterval(thinkingIntervalRef.current);
-      thinkingIntervalRef.current = null;
+  function handleDetachToBackground() {
+    const runId = sendMessage.detachToBackground();
+    if (typeof runId === "number") {
+      setBackgroundRunIds((current) => new Set(current).add(runId));
     }
-    timersRef.current.forEach((timer) => window.clearTimeout(timer));
-    timersRef.current = [];
+    toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
   }
 
-  function startThinkingCycle(intent: ChatIntent) {
-    const stages = thinkingStagesByIntent[intent];
-    let stageIndex = 0;
-    setThinkingStage(stages[0]);
-    stopThinkingCycle();
-    thinkingIntervalRef.current = window.setInterval(() => {
-      stageIndex = (stageIndex + 1) % stages.length;
-      setThinkingStage(stages[stageIndex]);
-    }, 1200);
-  }
+  const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode);
+  const showWelcomeMessage = messages.length > 0 && messages[0]?.id === 1;
 
   function selectIntent(intent: ActionIntent) {
     setSelectedIntent((current) => (current === intent ? "freeform" : intent));
@@ -543,12 +661,7 @@ function ChatWorkspace({
       { id: nextMessageId(), role: "user", body: trimmed, intent },
     ]);
     setDraft("");
-    startThinkingCycle(intent);
-
-    sendMessage.mutate(
-      { body: trimmed, intent },
-      { onSettled: () => stopThinkingCycle() }
-    );
+    sendMessage.mutate({ body: trimmed, intent });
   }
 
   function scrollTranscriptToBottom() {
@@ -563,9 +676,8 @@ function ChatWorkspace({
       scrollTranscriptToBottom();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, isThinking, displayedThinkingStage]);
+  }, [messages, isThinking, sendMessage.processingState]);
 
-  useEffect(() => () => stopThinkingCycle(), []);
 
   return (
     <section
@@ -691,11 +803,33 @@ function ChatWorkspace({
         }`}
       >
         <div className="space-y-4">
-          {messages.map((message, index) => (
+          {messages.map((message, index) => {
+            const pendingRunId =
+              typeof message.meta?.discovery_run_id === "number"
+                ? message.meta.discovery_run_id
+                : null;
+            const isPendingMessage = Boolean(message.meta?.pending);
+            const isBackgroundPending =
+              isPendingMessage &&
+              !isThinking &&
+              (pendingRunId == null ||
+                backgroundRunIds.has(pendingRunId) ||
+                sendMessage.waitMode === "background" ||
+                hasPendingDiscovery);
+
+            return (
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[78%]" : "max-w-full"}>
               {message.role === "user" && message.intent && message.intent !== "freeform" && (
                 <div className="mb-1.5 flex justify-end">
                   <IntentModeChip intent={message.intent} compact />
+                </div>
+              )}
+              {isBackgroundPending && (
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
+                    <Loader2 size={10} className="animate-spin" />
+                    Processing in background
+                  </span>
                 </div>
               )}
               <div
@@ -712,7 +846,21 @@ function ChatWorkspace({
                   variant={message.role === "user" ? "user" : showWelcomeMessage && index === 0 ? "welcome" : "assistant"}
                 />
               </div>
-              {message.leads && <LeadInlineResults leads={message.leads} />}
+              {message.intent === "generate_leads" && !message.leads?.length && !isPendingMessage && (
+                <p className="mt-2 text-[9px] font-medium text-[#616263]">
+                  No leads could be extracted for this search — try rephrasing with specific names, companies, or territories.
+                </p>
+              )}
+              {message.leads && message.leads.length > 0 && (
+                <LeadInlineResults
+                  leads={message.leads}
+                  onLeadsChange={(leads) => {
+                    setMessages((current) =>
+                      current.map((item) => (item.id === message.id ? { ...item, leads } : item))
+                    );
+                  }}
+                />
+              )}
               {showWelcomeMessage && index === 0 && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
                   <ThumbsUp size={14} />
@@ -721,8 +869,14 @@ function ChatWorkspace({
                 </div>
               )}
             </div>
-          ))}
-          {isThinking && <ThinkingBubble stage={displayedThinkingStage} />}
+            );
+          })}
+          {isThinking && sendMessage.processingState && (
+            <ProcessingPanel
+              state={sendMessage.processingState}
+              onDetachToBackground={handleDetachToBackground}
+            />
+          )}
           <div aria-hidden className="h-2" />
         </div>
       </div>
@@ -1007,7 +1161,7 @@ function SocialSignalRow({
       onMouseEnter={() => onHover(signal)}
       onFocus={() => onHover(signal)}
       tabIndex={0}
-      className="group bg-[#f4f4f4] text-[#616263] outline-none transition-colors duration-200 hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+      className="group animate-in fade-in duration-500 bg-[#f4f4f4] text-[#616263] outline-none transition-colors duration-200 hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
     >
       <td className="rounded-l-[20px] px-4 py-3">
         <div className="flex min-w-[230px] gap-3">
@@ -1071,7 +1225,12 @@ function SocialSignalsTable({
   perPage,
   onPageChange,
   isLoading,
-  emptyStateMessage,
+  isScanning,
+  emptyState,
+  onEmptyScanNow,
+  onEmptyOpenSettings,
+  enabledSources,
+  scanPanel,
 }: {
   signals: SocialSignal[];
   onHoverSignal: (signal: SocialSignal) => void;
@@ -1081,21 +1240,23 @@ function SocialSignalsTable({
   perPage: number;
   onPageChange: (page: number) => void;
   isLoading?: boolean;
-  emptyStateMessage?: string;
+  isScanning?: boolean;
+  emptyState?: ReturnType<typeof getSocialListeningEmptyState>;
+  onEmptyScanNow?: () => void;
+  onEmptyOpenSettings?: () => void;
+  enabledSources?: string[];
+  scanPanel?: ReactNode;
 }) {
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(page * perPage, total);
   const visiblePages = Array.from({ length: Math.min(lastPage, 3) }, (_, index) => index + 1);
+  const showSkeleton = (isLoading || isScanning) && signals.length === 0;
+  const skeletonRows = isScanning ? 5 : 4;
 
   return (
     <section className="flex min-h-[416px] flex-1 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+      {isScanning && scanPanel}
       <div className="min-h-0 flex-1 overflow-auto pr-1">
-        {isLoading ? (
-          <div className="flex h-[220px] items-center justify-center text-[12px] font-medium text-[#616263]">
-            <Loader2 size={18} className="mr-2 animate-spin" />
-            Loading signals…
-          </div>
-        ) : (
         <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
           <thead>
             <tr className="text-[9px] font-semibold text-[#333333]">
@@ -1112,16 +1273,16 @@ function SocialSignalsTable({
             {signals.map((signal) => (
               <SocialSignalRow key={signal.id} signal={signal} onHover={onHoverSignal} />
             ))}
+            {showSkeleton && <SocialSignalsTableSkeleton rows={skeletonRows} />}
           </tbody>
         </table>
-        )}
-        {!isLoading && signals.length === 0 && (
-          <div className="flex h-[220px] flex-col items-center justify-center gap-2 px-6 text-center text-[12px] font-medium text-[#616263]">
-            {emptyStateMessage?.includes("Scanning") && (
-              <Loader2 size={18} className="animate-spin text-[#09232d]" />
-            )}
-            <span>{emptyStateMessage ?? "No matching signals found."}</span>
-          </div>
+        {!isLoading && !isScanning && signals.length === 0 && emptyState && (
+          <SocialSignalsEmptyState
+            state={emptyState}
+            enabledSources={enabledSources}
+            onScanNow={onEmptyScanNow}
+            onOpenSettings={onEmptyOpenSettings}
+          />
         )}
       </div>
       <div className="flex items-center justify-between px-8 pb-3 pt-1 text-[9px] font-semibold text-[#333333] max-sm:px-3">
@@ -1675,6 +1836,7 @@ function ListeningSettingsModal({
 
 function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void }) {
   const { data: activeProfile } = useActiveIcpProfile();
+  const { data: listenSettings } = useSocialListeningSettings();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [source, setSource] = useState("all");
@@ -1735,11 +1897,37 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
 
   const activeSignal = signals.find((signal) => signal.id === activeSignalId) ?? signals[0];
 
-  const emptyStateMessage = getSocialListeningEmptyMessage(
+  const hasActiveFilters =
+    debouncedSearch.length > 0 ||
+    source !== "all" ||
+    signalType !== "all" ||
+    intent !== "all";
+
+  const emptyState = getSocialListeningEmptyState(
     latestRun,
     metrics?.last_run_at,
-    isScanning
+    isScanning,
+    hasActiveFilters
   );
+
+  const icpContext = useMemo(
+    () => ({
+      industries: activeProfile?.config.industries,
+      territories: activeProfile?.config.territories,
+      name: activeProfile?.name,
+    }),
+    [activeProfile]
+  );
+
+  const scanPanel = isScanning ? (
+    <SocialScanPanel
+      stages={latestRun?.stages}
+      signalsFound={Math.max(latestRun?.signals_created ?? 0, signals.length)}
+      enabledSources={listenSettings?.enabled_sources ?? []}
+      startedAt={latestRun?.started_at}
+      icpContext={icpContext}
+    />
+  ) : null;
 
   const handleScanNow = () => {
     triggerRun.mutate(true, {
@@ -1797,10 +1985,11 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
               <MetricCard
                 key={card.title}
                 title={card.title}
-                value={metricsLoading ? "—" : card.value}
-                percent={metricsLoading ? "—" : card.percent}
+                value={metricsLoading && !isScanning ? "—" : card.value}
+                percent={metricsLoading && !isScanning ? "—" : card.percent}
                 active={card.active}
                 unit={card.unit}
+                isScanning={isScanning && card.active}
               />
             ))}
           </div>
@@ -1832,7 +2021,12 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
               perPage={meta.per_page}
               onPageChange={setPage}
               isLoading={signalsLoading}
-              emptyStateMessage={emptyStateMessage}
+              isScanning={isScanning}
+              emptyState={emptyState}
+              onEmptyScanNow={handleScanNow}
+              onEmptyOpenSettings={() => setIsSettingsOpen(true)}
+              enabledSources={listenSettings?.enabled_sources}
+              scanPanel={scanPanel}
             />
           )}
         </div>
@@ -1870,17 +2064,10 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
               });
             }}
           />
+        ) : isScanning ? (
+          <SocialOpportunityDetailSkeleton />
         ) : (
-          <aside className="flex min-h-[645px] items-center justify-center rounded-[30px] bg-white px-8 text-center text-[13px] text-[#616263] shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-            {signalsLoading || isScanning ? (
-              <span className="flex items-center gap-2">
-                <Loader2 size={16} className="animate-spin" />
-                {emptyStateMessage}
-              </span>
-            ) : (
-              "Select a signal to view details."
-            )}
-          </aside>
+          <SocialOpportunityEmptyState />
         )}
       </div>
       <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
@@ -1895,8 +2082,8 @@ export function SalesEngineView() {
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: metrics } = useSalesEngineMetrics();
 
-  const leadsDiscovered = metrics?.leads_discovered ?? 0;
-  const qualifiedLeads = metrics?.qualified_leads ?? 0;
+  const leadsInCrm = metrics?.leads_in_crm ?? 0;
+  const leadsPendingReview = metrics?.leads_pending_review ?? 0;
   const formatMetric = (value: number) => value.toLocaleString();
 
   return (
@@ -1918,17 +2105,28 @@ export function SalesEngineView() {
           <>
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
-            <MetricCard title="Qualified Lead Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
+            <MetricCard
+              title="In CRM"
+              value={formatMetric(leadsInCrm)}
+              percent="—"
+              active
+              unit="Leads"
+            />
+            <MetricCard
+              title="Pending Review"
+              value={formatMetric(leadsPendingReview)}
+              percent="—"
+              unit="Drafts"
+            />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">
                 <Link
-                  href="/crm"
+                  href="/crm?source=sales_engine"
                   className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
                 >
                   <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
-                  View CRM Pipeline
+                  View CRM Pipeline{leadsInCrm > 0 ? ` (${formatMetric(leadsInCrm)})` : ""}
                 </Link>
                 <button
                   type="button"

@@ -222,28 +222,7 @@ export function useTriggerSocialListeningRun() {
   });
 }
 
-export function getSocialListeningEmptyMessage(
-  latestRun: SocialListeningRunStatus | null | undefined,
-  lastRunAt: string | null | undefined,
-  isScanning: boolean
-): string {
-  if (isScanning) {
-    const stages = latestRun?.stages?.filter(Boolean) ?? [];
-    const stageLabel = stages.length > 0 ? stages[stages.length - 1] : "queued";
-    return `Scanning social sources… (${stageLabel.replace(/_/g, " ")})`;
-  }
-
-  if (latestRun?.status === "failed") {
-    return latestRun.error ?? "The last scan failed. Try Scan now to retry.";
-  }
-
-  if (!lastRunAt && !latestRun) {
-    return "Starting your first scan…";
-  }
-
-  if (latestRun?.status === "completed" && (latestRun.signals_created ?? 0) === 0) {
-    return "Scan complete — no high-intent posts matched your ICP yet. Try Scan now or adjust Listen Settings.";
-  }
-
-  return "No matching signals found.";
-}
+export {
+  getSocialListeningEmptyMessage,
+  getSocialListeningEmptyState,
+} from "@/lib/social-listening-empty-state";

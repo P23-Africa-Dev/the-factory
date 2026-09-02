@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   clearChatMessages,
@@ -11,8 +11,17 @@ import {
   SalesEngineApiError,
   type ChatIntent,
   type ChatMessageApi,
+  type DiscoveryStageInfo,
   type SendChatMessageResult,
 } from "@/lib/api/sales-engine";
+import {
+  LATE_ENGAGEMENT_LABELS,
+  LATE_LABEL_AFTER_MS,
+  labelsForIntent,
+  nextProcessingLabelIndex,
+  PROCESSING_LABEL_INTERVAL_MS,
+  type SalesEngineIcpContext,
+} from "@/lib/sales-engine-processing-labels";
 import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
 import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
 import { SALES_ENGINE_ICP_KEYS } from "@/hooks/use-sales-engine-icp";
@@ -24,6 +33,15 @@ export const SALES_ENGINE_CHAT_KEYS = {
   history: (icpId: string | undefined) => ["sales-engine", "chat", "history", icpId] as const,
 };
 
+export type ProcessingState = {
+  label: string;
+  secondaryLabel?: string | null;
+  stepIndex: number;
+  totalSteps: number;
+  intent: ChatIntent;
+  startedAt: number;
+};
+
 function isUnauthorized(error: unknown) {
   return error instanceof SalesEngineApiError && error.status === 401;
 }
@@ -33,13 +51,20 @@ export function isMissingActiveIcp(error: unknown): boolean {
   return error instanceof SalesEngineApiError && error.status === 422;
 }
 
+export type ChatWaitMode = "foreground" | "background";
+
+export function isForegroundChatWaiting(isPending: boolean, waitMode: ChatWaitMode): boolean {
+  return isPending && waitMode !== "background";
+}
+
 export function mapApiMessagesToUi(messages: ChatMessageApi[]) {
   return messages.map((message, index) => ({
-    id: index + 2,
+    id: message.id ?? index + 2,
     role: message.role,
     body: message.body,
     intent: message.intent,
     leads: message.leads ?? undefined,
+    meta: message.meta ?? undefined,
   }));
 }
 
@@ -130,23 +155,178 @@ type SendMessageOptions = {
   onError?: (error: unknown) => void;
 };
 
+function progressSecondaryLabel(progress?: { candidates_found?: number } | null): string | null {
+  if (!progress?.candidates_found || progress.candidates_found <= 0) return null;
+  const count = progress.candidates_found;
+  return `Found ${count} potential match${count === 1 ? "" : "es"} so far…`;
+}
+
 export function useSendChatMessage(icpProfileId?: string, options?: SendMessageOptions) {
   const queryClient = useQueryClient();
   const resetAuth = useResetSalesEngineAuth();
   const { ensureSession } = useChatSessionManager();
-  const [processingStage, setProcessingStage] = useState<string | null>(null);
+  const { data: activeProfile } = useActiveIcpProfile();
+
+  const [processingState, setProcessingState] = useState<ProcessingState | null>(null);
+  const [waitMode, setWaitMode] = useState<ChatWaitMode>("foreground");
+
+  const labelSequenceRef = useRef<string[]>([]);
+  const labelIndexRef = useRef(0);
+  const labelIntervalRef = useRef<number | null>(null);
+  const lateIntervalRef = useRef<number | null>(null);
+  const lastLabelChangeRef = useRef(Date.now());
+  const lateIndexRef = useRef(0);
+  const currentIntentRef = useRef<ChatIntent>("freeform");
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingRunIdRef = useRef<number | null>(null);
+
+  const icpContext: SalesEngineIcpContext | undefined = activeProfile
+    ? {
+        industries: activeProfile.config?.industries,
+        territories: activeProfile.config?.territories,
+        name: activeProfile.name,
+      }
+    : undefined;
+
+  const clearProcessingTimers = useCallback(() => {
+    if (labelIntervalRef.current != null) {
+      window.clearInterval(labelIntervalRef.current);
+      labelIntervalRef.current = null;
+    }
+    if (lateIntervalRef.current != null) {
+      window.clearInterval(lateIntervalRef.current);
+      lateIntervalRef.current = null;
+    }
+  }, []);
+
+  const applyProcessingUpdate = useCallback(
+    (partial: Partial<ProcessingState> & { label: string }) => {
+      setProcessingState((current) => {
+        const base = current ?? {
+          label: partial.label,
+          stepIndex: partial.stepIndex ?? 0,
+          totalSteps: partial.totalSteps ?? 4,
+          intent: partial.intent ?? currentIntentRef.current,
+          startedAt: Date.now(),
+          secondaryLabel: partial.secondaryLabel ?? null,
+        };
+
+        return {
+          ...base,
+          ...partial,
+          intent: partial.intent ?? base.intent,
+          startedAt: base.startedAt,
+        };
+      });
+      lastLabelChangeRef.current = Date.now();
+    },
+    []
+  );
+
+  const startLabelRotation = useCallback(
+    (intent: ChatIntent, message: string) => {
+      clearProcessingTimers();
+      currentIntentRef.current = intent;
+
+      const sequence = labelsForIntent(intent, message, icpContext);
+      labelSequenceRef.current = sequence;
+      labelIndexRef.current = 0;
+      lateIndexRef.current = 0;
+      lastLabelChangeRef.current = Date.now();
+
+      const firstLabel = sequence[0] ?? "Processing your request…";
+      setProcessingState({
+        label: firstLabel,
+        stepIndex: 0,
+        totalSteps: 4,
+        intent,
+        startedAt: Date.now(),
+        secondaryLabel: null,
+      });
+
+      labelIntervalRef.current = window.setInterval(() => {
+        labelIndexRef.current = nextProcessingLabelIndex(
+          labelSequenceRef.current,
+          labelIndexRef.current
+        );
+        const nextLabel = labelSequenceRef.current[labelIndexRef.current];
+        if (nextLabel) {
+          applyProcessingUpdate({ label: nextLabel });
+        }
+      }, PROCESSING_LABEL_INTERVAL_MS);
+
+      lateIntervalRef.current = window.setInterval(() => {
+        if (Date.now() - lastLabelChangeRef.current < LATE_LABEL_AFTER_MS) return;
+        lateIndexRef.current = (lateIndexRef.current + 1) % LATE_ENGAGEMENT_LABELS.length;
+        applyProcessingUpdate({ label: LATE_ENGAGEMENT_LABELS[lateIndexRef.current] });
+      }, PROCESSING_LABEL_INTERVAL_MS);
+    },
+    [applyProcessingUpdate, clearProcessingTimers, icpContext]
+  );
+
+  const handleBackendStage = useCallback(
+    (info: DiscoveryStageInfo) => {
+      const secondary =
+        info.progress && info.progress.candidates_found
+          ? progressSecondaryLabel(info.progress)
+          : null;
+
+      applyProcessingUpdate({
+        label: info.label,
+        stepIndex: info.stepIndex,
+        totalSteps: info.totalSteps,
+        secondaryLabel: secondary,
+      });
+    },
+    [applyProcessingUpdate]
+  );
+
+  const detachToBackground = useCallback(() => {
+    setWaitMode("background");
+    abortControllerRef.current?.abort();
+    clearProcessingTimers();
+    setProcessingState(null);
+    queryClient.invalidateQueries({ queryKey: SALES_ENGINE_CHAT_KEYS.history(icpProfileId) });
+    return pendingRunIdRef.current;
+  }, [clearProcessingTimers, icpProfileId, queryClient]);
 
   const mutation = useMutation({
     mutationFn: async ({ body, intent }: SendMessageVariables) => {
-      setProcessingStage(null);
+      setWaitMode("foreground");
+      pendingRunIdRef.current = null;
+      abortControllerRef.current = new AbortController();
+      startLabelRotation(intent, body);
       const sessionId = await ensureSession(icpProfileId);
 
-      return sendChatMessage(sessionId, { body, intent }, {
-        onStage: (label) => setProcessingStage(label),
-      });
+      const result = await sendChatMessage(
+        sessionId,
+        { body, intent },
+        {
+          onStage: handleBackendStage,
+          icpContext,
+          signal: abortControllerRef.current.signal,
+        }
+      );
+
+      if (result.discovery_run_id) {
+        pendingRunIdRef.current = result.discovery_run_id;
+      }
+
+      return result;
     },
     onSuccess: (result, variables) => {
-      setProcessingStage(null);
+      if (result.pending) {
+        clearProcessingTimers();
+        setProcessingState(null);
+        queryClient.invalidateQueries({ queryKey: SALES_ENGINE_CHAT_KEYS.history(icpProfileId) });
+        options?.onSuccess?.(result);
+        return;
+      }
+
+      clearProcessingTimers();
+      setProcessingState(null);
+      setWaitMode("foreground");
+      pendingRunIdRef.current = null;
       if (variables.intent === "generate_leads" || variables.intent === "quick_research") {
         queryClient.invalidateQueries({ queryKey: SALES_ENGINE_METRICS_KEYS.all });
         queryClient.invalidateQueries({ queryKey: SALES_ENGINE_ICP_KEYS.all });
@@ -158,13 +338,18 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
       options?.onSuccess?.(result);
     },
     onError: (error) => {
-      setProcessingStage(null);
+      clearProcessingTimers();
+      setProcessingState(null);
+      setWaitMode("foreground");
+      pendingRunIdRef.current = null;
       if (isUnauthorized(error)) resetAuth();
       options?.onError?.(error);
     },
   });
 
-  return { ...mutation, processingStage };
+  useEffect(() => () => clearProcessingTimers(), [clearProcessingTimers]);
+
+  return { ...mutation, processingState, waitMode, detachToBackground };
 }
 
 export function useClearChatHistory(icpProfileId?: string) {
