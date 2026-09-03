@@ -220,7 +220,7 @@ function MetricCard({
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
           {title}
         </p>
-        <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} />
+        {/* <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} /> */}
       </div>
 
       <div className="absolute left-5 top-[48px]">
@@ -2556,7 +2556,7 @@ export function SalesEngineView() {
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
             <MetricCard
-              title="In CRM"
+              title="Lead Metrics"
               value={formatMetric(leadsInCrm)}
               percent="—"
               active
