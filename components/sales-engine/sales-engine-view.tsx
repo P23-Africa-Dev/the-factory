@@ -21,6 +21,7 @@ import {
   Check,
   ChevronDown,
   CircleCheck,
+  Clock,
   Copy,
   Expand,
   Globe2,
@@ -37,7 +38,9 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   User,
+  UserPlus,
   UsersRound,
   X,
 } from "lucide-react";
@@ -1090,12 +1093,164 @@ function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) 
   );
 }
 
+function SignalActionMenu({
+  signal,
+  onRemove,
+  onSelect,
+}: {
+  signal: SocialSignal;
+  onRemove?: (id: number) => void;
+  onSelect?: (signal: SocialSignal) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 150;
+    const menuHeight = 155;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < menuHeight ? rect.top - menuHeight : rect.bottom + 4;
+    const left = Math.max(12, rect.right - menuWidth);
+    setPosition({ top, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    function handleScroll() {
+      setIsOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleScroll);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Signal actions"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect?.(signal);
+          setIsOpen((prev) => !prev);
+        }}
+        className={`grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer ${
+          isOpen ? "bg-black/10 group-hover:bg-white/20" : ""
+        }`}
+      >
+        <MoreVertical
+          size={16}
+          className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+        />
+      </button>
+
+      {isOpen &&
+        position &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: position.top, left: position.left }}
+            className="fixed z-50 w-[150px] rounded-[14px] border border-black/10 bg-white p-1.5 text-[#09232d] shadow-[0_12px_28px_rgba(9,35,45,0.18)]"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                toast.success(`Opening outreach composer for ${signal.company} (${signal.profile})…`);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <Send size={13} className="shrink-0 text-[#09232d]" />
+              <span>Outreach</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                toast.success(`Added ${signal.company} to CRM pipeline.`);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <UserPlus size={13} className="shrink-0 text-[#09232d]" />
+              <span>Add to CRM</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                toast.success(`Reminder set for ${signal.company}.`);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <Clock size={13} className="shrink-0 text-[#09232d]" />
+              <span>Set Reminder</span>
+            </button>
+            <div className="my-1 border-t border-gray-100" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onRemove?.(signal.id);
+                toast.success(`Signal from ${signal.company} removed.`);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-red-600 transition hover:bg-red-50 cursor-pointer"
+            >
+              <Trash2 size={13} className="shrink-0 text-red-500" />
+              <span>Remove</span>
+            </button>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 function SocialSignalRow({
   signal,
   onHover,
+  onRemoveSignal,
 }: {
   signal: SocialSignal;
   onHover: (signal: SocialSignal) => void;
+  onRemoveSignal?: (id: number) => void;
 }) {
   const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
 
@@ -1157,9 +1312,23 @@ function SocialSignalRow({
         </div>
       </td>
       <td className="rounded-r-[20px] px-4 py-3 align-middle">
-        <div className="flex items-center gap-4">
-          <MessageCircle size={15} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
-          <MoreVertical size={16} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label={`Message ${signal.profile || signal.company}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onHover(signal);
+              toast.info(`Opening message composer for ${signal.profile || signal.company}…`);
+            }}
+            className="grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer"
+          >
+            <MessageCircle
+              size={15}
+              className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+            />
+          </button>
+          <SignalActionMenu signal={signal} onRemove={onRemoveSignal} onSelect={onHover} />
         </div>
       </td>
     </tr>
@@ -1169,9 +1338,11 @@ function SocialSignalRow({
 function SocialSignalsTable({
   signals,
   onHoverSignal,
+  onRemoveSignal,
 }: {
   signals: SocialSignal[];
   onHoverSignal: (signal: SocialSignal) => void;
+  onRemoveSignal?: (id: number) => void;
 }) {
   return (
     <section className="flex min-h-[416px] flex-1 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
@@ -1190,7 +1361,12 @@ function SocialSignalsTable({
           </thead>
           <tbody>
             {signals.map((signal) => (
-              <SocialSignalRow key={signal.id} signal={signal} onHover={onHoverSignal} />
+              <SocialSignalRow
+                key={signal.id}
+                signal={signal}
+                onHover={onHoverSignal}
+                onRemoveSignal={onRemoveSignal}
+              />
             ))}
           </tbody>
         </table>
@@ -1410,9 +1586,27 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
       </div>
 
       <div className="mt-auto flex items-center gap-[17px] bg-[#f7f7f7] px-6 py-4">
-        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white">Create Outreach</button>
-        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">Set Reminder</button>
-        <button type="button" className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">Add to CRM</button>
+        <button
+          type="button"
+          onClick={() => toast.success(`Creating outreach message for ${signal.company}…`)}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition hover:bg-[#0f3340] cursor-pointer"
+        >
+          Create Outreach
+        </button>
+        <button
+          type="button"
+          onClick={() => toast.success(`Reminder set for ${signal.company}.`)}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer"
+        >
+          Set Reminder
+        </button>
+        <button
+          type="button"
+          onClick={() => toast.success(`Added ${signal.company} to CRM pipeline.`)}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer"
+        >
+          Add to CRM
+        </button>
       </div>
     </aside>
   );
@@ -1583,6 +1777,11 @@ function SocialListeningTab() {
   const [activeSignalId, setActiveSignalId] = useState(socialSignals[0].id);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [removedSignalIds, setRemovedSignalIds] = useState<number[]>([]);
+
+  const handleRemoveSignal = (id: number) => {
+    setRemovedSignalIds((prev) => [...prev, id]);
+  };
 
   const handleScan = () => {
     setIsScanning(true);
@@ -1596,6 +1795,7 @@ function SocialListeningTab() {
   const filteredSignals = useMemo(() => {
     const query = search.trim().toLowerCase();
     return socialSignals.filter((signal) => {
+      if (removedSignalIds.includes(signal.id)) return false;
       const matchesSearch =
         query.length === 0 ||
         [signal.signal, signal.source, signal.persona, signal.company, signal.intent, signal.description]
@@ -1607,7 +1807,7 @@ function SocialListeningTab() {
       const matchesIntent = intent === "all" || signal.buyingStage === intent;
       return matchesSearch && matchesSource && matchesSignalType && matchesIntent;
     });
-  }, [intent, search, signalType, source]);
+  }, [intent, removedSignalIds, search, signalType, source]);
 
   const activeSignal =
     filteredSignals.find((signal) => signal.id === activeSignalId) ?? filteredSignals[0] ?? socialSignals[0];
@@ -1641,7 +1841,11 @@ function SocialListeningTab() {
             onScan={handleScan}
             onOpenSettings={() => setIsSettingsOpen(true)}
           />
-          <SocialSignalsTable signals={filteredSignals} onHoverSignal={(signal) => setActiveSignalId(signal.id)} />
+          <SocialSignalsTable
+            signals={filteredSignals}
+            onHoverSignal={(signal) => setActiveSignalId(signal.id)}
+            onRemoveSignal={handleRemoveSignal}
+          />
         </div>
         <SocialOpportunityDetail signal={activeSignal} />
       </div>
