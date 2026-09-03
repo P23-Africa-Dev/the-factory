@@ -1858,7 +1858,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   const [page, setPage] = useState(1);
   const [activeSignalId, setActiveSignalId] = useState<number | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const perPage = 20;
+  const perPage = 10;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

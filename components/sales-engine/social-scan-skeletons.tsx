@@ -107,7 +107,7 @@ export function SocialOpportunityDetailSkeleton() {
       </div>
 
       <p className="border-t border-[#f1f1f1] px-7 py-4 text-center text-[10px] text-[#616263]">
-        Results appear here as signals are scored — select one to preview details.
+        Results appear here as signals are scored → select one to preview details.
       </p>
     </aside>
   );
