@@ -76,6 +76,10 @@ type SocialSignal = {
   suggestedMessage: string;
   postUrl?: string;
   entityType?: "company" | "individual";
+  industry?: string;
+  keyTopics?: string[];
+  competitors?: string[];
+  followUpStrategy?: string;
 };
 
 type SocialStatCard = {
@@ -176,9 +180,13 @@ const socialSignals: SocialSignal[] = [
     problem: "Generating qualified leads consistently",
     urgency: "Medium-High",
     entityType: "company",
+    industry: "Information Technology & Services",
+    keyTopics: ["B2B Outbound", "Lead Generation", "Pipeline Acceleration"],
+    competitors: ["Traditional Agencies", "Manual Prospecting"],
+    followUpStrategy: "Share a 2-page benchmark deck illustrating B2B customer acquisition benchmarks in West Africa.",
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
-      "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
+      "Hi Thabo,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
   },
   {
     id: 2,
@@ -205,38 +213,46 @@ const socialSignals: SocialSignal[] = [
     problem: "CRM implementation friction",
     urgency: "High",
     entityType: "company",
+    industry: "Commercial Real Estate & Logistics",
+    keyTopics: ["CRM Migration", "Sales Velocity", "Contact Management"],
+    competitors: ["Zoho CRM", "HubSpot"],
+    followUpStrategy: "Offer a direct feature and data-migration breakdown comparing their current tool against simpler automated pipelines.",
     postUrl: "https://x.com/search?q=CRM",
     suggestedMessage:
       "Hi Aisha,\nI noticed your team is evaluating CRM options before renewal. Factory 23 can help compare implementation effort and identify a lower-friction path for your sales process.",
   },
   {
     id: 3,
-    signal: "We're struggling to consistently generate qualified leads in Nigeria. Any recommendations for agencies that actually understand B2B?",
+    signal: "Scaling our sales development team from 3 to 10 reps across Nairobi and Lagos. Need proven cold outreach workflows and intent data tools.",
     source: "LinkedIn Post",
     sourceIcon: "in",
-    persona: "Marketing Director",
-    company: "ABC Technologies",
-    location: "Lagos, Nigeria\n51-200 employees",
+    persona: "VP of Sales",
+    company: "BlueRidge Energy",
+    location: "Port Harcourt, Nigeria\n201-500 employees",
     intent: "Recommendation",
     intentColor: "#6ec758",
-    description: "Actively looking for solutions",
-    score: 73,
-    profile: "Thabo Molefe",
+    description: "Team expansion & tooling",
+    score: 86,
+    profile: "Chinedu Okeke",
     reasons: [
-      "Explicit problem with current situation",
-      "Actively asking for recommendations",
-      "Relevant decision maker (Marketing Director)",
-      "Matches ICP (Industry, Size, Location)",
-      "Recent activity (Posted 2 hours ago)",
+      "Headcount expansion signals committed budget",
+      "Explicit interest in outbound workflows & intent signals",
+      "Senior VP stakeholder with purchasing authority",
+      "High fit with enterprise tier",
+      "Recent activity (Posted 3 hours ago)",
     ],
-    signalType: "Recommendation",
-    buyingStage: "Consideration",
-    problem: "Generating qualified leads consistently",
-    urgency: "Medium-High",
+    signalType: "Expansion",
+    buyingStage: "Purchase Planning",
+    problem: "Onboarding new sales reps without unified playbook",
+    urgency: "High",
     entityType: "company",
+    industry: "Clean Energy & Utilities",
+    keyTopics: ["SDR Enablement", "Outbound Workflows", "Intent Data"],
+    competitors: ["Apollo.io", "ZoomInfo"],
+    followUpStrategy: "Introduce our multi-seat Sales Engine workflow template built specifically for growing African enterprise teams.",
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
-      "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
+      "Hi Chinedu,\nSaw your team is expanding SDR operations in Nairobi and Lagos. We work with fast-growing regional teams to deploy automated intent pipelines that get reps productive on week one.",
   },
   {
     id: 4,
@@ -263,9 +279,686 @@ const socialSignals: SocialSignal[] = [
     problem: "Understanding app build cost",
     urgency: "Medium",
     entityType: "individual",
+    industry: "Fintech & Consumer Tech",
+    keyTopics: ["App Development", "Cost Estimation", "Product Scoping"],
+    competitors: ["Offshore Dev Agencies", "Freelance Contractors"],
+    followUpStrategy: "Send our interactive app estimation roadmap with phased milestone pricing.",
     postUrl: "https://www.reddit.com/r/startups/",
     suggestedMessage:
       "Hi Daniel,\nI saw your question about fintech app build costs. We can help you break the scope into phases and estimate a realistic budget before you commit to a vendor.",
+  },
+  {
+    id: 5,
+    signal: "We are looking for automated payment reconciliation software for our cross-border merchants. Existing banking portals take days to reconcile.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Head of Product",
+    company: "PayTrack Solutions",
+    location: "Accra, Ghana\n20-50 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Manual reconciliation bottlenecks",
+    score: 88,
+    profile: "Kofi Mensah",
+    reasons: [
+      "Specific technical bottleneck highlighted",
+      "Strong cross-border business commercial intent",
+      "Key decision maker in product & engineering",
+      "Actively evaluating modern API alternatives",
+      "Recent activity (Posted 4 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Solution Evaluation",
+    problem: "Delayed reconciliation cycle and transaction opacity",
+    urgency: "High",
+    entityType: "company",
+    industry: "Financial Technology",
+    keyTopics: ["Automated Reconciliation", "Cross-border Payments", "Banking APIs"],
+    competitors: ["Custom In-house Scripts", "Legacy Banking Portals"],
+    followUpStrategy: "Offer an architecture review showing automated webhook-based reconciliation.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Kofi,\nRead your note regarding multi-currency merchant reconciliation friction. We've automated identical transaction pipelines for regional fintechs with real-time settlement tracking.",
+  },
+  {
+    id: 6,
+    signal: "Hiring 5 new account executives in Abuja and Lagos. Looking for lead enrichment software that actually has accurate West African contact data.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "People & Operations Lead",
+    company: "Apex Logistics",
+    location: "Abuja, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "High-accuracy regional data search",
+    score: 81,
+    profile: "Fatima Al-Hassan",
+    reasons: [
+      "Explicit frustration with Western-centric databases",
+      "Immediate hiring timeline creates operational urgency",
+      "Direct buying signal for data enrichment services",
+      "Matches primary ICP criteria",
+      "Recent activity (Posted 5 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Poor phone and email deliverability in regional databases",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Freight & Supply Chain",
+    keyTopics: ["Data Enrichment", "Local Contact Verification", "AE Hiring"],
+    competitors: ["Lusha", "Cognism", "Seamless.ai"],
+    followUpStrategy: "Provide a sample verified lead batch of 25 logistics decision-makers in Nigeria.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Fatima,\nFinding verified contact data in Nigeria can be frustrating with generic global tools. We maintain localized verified phone and email indexes tailored specifically for Nigerian B2B markets.",
+  },
+  {
+    id: 7,
+    signal: "Current marketing automation stack is too slow and clunky. Migration recommendations away from Marketo for a mid-market team?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Director of Marketing",
+    company: "Kazi Dynamics",
+    location: "Johannesburg, South Africa\n201-500 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Seeking agile marketing stack",
+    score: 84,
+    profile: "Zanele Dlamini",
+    reasons: [
+      "Dissatisfaction with high complexity legacy stack",
+      "Direct budget holder for marketing automation",
+      "Mid-market tier with high expansion potential",
+      "Clear intent to migrate within quarter",
+      "Recent activity (Posted 5 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Requirement Gathering",
+    problem: "High maintenance overhead and sluggish campaign delivery",
+    urgency: "High",
+    entityType: "company",
+    industry: "Enterprise Software & Cloud",
+    keyTopics: ["Marketing Automation", "Campaign Orchestration", "Marketo Replacement"],
+    competitors: ["Adobe Marketo", "Pardot", "ActiveCampaign"],
+    followUpStrategy: "Share migration roadmap detailing lead score synchronization and nurture workflow parity.",
+    postUrl: "https://x.com/search?q=marketo",
+    suggestedMessage:
+      "Hi Zanele,\nMarketo migrations are one of the best opportunities to streamline lifecycle campaigns. We can show how modern teams cut software overhead in half while improving response rates.",
+  },
+  {
+    id: 8,
+    signal: "Need a reputable partner to design and audit our cross-border payment gateway security. Who is the gold standard right now?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Technical Lead",
+    company: "FlutterWire",
+    location: "Lagos, Nigeria\n20-50 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Security audit & gateway review",
+    score: 91,
+    profile: "Tunde Adeyemi",
+    reasons: [
+      "Highest intent score (91%) - critical compliance project",
+      "Technical gatekeeper actively looking for verified partners",
+      "High urgency tied to upcoming product launch",
+      "Strong fit for Factory 23 fintech advisory",
+      "Recent activity (Posted 6 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Partner Selection",
+    problem: "Upcoming regulatory audit for payment processing",
+    urgency: "High",
+    entityType: "company",
+    industry: "Payments Infrastructure",
+    keyTopics: ["Payment Gateway", "PCI-DSS Compliance", "Security Audit"],
+    competitors: ["Tier 1 Consultancies", "Independent Audit Firms"],
+    followUpStrategy: "Connect directly with our Lead Architect for an initial security scoping call.",
+    postUrl: "https://x.com/search?q=payment+security",
+    suggestedMessage:
+      "Hi Tunde,\nEnsuring bulletproof payment architecture before launch is crucial. We've guided leading fintech platforms through PCI compliance and secure gateway design.",
+  },
+  {
+    id: 9,
+    signal: "Exploring telemedicine software vendors for a hospital network in East Africa. Needs offline sync support for remote clinics.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Chief Medical Officer",
+    company: "Mara Health",
+    location: "Nairobi, Kenya\n501-1000 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Regional healthcare infrastructure RFP",
+    score: 87,
+    profile: "Dr. Amina Yusuf",
+    reasons: [
+      "Large institution with significant budget allocation",
+      "Unique technical requirement (offline data sync) fits specialized build",
+      "High social and commercial impact project",
+      "Executive level decision maker",
+      "Recent activity (Posted 6 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Discovery & RFP",
+    problem: "Unreliable connectivity in rural clinics disrupting patient records",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Healthcare Systems",
+    keyTopics: ["Telemedicine", "Offline Data Sync", "EMR Integration"],
+    competitors: ["Generic EHR Providers", "Custom Legacy Systems"],
+    followUpStrategy: "Share a technical brief demonstrating progressive web app offline sync architectures.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Dr. Yusuf,\nOffline-first architecture is vital for healthcare delivery across distributed networks. We specialize in robust offline synchronization engines for mission-critical platforms.",
+  },
+  {
+    id: 10,
+    signal: "What are people paying on average for B2B outbound lead generation services in Africa? Getting quotes ranging from $1k to $15k/mo.",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Managing Director",
+    company: "Sterling B2B",
+    location: "Benin City, Nigeria\n11-50 employees",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Comparing outbound vendor pricing",
+    score: 79,
+    profile: "Efe Omoruyi",
+    reasons: [
+      "Active buyer seeking pricing clarity in the market",
+      "Wide quote variance shows opportunity for consultative pricing",
+      "Decision maker with clear budget allocated",
+      "Immediate relevance to Sales Engine value proposition",
+      "Recent activity (Posted 7 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Budget Allocation",
+    problem: "Unclear ROI metrics and opaque pricing models from agency vendors",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Wholesale & Business Supplies",
+    keyTopics: ["Outbound Pricing", "Cost per Qualified Lead", "Sales ROI"],
+    competitors: ["Fixed-fee Agencies", "Commission-only Contractors"],
+    followUpStrategy: "Provide our transparent B2B Outbound Cost & ROI calculator spreadsheet.",
+    postUrl: "https://www.reddit.com/r/sales/",
+    suggestedMessage:
+      "Hi Efe,\nOutbound pricing can vary wildly depending on whether vendors use generic email blasts or verified multi-channel intent data. We can share a straightforward benchmark breakdown based on actual conversion rates.",
+  },
+  {
+    id: 11,
+    signal: "Looking to deploy an automated lead qualification system that syncs directly with our WhatsApp business and Zoho CRM.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Head of Operations",
+    company: "OmniFlow Systems",
+    location: "Kaduna, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "WhatsApp & CRM integration",
+    score: 83,
+    profile: "Ibrahim Musa",
+    reasons: [
+      "Direct integration requirement specified",
+      "High regional reliance on WhatsApp for sales",
+      "Operations lead with purchasing authority",
+      "Matches ICP tier",
+      "Recent activity (Posted 7 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Manual lead entry from messaging apps causing dropped prospects",
+    urgency: "High",
+    entityType: "company",
+    industry: "Enterprise Automation",
+    keyTopics: ["WhatsApp Integration", "Lead Qualification", "Zoho Sync"],
+    competitors: ["Twilio", "Wati", "Zoko"],
+    followUpStrategy: "Share a live sandbox demonstration of instant WhatsApp lead capture.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Ibrahim,\nConnecting WhatsApp conversations straight into CRM pipelines without manual copy-pasting is a game changer. We've built bidirectional sync flows for regional sales teams.",
+  },
+  {
+    id: 12,
+    signal: "We are struggling with high customer support volumes during billings cycles. Any AI triage bots that understand African payment context?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Operations Manager",
+    company: "Zola Health",
+    location: "Nairobi, Kenya\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Support triage automation",
+    score: 80,
+    profile: "Grace Mwangi",
+    reasons: [
+      "High volume support strain identified",
+      "Specific domain context (African payments)",
+      "Strong operational trigger for AI automation",
+      "Recent activity (Posted 8 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Evaluation",
+    problem: "Delayed support ticket resolution during monthly renewals",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Healthtech & Wellness",
+    keyTopics: ["AI Support Bot", "Payment Queries", "Automated Triage"],
+    competitors: ["Intercom", "Freshdesk"],
+    followUpStrategy: "Demonstrate localized payment intent classification models.",
+    postUrl: "https://x.com/search?q=support+automation",
+    suggestedMessage:
+      "Hi Grace,\nSupport surges around billing cycles can overwhelm teams quickly. Our AI triage assistants accurately categorize payment inquiries and resolve common friction points instantly.",
+  },
+  {
+    id: 13,
+    signal: "Need a fleet dispatch API with automated SMS delivery notifications that actually works reliably across all Nigerian networks.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Logistics Coordinator",
+    company: "SwiftHaul",
+    location: "Onitsha, Nigeria\n20-50 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Seeking reliable SMS gateway",
+    score: 77,
+    profile: "Obinna Nnamdi",
+    reasons: [
+      "Reliability issues with existing SMS telco provider",
+      "Clear intent to switch to dedicated routing",
+      "Core operational workflow dependency",
+      "Recent activity (Posted 8 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Consideration",
+    problem: "Failed delivery notifications resulting in customer complaints",
+    urgency: "High",
+    entityType: "company",
+    industry: "Haulage & Dispatch",
+    keyTopics: ["SMS Delivery", "Fleet Dispatch", "Telco Routing"],
+    competitors: ["Termii", "Infobip"],
+    followUpStrategy: "Provide live delivery rate benchmarks across MTN, Airtel, and Glo networks.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Obinna,\nDeliverability on regional telco networks requires smart fallback routing. We can share benchmark data and route your dispatch alerts through high-uptime paths.",
+  },
+  {
+    id: 14,
+    signal: "Evaluating cloud cost reduction strategies. Our AWS bill in South Africa doubled after the latest traffic spike. Any FinOps consultants?",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Cloud Architect",
+    company: "CloudNova",
+    location: "Cape Town, South Africa\n101-250 employees",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Cloud optimization & cost reduction",
+    score: 85,
+    profile: "Sipho Ndlovu",
+    reasons: [
+      "Direct cost pain trigger (bill doubled)",
+      "Technical authority looking for advisory",
+      "High budget reallocation potential",
+      "Recent activity (Posted 9 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Research",
+    problem: "Unpredictable compute scaling costs",
+    urgency: "High",
+    entityType: "company",
+    industry: "Cloud Infrastructure",
+    keyTopics: ["FinOps", "AWS Cost Optimization", "Infrastructure Scaling"],
+    competitors: ["In-house DevOps", "Global Consultancies"],
+    followUpStrategy: "Offer an architecture audit identifying reserved instance and caching savings.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Sipho,\nCloud cost spikes post-traffic surge are usually driven by unoptimized egress and instance overprovisioning. We can review your architecture and model immediate 30-40% savings.",
+  },
+  {
+    id: 15,
+    signal: "Looking for an instant KYC verification engine with 99.9% uptime on BVN and NIN checks for Nigerian fintech onboarding.",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Head of Compliance",
+    company: "FinEdge Capital",
+    location: "Lagos, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "High-uptime KYC provider",
+    score: 92,
+    profile: "Yewande Balogun",
+    reasons: [
+      "Top tier intent score (92%)",
+      "Mission critical regulatory compliance need",
+      "Frustrated with existing verification downtime",
+      "Recent activity (Posted 9 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Partner Selection",
+    problem: "High drop-off at identity verification during user registration",
+    urgency: "High",
+    entityType: "company",
+    industry: "Consumer Credit & Banking",
+    keyTopics: ["KYC Verification", "BVN Verification", "Compliance Engine"],
+    competitors: ["Smile ID", "Dojah", "Prembly"],
+    followUpStrategy: "Share our multi-provider fallback engine uptime metrics.",
+    postUrl: "https://x.com/search?q=kyc+verification",
+    suggestedMessage:
+      "Hi Yewande,\nSingle-provider KYC APIs frequently experience downtime during government server outages. We implement automated multi-vendor fallback so your user onboarding never stalls.",
+  },
+  {
+    id: 16,
+    signal: "Seeking a B2B merchant acquisition playbook for agro-commodities across Ghana and Ivory Coast. Who has done this at scale?",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "VP of Growth",
+    company: "TradeSprint",
+    location: "Kumasi, Ghana\n51-200 employees",
+    intent: "Expansion",
+    intentColor: "#6ec758",
+    description: "Cross-border merchant acquisition",
+    score: 82,
+    profile: "Kwame Addo",
+    reasons: [
+      "Regional market expansion signal",
+      "Executive growth stakeholder with allocated budget",
+      "High strategic fit for Sales Engine playbooks",
+      "Recent activity (Posted 10 hours ago)",
+    ],
+    signalType: "Expansion",
+    buyingStage: "Strategy Planning",
+    problem: "Slow merchant onboarding in non-metro agricultural centers",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Agri-Tech & Trade",
+    keyTopics: ["Merchant Acquisition", "Field Sales", "Cross-border Expansion"],
+    competitors: ["Local Agencies", "Internal Field Reps"],
+    followUpStrategy: "Share case study on merchant digitization in West African trade corridors.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Kwame,\nAcquiring merchants across agricultural hubs requires hyper-local outreach combined with automated follow-ups. We can share what has worked best in Ghana and Ivory Coast.",
+  },
+  {
+    id: 17,
+    signal: "What is the best tech stack for real-time auction apps that need sub-second bidding updates in low-bandwidth areas?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Freelance Developer",
+    company: "Individual",
+    location: "",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Evaluating low-bandwidth architecture",
+    score: 71,
+    profile: "Musa Garba",
+    reasons: [
+      "Technical scoping for active project",
+      "Open to architecture recommendations",
+      "Recent activity (Posted 10 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Research",
+    problem: "Real-time websocket latency on mobile networks",
+    urgency: "Medium",
+    entityType: "individual",
+    industry: "Software & Mobile Apps",
+    keyTopics: ["WebSockets", "Low Bandwidth", "Real-time Bidding"],
+    competitors: ["Firebase", "Supabase", "Pusher"],
+    followUpStrategy: "Send architecture blueprint on lightweight binary websocket protocols.",
+    postUrl: "https://www.reddit.com/r/webdev/",
+    suggestedMessage:
+      "Hi Musa,\nFor low-bandwidth real-time sync, binary serialization over lightweight WebSockets saves up to 70% data transfer compared to JSON payloads. Happy to share a quick prototype structure.",
+  },
+  {
+    id: 18,
+    signal: "Replacing our subscription billing provider due to failed debit retries on local cards. Need intelligent card retry logic.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Product Lead",
+    company: "PayNexus",
+    location: "Lagos, Nigeria\n20-50 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Failed subscription debit recovery",
+    score: 89,
+    profile: "Folake Adeleke",
+    reasons: [
+      "Direct revenue loss from failed renewals",
+      "Immediate switching trigger",
+      "Product decision maker",
+      "Recent activity (Posted 11 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Vendor Selection",
+    problem: "Involuntary churn due to unoptimized retry schedules",
+    urgency: "High",
+    entityType: "company",
+    industry: "Fintech & SaaS",
+    keyTopics: ["Card Retries", "Subscription Billing", "Churn Prevention"],
+    competitors: ["Stripe Billing", "Paystack Subscriptions"],
+    followUpStrategy: "Share data on optimal retry windows for Nigerian commercial banks.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Folake,\nInvoluntary churn from failed card debits can cost up to 15% of ARR. Intelligent retry scheduling synced to salary cycles recovers over 40% of missed debits.",
+  },
+  {
+    id: 19,
+    signal: "Looking for an SMS broadcast partner with high regional deliverability for rural farmers in Western Kenya.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "CEO",
+    company: "AgriConnect",
+    location: "Kisumu, Kenya\n20-50 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Rural SMS broadcast reach",
+    score: 84,
+    profile: "Juma Omondi",
+    reasons: [
+      "Direct C-level outreach trigger",
+      "High mission-critical dependency on SMS",
+      "Recent activity (Posted 11 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Evaluation",
+    problem: "Low delivery rates for weather and market price alerts",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Agriculture",
+    keyTopics: ["SMS Broadcast", "Rural Telecoms", "Agri Alerts"],
+    competitors: ["AfricasTalking", "Safaricom Direct"],
+    followUpStrategy: "Offer pilot credit trial with direct delivery receipts.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Juma,\nConnecting with rural smallholders requires direct operator interconnects rather than cheap grey routes. We can set up a test route to verify delivery speeds in Western Kenya.",
+  },
+  {
+    id: 20,
+    signal: "Need inventory sync software connecting our 4 physical stores in Enugu and Abuja with our Shopify online storefront.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "E-commerce Manager",
+    company: "Horizon Retail",
+    location: "Enugu, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Omnichannel inventory sync",
+    score: 78,
+    profile: "Ngozi Eze",
+    reasons: [
+      "Physical and online stock desynchronization pain",
+      "Active buyer seeking software solution",
+      "Recent activity (Posted 12 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Research",
+    problem: "Overselling out-of-stock items online",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Retail & Apparel",
+    keyTopics: ["Omnichannel", "Shopify Sync", "POS Integration"],
+    competitors: ["TradeGecko", "Cin7", "QuickBooks POS"],
+    followUpStrategy: "Share our step-by-step multi-location stock synchronization guide.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Ngozi,\nPreventing stockouts between physical POS terminals and Shopify is essential for retail growth. We configure real-time stock webhooks so inventory updates across all stores instantly.",
+  },
+  {
+    id: 21,
+    signal: "Evaluating applicant tracking systems and recruitment CRM for technical hiring across West Africa. Needs WhatsApp candidate communication.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Talent Acquisition Lead",
+    company: "TalentBridge",
+    location: "Kano, Nigeria\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Recruitment CRM with WhatsApp",
+    score: 80,
+    profile: "Suleiman Bello",
+    reasons: [
+      "Hiring expansion underway",
+      "Identified candidate channel preference (WhatsApp)",
+      "Recent activity (Posted 12 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Candidates ignore emails; need high-response messaging",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Staffing & Recruiting",
+    keyTopics: ["Recruitment CRM", "Applicant Tracking", "Candidate Sourcing"],
+    competitors: ["Lever", "Greenhouse", "Workable"],
+    followUpStrategy: "Demonstrate WhatsApp interview scheduling workflows.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Suleiman,\nEmail response rates for engineering candidates in Nigeria are under 20%, while WhatsApp averages over 85%. We integrate automated candidate messaging directly into hiring pipelines.",
+  },
+  {
+    id: 22,
+    signal: "Looking for penetration testing partners for SOC2 and ISO 27001 compliance ahead of our Series A diligence.",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Chief Information Security Officer",
+    company: "SafeVault",
+    location: "Pretoria, South Africa\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Security compliance penetration testing",
+    score: 93,
+    profile: "Lerato Molefe",
+    reasons: [
+      "Highest intent score (93%) tied to fundraising milestone",
+      "Executive CISO stakeholder",
+      "Immediate budget allocation",
+      "Recent activity (Posted 13 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Partner Selection",
+    problem: "Audit deadline approaching for investor review",
+    urgency: "High",
+    entityType: "company",
+    industry: "Enterprise Security",
+    keyTopics: ["SOC2 Compliance", "Penetration Testing", "Security Diligence"],
+    competitors: ["Big 4 Accounting", "Specialist Cyber Firms"],
+    followUpStrategy: "Schedule priority briefing with certified ethical hackers and compliance leads.",
+    postUrl: "https://x.com/search?q=soc2+pentest",
+    suggestedMessage:
+      "Hi Lerato,\nInvestor diligence timelines leave no room for audit delays. Our certified security team delivers thorough penetration tests and remediation reports mapped directly to SOC2 controls.",
+  },
+  {
+    id: 23,
+    signal: "Automating driver dispatch and customer delivery confirmation via WhatsApp bot. Has anyone built this without coding from scratch?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Dispatch Lead",
+    company: "Nexus Freight",
+    location: "Warri, Nigeria\n20-50 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "No-code delivery confirmation bot",
+    score: 76,
+    profile: "David Kalu",
+    reasons: [
+      "Operational bottleneck with phone confirmation",
+      "Seeking turnkey or low-code automation",
+      "Recent activity (Posted 13 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Research",
+    problem: "Drivers spending too much time making manual check-in phone calls",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Last-Mile Delivery",
+    keyTopics: ["WhatsApp Bot", "Dispatch Automation", "Proof of Delivery"],
+    competitors: ["Yellow.ai", "Gupshup"],
+    followUpStrategy: "Share ready-to-deploy delivery confirmation flow template.",
+    postUrl: "https://x.com/search?q=whatsapp+dispatch",
+    suggestedMessage:
+      "Hi David,\nAutomating delivery confirmations over WhatsApp frees up dispatchers completely. We have a pre-built driver check-in template that triggers automated customer notifications.",
+  },
+  {
+    id: 24,
+    signal: "How much budget should an early-stage B2B founder allocate for initial outbound automation software?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Founder",
+    company: "Individual",
+    location: "",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Early-stage outbound budgeting",
+    score: 72,
+    profile: "Adaobi Uche",
+    reasons: [
+      "Early stage founder preparing outbound stack",
+      "Active price discovery question",
+      "Recent activity (Posted 14 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Budgeting",
+    problem: "Uncertainty around tool pricing vs. in-house effort",
+    urgency: "Low-Medium",
+    entityType: "individual",
+    industry: "B2B Software",
+    keyTopics: ["Outbound Budget", "Founder Sales", "Stack Optimization"],
+    competitors: ["Manual Cold Email", "Fractional Agency"],
+    followUpStrategy: "Send our Lean Outbound Stack guide for bootstrap founders.",
+    postUrl: "https://www.reddit.com/r/startups/",
+    suggestedMessage:
+      "Hi Adaobi,\nFor early-stage B2B outreach, you don't need expensive enterprise contracts. You can build a lean, high-performing intent pipeline for under $200/month before scaling up.",
+  },
+  {
+    id: 25,
+    signal: "Looking for a CRM that handles field technician dispatch and equipment leasing schedules for off-grid solar systems.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Commercial Lead",
+    company: "Zenith Solar",
+    location: "Takoradi, Ghana\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Field service & leasing CRM",
+    score: 87,
+    profile: "Patrick Mensah",
+    reasons: [
+      "Clear industry-specific workflow requirements",
+      "Commercial decision maker with growth agenda",
+      "High fit for Sales Engine pipeline customizations",
+      "Recent activity (Posted 14 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Solution Discovery",
+    problem: "Disconnected systems for customer sales and field maintenance",
+    urgency: "High",
+    entityType: "company",
+    industry: "Renewable Energy",
+    keyTopics: ["Field Service CRM", "Equipment Leasing", "Solar Operations"],
+    competitors: ["Salesforce Field Service", "Zoho FSM"],
+    followUpStrategy: "Schedule consultative review showing unified customer and asset management.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Patrick,\nManaging both lease contracts and field technician routes in one unified hub eliminates dropped service calls. We can show how renewable energy providers organize this workflow.",
   },
 ];
 
@@ -1397,10 +2090,12 @@ function SignalActionMenu({
 
 function SocialSignalRow({
   signal,
+  isActive = false,
   onHover,
   onRemoveSignal,
 }: {
   signal: SocialSignal;
+  isActive?: boolean;
   onHover: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
 }) {
@@ -1408,22 +2103,37 @@ function SocialSignalRow({
 
   return (
     <tr
+      onClick={() => onHover(signal)}
       onMouseEnter={() => onHover(signal)}
       onFocus={() => onHover(signal)}
       tabIndex={0}
-      className="group bg-[#f4f4f4] text-[#616263] outline-none transition-colors duration-200 hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+      className={`group cursor-pointer outline-none transition-colors duration-200 ${
+        isActive
+          ? "bg-[#09232d] text-white"
+          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+      }`}
     >
       <td className="rounded-l-[20px] px-4 py-3">
         <div className="flex min-w-[230px] gap-3">
           <SourceBadge sourceIcon={signal.sourceIcon} />
-          <p className="line-clamp-4 text-[9px] leading-[11px] text-[#616263] transition-colors group-hover:text-white group-focus:text-white">
+          <p
+            className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
+              isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+            }`}
+          >
             {signal.signal}
           </p>
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
         <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
-        <p className="mt-1 text-[8px] text-[#616263]/70 transition-colors group-hover:text-white/70 group-focus:text-white/70">2hr ago</p>
+        <p
+          className={`mt-1 text-[8px] transition-colors ${
+            isActive ? "text-white/70" : "text-[#616263]/70 group-hover:text-white/70 group-focus:text-white/70"
+          }`}
+        >
+          2hr ago
+        </p>
       </td>
       <td className="px-3 py-3 align-middle">
         <p className="w-[68px] text-[8px] leading-[11px]">{signal.persona}</p>
@@ -1433,16 +2143,22 @@ function SocialSignalRow({
           {isIndividual ? (
             <User
               size={20}
-              className="shrink-0 text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+              className={`shrink-0 transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
             />
           ) : (
             <CompanyBuildingIcon
-              className="size-5 shrink-0 text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+              className={`size-5 shrink-0 transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
             />
           )}
           <div>
             <p className="text-[9px] font-semibold leading-[11px]">{signal.company}</p>
-            {signal.location && <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>}
+            {signal.location && (
+              <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>
+            )}
           </div>
         </div>
       </td>
@@ -1456,10 +2172,10 @@ function SocialSignalRow({
         <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
       </td>
       <td className="px-3 py-3 align-middle">
-        <div className="block group-hover:hidden group-focus:hidden">
+        <div className={isActive ? "hidden" : "block group-hover:hidden group-focus:hidden"}>
           <ScoreGauge score={signal.score} />
         </div>
-        <div className="hidden group-hover:block group-focus:block">
+        <div className={isActive ? "block" : "hidden group-hover:block group-focus:block"}>
           <ScoreGauge score={signal.score} dark />
         </div>
       </td>
@@ -1477,7 +2193,9 @@ function SocialSignalRow({
           >
             <MessageCircle
               size={15}
-              className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+              className={`transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
             />
           </button>
           <SignalActionMenu signal={signal} onRemove={onRemoveSignal} onSelect={onHover} />
@@ -1487,35 +2205,69 @@ function SocialSignalRow({
   );
 }
 
+const SIGNALS_PAGE_SIZE = 10;
+
 function SocialSignalsTable({
   signals,
+  activeSignalId,
   onHoverSignal,
   onRemoveSignal,
 }: {
   signals: SocialSignal[];
+  activeSignalId?: number;
   onHoverSignal: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(signals.length / SIGNALS_PAGE_SIZE));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [signals]);
+
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * SIGNALS_PAGE_SIZE;
+  const paginatedSignals = useMemo(() => {
+    return signals.slice(startIndex, startIndex + SIGNALS_PAGE_SIZE);
+  }, [signals, startIndex]);
+
+  const startDisplay = signals.length === 0 ? 0 : startIndex + 1;
+  const endDisplay = Math.min(startIndex + SIGNALS_PAGE_SIZE, signals.length);
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (safePage <= 3) {
+      return [1, 2, 3, "...", totalPages];
+    }
+    if (safePage >= totalPages - 2) {
+      return [1, "...", totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, "...", safePage, "...", totalPages];
+  }, [safePage, totalPages]);
+
   return (
-    <section className="flex min-h-[416px] flex-1 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-      <div className="min-h-0 flex-1 overflow-auto pr-1">
+    <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1">
         <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
-              <th className="px-4 py-1 text-left">Signal</th>
-              <th className="px-3 py-1 text-left">Source</th>
-              <th className="px-3 py-1 text-left">Persona</th>
-              <th className="px-3 py-1 text-left">Company</th>
-              <th className="px-3 py-1 text-left">Intent</th>
-              <th className="px-3 py-1 text-center">Score</th>
-              <th className="px-4 py-1 text-center">Action</th>
+              <th className="bg-white px-4 py-1 text-left">Signal</th>
+              <th className="bg-white px-3 py-1 text-left">Source</th>
+              <th className="bg-white px-3 py-1 text-left">Persona</th>
+              <th className="bg-white px-3 py-1 text-left">Company</th>
+              <th className="bg-white px-3 py-1 text-left">Intent</th>
+              <th className="bg-white px-3 py-1 text-center">Score</th>
+              <th className="bg-white px-4 py-1 text-center">Action</th>
             </tr>
           </thead>
           <tbody>
-            {signals.map((signal) => (
+            {paginatedSignals.map((signal) => (
               <SocialSignalRow
                 key={signal.id}
                 signal={signal}
+                isActive={signal.id === activeSignalId}
                 onHover={onHoverSignal}
                 onRemoveSignal={onRemoveSignal}
               />
@@ -1528,24 +2280,53 @@ function SocialSignalsTable({
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between px-8 pb-3 pt-1 text-[9px] font-semibold text-[#333333] max-sm:px-3">
-        <span>Showing 1 - {Math.max(signals.length, 1)} of 213 Signals</span>
+      <div className="shrink-0 flex items-center justify-between border-t border-[#f1f1f1] px-8 pb-3 pt-3 text-[9px] font-semibold text-[#333333] max-sm:px-3">
+        <span>Showing {startDisplay} - {endDisplay} of {signals.length} Signals</span>
         <div className="flex items-center gap-2">
-          <button type="button" className="px-2 text-[#c1c1c1]">Prev</button>
-          {[1, 2, 3].map((page) => (
-            <button
-              key={page}
-              type="button"
-              className={`grid size-8 place-items-center rounded-[8px] border text-[10px] ${
-                page === 1 ? "border-[#3f83f8] bg-[#3f83f8] text-white" : "border-[#f1f1f1] bg-white text-[#333333]"
-              }`}
-            >
-              {page}
-            </button>
-          ))}
-          <span className="px-2 text-[13px]">...</span>
-          <button type="button" className="grid size-8 place-items-center rounded-[8px] border border-[#f1f1f1] bg-white text-[10px]">10</button>
-          <button type="button" className="px-2">Next</button>
+          <button
+            type="button"
+            disabled={safePage <= 1}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className={`px-2 transition ${
+              safePage <= 1
+                ? "text-[#c1c1c1] cursor-not-allowed"
+                : "text-[#333333] hover:text-[#09232d] cursor-pointer"
+            }`}
+          >
+            Prev
+          </button>
+          {pageNumbers.map((page, idx) =>
+            typeof page === "number" ? (
+              <button
+                key={page}
+                type="button"
+                onClick={() => setCurrentPage(page)}
+                className={`grid size-8 place-items-center rounded-[8px] border text-[10px] font-medium transition cursor-pointer ${
+                  safePage === page
+                    ? "border-[#3f83f8] bg-[#3f83f8] text-white shadow-sm"
+                    : "border-[#f1f1f1] bg-white text-[#333333] hover:bg-gray-100"
+                }`}
+              >
+                {page}
+              </button>
+            ) : (
+              <span key={`ellipsis-${idx}`} className="px-1 text-[13px] text-gray-400">
+                ...
+              </span>
+            )
+          )}
+          <button
+            type="button"
+            disabled={safePage >= totalPages}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className={`px-2 transition ${
+              safePage >= totalPages
+                ? "text-[#c1c1c1] cursor-not-allowed"
+                : "text-[#333333] hover:text-[#09232d] cursor-pointer"
+            }`}
+          >
+            Next
+          </button>
         </div>
       </div>
     </section>
@@ -1662,8 +2443,9 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
       : "https://www.reddit.com");
 
   return (
-    <aside className="flex min-h-[645px] flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-      <div className="relative min-h-[175px] bg-[#0b242e] px-7 pb-5 pt-8 text-white">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+      {/* 1. Opportunity Header (FIXED) */}
+      <div className="relative min-h-[175px] shrink-0 bg-[#0b242e] px-7 pb-5 pt-8 text-white">
         <div className="absolute right-7 top-8">
           <ScoreGauge score={signal.score} dark />
         </div>
@@ -1689,82 +2471,131 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">{signal.source} • Public • 2hrs ago</p>
       </div>
 
-      <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
-        <div className="flex items-center gap-2 border-r border-[#e9e9e9] pr-4">
-          <Image src="/avatars/male-avatar.png" alt="" width={25} height={25} className="size-[25px] rounded-full object-cover" />
-          <div>
-            <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
-            <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
+      {/* 2. Middle Content (SCROLLABLE) */}
+      <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+        <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+          <div className="flex items-center gap-2 border-r border-[#e9e9e9] pr-4">
+            <Image src="/avatars/male-avatar.png" alt="" width={25} height={25} className="size-[25px] rounded-full object-cover" />
+            <div>
+              <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+              <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pl-4">
+            {isIndividual ? (
+              <User size={22} className="shrink-0 text-[#616263]" />
+            ) : (
+              <CompanyBuildingIcon className="size-[22px] shrink-0 text-[#616263]" />
+            )}
+            <div>
+              <p className="text-[10px] font-semibold leading-[12px]">{signal.company}</p>
+              <p className="whitespace-pre-line text-[10px] font-light leading-[12px]">
+                {signal.location || (isIndividual ? "Individual profile" : "Public profile")}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 pl-4">
-          {isIndividual ? (
-            <User size={22} className="shrink-0 text-[#616263]" />
-          ) : (
-            <CompanyBuildingIcon className="size-[22px] shrink-0 text-[#616263]" />
-          )}
-          <div>
-            <p className="text-[10px] font-semibold leading-[12px]">{signal.company}</p>
-            <p className="whitespace-pre-line text-[10px] font-light leading-[12px]">
-              {signal.location || (isIndividual ? "Individual profile" : "Public profile")}
-            </p>
-          </div>
-        </div>
-      </div>
 
-      <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
-        <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
-        {signal.reasons.map((item) => (
-          <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
-            <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
-            {item}
-          </div>
-        ))}
-      </div>
-
-      <div className="px-5 py-3 text-[#616263]">
-        <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-          {[
-            ["Signal Type", signal.signalType],
-            ["Buying Stage", signal.buyingStage],
-            ["Problem", signal.problem],
-            ["Urgency", signal.urgency],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <p className="text-[10px] font-light leading-[12px]">{label}</p>
-              <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+        <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+          <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
+          {signal.reasons.map((item) => (
+            <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
+              <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
+              {item}
             </div>
           ))}
         </div>
-      </div>
 
-      <div className="space-y-[5px] px-2 pb-2">
-        <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-          <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
-          <p className="mt-1 text-[9px] leading-[12px]"><span className="font-semibold">Reach out within 24 hours</span><br />This prospect is actively looking for solutions.</p>
-        </div>
-        <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
-            <button
-              type="button"
-              aria-label="Copy AI suggested message"
-              onClick={handleCopyMessage}
-              className="grid size-5 place-items-center rounded-[4px] text-[#9d9d9d] transition-colors hover:bg-gray-100 hover:text-[#09232d] cursor-pointer"
-            >
-              {hasCopiedMessage ? (
-                <Check size={13} className="text-[#16b37d]" />
-              ) : (
-                <Copy size={13} />
-              )}
-            </button>
+        <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+          <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            {[
+              ["Signal Type", signal.signalType],
+              ["Buying Stage", signal.buyingStage],
+              ["Problem", signal.problem],
+              ["Urgency", signal.urgency],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-[10px] font-light leading-[12px]">{label}</p>
+                <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+              </div>
+            ))}
           </div>
-          <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
+        </div>
+
+        {(signal.industry || (signal.keyTopics && signal.keyTopics.length > 0)) && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-2 text-[10px] font-semibold leading-[12px]">Prospect Intelligence</p>
+            {signal.industry && (
+              <p className="mb-2 text-[10px] leading-[13px]">
+                <span className="font-semibold">Industry:</span> {signal.industry}
+              </p>
+            )}
+            {signal.keyTopics && signal.keyTopics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {signal.keyTopics.map((topic) => (
+                  <span
+                    key={topic}
+                    className="inline-flex rounded-full bg-[#f1f3f4] px-2.5 py-0.5 text-[9px] font-medium text-[#494c4e]"
+                  >
+                    #{topic}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {signal.competitors && signal.competitors.length > 0 && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">Mentioned Tools & Vendors</p>
+            <div className="flex flex-wrap gap-1.5">
+              {signal.competitors.map((comp) => (
+                <span
+                  key={comp}
+                  className="inline-flex items-center gap-1 rounded-[6px] border border-[#e2e2e2] bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232d]"
+                >
+                  {comp}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-[5px] px-2 py-2">
+          <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+            <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
+            <p className="mt-1 text-[9px] leading-[12px]"><span className="font-semibold">Reach out within 24 hours</span><br />This prospect is actively looking for solutions.</p>
+          </div>
+          <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
+              <button
+                type="button"
+                aria-label="Copy AI suggested message"
+                onClick={handleCopyMessage}
+                className="grid size-5 place-items-center rounded-[4px] text-[#9d9d9d] transition-colors hover:bg-gray-100 hover:text-[#09232d] cursor-pointer"
+              >
+                {hasCopiedMessage ? (
+                  <Check size={13} className="text-[#16b37d]" />
+                ) : (
+                  <Copy size={13} />
+                )}
+              </button>
+            </div>
+            <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
+          </div>
+          {signal.followUpStrategy && (
+            <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+              <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
+              <p className="mt-1 text-[9px] leading-[12px]">{signal.followUpStrategy}</p>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="mt-auto flex items-center gap-[17px] bg-[#f7f7f7] px-6 py-4">
+      {/* 3. Opportunity Footer (FIXED) */}
+      <div className="mt-auto shrink-0 flex items-center gap-[17px] border-t border-[#e9e9e9] bg-[#f7f7f7] px-6 py-4">
         <button
           type="button"
           onClick={() => toast.success(`Creating outreach message for ${signal.company}…`)}
@@ -1993,9 +2824,9 @@ function SocialListeningTab() {
 
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1">
-        <div className="flex min-h-[645px] flex-col gap-[17px]">
-          <div className="grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1 xl:h-[700px]">
+        <div className="flex h-full min-h-0 flex-col gap-[17px]">
+          <div className="shrink-0 grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
             {socialStatCards.map((card) => (
               <MetricCard
                 key={card.title}
@@ -2007,21 +2838,24 @@ function SocialListeningTab() {
               />
             ))}
           </div>
-          <SocialListeningFilters
-            search={search}
-            source={source}
-            signalType={signalType}
-            intent={intent}
-            isScanning={isScanning}
-            onSearchChange={setSearch}
-            onSourceChange={setSource}
-            onSignalTypeChange={setSignalType}
-            onIntentChange={setIntent}
-            onScan={handleScan}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-          />
+          <div className="shrink-0">
+            <SocialListeningFilters
+              search={search}
+              source={source}
+              signalType={signalType}
+              intent={intent}
+              isScanning={isScanning}
+              onSearchChange={setSearch}
+              onSourceChange={setSource}
+              onSignalTypeChange={setSignalType}
+              onIntentChange={setIntent}
+              onScan={handleScan}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+            />
+          </div>
           <SocialSignalsTable
             signals={filteredSignals}
+            activeSignalId={activeSignal.id}
             onHoverSignal={(signal) => setActiveSignalId(signal.id)}
             onRemoveSignal={handleRemoveSignal}
           />
