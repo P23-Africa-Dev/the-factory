@@ -1488,6 +1488,19 @@ function SocialListeningFilters({
 
 function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
   const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
+
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(signal.suggestedMessage);
+      setHasCopiedMessage(true);
+      toast.success("AI suggested message copied to clipboard!");
+      window.setTimeout(() => setHasCopiedMessage(false), 2000);
+    } catch {
+      toast.error("Failed to copy message.");
+    }
+  };
+
   const postHref =
     signal.postUrl ||
     (signal.source === "LinkedIn Post"
@@ -1580,7 +1593,21 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
           <p className="mt-1 text-[9px] leading-[12px]"><span className="font-semibold">Reach out within 24 hours</span><br />This prospect is actively looking for solutions.</p>
         </div>
         <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-          <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
+            <button
+              type="button"
+              aria-label="Copy AI suggested message"
+              onClick={handleCopyMessage}
+              className="grid size-5 place-items-center rounded-[4px] text-[#9d9d9d] transition-colors hover:bg-gray-100 hover:text-[#09232d] cursor-pointer"
+            >
+              {hasCopiedMessage ? (
+                <Check size={13} className="text-[#16b37d]" />
+              ) : (
+                <Copy size={13} />
+              )}
+            </button>
+          </div>
           <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
         </div>
       </div>
