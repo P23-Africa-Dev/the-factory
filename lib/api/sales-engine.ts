@@ -1039,6 +1039,15 @@ export type Factory23IntegrationStatus = {
   block_message?: string | null;
 };
 
+export function fetchFactory23IntegrationStatus(): Promise<Factory23IntegrationStatus> {
+  return withSessionRetry(async () =>
+    seRequest<Factory23IntegrationStatus>({
+      method: "GET",
+      path: "/integrations/factory23/status",
+    })
+  );
+}
+
 export async function fetchFactory23IntegrationStatusWithAutoEnsure(): Promise<Factory23IntegrationStatus> {
   let status = await fetchFactory23IntegrationStatus();
   if (!status.can_sync && status.block_reason === "not_configured") {
