@@ -36,6 +36,7 @@ import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import {
   useCreateSignalOutreach,
+  useDismissSignal,
   useSetSignalReminder,
   useSocialListeningBootstrap,
   useSocialListeningSignals,
@@ -65,10 +66,10 @@ import {
   type SocialSignalApi,
 } from "@/lib/api/sales-engine";
 import {
-  Building2,
   Check,
   ChevronDown,
   CircleCheck,
+  Clock,
   Copy,
   Expand,
   Globe2,
@@ -78,12 +79,16 @@ import {
   Minimize2,
   MoreVertical,
   Plus,
+  Scan,
   Search,
   Send,
   SlidersHorizontal,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
+  User,
+  UserPlus,
   UsersRound,
   X,
 } from "lucide-react";
@@ -1100,6 +1105,28 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function CompanyBuildingIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 21h18" />
+      <path d="M5 21V7a4 4 0 0 1 4-4h5v18" />
+      <path d="M8 8h3" />
+      <path d="M8 12h3" />
+      <path d="M8 16h3" />
+      <path d="M14 9h5a1 1 0 0 1 1 1v11" />
+      <path d="M17 14v4" />
+    </svg>
+  );
+}
+
 function SalesEngineTabs({
   activeTab,
   onChange,
@@ -1162,31 +1189,228 @@ function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) 
   );
 }
 
-function SocialSignalRow({
+function SignalActionMenu({
   signal,
-  onHover,
+  onRemove,
+  onSelect,
+  onCreateOutreach,
+  onAddToCrm,
+  onSetReminder,
 }: {
   signal: SocialSignal;
-  onHover: (signal: SocialSignal) => void;
+  onRemove?: (id: number) => void;
+  onSelect?: (signal: SocialSignal) => void;
+  onCreateOutreach?: (signal: SocialSignal) => void;
+  onAddToCrm?: (signal: SocialSignal) => void;
+  onSetReminder?: (signal: SocialSignal) => void;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 150;
+    const menuHeight = 155;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < menuHeight ? rect.top - menuHeight : rect.bottom + 4;
+    const left = Math.max(12, rect.right - menuWidth);
+    setPosition({ top, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    function handleScroll() {
+      setIsOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleScroll);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Signal actions"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect?.(signal);
+          setIsOpen((prev) => !prev);
+        }}
+        className={`grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer ${
+          isOpen ? "bg-black/10 group-hover:bg-white/20" : ""
+        }`}
+      >
+        <MoreVertical
+          size={16}
+          className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+        />
+      </button>
+
+      {isOpen &&
+        position &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: position.top, left: position.left }}
+            className="fixed z-50 w-[150px] rounded-[14px] border border-black/10 bg-white p-1.5 text-[#09232d] shadow-[0_12px_28px_rgba(9,35,45,0.18)]"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                if (onCreateOutreach) {
+                  onCreateOutreach(signal);
+                } else {
+                  toast.success(`Opening outreach composer for ${signal.company} (${signal.profile})…`);
+                }
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <Send size={13} className="shrink-0 text-[#09232d]" />
+              <span>Outreach</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                if (onAddToCrm) {
+                  onAddToCrm(signal);
+                } else {
+                  toast.success(`Added ${signal.company} to CRM pipeline.`);
+                }
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <UserPlus size={13} className="shrink-0 text-[#09232d]" />
+              <span>Add to CRM</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                if (onSetReminder) {
+                  onSetReminder(signal);
+                } else {
+                  toast.success(`Reminder set for ${signal.company}.`);
+                }
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <Clock size={13} className="shrink-0 text-[#09232d]" />
+              <span>Set Reminder</span>
+            </button>
+            <div className="my-1 border-t border-gray-100" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                if (onRemove) {
+                  onRemove(signal.id);
+                } else {
+                  toast.success(`Signal from ${signal.company} removed.`);
+                }
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-red-600 transition hover:bg-red-50 cursor-pointer"
+            >
+              <Trash2 size={13} className="shrink-0 text-red-500" />
+              <span>Remove</span>
+            </button>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
+function SocialSignalRow({
+  signal,
+  isActive = false,
+  onHover,
+  onRemoveSignal,
+  onCreateOutreach,
+  onAddToCrm,
+  onSetReminder,
+}: {
+  signal: SocialSignal;
+  isActive?: boolean;
+  onHover: (signal: SocialSignal) => void;
+  onRemoveSignal?: (id: number) => void;
+  onCreateOutreach?: (signal: SocialSignal) => void;
+  onAddToCrm?: (signal: SocialSignal) => void;
+  onSetReminder?: (signal: SocialSignal) => void;
+}) {
+  const isIndividual =
+    signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+
   return (
     <tr
+      onClick={() => onHover(signal)}
       onMouseEnter={() => onHover(signal)}
       onFocus={() => onHover(signal)}
       tabIndex={0}
-      className="group animate-in fade-in duration-500 bg-[#f4f4f4] text-[#616263] outline-none transition-colors duration-200 hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+      className={`group cursor-pointer outline-none transition-colors duration-200 ${
+        isActive
+          ? "bg-[#09232d] text-white"
+          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+      }`}
     >
       <td className="rounded-l-[20px] px-4 py-3">
         <div className="flex min-w-[230px] gap-3">
           <SourceBadge sourceIcon={signal.sourceIcon} />
-          <p className="line-clamp-4 text-[9px] leading-[11px] text-[#616263] transition-colors group-hover:text-white group-focus:text-white">
+          <p
+            className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
+              isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+            }`}
+          >
             {signal.signal}
           </p>
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
         <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
-        <p className="mt-1 text-[8px] text-[#616263]/70 transition-colors group-hover:text-white/70 group-focus:text-white/70">
+        <p
+          className={`mt-1 text-[8px] transition-colors ${
+            isActive ? "text-white/70" : "text-[#616263]/70 group-hover:text-white/70 group-focus:text-white/70"
+          }`}
+        >
           {formatRelativeTime(signal.posted_at)}
         </p>
       </td>
@@ -1195,10 +1419,25 @@ function SocialSignalRow({
       </td>
       <td className="px-3 py-3 align-middle">
         <div className="flex min-w-[150px] items-center gap-2">
-          <Building2 size={20} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+          {isIndividual ? (
+            <User
+              size={20}
+              className={`shrink-0 transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
+            />
+          ) : (
+            <CompanyBuildingIcon
+              className={`size-5 shrink-0 transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
+            />
+          )}
           <div>
             <p className="text-[9px] font-semibold leading-[11px]">{signal.company}</p>
-            {signal.location && <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>}
+            {signal.location && (
+              <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>
+            )}
           </div>
         </div>
       </td>
@@ -1212,17 +1451,44 @@ function SocialSignalRow({
         <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
       </td>
       <td className="px-3 py-3 align-middle">
-        <div className="block group-hover:hidden group-focus:hidden">
+        <div className={isActive ? "hidden" : "block group-hover:hidden group-focus:hidden"}>
           <ScoreGauge score={signal.score} />
         </div>
-        <div className="hidden group-hover:block group-focus:block">
+        <div className={isActive ? "block" : "hidden group-hover:block group-focus:block"}>
           <ScoreGauge score={signal.score} dark />
         </div>
       </td>
       <td className="rounded-r-[20px] px-4 py-3 align-middle">
-        <div className="flex items-center gap-4">
-          <MessageCircle size={15} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
-          <MoreVertical size={16} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label={`Message ${signal.profile || signal.company}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onHover(signal);
+              if (onCreateOutreach) {
+                onCreateOutreach(signal);
+              } else {
+                toast.info(`Opening message composer for ${signal.profile || signal.company}…`);
+              }
+            }}
+            className="grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer"
+          >
+            <MessageCircle
+              size={15}
+              className={`transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
+            />
+          </button>
+          <SignalActionMenu
+            signal={signal}
+            onRemove={onRemoveSignal}
+            onSelect={onHover}
+            onCreateOutreach={onCreateOutreach}
+            onAddToCrm={onAddToCrm}
+            onSetReminder={onSetReminder}
+          />
         </div>
       </td>
     </tr>
@@ -1231,7 +1497,12 @@ function SocialSignalRow({
 
 function SocialSignalsTable({
   signals,
+  activeSignalId,
   onHoverSignal,
+  onRemoveSignal,
+  onCreateOutreach,
+  onAddToCrm,
+  onSetReminder,
   page,
   lastPage,
   total,
@@ -1246,7 +1517,12 @@ function SocialSignalsTable({
   scanPanel,
 }: {
   signals: SocialSignal[];
+  activeSignalId?: number | null;
   onHoverSignal: (signal: SocialSignal) => void;
+  onRemoveSignal?: (id: number) => void;
+  onCreateOutreach?: (signal: SocialSignal) => void;
+  onAddToCrm?: (signal: SocialSignal) => void;
+  onSetReminder?: (signal: SocialSignal) => void;
   page: number;
   lastPage: number;
   total: number;
@@ -1262,29 +1538,50 @@ function SocialSignalsTable({
 }) {
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(page * perPage, total);
-  const visiblePages = Array.from({ length: Math.min(lastPage, 3) }, (_, index) => index + 1);
+  const safePage = Math.min(Math.max(1, page), Math.max(lastPage, 1));
+  const pageNumbers = useMemo(() => {
+    if (lastPage <= 5) {
+      return Array.from({ length: Math.max(lastPage, 1) }, (_, i) => i + 1);
+    }
+    if (safePage <= 3) {
+      return [1, 2, 3, "...", lastPage];
+    }
+    if (safePage >= lastPage - 2) {
+      return [1, "...", lastPage - 2, lastPage - 1, lastPage];
+    }
+    return [1, "...", safePage, "...", lastPage];
+  }, [safePage, lastPage]);
   const showSkeleton = (isLoading || isScanning) && signals.length === 0;
   const skeletonRows = isScanning ? 5 : 4;
 
   return (
-    <section className="flex min-h-[416px] flex-1 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+    <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
       {isScanning && scanPanel}
-      <div className="min-h-0 flex-1 overflow-auto pr-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1">
         <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
-              <th className="px-4 py-1 text-left">Signal</th>
-              <th className="px-3 py-1 text-left">Source</th>
-              <th className="px-3 py-1 text-left">Persona</th>
-              <th className="px-3 py-1 text-left">Company</th>
-              <th className="px-3 py-1 text-left">Intent</th>
-              <th className="px-3 py-1 text-center">Score</th>
-              <th className="px-4 py-1 text-center">Action</th>
+              <th className="bg-white px-4 py-1 text-left">Signal</th>
+              <th className="bg-white px-3 py-1 text-left">Source</th>
+              <th className="bg-white px-3 py-1 text-left">Persona</th>
+              <th className="bg-white px-3 py-1 text-left">Company</th>
+              <th className="bg-white px-3 py-1 text-left">Intent</th>
+              <th className="bg-white px-3 py-1 text-center">Score</th>
+              <th className="bg-white px-4 py-1 text-center">Action</th>
             </tr>
           </thead>
           <tbody>
             {signals.map((signal) => (
-              <SocialSignalRow key={signal.id} signal={signal} onHover={onHoverSignal} />
+              <SocialSignalRow
+                key={signal.id}
+                signal={signal}
+                isActive={signal.id === activeSignalId}
+                onHover={onHoverSignal}
+                onRemoveSignal={onRemoveSignal}
+                onCreateOutreach={onCreateOutreach}
+                onAddToCrm={onAddToCrm}
+                onSetReminder={onSetReminder}
+              />
             ))}
             {showSkeleton && <SocialSignalsTableSkeleton rows={skeletonRows} />}
           </tbody>
@@ -1298,48 +1595,52 @@ function SocialSignalsTable({
           />
         )}
       </div>
-      <div className="flex items-center justify-between px-8 pb-3 pt-1 text-[9px] font-semibold text-[#333333] max-sm:px-3">
+      <div className="shrink-0 flex items-center justify-between border-t border-[#f1f1f1] px-8 pb-3 pt-3 text-[9px] font-semibold text-[#333333] max-sm:px-3">
         <span>
           Showing {rangeStart} - {rangeEnd} of {total} Signals
         </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled={page <= 1}
-            onClick={() => onPageChange(page - 1)}
-            className={`px-2 ${page <= 1 ? "text-[#c1c1c1]" : ""}`}
+            disabled={safePage <= 1}
+            onClick={() => onPageChange(safePage - 1)}
+            className={`px-2 transition ${
+              safePage <= 1
+                ? "text-[#c1c1c1] cursor-not-allowed"
+                : "text-[#333333] hover:text-[#09232d] cursor-pointer"
+            }`}
           >
             Prev
           </button>
-          {visiblePages.map((pageNumber) => (
-            <button
-              key={pageNumber}
-              type="button"
-              onClick={() => onPageChange(pageNumber)}
-              className={`grid size-8 place-items-center rounded-[8px] border text-[10px] ${
-                pageNumber === page ? "border-[#3f83f8] bg-[#3f83f8] text-white" : "border-[#f1f1f1] bg-white text-[#333333]"
-              }`}
-            >
-              {pageNumber}
-            </button>
-          ))}
-          {lastPage > 3 && (
-            <>
-              <span className="px-2 text-[13px]">...</span>
+          {pageNumbers.map((pageNumber, idx) =>
+            typeof pageNumber === "number" ? (
               <button
+                key={pageNumber}
                 type="button"
-                onClick={() => onPageChange(lastPage)}
-                className="grid size-8 place-items-center rounded-[8px] border border-[#f1f1f1] bg-white text-[10px]"
+                onClick={() => onPageChange(pageNumber)}
+                className={`grid size-8 place-items-center rounded-[8px] border text-[10px] font-medium transition cursor-pointer ${
+                  safePage === pageNumber
+                    ? "border-[#3f83f8] bg-[#3f83f8] text-white shadow-sm"
+                    : "border-[#f1f1f1] bg-white text-[#333333] hover:bg-gray-100"
+                }`}
               >
-                {lastPage}
+                {pageNumber}
               </button>
-            </>
+            ) : (
+              <span key={`ellipsis-${idx}`} className="px-1 text-[13px] text-gray-400">
+                ...
+              </span>
+            )
           )}
           <button
             type="button"
-            disabled={page >= lastPage}
-            onClick={() => onPageChange(page + 1)}
-            className={`px-2 ${page >= lastPage ? "text-[#c1c1c1]" : ""}`}
+            disabled={safePage >= lastPage}
+            onClick={() => onPageChange(safePage + 1)}
+            className={`px-2 transition ${
+              safePage >= lastPage
+                ? "text-[#c1c1c1] cursor-not-allowed"
+                : "text-[#333333] hover:text-[#09232d] cursor-pointer"
+            }`}
           >
             Next
           </button>
@@ -1376,10 +1677,11 @@ function SocialListeningFilters({
   isScanning?: boolean;
   isScanPending?: boolean;
 }) {
+  const scanBusy = isScanning || isScanPending;
   return (
-    <div className="flex flex-wrap items-center gap-[17px]">
-      <label className="flex h-12 min-w-[220px] flex-1 items-center gap-3 rounded-[24px] bg-white px-5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] lg:max-w-[316px]">
-        <Search size={16} className="text-[#09232d]" />
+    <div className="flex flex-nowrap items-center gap-2 xl:gap-2.5 overflow-x-auto py-1">
+      <label className="flex h-9 w-[150px] xl:w-[170px] shrink-0 items-center gap-2 rounded-full bg-white px-3.5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.18)]">
+        <Search size={14} className="shrink-0 text-[#09232d]" />
         <input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
@@ -1391,43 +1693,46 @@ function SocialListeningFilters({
         value={source}
         onChange={onSourceChange}
         options={sourceFilterOptions}
-        className="h-8 min-w-[101px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+        className="h-8 min-w-[96px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
         value={signalType}
         onChange={onSignalTypeChange}
         options={signalTypeFilterOptions}
-        className="h-8 min-w-[123px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+        className="h-8 min-w-[110px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
         value={intent}
         onChange={onIntentChange}
         options={intentFilterOptions}
-        className="h-8 min-w-[101px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+        className="h-8 min-w-[90px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
-      <button type="button" className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">
-        <SlidersHorizontal size={14} />
+      <button
+        type="button"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c] transition-colors hover:bg-gray-100 cursor-pointer"
+      >
+        <SlidersHorizontal size={13} />
         Filter
       </button>
       <button
         type="button"
         onClick={onScanNow}
-        disabled={isScanning || isScanPending}
-        className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={scanBusy}
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
       >
-        {isScanning || isScanPending ? (
-          <Loader2 size={14} className="animate-spin" />
+        {scanBusy ? (
+          <Loader2 size={13} className="animate-spin text-[#09232d]" />
         ) : (
-          <Sparkles size={14} />
+          <Scan size={13} className="text-[#09232d]" />
         )}
-        Scan now
+        <span>{scanBusy ? "Scanning…" : "Scan"}</span>
       </button>
       <button
         type="button"
         onClick={onOpenSettings}
-        className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340]"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340] cursor-pointer"
       >
-        <SlidersHorizontal size={14} />
+        <Sparkles size={13} />
         Listen Settings
       </button>
     </div>
@@ -1451,13 +1756,35 @@ function SocialOpportunityDetail({
   isSettingReminder?: boolean;
   isSyncingToCrm?: boolean;
 }) {
+  const isIndividual =
+    signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
   const recommendedAction =
     signal.recommendedAction ??
     "Reach out within 24 hours — this prospect may be actively looking for solutions.";
 
+  const handleCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(signal.suggestedMessage);
+      setHasCopiedMessage(true);
+      toast.success("AI suggested message copied to clipboard!");
+      window.setTimeout(() => setHasCopiedMessage(false), 2000);
+    } catch {
+      toast.error("Failed to copy message.");
+    }
+  };
+
+  const postHref =
+    signal.post_url ||
+    (signal.source === "LinkedIn Post"
+      ? "https://www.linkedin.com"
+      : signal.source === "X/Twitter Post"
+        ? "https://x.com"
+        : "https://www.reddit.com");
+
   return (
-    <aside className="flex min-h-[645px] flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-      <div className="relative h-[165px] bg-[#0b242e] px-7 pb-5 pt-8 text-white">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+      <div className="relative min-h-[175px] shrink-0 bg-[#0b242e] px-7 pb-5 pt-8 text-white">
         <div className="absolute right-7 top-8">
           <ScoreGauge score={signal.score} dark />
         </div>
@@ -1465,74 +1792,157 @@ function SocialOpportunityDetail({
         <p className="mt-3 max-w-[250px] text-[10px] font-light leading-[12px]">
           {signal.signal}
         </p>
+        <div className="mt-2">
+          <a
+            href={postHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
+          >
+            <span className="underline underline-offset-2">See Post</span>
+            <span className="not-italic no-underline">→</span>
+          </a>
+        </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
           {signal.source} • Public • {formatRelativeTime(signal.posted_at)}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
-        <div className="flex items-center gap-2 border-r border-[#e9e9e9] pr-4">
-          <Image src="/avatars/male-avatar.png" alt="" width={25} height={25} className="size-[25px] rounded-full object-cover" />
-          <div>
-            <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
-            <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+        <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+          <div className="flex items-center gap-2 border-r border-[#e9e9e9] pr-4">
+            <Image
+              src="/avatars/male-avatar.png"
+              alt=""
+              width={25}
+              height={25}
+              className="size-[25px] rounded-full object-cover"
+            />
+            <div>
+              <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+              <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pl-4">
+            {isIndividual ? (
+              <User size={22} className="shrink-0 text-[#616263]" />
+            ) : (
+              <CompanyBuildingIcon className="size-[22px] shrink-0 text-[#616263]" />
+            )}
+            <div>
+              <p className="text-[10px] font-semibold leading-[12px]">{signal.company}</p>
+              <p className="whitespace-pre-line text-[10px] font-light leading-[12px]">
+                {signal.location || (isIndividual ? "Individual profile" : "Public profile")}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 pl-4">
-          <Building2 size={24} />
-          <div>
-            <p className="text-[10px] font-semibold leading-[12px]">{signal.company}</p>
-            <p className="whitespace-pre-line text-[10px] font-light leading-[12px]">
-              {signal.location || "Public profile"}
-            </p>
-          </div>
-        </div>
-      </div>
 
-      <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
-        <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
-        {signal.reasons.map((item) => (
-          <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
-            <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
-            {item}
-          </div>
-        ))}
-      </div>
-
-      <div className="px-5 py-3 text-[#616263]">
-        <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-          {[
-            ["Signal Type", signal.signalType],
-            ["Buying Stage", signal.buyingStage],
-            ["Problem", signal.problem],
-            ["Urgency", signal.urgency],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <p className="text-[10px] font-light leading-[12px]">{label}</p>
-              <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+        <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+          <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
+          {signal.reasons.map((item) => (
+            <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
+              <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
+              {item}
             </div>
           ))}
         </div>
+
+        <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+          <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            {[
+              ["Signal Type", signal.signalType],
+              ["Buying Stage", signal.buyingStage],
+              ["Problem", signal.problem],
+              ["Urgency", signal.urgency],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-[10px] font-light leading-[12px]">{label}</p>
+                <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {(signal.industry || (signal.keyTopics && signal.keyTopics.length > 0)) && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-2 text-[10px] font-semibold leading-[12px]">Prospect Intelligence</p>
+            {signal.industry && (
+              <p className="mb-2 text-[10px] leading-[13px]">
+                <span className="font-semibold">Industry:</span> {signal.industry}
+              </p>
+            )}
+            {signal.keyTopics && signal.keyTopics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {signal.keyTopics.map((topic) => (
+                  <span
+                    key={topic}
+                    className="inline-flex rounded-full bg-[#f1f3f4] px-2.5 py-0.5 text-[9px] font-medium text-[#494c4e]"
+                  >
+                    #{topic}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {signal.competitors && signal.competitors.length > 0 && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">Mentioned Tools & Vendors</p>
+            <div className="flex flex-wrap gap-1.5">
+              {signal.competitors.map((comp) => (
+                <span
+                  key={comp}
+                  className="inline-flex items-center gap-1 rounded-[6px] border border-[#e2e2e2] bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232d]"
+                >
+                  {comp}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-[5px] px-2 py-2">
+          <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+            <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
+            <p className="mt-1 text-[9px] leading-[12px]">{recommendedAction}</p>
+          </div>
+          <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
+              <button
+                type="button"
+                aria-label="Copy AI suggested message"
+                onClick={handleCopyMessage}
+                className="grid size-5 place-items-center rounded-[4px] text-[#9d9d9d] transition-colors hover:bg-gray-100 hover:text-[#09232d] cursor-pointer"
+              >
+                {hasCopiedMessage ? (
+                  <Check size={13} className="text-[#16b37d]" />
+                ) : (
+                  <Copy size={13} />
+                )}
+              </button>
+            </div>
+            <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
+          </div>
+          {signal.followUpStrategy && (
+            <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+              <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
+              <p className="mt-1 text-[9px] leading-[12px]">{signal.followUpStrategy}</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-[5px] px-2 pb-2">
-        <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-          <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
-          <p className="mt-1 text-[9px] leading-[12px]">{recommendedAction}</p>
-        </div>
-        <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-          <p className="text-[10px] font-bold leading-[12px]">AI Suggested Message</p>
-          <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
-        </div>
-      </div>
-
-      <div className="mt-auto flex items-center gap-[17px] bg-[#f7f7f7] px-6 py-4">
+      <div className="mt-auto shrink-0 flex items-center gap-[17px] border-t border-[#e9e9e9] bg-[#f7f7f7] px-6 py-4">
         <button
           type="button"
           disabled={isCreatingOutreach}
           onClick={onCreateOutreach}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white disabled:opacity-60"
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition hover:bg-[#0f3340] cursor-pointer disabled:opacity-60"
         >
           {isCreatingOutreach ? "Creating…" : "Create Outreach"}
         </button>
@@ -1540,7 +1950,7 @@ function SocialOpportunityDetail({
           type="button"
           disabled={isSettingReminder}
           onClick={onSetReminder}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] disabled:opacity-60"
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
         >
           {isSettingReminder ? "Saving…" : "Set Reminder"}
         </button>
@@ -1548,7 +1958,7 @@ function SocialOpportunityDetail({
           type="button"
           disabled={isSyncingToCrm}
           onClick={onSyncToCrm}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] disabled:opacity-60"
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
         >
           {isSyncingToCrm ? "Syncing…" : "Add to CRM"}
         </button>
@@ -1894,6 +2304,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   const createOutreach = useCreateSignalOutreach();
   const setReminder = useSetSignalReminder();
   const syncToCrm = useSyncSignalToCrm();
+  const dismissSignalMutation = useDismissSignal();
 
   const signals = signalsResult?.items ?? [];
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
@@ -1950,6 +2361,49 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
     });
   };
 
+  const handleCreateOutreach = (signal: SocialSignal) => {
+    createOutreach.mutate(
+      { id: signal.id },
+      {
+        onSuccess: () => toast.success("Outreach draft created."),
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not create outreach draft.")),
+      }
+    );
+  };
+
+  const handleSetReminder = (signal: SocialSignal) => {
+    setReminder.mutate(
+      { id: signal.id, note: signal.recommendedAction },
+      {
+        onSuccess: () => toast.success("Reminder set for 24 hours from now."),
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not set reminder.")),
+      }
+    );
+  };
+
+  const handleSyncToCrm = (signal: SocialSignal) => {
+    syncToCrm.mutate(signal.id, {
+      onSuccess: () => toast.success("Signal synced to CRM."),
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
+    });
+  };
+
+  const handleRemoveSignal = (id: number) => {
+    dismissSignalMutation.mutate(id, {
+      onSuccess: () => {
+        toast.success("Signal removed.");
+        if (activeSignalId === id) {
+          setActiveSignalId(null);
+        }
+      },
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not remove signal.")),
+    });
+  };
+
   const statCards: SocialStatCard[] = [
     {
       title: "Signals Detected",
@@ -1991,9 +2445,9 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
 
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1">
-        <div className="flex min-h-[645px] flex-col gap-[17px]">
-          <div className="grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1 xl:h-[700px]">
+        <div className="flex h-full min-h-0 flex-col gap-[17px]">
+          <div className="shrink-0 grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
             {statCards.map((card) => (
               <MetricCard
                 key={card.title}
@@ -2006,20 +2460,22 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
               />
             ))}
           </div>
-          <SocialListeningFilters
-            search={search}
-            source={source}
-            signalType={signalType}
-            intent={intent}
-            onSearchChange={setSearch}
-            onSourceChange={setSource}
-            onSignalTypeChange={setSignalType}
-            onIntentChange={setIntent}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            onScanNow={handleScanNow}
-            isScanning={isScanning}
-            isScanPending={triggerRun.isPending || bootstrap.isPending}
-          />
+          <div className="shrink-0">
+            <SocialListeningFilters
+              search={search}
+              source={source}
+              signalType={signalType}
+              intent={intent}
+              onSearchChange={setSearch}
+              onSourceChange={setSource}
+              onSignalTypeChange={setSignalType}
+              onIntentChange={setIntent}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              onScanNow={handleScanNow}
+              isScanning={isScanning}
+              isScanPending={triggerRun.isPending || bootstrap.isPending}
+            />
+          </div>
           {signalsError && isMissingActiveIcp(signalsError) ? (
             <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
               Select an active ICP profile first — open ICP Builder to create or activate one.
@@ -2027,7 +2483,12 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
           ) : (
             <SocialSignalsTable
               signals={signals}
+              activeSignalId={activeSignalId}
               onHoverSignal={(signal) => setActiveSignalId(signal.id)}
+              onRemoveSignal={handleRemoveSignal}
+              onCreateOutreach={handleCreateOutreach}
+              onAddToCrm={handleSyncToCrm}
+              onSetReminder={handleSetReminder}
               page={meta.current_page}
               lastPage={Math.max(meta.last_page, 1)}
               total={meta.total}
@@ -2049,33 +2510,9 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
             isCreatingOutreach={createOutreach.isPending}
             isSettingReminder={setReminder.isPending}
             isSyncingToCrm={syncToCrm.isPending}
-            onCreateOutreach={() => {
-              createOutreach.mutate(
-                { id: activeSignal.id },
-                {
-                  onSuccess: () => toast.success("Outreach draft created."),
-                  onError: (error) =>
-                    toast.error(getApiErrorMessage(error, "Could not create outreach draft.")),
-                }
-              );
-            }}
-            onSetReminder={() => {
-              setReminder.mutate(
-                { id: activeSignal.id, note: activeSignal.recommendedAction },
-                {
-                  onSuccess: () => toast.success("Reminder set for 24 hours from now."),
-                  onError: (error) =>
-                    toast.error(getApiErrorMessage(error, "Could not set reminder.")),
-                }
-              );
-            }}
-            onSyncToCrm={() => {
-              syncToCrm.mutate(activeSignal.id, {
-                onSuccess: () => toast.success("Signal synced to CRM."),
-                onError: (error) =>
-                  toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
-              });
-            }}
+            onCreateOutreach={() => handleCreateOutreach(activeSignal)}
+            onSetReminder={() => handleSetReminder(activeSignal)}
+            onSyncToCrm={() => handleSyncToCrm(activeSignal)}
           />
         ) : isScanning ? (
           <SocialOpportunityDetailSkeleton />

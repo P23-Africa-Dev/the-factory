@@ -736,6 +736,11 @@ export type SocialSignalApi = {
   post_url?: string | null;
   lead_id?: number | null;
   f23_lead_id?: number | null;
+  entityType?: "company" | "individual";
+  industry?: string;
+  keyTopics?: string[];
+  competitors?: string[];
+  followUpStrategy?: string;
 };
 
 export type SocialListeningRunStatus = {
