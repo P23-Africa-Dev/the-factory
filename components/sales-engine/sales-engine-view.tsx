@@ -30,12 +30,14 @@ import {
   Minimize2,
   MoreVertical,
   Plus,
+  Scan,
   Search,
   Send,
   SlidersHorizontal,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  User,
   UsersRound,
   X,
 } from "lucide-react";
@@ -69,6 +71,8 @@ type SocialSignal = {
   problem: string;
   urgency: string;
   suggestedMessage: string;
+  postUrl?: string;
+  entityType?: "company" | "individual";
 };
 
 type SocialStatCard = {
@@ -168,6 +172,8 @@ const socialSignals: SocialSignal[] = [
     buyingStage: "Consideration",
     problem: "Generating qualified leads consistently",
     urgency: "Medium-High",
+    entityType: "company",
+    postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
   },
@@ -195,6 +201,8 @@ const socialSignals: SocialSignal[] = [
     buyingStage: "Vendor Evaluation",
     problem: "CRM implementation friction",
     urgency: "High",
+    entityType: "company",
+    postUrl: "https://x.com/search?q=CRM",
     suggestedMessage:
       "Hi Aisha,\nI noticed your team is evaluating CRM options before renewal. Factory 23 can help compare implementation effort and identify a lower-friction path for your sales process.",
   },
@@ -222,6 +230,8 @@ const socialSignals: SocialSignal[] = [
     buyingStage: "Consideration",
     problem: "Generating qualified leads consistently",
     urgency: "Medium-High",
+    entityType: "company",
+    postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi John,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
   },
@@ -249,6 +259,8 @@ const socialSignals: SocialSignal[] = [
     buyingStage: "Research",
     problem: "Understanding app build cost",
     urgency: "Medium",
+    entityType: "individual",
+    postUrl: "https://www.reddit.com/r/startups/",
     suggestedMessage:
       "Hi Daniel,\nI saw your question about fintech app build costs. We can help you break the scope into phases and estimate a realistic budget before you commit to a vendor.",
   },
@@ -307,7 +319,7 @@ function MetricCard({
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
           {title}
         </p>
-        <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} />
+        {/* <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} /> */}
       </div>
 
       <div className="absolute left-5 top-[48px]">
@@ -994,6 +1006,28 @@ function IcpBuilderIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function CompanyBuildingIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 21h18" />
+      <path d="M5 21V7a4 4 0 0 1 4-4h5v18" />
+      <path d="M8 8h3" />
+      <path d="M8 12h3" />
+      <path d="M8 16h3" />
+      <path d="M14 9h5a1 1 0 0 1 1 1v11" />
+      <path d="M17 14v4" />
+    </svg>
+  );
+}
+
 function SalesEngineTabs({
   activeTab,
   onChange,
@@ -1028,7 +1062,7 @@ function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
   const isReddit = sourceIcon === "r";
   return (
     <span
-      className={`grid size-[22px] shrink-0 place-items-center rounded-full text-[10px] font-bold text-white ${
+      className={`grid size-[22px] shrink-0 place-items-center rounded-[6px] text-[10px] font-bold text-white shadow-sm ${
         isLinkedIn ? "bg-[#0a66c2]" : isReddit ? "bg-[#ff4500]" : "bg-black"
       }`}
     >
@@ -1063,6 +1097,8 @@ function SocialSignalRow({
   signal: SocialSignal;
   onHover: (signal: SocialSignal) => void;
 }) {
+  const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+
   return (
     <tr
       onMouseEnter={() => onHover(signal)}
@@ -1087,7 +1123,16 @@ function SocialSignalRow({
       </td>
       <td className="px-3 py-3 align-middle">
         <div className="flex min-w-[150px] items-center gap-2">
-          <Building2 size={20} className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white" />
+          {isIndividual ? (
+            <User
+              size={20}
+              className="shrink-0 text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+            />
+          ) : (
+            <CompanyBuildingIcon
+              className="size-5 shrink-0 text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+            />
+          )}
           <div>
             <p className="text-[9px] font-semibold leading-[11px]">{signal.company}</p>
             {signal.location && <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>}
@@ -1184,26 +1229,30 @@ function SocialListeningFilters({
   source,
   signalType,
   intent,
+  isScanning,
   onSearchChange,
   onSourceChange,
   onSignalTypeChange,
   onIntentChange,
   onOpenSettings,
+  onScan,
 }: {
   search: string;
   source: string;
   signalType: string;
   intent: string;
+  isScanning?: boolean;
   onSearchChange: (value: string) => void;
   onSourceChange: (value: string) => void;
   onSignalTypeChange: (value: string) => void;
   onIntentChange: (value: string) => void;
   onOpenSettings: () => void;
+  onScan?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-[17px]">
-      <label className="flex h-12 min-w-[220px] flex-1 items-center gap-3 rounded-[24px] bg-white px-5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] lg:max-w-[316px]">
-        <Search size={16} className="text-[#09232d]" />
+    <div className="flex flex-nowrap items-center gap-2 xl:gap-2.5 overflow-x-auto py-1">
+      <label className="flex h-9 w-[150px] xl:w-[170px] shrink-0 items-center gap-2 rounded-full bg-white px-3.5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.18)]">
+        <Search size={14} className="shrink-0 text-[#09232d]" />
         <input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
@@ -1215,30 +1264,46 @@ function SocialListeningFilters({
         value={source}
         onChange={onSourceChange}
         options={sourceFilterOptions}
-        className="h-8 min-w-[101px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+        className="h-8 min-w-[96px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
         value={signalType}
         onChange={onSignalTypeChange}
         options={signalTypeFilterOptions}
-        className="h-8 min-w-[123px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+        className="h-8 min-w-[110px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
         value={intent}
         onChange={onIntentChange}
         options={intentFilterOptions}
-        className="h-8 min-w-[101px] rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]"
+        className="h-8 min-w-[90px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
-      <button type="button" className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c]">
-        <SlidersHorizontal size={14} />
+      <button
+        type="button"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c] transition-colors hover:bg-gray-100 cursor-pointer"
+      >
+        <SlidersHorizontal size={13} />
         Filter
       </button>
       <button
         type="button"
-        onClick={onOpenSettings}
-        className="flex h-8 items-center gap-2 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340]"
+        onClick={onScan}
+        disabled={isScanning}
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer"
       >
-        <Sparkles size={14} />
+        {isScanning ? (
+          <Loader2 size={13} className="animate-spin text-[#09232d]" />
+        ) : (
+          <Scan size={13} className="text-[#09232d]" />
+        )}
+        <span>{isScanning ? "Scanning…" : "Scan"}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340] cursor-pointer"
+      >
+        <Sparkles size={13} />
         Listen Settings
       </button>
     </div>
@@ -1246,9 +1311,18 @@ function SocialListeningFilters({
 }
 
 function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
+  const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const postHref =
+    signal.postUrl ||
+    (signal.source === "LinkedIn Post"
+      ? "https://www.linkedin.com"
+      : signal.source === "X/Twitter Post"
+      ? "https://x.com"
+      : "https://www.reddit.com");
+
   return (
     <aside className="flex min-h-[645px] flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-      <div className="relative h-[165px] bg-[#0b242e] px-7 pb-5 pt-8 text-white">
+      <div className="relative min-h-[175px] bg-[#0b242e] px-7 pb-5 pt-8 text-white">
         <div className="absolute right-7 top-8">
           <ScoreGauge score={signal.score} dark />
         </div>
@@ -1256,6 +1330,21 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
         <p className="mt-3 max-w-[250px] text-[10px] font-light leading-[12px]">
           {signal.signal}
         </p>
+        <div className="mt-2">
+          <a
+            href={postHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.stopPropagation();
+              toast.info(`Opening ${signal.source}…`);
+            }}
+            className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
+          >
+            <span className="underline underline-offset-2">See Post</span>
+            <span className="not-italic no-underline">→</span>
+          </a>
+        </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">{signal.source} • Public • 2hrs ago</p>
       </div>
 
@@ -1268,11 +1357,15 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
           </div>
         </div>
         <div className="flex items-center gap-2 pl-4">
-          <Building2 size={24} />
+          {isIndividual ? (
+            <User size={22} className="shrink-0 text-[#616263]" />
+          ) : (
+            <CompanyBuildingIcon className="size-[22px] shrink-0 text-[#616263]" />
+          )}
           <div>
             <p className="text-[10px] font-semibold leading-[12px]">{signal.company}</p>
             <p className="whitespace-pre-line text-[10px] font-light leading-[12px]">
-              {signal.location || "Public profile"}
+              {signal.location || (isIndividual ? "Individual profile" : "Public profile")}
             </p>
           </div>
         </div>
@@ -1489,6 +1582,16 @@ function SocialListeningTab() {
   const [intent, setIntent] = useState("all");
   const [activeSignalId, setActiveSignalId] = useState(socialSignals[0].id);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScan = () => {
+    setIsScanning(true);
+    toast.loading("Scanning web, social channels, and public registries…", { id: "social-scan" });
+    window.setTimeout(() => {
+      setIsScanning(false);
+      toast.success("Scan complete. 4 new social opportunities identified.", { id: "social-scan" });
+    }, 1500);
+  };
 
   const filteredSignals = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -1530,10 +1633,12 @@ function SocialListeningTab() {
             source={source}
             signalType={signalType}
             intent={intent}
+            isScanning={isScanning}
             onSearchChange={setSearch}
             onSourceChange={setSource}
             onSignalTypeChange={setSignalType}
             onIntentChange={setIntent}
+            onScan={handleScan}
             onOpenSettings={() => setIsSettingsOpen(true)}
           />
           <SocialSignalsTable signals={filteredSignals} onHoverSignal={(signal) => setActiveSignalId(signal.id)} />
