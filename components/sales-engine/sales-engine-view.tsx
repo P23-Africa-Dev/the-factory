@@ -912,7 +912,6 @@ function OutreachCard({
     </article>
   );
 }
-
 const OUTREACH_FALLBACK_COLORS = [
   { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
   { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
@@ -920,15 +919,162 @@ const OUTREACH_FALLBACK_COLORS = [
   { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
 ] as const;
 
-function OutreachPanel() {
-  const { data: items = [] } = useSalesEngineOutreach();
+function ViewAllOutreachIcon({ className = "size-4" }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path d="M4.66797 9.33341L6.5299 7.47148C6.79024 7.21115 7.21237 7.21115 7.4727 7.47148L8.5299 8.52868C8.79024 8.78901 9.21237 8.78901 9.4727 8.52868L11.3346 6.66675" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M13.9995 8.66667C14 8.4536 14 8.23153 14 8C14 5.17157 14 3.75736 13.1213 2.87868C12.2427 2 10.8284 2 8 2C5.17157 2 3.75736 2 2.87868 2.87868C2 3.75736 2 5.17157 2 8C2 10.8284 2 12.2427 2.87868 13.1213C3.75736 14 5.17157 14 8 14C8.23153 14 8.4536 14 8.66667 13.9995" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M12.6505 10.6811C12.6543 10.662 12.6817 10.662 12.6855 10.6811C12.8881 11.6722 13.6626 12.4466 14.6537 12.6492C14.6728 12.6531 14.6728 12.6804 14.6537 12.6843C13.6626 12.8869 12.8881 13.6614 12.6855 14.6524C12.6817 14.6716 12.6543 14.6716 12.6505 14.6524C12.4479 13.6614 11.6734 12.8869 10.6823 12.6843C10.6632 12.6804 10.6632 12.6531 10.6823 12.6492C11.6734 12.4466 12.4479 11.6722 12.6505 10.6811Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function AllOutreachModal({
+  isOpen,
+  onClose,
+  items,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  items: Array<{
+    id: number;
+    name: string;
+    channel: string;
+    preview: string;
+    occurred_at: string;
+    accentBg?: string;
+    accentIcon?: string;
+  }>;
+}) {
+  const [query, setQuery] = useState("");
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.channel.toLowerCase().includes(q) ||
+        item.preview.toLowerCase().includes(q)
+    );
+  }, [items, query]);
 
   return (
-    <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
-      <header className="mb-8 flex items-center justify-center gap-2">
-        <h2 className="text-[13px] font-bold">Recent Outreach Activities</h2>
-        <ChevronDown size={14} className="text-white/70" />
-      </header>
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+          />
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 18 }}
+            transition={{ type: "spring", duration: 0.32 }}
+            className="relative z-10 flex max-h-[88vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#09232d] text-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/40">
+                  Smart Lead
+                </p>
+                <h3 className="mt-1 text-[18px] font-semibold">All Outreach Activities</h3>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="grid size-9 place-items-center rounded-full bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white cursor-pointer"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="border-b border-white/10 px-6 py-3">
+              <label className="flex h-9 w-full items-center gap-2 rounded-full bg-white/5 px-3.5 text-white">
+                <Search size={14} className="text-white/40" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search activities by recipient, channel, or message…"
+                  className="min-w-0 flex-1 bg-transparent text-[12px] text-white outline-none placeholder:text-white/40"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="text-white/40 hover:text-white cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </label>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
+              {filteredItems.length === 0 ? (
+                <div className="flex h-[200px] flex-col items-center justify-center text-center text-white/50 text-[13px]">
+                  No outreach activities found.
+                </div>
+              ) : (
+                filteredItems.map((item, index) => {
+                  const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
+                  const useApiColors = item.accentBg?.startsWith("#");
+                  return (
+                    <OutreachCard
+                      key={item.id}
+                      color={useApiColors ? item.accentBg! : fallback.color}
+                      icon={useApiColors ? "" : fallback.icon}
+                      iconColor={useApiColors ? item.accentIcon : undefined}
+                      name={item.name}
+                      channel={item.channel}
+                      preview={item.preview}
+                      time={formatRelativeTime(item.occurred_at)}
+                    />
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex justify-end border-t border-white/10 px-6 py-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-10 rounded-[12px] bg-white/10 px-5 text-[12px] font-semibold text-white transition hover:bg-white/15 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function OutreachPanel() {
+  const { data: items = [] } = useSalesEngineOutreach();
+  const [isAllOutreachOpen, setIsAllOutreachOpen] = useState(false);
+
+  return (
+    <>
+      <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[36px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
+        <header className="mb-6 flex items-center justify-between gap-2">
+          <h2 className="text-[13px] font-bold leading-tight">Recent Outreach Activities</h2>
+          <button
+            type="button"
+            onClick={() => setIsAllOutreachOpen(true)}
+            className="flex h-[34px] shrink-0 items-center gap-1.5 rounded-[12px] bg-white px-3 text-[12px] font-bold text-[#09232d] shadow-sm transition hover:bg-gray-100 cursor-pointer"
+          >
+            <ViewAllOutreachIcon className="size-4 text-[#09232d]" />
+            <span>View All</span>
+          </button>
+        </header>
       {items.length > 0 ? (
         <>
           <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
@@ -964,6 +1110,12 @@ function OutreachPanel() {
         </div>
       )}
     </aside>
+    <AllOutreachModal
+      isOpen={isAllOutreachOpen}
+      onClose={() => setIsAllOutreachOpen(false)}
+      items={items}
+    />
+  </>
   );
 }
 
