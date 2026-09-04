@@ -57,7 +57,7 @@ type SalesEngineTab = "smart-lead" | "social-listening";
 type SocialSignal = {
   id: number;
   signal: string;
-  source: "LinkedIn Post" | "X/Twitter Post" | "Reddit Post";
+  source: "LinkedIn Post" | "X/Twitter Post" | "Reddit Post" | "Google Search";
   sourceIcon: string;
   persona: string;
   company: string;
@@ -156,808 +156,804 @@ const socialStatCards: SocialStatCard[] = [
 const socialSignals: SocialSignal[] = [
   {
     id: 1,
-    signal: "We're struggling to consistently generate qualified leads in Nigeria. Any recommendations for agencies that actually understand B2B?",
+    signal: "We're looking to automate our B2B outbound pipeline in Kenya. Most global AI sales SDR tools hallucinate or fail on Kenyan local company domains. Recommendations for platforms that actually understand East Africa?",
     source: "LinkedIn Post",
     sourceIcon: "in",
-    persona: "Marketing Director",
-    company: "ABC Technologies",
-    location: "Lagos, Nigeria\n51-200 employees",
+    persona: "Head of Growth & AI",
+    company: "Savannah AI Labs",
+    location: "Nairobi (Westlands), Kenya\n51-200 employees",
     intent: "Recommendation",
     intentColor: "#6ec758",
-    description: "Actively looking for solutions",
-    score: 73,
-    profile: "Thabo Molefe",
+    description: "Outbound AI sales automation search",
+    score: 94,
+    profile: "Esther Nyambura",
     reasons: [
-      "Explicit problem with current situation",
-      "Actively asking for recommendations",
-      "Relevant decision maker (Marketing Director)",
-      "Matches ICP (Industry, Size, Location)",
-      "Recent activity (Posted 2 hours ago)",
+      "Explicit bottleneck with Western sales automation tools",
+      "Head of Growth actively seeking verified regional tools",
+      "Decision maker with allocated software budget",
+      "High fit with Factory 23 Sales Engine ICP",
+      "Recent activity (Posted 1 hour ago)",
     ],
     signalType: "Recommendation",
-    buyingStage: "Consideration",
-    problem: "Generating qualified leads consistently",
-    urgency: "Medium-High",
+    buyingStage: "Vendor Evaluation",
+    problem: "Global AI SDRs lacking East African B2B firmographic data",
+    urgency: "High",
     entityType: "company",
-    industry: "Information Technology & Services",
-    keyTopics: ["B2B Outbound", "Lead Generation", "Pipeline Acceleration"],
-    competitors: ["Traditional Agencies", "Manual Prospecting"],
-    followUpStrategy: "Share a 2-page benchmark deck illustrating B2B customer acquisition benchmarks in West Africa.",
+    industry: "Enterprise AI & Cloud Services",
+    keyTopics: ["AI Sales SDR", "B2B Lead Generation", "Outbound Automation"],
+    competitors: ["11x.ai", "Regie.ai", "Apollo.io"],
+    followUpStrategy: "Share our East Africa B2B firmographic benchmark and demonstrate verified lead enrichment in Nairobi.",
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
-      "Hi Thabo,\nI came across your post about the challenges of generating qualified leads in Nigeria. We help B2B companies improve their lead generation and connect with more qualified prospects.",
+      "Hi Esther,\nI saw your post on automating B2B outbound in Kenya. Most Western AI SDRs fail because they lack local domain directories and verified phone data. Factory 23 Sales Engine is trained specifically on East African commercial registries and intent data.",
   },
   {
     id: 2,
-    signal: "Our CRM contract expires next month. Looking for something easier to implement. Anyone used Zoho or HubSpot?",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Sales Manager",
-    company: "Greenfield Ltd",
-    location: "Lagos, Nigeria\n51-200 employees",
+    signal: "best ai customer support automation mpesa daraja api kenya",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Chief Technology Officer",
+    company: "Kilimani Microfinance",
+    location: "Nairobi (Kilimani), Kenya\n101-250 employees",
     intent: "Switching",
     intentColor: "#f8725d",
-    description: "Evaluating alternatives",
-    score: 73,
-    profile: "Aisha Bello",
+    description: "Automating M-Pesa billing inquiries",
+    score: 91,
+    profile: "Kevin Kiprop",
     reasons: [
-      "Contract renewal creates a near-term trigger",
-      "Named competing tools in the current workflow",
-      "Relevant decision maker (Sales Manager)",
-      "Clear need for easier implementation",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Vendor Evaluation",
-    problem: "CRM implementation friction",
-    urgency: "High",
-    entityType: "company",
-    industry: "Commercial Real Estate & Logistics",
-    keyTopics: ["CRM Migration", "Sales Velocity", "Contact Management"],
-    competitors: ["Zoho CRM", "HubSpot"],
-    followUpStrategy: "Offer a direct feature and data-migration breakdown comparing their current tool against simpler automated pipelines.",
-    postUrl: "https://x.com/search?q=CRM",
-    suggestedMessage:
-      "Hi Aisha,\nI noticed your team is evaluating CRM options before renewal. Factory 23 can help compare implementation effort and identify a lower-friction path for your sales process.",
-  },
-  {
-    id: 3,
-    signal: "Scaling our sales development team from 3 to 10 reps across Nairobi and Lagos. Need proven cold outreach workflows and intent data tools.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "VP of Sales",
-    company: "BlueRidge Energy",
-    location: "Port Harcourt, Nigeria\n201-500 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Team expansion & tooling",
-    score: 86,
-    profile: "Chinedu Okeke",
-    reasons: [
-      "Headcount expansion signals committed budget",
-      "Explicit interest in outbound workflows & intent signals",
-      "Senior VP stakeholder with purchasing authority",
-      "High fit with enterprise tier",
-      "Recent activity (Posted 3 hours ago)",
-    ],
-    signalType: "Expansion",
-    buyingStage: "Purchase Planning",
-    problem: "Onboarding new sales reps without unified playbook",
-    urgency: "High",
-    entityType: "company",
-    industry: "Clean Energy & Utilities",
-    keyTopics: ["SDR Enablement", "Outbound Workflows", "Intent Data"],
-    competitors: ["Apollo.io", "ZoomInfo"],
-    followUpStrategy: "Introduce our multi-seat Sales Engine workflow template built specifically for growing African enterprise teams.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Chinedu,\nSaw your team is expanding SDR operations in Nairobi and Lagos. We work with fast-growing regional teams to deploy automated intent pipelines that get reps productive on week one.",
-  },
-  {
-    id: 4,
-    signal: "Anyone know how much it actually costs to build a mobile app like these fintech apps?",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Marketing Director",
-    company: "Individual",
-    location: "",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Gathering pricing information",
-    score: 73,
-    profile: "Daniel Okafor",
-    reasons: [
-      "Pricing question suggests active budgeting",
-      "Mobile product scope fits Factory 23 discovery",
-      "Open to external recommendations",
-      "Fintech context has high commercial value",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Research",
-    problem: "Understanding app build cost",
-    urgency: "Medium",
-    entityType: "individual",
-    industry: "Fintech & Consumer Tech",
-    keyTopics: ["App Development", "Cost Estimation", "Product Scoping"],
-    competitors: ["Offshore Dev Agencies", "Freelance Contractors"],
-    followUpStrategy: "Send our interactive app estimation roadmap with phased milestone pricing.",
-    postUrl: "https://www.reddit.com/r/startups/",
-    suggestedMessage:
-      "Hi Daniel,\nI saw your question about fintech app build costs. We can help you break the scope into phases and estimate a realistic budget before you commit to a vendor.",
-  },
-  {
-    id: 5,
-    signal: "We are looking for automated payment reconciliation software for our cross-border merchants. Existing banking portals take days to reconcile.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Head of Product",
-    company: "PayTrack Solutions",
-    location: "Accra, Ghana\n20-50 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Manual reconciliation bottlenecks",
-    score: 88,
-    profile: "Kofi Mensah",
-    reasons: [
-      "Specific technical bottleneck highlighted",
-      "Strong cross-border business commercial intent",
-      "Key decision maker in product & engineering",
-      "Actively evaluating modern API alternatives",
-      "Recent activity (Posted 4 hours ago)",
+      "High-intent inbound search for automated M-Pesa customer support",
+      "CTO evaluating API-driven alternatives to legacy helpdesks",
+      "Core operational bottleneck with STK push reversal queries",
+      "Regulated financial institution with enterprise budget",
+      "Recent search activity (Detected 1 hour ago)",
     ],
     signalType: "Switching",
     buyingStage: "Solution Evaluation",
-    problem: "Delayed reconciliation cycle and transaction opacity",
+    problem: "High volume M-Pesa STK push failed payment support tickets",
     urgency: "High",
     entityType: "company",
-    industry: "Financial Technology",
-    keyTopics: ["Automated Reconciliation", "Cross-border Payments", "Banking APIs"],
-    competitors: ["Custom In-house Scripts", "Legacy Banking Portals"],
-    followUpStrategy: "Offer an architecture review showing automated webhook-based reconciliation.",
-    postUrl: "https://www.linkedin.com/feed/",
+    industry: "Fintech & Digital Lending",
+    keyTopics: ["M-Pesa Daraja API", "AI Customer Support", "Payment Reconciliation"],
+    competitors: ["Zendesk", "Freshchat", "Custom Python Bot"],
+    followUpStrategy: "Offer an architecture review demonstrating real-time M-Pesa transaction lookup and automated conversational resolution.",
+    postUrl: "https://www.google.com/search?q=best+ai+customer+support+automation+mpesa+daraja+api+kenya",
     suggestedMessage:
-      "Hi Kofi,\nRead your note regarding multi-currency merchant reconciliation friction. We've automated identical transaction pipelines for regional fintechs with real-time settlement tracking.",
+      "Hi Kevin,\nSaw your team is exploring AI support automation for M-Pesa Daraja payment workflows. We integrate directly with Daraja APIs to resolve failed STK push inquiries and instant reversals without human agent delay.",
   },
   {
-    id: 6,
-    signal: "Hiring 5 new account executives in Abuja and Lagos. Looking for lead enrichment software that actually has accurate West African contact data.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "People & Operations Lead",
-    company: "Apex Logistics",
-    location: "Abuja, Nigeria\n51-200 employees",
+    id: 3,
+    signal: "Our manual invoice data entry for KRA eTIMS is becoming a nightmare across 400+ FMCG distributor accounts. Anyone using an AI vision agent that extracts Kenyan tax invoices with >99% accuracy?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "VP of Engineering",
+    company: "Twiga Logistics",
+    location: "Nairobi (Industrial Area), Kenya\n201-500 employees",
     intent: "Recommendation",
     intentColor: "#6ec758",
-    description: "High-accuracy regional data search",
-    score: 81,
-    profile: "Fatima Al-Hassan",
+    description: "AI eTIMS invoice extraction RFP",
+    score: 89,
+    profile: "Brian Otieno",
     reasons: [
-      "Explicit frustration with Western-centric databases",
-      "Immediate hiring timeline creates operational urgency",
-      "Direct buying signal for data enrichment services",
-      "Matches primary ICP criteria",
-      "Recent activity (Posted 5 hours ago)",
+      "Severe operational overhead from manual eTIMS tax compliance",
+      "Executive tech buyer seeking enterprise-grade AI extraction",
+      "400+ distributor network represents high-volume pipeline",
+      "Immediate quarterly compliance deadline",
+      "Recent activity (Posted 2 hours ago)",
     ],
     signalType: "Recommendation",
     buyingStage: "Vendor Selection",
-    problem: "Poor phone and email deliverability in regional databases",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Freight & Supply Chain",
-    keyTopics: ["Data Enrichment", "Local Contact Verification", "AE Hiring"],
-    competitors: ["Lusha", "Cognism", "Seamless.ai"],
-    followUpStrategy: "Provide a sample verified lead batch of 25 logistics decision-makers in Nigeria.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Fatima,\nFinding verified contact data in Nigeria can be frustrating with generic global tools. We maintain localized verified phone and email indexes tailored specifically for Nigerian B2B markets.",
-  },
-  {
-    id: 7,
-    signal: "Current marketing automation stack is too slow and clunky. Migration recommendations away from Marketo for a mid-market team?",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Director of Marketing",
-    company: "Kazi Dynamics",
-    location: "Johannesburg, South Africa\n201-500 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Seeking agile marketing stack",
-    score: 84,
-    profile: "Zanele Dlamini",
-    reasons: [
-      "Dissatisfaction with high complexity legacy stack",
-      "Direct budget holder for marketing automation",
-      "Mid-market tier with high expansion potential",
-      "Clear intent to migrate within quarter",
-      "Recent activity (Posted 5 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Requirement Gathering",
-    problem: "High maintenance overhead and sluggish campaign delivery",
+    problem: "Manual KRA eTIMS invoice processing creating delivery bottlenecks",
     urgency: "High",
     entityType: "company",
-    industry: "Enterprise Software & Cloud",
-    keyTopics: ["Marketing Automation", "Campaign Orchestration", "Marketo Replacement"],
-    competitors: ["Adobe Marketo", "Pardot", "ActiveCampaign"],
-    followUpStrategy: "Share migration roadmap detailing lead score synchronization and nurture workflow parity.",
-    postUrl: "https://x.com/search?q=marketo",
+    industry: "Supply Chain & FMCG Distribution",
+    keyTopics: ["KRA eTIMS", "Document AI", "Invoice OCR", "Supply Chain"],
+    competitors: ["ABBYY", "Google Document AI", "Manual Data Entry"],
+    followUpStrategy: "Share a sample OCR evaluation test processing Kenyan VAT & eTIMS QR codes with sub-second extraction.",
+    postUrl: "https://x.com/search?q=etims+ai+invoice",
     suggestedMessage:
-      "Hi Zanele,\nMarketo migrations are one of the best opportunities to streamline lifecycle campaigns. We can show how modern teams cut software overhead in half while improving response rates.",
+      "Hi Brian,\nHandling KRA eTIMS invoices manually across hundreds of distributors creates serious compliance delays. We build localized vision-language extraction models optimized for Kenyan PINs and eTIMS QR formats.",
   },
   {
-    id: 8,
-    signal: "Need a reputable partner to design and audit our cross-border payment gateway security. Who is the gold standard right now?",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Technical Lead",
-    company: "FlutterWire",
-    location: "Lagos, Nigeria\n20-50 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Security audit & gateway review",
-    score: 91,
-    profile: "Tunde Adeyemi",
-    reasons: [
-      "Highest intent score (91%) - critical compliance project",
-      "Technical gatekeeper actively looking for verified partners",
-      "High urgency tied to upcoming product launch",
-      "Strong fit for Factory 23 fintech advisory",
-      "Recent activity (Posted 6 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Partner Selection",
-    problem: "Upcoming regulatory audit for payment processing",
-    urgency: "High",
-    entityType: "company",
-    industry: "Payments Infrastructure",
-    keyTopics: ["Payment Gateway", "PCI-DSS Compliance", "Security Audit"],
-    competitors: ["Tier 1 Consultancies", "Independent Audit Firms"],
-    followUpStrategy: "Connect directly with our Lead Architect for an initial security scoping call.",
-    postUrl: "https://x.com/search?q=payment+security",
-    suggestedMessage:
-      "Hi Tunde,\nEnsuring bulletproof payment architecture before launch is crucial. We've guided leading fintech platforms through PCI compliance and secure gateway design.",
-  },
-  {
-    id: 9,
-    signal: "Exploring telemedicine software vendors for a hospital network in East Africa. Needs offline sync support for remote clinics.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Chief Medical Officer",
-    company: "Mara Health",
-    location: "Nairobi, Kenya\n501-1000 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Regional healthcare infrastructure RFP",
-    score: 87,
-    profile: "Dr. Amina Yusuf",
-    reasons: [
-      "Large institution with significant budget allocation",
-      "Unique technical requirement (offline data sync) fits specialized build",
-      "High social and commercial impact project",
-      "Executive level decision maker",
-      "Recent activity (Posted 6 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Discovery & RFP",
-    problem: "Unreliable connectivity in rural clinics disrupting patient records",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Healthcare Systems",
-    keyTopics: ["Telemedicine", "Offline Data Sync", "EMR Integration"],
-    competitors: ["Generic EHR Providers", "Custom Legacy Systems"],
-    followUpStrategy: "Share a technical brief demonstrating progressive web app offline sync architectures.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Dr. Yusuf,\nOffline-first architecture is vital for healthcare delivery across distributed networks. We specialize in robust offline synchronization engines for mission-critical platforms.",
-  },
-  {
-    id: 10,
-    signal: "What are people paying on average for B2B outbound lead generation services in Africa? Getting quotes ranging from $1k to $15k/mo.",
+    id: 4,
+    signal: "How much does it cost in Kenya to build or buy an AI WhatsApp chatbot that answers farmer queries in Swahili and English?",
     source: "Reddit Post",
     sourceIcon: "r",
     persona: "Managing Director",
-    company: "Sterling B2B",
-    location: "Benin City, Nigeria\n11-50 employees",
+    company: "Rift Valley AgriTech",
+    location: "Nakuru, Kenya\n20-50 employees",
     intent: "Price",
     intentColor: "#67b7f4",
-    description: "Comparing outbound vendor pricing",
-    score: 79,
-    profile: "Efe Omoruyi",
-    reasons: [
-      "Active buyer seeking pricing clarity in the market",
-      "Wide quote variance shows opportunity for consultative pricing",
-      "Decision maker with clear budget allocated",
-      "Immediate relevance to Sales Engine value proposition",
-      "Recent activity (Posted 7 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Budget Allocation",
-    problem: "Unclear ROI metrics and opaque pricing models from agency vendors",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Wholesale & Business Supplies",
-    keyTopics: ["Outbound Pricing", "Cost per Qualified Lead", "Sales ROI"],
-    competitors: ["Fixed-fee Agencies", "Commission-only Contractors"],
-    followUpStrategy: "Provide our transparent B2B Outbound Cost & ROI calculator spreadsheet.",
-    postUrl: "https://www.reddit.com/r/sales/",
-    suggestedMessage:
-      "Hi Efe,\nOutbound pricing can vary wildly depending on whether vendors use generic email blasts or verified multi-channel intent data. We can share a straightforward benchmark breakdown based on actual conversion rates.",
-  },
-  {
-    id: 11,
-    signal: "Looking to deploy an automated lead qualification system that syncs directly with our WhatsApp business and Zoho CRM.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Head of Operations",
-    company: "OmniFlow Systems",
-    location: "Kaduna, Nigeria\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "WhatsApp & CRM integration",
+    description: "Swahili LLM chatbot pricing",
     score: 83,
-    profile: "Ibrahim Musa",
+    profile: "Faith Muthoni",
     reasons: [
-      "Direct integration requirement specified",
-      "High regional reliance on WhatsApp for sales",
-      "Operations lead with purchasing authority",
-      "Matches ICP tier",
-      "Recent activity (Posted 7 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Manual lead entry from messaging apps causing dropped prospects",
-    urgency: "High",
-    entityType: "company",
-    industry: "Enterprise Automation",
-    keyTopics: ["WhatsApp Integration", "Lead Qualification", "Zoho Sync"],
-    competitors: ["Twilio", "Wati", "Zoko"],
-    followUpStrategy: "Share a live sandbox demonstration of instant WhatsApp lead capture.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Ibrahim,\nConnecting WhatsApp conversations straight into CRM pipelines without manual copy-pasting is a game changer. We've built bidirectional sync flows for regional sales teams.",
-  },
-  {
-    id: 12,
-    signal: "We are struggling with high customer support volumes during billings cycles. Any AI triage bots that understand African payment context?",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Operations Manager",
-    company: "Zola Health",
-    location: "Nairobi, Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Support triage automation",
-    score: 80,
-    profile: "Grace Mwangi",
-    reasons: [
-      "High volume support strain identified",
-      "Specific domain context (African payments)",
-      "Strong operational trigger for AI automation",
-      "Recent activity (Posted 8 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Evaluation",
-    problem: "Delayed support ticket resolution during monthly renewals",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Healthtech & Wellness",
-    keyTopics: ["AI Support Bot", "Payment Queries", "Automated Triage"],
-    competitors: ["Intercom", "Freshdesk"],
-    followUpStrategy: "Demonstrate localized payment intent classification models.",
-    postUrl: "https://x.com/search?q=support+automation",
-    suggestedMessage:
-      "Hi Grace,\nSupport surges around billing cycles can overwhelm teams quickly. Our AI triage assistants accurately categorize payment inquiries and resolve common friction points instantly.",
-  },
-  {
-    id: 13,
-    signal: "Need a fleet dispatch API with automated SMS delivery notifications that actually works reliably across all Nigerian networks.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Logistics Coordinator",
-    company: "SwiftHaul",
-    location: "Onitsha, Nigeria\n20-50 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Seeking reliable SMS gateway",
-    score: 77,
-    profile: "Obinna Nnamdi",
-    reasons: [
-      "Reliability issues with existing SMS telco provider",
-      "Clear intent to switch to dedicated routing",
-      "Core operational workflow dependency",
-      "Recent activity (Posted 8 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Consideration",
-    problem: "Failed delivery notifications resulting in customer complaints",
-    urgency: "High",
-    entityType: "company",
-    industry: "Haulage & Dispatch",
-    keyTopics: ["SMS Delivery", "Fleet Dispatch", "Telco Routing"],
-    competitors: ["Termii", "Infobip"],
-    followUpStrategy: "Provide live delivery rate benchmarks across MTN, Airtel, and Glo networks.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Obinna,\nDeliverability on regional telco networks requires smart fallback routing. We can share benchmark data and route your dispatch alerts through high-uptime paths.",
-  },
-  {
-    id: 14,
-    signal: "Evaluating cloud cost reduction strategies. Our AWS bill in South Africa doubled after the latest traffic spike. Any FinOps consultants?",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Cloud Architect",
-    company: "CloudNova",
-    location: "Cape Town, South Africa\n101-250 employees",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Cloud optimization & cost reduction",
-    score: 85,
-    profile: "Sipho Ndlovu",
-    reasons: [
-      "Direct cost pain trigger (bill doubled)",
-      "Technical authority looking for advisory",
-      "High budget reallocation potential",
-      "Recent activity (Posted 9 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Research",
-    problem: "Unpredictable compute scaling costs",
-    urgency: "High",
-    entityType: "company",
-    industry: "Cloud Infrastructure",
-    keyTopics: ["FinOps", "AWS Cost Optimization", "Infrastructure Scaling"],
-    competitors: ["In-house DevOps", "Global Consultancies"],
-    followUpStrategy: "Offer an architecture audit identifying reserved instance and caching savings.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Sipho,\nCloud cost spikes post-traffic surge are usually driven by unoptimized egress and instance overprovisioning. We can review your architecture and model immediate 30-40% savings.",
-  },
-  {
-    id: 15,
-    signal: "Looking for an instant KYC verification engine with 99.9% uptime on BVN and NIN checks for Nigerian fintech onboarding.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Head of Compliance",
-    company: "FinEdge Capital",
-    location: "Lagos, Nigeria\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "High-uptime KYC provider",
-    score: 92,
-    profile: "Yewande Balogun",
-    reasons: [
-      "Top tier intent score (92%)",
-      "Mission critical regulatory compliance need",
-      "Frustrated with existing verification downtime",
-      "Recent activity (Posted 9 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Partner Selection",
-    problem: "High drop-off at identity verification during user registration",
-    urgency: "High",
-    entityType: "company",
-    industry: "Consumer Credit & Banking",
-    keyTopics: ["KYC Verification", "BVN Verification", "Compliance Engine"],
-    competitors: ["Smile ID", "Dojah", "Prembly"],
-    followUpStrategy: "Share our multi-provider fallback engine uptime metrics.",
-    postUrl: "https://x.com/search?q=kyc+verification",
-    suggestedMessage:
-      "Hi Yewande,\nSingle-provider KYC APIs frequently experience downtime during government server outages. We implement automated multi-vendor fallback so your user onboarding never stalls.",
-  },
-  {
-    id: 16,
-    signal: "Seeking a B2B merchant acquisition playbook for agro-commodities across Ghana and Ivory Coast. Who has done this at scale?",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "VP of Growth",
-    company: "TradeSprint",
-    location: "Kumasi, Ghana\n51-200 employees",
-    intent: "Expansion",
-    intentColor: "#6ec758",
-    description: "Cross-border merchant acquisition",
-    score: 82,
-    profile: "Kwame Addo",
-    reasons: [
-      "Regional market expansion signal",
-      "Executive growth stakeholder with allocated budget",
-      "High strategic fit for Sales Engine playbooks",
-      "Recent activity (Posted 10 hours ago)",
-    ],
-    signalType: "Expansion",
-    buyingStage: "Strategy Planning",
-    problem: "Slow merchant onboarding in non-metro agricultural centers",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Agri-Tech & Trade",
-    keyTopics: ["Merchant Acquisition", "Field Sales", "Cross-border Expansion"],
-    competitors: ["Local Agencies", "Internal Field Reps"],
-    followUpStrategy: "Share case study on merchant digitization in West African trade corridors.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Kwame,\nAcquiring merchants across agricultural hubs requires hyper-local outreach combined with automated follow-ups. We can share what has worked best in Ghana and Ivory Coast.",
-  },
-  {
-    id: 17,
-    signal: "What is the best tech stack for real-time auction apps that need sub-second bidding updates in low-bandwidth areas?",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Freelance Developer",
-    company: "Individual",
-    location: "",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Evaluating low-bandwidth architecture",
-    score: 71,
-    profile: "Musa Garba",
-    reasons: [
-      "Technical scoping for active project",
-      "Open to architecture recommendations",
-      "Recent activity (Posted 10 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Research",
-    problem: "Real-time websocket latency on mobile networks",
-    urgency: "Medium",
-    entityType: "individual",
-    industry: "Software & Mobile Apps",
-    keyTopics: ["WebSockets", "Low Bandwidth", "Real-time Bidding"],
-    competitors: ["Firebase", "Supabase", "Pusher"],
-    followUpStrategy: "Send architecture blueprint on lightweight binary websocket protocols.",
-    postUrl: "https://www.reddit.com/r/webdev/",
-    suggestedMessage:
-      "Hi Musa,\nFor low-bandwidth real-time sync, binary serialization over lightweight WebSockets saves up to 70% data transfer compared to JSON payloads. Happy to share a quick prototype structure.",
-  },
-  {
-    id: 18,
-    signal: "Replacing our subscription billing provider due to failed debit retries on local cards. Need intelligent card retry logic.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Product Lead",
-    company: "PayNexus",
-    location: "Lagos, Nigeria\n20-50 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Failed subscription debit recovery",
-    score: 89,
-    profile: "Folake Adeleke",
-    reasons: [
-      "Direct revenue loss from failed renewals",
-      "Immediate switching trigger",
-      "Product decision maker",
-      "Recent activity (Posted 11 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Vendor Selection",
-    problem: "Involuntary churn due to unoptimized retry schedules",
-    urgency: "High",
-    entityType: "company",
-    industry: "Fintech & SaaS",
-    keyTopics: ["Card Retries", "Subscription Billing", "Churn Prevention"],
-    competitors: ["Stripe Billing", "Paystack Subscriptions"],
-    followUpStrategy: "Share data on optimal retry windows for Nigerian commercial banks.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Folake,\nInvoluntary churn from failed card debits can cost up to 15% of ARR. Intelligent retry scheduling synced to salary cycles recovers over 40% of missed debits.",
-  },
-  {
-    id: 19,
-    signal: "Looking for an SMS broadcast partner with high regional deliverability for rural farmers in Western Kenya.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "CEO",
-    company: "AgriConnect",
-    location: "Kisumu, Kenya\n20-50 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Rural SMS broadcast reach",
-    score: 84,
-    profile: "Juma Omondi",
-    reasons: [
-      "Direct C-level outreach trigger",
-      "High mission-critical dependency on SMS",
-      "Recent activity (Posted 11 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Evaluation",
-    problem: "Low delivery rates for weather and market price alerts",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Agriculture",
-    keyTopics: ["SMS Broadcast", "Rural Telecoms", "Agri Alerts"],
-    competitors: ["AfricasTalking", "Safaricom Direct"],
-    followUpStrategy: "Offer pilot credit trial with direct delivery receipts.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Juma,\nConnecting with rural smallholders requires direct operator interconnects rather than cheap grey routes. We can set up a test route to verify delivery speeds in Western Kenya.",
-  },
-  {
-    id: 20,
-    signal: "Need inventory sync software connecting our 4 physical stores in Enugu and Abuja with our Shopify online storefront.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "E-commerce Manager",
-    company: "Horizon Retail",
-    location: "Enugu, Nigeria\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Omnichannel inventory sync",
-    score: 78,
-    profile: "Ngozi Eze",
-    reasons: [
-      "Physical and online stock desynchronization pain",
-      "Active buyer seeking software solution",
-      "Recent activity (Posted 12 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Research",
-    problem: "Overselling out-of-stock items online",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Retail & Apparel",
-    keyTopics: ["Omnichannel", "Shopify Sync", "POS Integration"],
-    competitors: ["TradeGecko", "Cin7", "QuickBooks POS"],
-    followUpStrategy: "Share our step-by-step multi-location stock synchronization guide.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Ngozi,\nPreventing stockouts between physical POS terminals and Shopify is essential for retail growth. We configure real-time stock webhooks so inventory updates across all stores instantly.",
-  },
-  {
-    id: 21,
-    signal: "Evaluating applicant tracking systems and recruitment CRM for technical hiring across West Africa. Needs WhatsApp candidate communication.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Talent Acquisition Lead",
-    company: "TalentBridge",
-    location: "Kano, Nigeria\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Recruitment CRM with WhatsApp",
-    score: 80,
-    profile: "Suleiman Bello",
-    reasons: [
-      "Hiring expansion underway",
-      "Identified candidate channel preference (WhatsApp)",
-      "Recent activity (Posted 12 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Candidates ignore emails; need high-response messaging",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Staffing & Recruiting",
-    keyTopics: ["Recruitment CRM", "Applicant Tracking", "Candidate Sourcing"],
-    competitors: ["Lever", "Greenhouse", "Workable"],
-    followUpStrategy: "Demonstrate WhatsApp interview scheduling workflows.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Suleiman,\nEmail response rates for engineering candidates in Nigeria are under 20%, while WhatsApp averages over 85%. We integrate automated candidate messaging directly into hiring pipelines.",
-  },
-  {
-    id: 22,
-    signal: "Looking for penetration testing partners for SOC2 and ISO 27001 compliance ahead of our Series A diligence.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Chief Information Security Officer",
-    company: "SafeVault",
-    location: "Pretoria, South Africa\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Security compliance penetration testing",
-    score: 93,
-    profile: "Lerato Molefe",
-    reasons: [
-      "Highest intent score (93%) tied to fundraising milestone",
-      "Executive CISO stakeholder",
-      "Immediate budget allocation",
-      "Recent activity (Posted 13 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Partner Selection",
-    problem: "Audit deadline approaching for investor review",
-    urgency: "High",
-    entityType: "company",
-    industry: "Enterprise Security",
-    keyTopics: ["SOC2 Compliance", "Penetration Testing", "Security Diligence"],
-    competitors: ["Big 4 Accounting", "Specialist Cyber Firms"],
-    followUpStrategy: "Schedule priority briefing with certified ethical hackers and compliance leads.",
-    postUrl: "https://x.com/search?q=soc2+pentest",
-    suggestedMessage:
-      "Hi Lerato,\nInvestor diligence timelines leave no room for audit delays. Our certified security team delivers thorough penetration tests and remediation reports mapped directly to SOC2 controls.",
-  },
-  {
-    id: 23,
-    signal: "Automating driver dispatch and customer delivery confirmation via WhatsApp bot. Has anyone built this without coding from scratch?",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Dispatch Lead",
-    company: "Nexus Freight",
-    location: "Warri, Nigeria\n20-50 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "No-code delivery confirmation bot",
-    score: 76,
-    profile: "David Kalu",
-    reasons: [
-      "Operational bottleneck with phone confirmation",
-      "Seeking turnkey or low-code automation",
-      "Recent activity (Posted 13 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Research",
-    problem: "Drivers spending too much time making manual check-in phone calls",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Last-Mile Delivery",
-    keyTopics: ["WhatsApp Bot", "Dispatch Automation", "Proof of Delivery"],
-    competitors: ["Yellow.ai", "Gupshup"],
-    followUpStrategy: "Share ready-to-deploy delivery confirmation flow template.",
-    postUrl: "https://x.com/search?q=whatsapp+dispatch",
-    suggestedMessage:
-      "Hi David,\nAutomating delivery confirmations over WhatsApp frees up dispatchers completely. We have a pre-built driver check-in template that triggers automated customer notifications.",
-  },
-  {
-    id: 24,
-    signal: "How much budget should an early-stage B2B founder allocate for initial outbound automation software?",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Founder",
-    company: "Individual",
-    location: "",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Early-stage outbound budgeting",
-    score: 72,
-    profile: "Adaobi Uche",
-    reasons: [
-      "Early stage founder preparing outbound stack",
-      "Active price discovery question",
-      "Recent activity (Posted 14 hours ago)",
+      "Active buyer researching budget for localized AI agent",
+      "Specific multilingual demand (English & Swahili)",
+      "Decision maker with allocated agribusiness capital",
+      "Recent activity (Posted 2 hours ago)",
     ],
     signalType: "Price",
     buyingStage: "Budgeting",
-    problem: "Uncertainty around tool pricing vs. in-house effort",
+    problem: "High cost of hiring bilingual agronomy call agents",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Agritech & Smart Farming",
+    keyTopics: ["Swahili NLP", "WhatsApp AI Agent", "Agritech Chatbot"],
+    competitors: ["Turn.io", "Yellow.ai", "Twilio Flex"],
+    followUpStrategy: "Send our WhatsApp AI Chatbot Cost & ROI calculator for Kenyan agribusinesses.",
+    postUrl: "https://www.reddit.com/r/Kenya/",
+    suggestedMessage:
+      "Hi Faith,\nBuilding bilingual English/Swahili AI WhatsApp bots for smallholder farming no longer requires tens of thousands of dollars. We can share benchmark pricing and architecture patterns running on localized open LLMs.",
+  },
+  {
+    id: 5,
+    signal: "predictive ai credit scoring and churn reduction software for saccos kenya",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Head of Digital Channels",
+    company: "Harambee Sacco",
+    location: "Nairobi (Upper Hill), Kenya\n201-500 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "SACCO credit scoring & churn reduction",
+    score: 92,
+    profile: "Dennis Odhiambo",
+    reasons: [
+      "Direct search query for SACCO predictive intelligence software",
+      "Tier-1 cooperative institution subject to SASRA guidelines",
+      "Urgent operational need to curb member loan defaults",
+      "Recent search activity (Detected 2 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Evaluation",
+    problem: "Member loan defaults and account dormancy in Tier-1 SACCOs",
+    urgency: "High",
+    entityType: "company",
+    industry: "SACCO & Cooperative Banking",
+    keyTopics: ["SACCO AI", "Credit Scoring", "Member Retention", "Predictive Churn"],
+    competitors: ["Coretec", "Finserve", "Legacy SAS Models"],
+    followUpStrategy: "Offer a confidential briefing showcasing predictive member churn models tailored for SASRA-regulated SACCOs.",
+    postUrl: "https://www.google.com/search?q=predictive+ai+credit+scoring+saccos+kenya",
+    suggestedMessage:
+      "Hi Dennis,\nModern SACCOs in Kenya are shifting from reactive loan recovery to predictive AI health scoring. We've modeled member contribution patterns to flag churn and default risks 60 days in advance.",
+  },
+  {
+    id: 6,
+    signal: "We are evaluating AI triage assistants for private clinics across Western Kenya. Needs to work smoothly over low-bandwidth mobile networks and sync back to our EMR.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Commercial Operations Director",
+    company: "Boma Care Health",
+    location: "Eldoret, Kenya\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Clinical AI triage for Western Kenya",
+    score: 88,
+    profile: "Mercy Chebet",
+    reasons: [
+      "Large regional healthcare network expanding clinical capacity",
+      "Clear technical requirement (low-bandwidth offline sync)",
+      "Executive stakeholder with procurement mandate",
+      "Recent activity (Posted 3 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Consideration",
+    problem: "Clinic nurse overwhelm during morning outpatient surges",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Healthcare & Telemedicine",
+    keyTopics: ["Clinical AI Triage", "Offline First", "EMR Integration"],
+    competitors: ["Babyl", "Ada Health", "Paper Records"],
+    followUpStrategy: "Share a technical overview of lightweight edge-LLM triage deployed over offline-capable Progressive Web Apps.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Mercy,\nOutpatient triage in regional health networks requires ultra-low bandwidth models that don't stall when fiber is down. We specialize in offline-first AI workflow engines for Kenyan healthcare providers.",
+  },
+  {
+    id: 7,
+    signal: "ai route optimization dynamic fuel tracking kenya northern corridor",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Chief Executive Officer",
+    company: "SafariFleet Logistics",
+    location: "Mombasa, Kenya\n51-200 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Fleet AI route optimization & fuel leak prevention",
+    score: 87,
+    profile: "David Kamau",
+    reasons: [
+      "Commercial freight operator looking to cut fleet overhead",
+      "Northern corridor haulage heavily penalized by transit delays",
+      "Direct CEO intent to replace passive GPS trackers with predictive AI",
+      "Recent search activity (Detected 3 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Solution Discovery",
+    problem: "High fuel theft and suboptimal transit times between Mombasa port and Nairobi",
+    urgency: "High",
+    entityType: "company",
+    industry: "Haulage & Marine Logistics",
+    keyTopics: ["Northern Corridor", "AI Route Optimization", "Fuel Telematics", "IoT Fleet"],
+    competitors: ["Cartrack Kenya", "Tramigo", "Manual GPS Logs"],
+    followUpStrategy: "Provide our Northern Corridor transit benchmark showing 18% fuel savings via predictive traffic & weighbridge routing.",
+    postUrl: "https://www.google.com/search?q=ai+route+optimization+dynamic+fuel+tracking+kenya",
+    suggestedMessage:
+      "Hi David,\nManaging long-haul truck turnaround times between Mombasa Port and inland depots is heavily impacted by weighbridge congestion. Our AI dispatch models dynamically reroute trucks and audit fuel sensor anomalies in real-time.",
+  },
+  {
+    id: 8,
+    signal: "HubSpot is charging us $1,200/mo and doesn't even have automated WhatsApp triggers for East African phone numbers. Looking to switch to a modern AI CRM built for our market.",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Head of Marketing",
+    company: "Kifaru Pay",
+    location: "Nairobi (Kilimani), Kenya\n20-50 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Replacing HubSpot with WhatsApp AI CRM",
+    score: 90,
+    profile: "Sharon Achieng",
+    reasons: [
+      "High SaaS friction and price dissatisfaction with HubSpot",
+      "Critical need for automated WhatsApp triggers in sales pipeline",
+      "Marketing director holds direct credit card buying authority",
+      "Recent activity (Posted 4 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Vendor Evaluation",
+    problem: "High SaaS overhead with zero localized messaging automation",
+    urgency: "High",
+    entityType: "company",
+    industry: "Fintech & Merchant Payments",
+    keyTopics: ["CRM Migration", "WhatsApp Triggers", "SaaS Cost Reduction"],
+    competitors: ["HubSpot CRM", "ActiveCampaign", "Zoho CRM"],
+    followUpStrategy: "Send a migration matrix showing 65% software cost reduction with native Safaricom/Airtel SMS and WhatsApp automation.",
+    postUrl: "https://x.com/search?q=hubspot+alternative+kenya",
+    suggestedMessage:
+      "Hi Sharon,\nPaying exorbitant enterprise fees for US CRMs that lack native WhatsApp webhook automation is a common pain in Nairobi. Factory 23 Sales Engine includes native WhatsApp cadences and automated lead scoring built for African sales teams.",
+  },
+  {
+    id: 9,
+    signal: "automated ai lead qualification tool for paygo solar sales reps nairobi",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Operations Lead",
+    company: "Simba Solar Energy",
+    location: "Nairobi (Westlands), Kenya\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Pay-As-You-Go solar lead qualification",
+    score: 86,
+    profile: "Patrick Kariuki",
+    reasons: [
+      "High-intent search for automated solar sales pre-qualification",
+      "Distributed sales force requires mobile lead verification",
+      "High commercial viability in off-grid renewable distribution",
+      "Recent search activity (Detected 4 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Field reps spending 60% of time pursuing unqualified off-grid leads",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Renewable Energy & PayGo",
+    keyTopics: ["PayGo Solar", "Lead Qualification", "Field Sales Enablement"],
+    competitors: ["Angaza", "Salesforce Energy", "Manual Excel Sheets"],
+    followUpStrategy: "Share case study on automated credit pre-qualification scoring via mobile data proxies.",
+    postUrl: "https://www.google.com/search?q=automated+ai+lead+qualification+paygo+solar+kenya",
+    suggestedMessage:
+      "Hi Patrick,\nField agents in solar distribution waste immense hours on leads who fail subsequent credit checks. Our AI lead scoring engine validates phone, location, and propensity data before reps even hit the field.",
+  },
+  {
+    id: 10,
+    signal: "What are leading private hospitals in East Africa paying for AI transcription and clinical documentation assistants?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Chief Medical Officer",
+    company: "Mara Health System",
+    location: "Nairobi (Parklands), Kenya\n501-1000 employees",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Clinical AI transcription budgeting",
+    score: 85,
+    profile: "Dr. Amina Yusuf",
+    reasons: [
+      "Executive decision maker budgeting hospital AI rollouts",
+      "Looking for market pricing benchmarks for medical transcription",
+      "Severe documentation backlog impacting doctor retention",
+      "Recent activity (Posted 5 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Budget Allocation",
+    problem: "Doctors spending 3 hours daily typing patient notes into legacy hospital software",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Hospital Networks & Specialized Clinics",
+    keyTopics: ["Clinical AI", "Medical Transcription", "Doctor Burnout"],
+    competitors: ["Nuance DAX", "Abridge", "Manual Transcriptionists"],
+    followUpStrategy: "Share our healthcare AI economics breakdown with compliant local data hosting.",
+    postUrl: "https://www.reddit.com/r/Kenya/",
+    suggestedMessage:
+      "Hi Dr. Yusuf,\nPhysician documentation burden is acute across major hospital centers in Nairobi. We can share a transparent breakdown of speech-to-clinical note AI models fine-tuned on East African medical accents and terminology.",
+  },
+  {
+    id: 11,
+    signal: "Looking for an automated AI agent to conduct continuous SOC2 and Kenya Data Protection Act (KDPA) compliance audits across our AWS infrastructure.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Chief Information Security Officer",
+    company: "Lake Basin FinTech",
+    location: "Kisumu, Kenya\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "AI KDPA & SOC2 compliance auditing",
+    score: 93,
+    profile: "Victor Omondi",
+    reasons: [
+      "Regulatory enforcement by ODPC creating compliance urgency",
+      "CISO actively evaluating continuous compliance automation",
+      "High-value fintech tier with immediate audit timeline",
+      "Recent activity (Posted 5 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Partner Selection",
+    problem: "Pending Office of Data Protection Commissioner (ODPC) annual audit compliance",
+    urgency: "High",
+    entityType: "company",
+    industry: "Financial Services & Payment Gateway",
+    keyTopics: ["KDPA Compliance", "SOC2 Audit", "Automated Security Agent"],
+    competitors: ["Vanta", "Drata", "Big 4 Advisory"],
+    followUpStrategy: "Provide an automated KDPA compliance mapping matrix illustrating continuous control monitoring.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Victor,\nODPC regulatory audits in Kenya require clear data residency and processing telemetry. Our automated governance agents monitor cloud permissions and flag non-compliant data flows 24/7.",
+  },
+  {
+    id: 12,
+    signal: "ai automated inventory demand forecasting fmcg distributors kenya",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Commercial Director",
+    company: "Tatu Retail Hub",
+    location: "Thika, Kenya\n101-250 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "AI FMCG inventory & stockout forecasting",
+    score: 88,
+    profile: "Wanjiku Mwangi",
+    reasons: [
+      "Direct search query for predictive FMCG inventory planning",
+      "Commercial leader seeking to replace manual spreadsheet forecasting",
+      "Fast-expanding warehouse footprint in Kiambu County",
+      "Recent search activity (Detected 6 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Research",
+    problem: "Excess stock in slow lines and frequent stockouts in fast-moving staples",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Wholesale & FMCG Distribution",
+    keyTopics: ["Demand Forecasting", "Stockout Prevention", "FMCG Supply Chain"],
+    competitors: ["SAP Business One", "Sage Evolution", "Excel Forecasting"],
+    followUpStrategy: "Schedule demo showcasing dynamic safety stock optimization based on historical regional order cycles.",
+    postUrl: "https://www.google.com/search?q=ai+automated+inventory+demand+forecasting+kenya",
+    suggestedMessage:
+      "Hi Wanjiku,\nFMCG distributors lose substantial margin to stockouts on key staples while holding dead inventory elsewhere. Our predictive replenishment engine accurately models localized supermarket demand cycles.",
+  },
+  {
+    id: 13,
+    signal: "Traditional SMS recovery blasts have a 4% collection rate. Any fintechs using conversational AI voice/chat agents for ethical debt recovery in Kenya?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Head of Digital Lending",
+    company: "PesaQuick Micro-Loans",
+    location: "Nairobi (Upper Hill), Kenya\n20-50 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "AI conversational debt collection",
+    score: 90,
+    profile: "Collins Koech",
+    reasons: [
+      "Direct pain point with one-way SMS collection failure",
+      "Lending head searching for two-way conversational agents",
+      "Immediate revenue uplift from improved loan recovery",
+      "Recent activity (Posted 6 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Vendor Evaluation",
+    problem: "Skyrocketing NPLs and low borrower responsiveness to one-way SMS",
+    urgency: "High",
+    entityType: "company",
+    industry: "Digital Lending & Microfinance",
+    keyTopics: ["Debt Collection AI", "NPL Recovery", "Conversational AI"],
+    competitors: ["Manual Call Centers", "Bulk SMS Blasts"],
+    followUpStrategy: "Share conversion statistics of two-way conversational recovery agents operating in Swahili and English.",
+    postUrl: "https://x.com/search?q=ai+debt+collection+kenya",
+    suggestedMessage:
+      "Hi Collins,\nOne-way SMS collections alienate borrowers and produce single-digit recovery. Conversational AI recovery agents that negotiate realistic installment plans recover up to 3x more capital while maintaining regulatory goodwill.",
+  },
+  {
+    id: 14,
+    signal: "How much are Kenyan software agencies charging to implement an AI document search engine over company contracts and policies?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Founder & CEO",
+    company: "Individual",
+    location: "Nairobi, Kenya",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Enterprise RAG search implementation cost",
+    score: 76,
+    profile: "Beatrice Wambui",
+    reasons: [
+      "Founder actively scoping private RAG search implementation",
+      "Pricing discovery indicates committed near-term project",
+      "Recent activity (Posted 7 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Budgeting",
+    problem: "Staff spending hours locating clauses in legacy legal PDFs",
+    urgency: "Medium",
+    entityType: "individual",
+    industry: "Corporate Services & Legal Tech",
+    keyTopics: ["RAG Search", "Contract AI", "Knowledge Base"],
+    competitors: ["Glean", "Custom LangChain Project", "SharePoint Search"],
+    followUpStrategy: "Share our phased enterprise RAG roadmap with transparent fixed milestones.",
+    postUrl: "https://www.reddit.com/r/Kenya/",
+    suggestedMessage:
+      "Hi Beatrice,\nSetting up private document RAG pipelines for contracts can be done securely without open-ended agency bills. We can outline a quick proof-of-concept timeline that indexes your repository within days.",
+  },
+  {
+    id: 15,
+    signal: "b2b ai sales prospecting software verified east africa contact numbers",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Head of Sales",
+    company: "Chui Logistics & Warehousing",
+    location: "Mombasa, Kenya\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Verified East African phone & email data search",
+    score: 94,
+    profile: "Samuel Karanja",
+    reasons: [
+      "High purchase intent for localized B2B sales intelligence",
+      "Sales head frustrated with Western data provider inaccuracy",
+      "Direct fit with Factory 23 primary value proposition",
+      "Recent search activity (Detected 7 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Lusha, ZoomInfo, and Apollo having 80%+ bounce rates on Kenyan contacts",
+    urgency: "High",
+    entityType: "company",
+    industry: "Warehousing & Cold Chain",
+    keyTopics: ["Verified Contact Data", "B2B Data Accuracy", "Sales Prospecting"],
+    competitors: ["ZoomInfo", "Lusha", "Apollo.io"],
+    followUpStrategy: "Provide a verified batch of 30 logistics decision-makers in Mombasa and Nairobi with live phone verification.",
+    postUrl: "https://www.google.com/search?q=b2b+ai+sales+prospecting+software+kenya",
+    suggestedMessage:
+      "Hi Samuel,\nUS-centric data platforms have abysmal coverage in East Africa, resulting in wasted sales rep hours. Factory 23 maintains verified direct mobile and WhatsApp indexes for commercial leaders across Kenya.",
+  },
+  {
+    id: 16,
+    signal: "We receive 1,500+ applications per open engineering role. Looking for an AI resume screening platform that understands Kenyan university degrees and local tech bootcamps.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Head of People & Culture",
+    company: "AfriTalent Solutions",
+    location: "Nairobi (Kilimani), Kenya\n51-200 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "AI applicant screening with local context",
+    score: 82,
+    profile: "Grace Mwangi",
+    reasons: [
+      "High volume applicant strain during hiring cycles",
+      "Specific localized requirement for Kenyan educational context",
+      "HR buyer seeking automated parsing tools",
+      "Recent activity (Posted 8 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Consideration",
+    problem: "HR drowning in manual CV reviews; Western ATS filters rejecting qualified local talent",
+    urgency: "Medium-High",
+    entityType: "company",
+    industry: "Human Resources & Recruitment",
+    keyTopics: ["AI Resume Screening", "ATS Automation", "Technical Hiring"],
+    competitors: ["Workable", "Lever", "Ashby"],
+    followUpStrategy: "Demonstrate localized semantic resume parser recognizing Kenyan tech institutions and practical GitHub experience.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Grace,\nStandard Western ATS filters miss exceptional local engineers from Moringa, ALX, and JKUAT because of rigid keyword templates. We build intelligent applicant ranking models tuned to local engineering pipelines.",
+  },
+  {
+    id: 17,
+    signal: "ai vision quality grading conveyor belt automated sorting kenya",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Managing Director",
+    company: "Victoria Fish Processors",
+    location: "Kisumu, Kenya\n101-250 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "Computer vision fish quality grading",
+    score: 85,
+    profile: "Juma Omondi",
+    reasons: [
+      "Industrial exporter seeking automated quality sorting",
+      "Direct commercial risk from export cargo quality rejections",
+      "Managing Director driving smart manufacturing investments",
+      "Recent search activity (Detected 8 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Research",
+    problem: "Manual grading errors causing EU export rejection penalties",
+    urgency: "High",
+    entityType: "company",
+    industry: "Agri-Food Processing & Export",
+    keyTopics: ["Computer Vision", "Industrial AI", "Quality Control"],
+    competitors: ["Marel", "Manual Inspectors"],
+    followUpStrategy: "Provide case studies on real-time edge vision inspection deployed in industrial food processing.",
+    postUrl: "https://www.google.com/search?q=ai+vision+quality+grading+conveyor+belt+kenya",
+    suggestedMessage:
+      "Hi Juma,\nAutomating export grade classification on high-speed conveyor lines eliminates costly shipment rejections at port. We deploy rugged edge AI vision cameras that grade product dimensions and freshness in real-time.",
+  },
+  {
+    id: 18,
+    signal: "Trying to integrate local Kenyan payment gateways (Paybill, Till, Bank EFT) into our SaaS. Anyone solved automated webhook reconciliations without writing 5,000 lines of custom glue code?",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Founder",
+    company: "Kipawa Tech",
+    location: "Eldoret, Kenya\n11-50 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Automating payment reconciliation webhooks",
+    score: 87,
+    profile: "Kipchumba Bett",
+    reasons: [
+      "Technical founder facing high engineering burden on payment ops",
+      "Seeking turnkey webhook reconciliation infrastructure",
+      "Near-term launch dependency",
+      "Recent activity (Posted 9 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Vendor Evaluation",
+    problem: "Silent webhook drops and manual ledger balancing on Daraja APIs",
+    urgency: "High",
+    entityType: "company",
+    industry: "SaaS & Cloud Software",
+    keyTopics: ["M-Pesa Webhooks", "Automated Reconciliation", "Fintech Infrastructure"],
+    competitors: ["Custom In-house Scripts", "Manual Spreadsheet Tally"],
+    followUpStrategy: "Share architecture diagram of our zero-drop transactional payment event bus.",
+    postUrl: "https://x.com/search?q=daraja+mpesa+reconciliation",
+    suggestedMessage:
+      "Hi Kipchumba,\nDaraja webhook drops during Safaricom maintenance windows cause major billing headaches. We provide resilient event-driven reconciliation connectors that auto-retry and balance your SaaS ledger automatically.",
+  },
+  {
+    id: 19,
+    signal: "Replacing our enterprise ERP dispatch module. Looking for a vendor that integrates AI dynamic route planning with live WhatsApp delivery notifications for pharmacies across Kenya.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Chief Operating Officer",
+    company: "Nairobi Med Supplies",
+    location: "Nairobi (Industrial Area), Kenya\n51-200 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "AI pharma route dispatch & WhatsApp tracking",
+    score: 89,
+    profile: "Lucy Njeri",
+    reasons: [
+      "Mission-critical supply chain optimization for medicine distribution",
+      "COO looking to replace rigid legacy dispatch software",
+      "Direct requirement for AI routing and WhatsApp alerts",
+      "Recent activity (Posted 9 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Solution Evaluation",
+    problem: "Cold-chain pharmaceutical delivery delays and manual customer verification calls",
+    urgency: "High",
+    entityType: "company",
+    industry: "Pharmaceuticals & Healthcare Supply",
+    keyTopics: ["Pharma Dispatch", "Dynamic Routing", "WhatsApp Automation"],
+    competitors: ["SAP", "Microsoft Dynamics", "Manual Dispatchers"],
+    followUpStrategy: "Present live dispatch console showing multi-stop route optimization with real-time customer WhatsApp delivery alerts.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Lucy,\nDelivering medical supplies on tight cold-chain schedules requires intelligent multi-stop routing and transparent recipient alerts. We connect your ERP straight into automated route planning and instant WhatsApp status updates.",
+  },
+  {
+    id: 20,
+    signal: "best ai contract lifecycle management and supplier compliance audit kenya",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Head of Procurement",
+    company: "Western Sugar Mills",
+    location: "Kakamega, Kenya\n201-500 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "AI supplier contract lifecycle management",
+    score: 81,
+    profile: "Kennedy Wekesa",
+    reasons: [
+      "Inbound search for enterprise contract compliance automation",
+      "Large-scale agricultural processing plant with extensive vendor base",
+      "Procurement lead looking to automate audit trails",
+      "Recent search activity (Detected 10 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Unmonitored supplier contract expirations and missed SLA breach penalties",
+    urgency: "Medium",
+    entityType: "company",
+    industry: "Manufacturing & Agro-Processing",
+    keyTopics: ["Contract AI", "Supplier Compliance", "Procurement Automation"],
+    competitors: ["Icertis", "Coupa", "Manual Filing Cabinets"],
+    followUpStrategy: "Offer an automated contract audit scanning 50 legacy supplier agreements for hidden renewal dates.",
+    postUrl: "https://www.google.com/search?q=best+ai+contract+lifecycle+management+kenya",
+    suggestedMessage:
+      "Hi Kennedy,\nProcurement teams in heavy agro-processing frequently lose capital when supplier contracts auto-renew without renegotiation. Our AI contract intelligence platform flags renewals and audits supplier compliance automatically.",
+  },
+  {
+    id: 21,
+    signal: "What is the fastest way to add Swahili speech-to-text into our customer service app in Kenya? Whisper vs Google Cloud Speech pricing comparison?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Lead Developer",
+    company: "Individual",
+    location: "Nakuru, Kenya",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "Swahili speech-to-text benchmark & cost",
+    score: 75,
+    profile: "Daniel Kiprotich",
+    reasons: [
+      "Developer researching voice STT costs for customer support",
+      "Evaluating cloud API costs vs self-hosted Whisper",
+      "Recent activity (Posted 10 hours ago)",
+    ],
+    signalType: "Price",
+    buyingStage: "Research",
+    problem: "High cloud API bills for voice transcription in African dialects",
     urgency: "Low-Medium",
     entityType: "individual",
-    industry: "B2B Software",
-    keyTopics: ["Outbound Budget", "Founder Sales", "Stack Optimization"],
-    competitors: ["Manual Cold Email", "Fractional Agency"],
-    followUpStrategy: "Send our Lean Outbound Stack guide for bootstrap founders.",
-    postUrl: "https://www.reddit.com/r/startups/",
+    industry: "Software & Mobile Apps",
+    keyTopics: ["Swahili STT", "Speech Recognition", "Cloud Costs"],
+    competitors: ["Google Cloud STT", "OpenAI Whisper", "Deepgram"],
+    followUpStrategy: "Send open-source self-hosted Whisper benchmark for East African dialects.",
+    postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
-      "Hi Adaobi,\nFor early-stage B2B outreach, you don't need expensive enterprise contracts. You can build a lean, high-performing intent pipeline for under $200/month before scaling up.",
+      "Hi Daniel,\nTranscribing Swahili at scale using generic US cloud APIs gets expensive very quickly. We can share benchmark latency and cost numbers comparing fine-tuned local models against proprietary cloud APIs.",
+  },
+  {
+    id: 22,
+    signal: "Hiring 6 new B2B sales development reps in Nairobi. We need an AI sales coaching tool that reviews sales call recordings and scores objection handling on East African financial products.",
+    source: "LinkedIn Post",
+    sourceIcon: "in",
+    persona: "Head of Marketing & Sales",
+    company: "Apex Financial Advisory",
+    location: "Nairobi (Upper Hill), Kenya\n20-50 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "AI sales call coaching for local financial products",
+    score: 91,
+    profile: "Phyllis Kerubo",
+    reasons: [
+      "Sales expansion creating urgent onboarding and training need",
+      "Sales leader actively looking for call intelligence software",
+      "Dedicated commercial budget allocated for rep enablement",
+      "Recent activity (Posted 11 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Purchase Planning",
+    problem: "Long ramp time for junior SDRs pitching complex commercial wealth products",
+    urgency: "High",
+    entityType: "company",
+    industry: "Wealth Management & Advisory",
+    keyTopics: ["AI Sales Coaching", "Conversation Intelligence", "SDR Enablement"],
+    competitors: ["Gong.io", "Chorus", "Manual Call Shadowing"],
+    followUpStrategy: "Share our localized objection-handling scorecard fine-tuned on corporate banking sales in East Africa.",
+    postUrl: "https://www.linkedin.com/feed/",
+    suggestedMessage:
+      "Hi Phyllis,\nOnboarding new SDRs in Nairobi without standardized call coaching leads to months of missed quotas. Our sales intelligence platform automatically analyzes call recordings, highlights objection patterns, and boosts rep productivity in weeks.",
+  },
+  {
+    id: 23,
+    signal: "ai workflow automation core banking migration kenya",
+    source: "Google Search",
+    sourceIcon: "G",
+    persona: "Head of Digital Transformation",
+    company: "Metropolitan Sacco",
+    location: "Nairobi (CBD), Kenya\n201-500 employees",
+    intent: "Switching",
+    intentColor: "#f8725d",
+    description: "Core banking AI automation & data migration",
+    score: 95,
+    profile: "Anthony Macharia",
+    reasons: [
+      "Highest intent score (95%) tied to complex core banking upgrade",
+      "Executive transformation lead looking for automated verification",
+      "Critical compliance and balance reconciliation exposure",
+      "Recent search activity (Detected 11 hours ago)",
+    ],
+    signalType: "Switching",
+    buyingStage: "Partner Selection",
+    problem: "Data migration errors and manual reconciliation during core banking upgrade",
+    urgency: "High",
+    entityType: "company",
+    industry: "Banking & Financial Cooperatives",
+    keyTopics: ["Core Banking Migration", "AI Data Cleansing", "SACCO Transformation"],
+    competitors: ["Oracle Flexcube", "Temenos", "Local Systems Integrators"],
+    followUpStrategy: "Schedule executive consultation demonstrating automated data cleansing and balance verification.",
+    postUrl: "https://www.google.com/search?q=ai+workflow+automation+core+banking+kenya",
+    suggestedMessage:
+      "Hi Anthony,\nCore banking migrations carry tremendous risk of corrupted legacy records and member transaction discrepancies. Our automated reconciliation agents validate every ledger balance before and after migration cutover.",
+  },
+  {
+    id: 24,
+    signal: "Motor insurance claim fraud is eating our underwriting margins. Need an AI image damage assessment tool that works reliably on photos taken with budget Android phones.",
+    source: "X/Twitter Post",
+    sourceIcon: "X",
+    persona: "Chief Technology Officer",
+    company: "Zuri InsurTech",
+    location: "Nairobi (Westlands), Kenya\n20-50 employees",
+    intent: "Recommendation",
+    intentColor: "#6ec758",
+    description: "AI vehicle damage estimation & fraud detection",
+    score: 89,
+    profile: "Gladys Akinyi",
+    reasons: [
+      "Direct margin erosion from manual claims leakage",
+      "CTO actively seeking vision model tailored to mobile photos",
+      "High fit for automated damage classification build",
+      "Recent activity (Posted 12 hours ago)",
+    ],
+    signalType: "Recommendation",
+    buyingStage: "Vendor Selection",
+    problem: "Fraudulent repair estimates and delayed claim turnaround times",
+    urgency: "High",
+    entityType: "company",
+    industry: "Insurtech & Underwriting",
+    keyTopics: ["Insurtech AI", "Damage Assessment", "Fraud Detection"],
+    competitors: ["Tractable", "Manual Claims Adjusters"],
+    followUpStrategy: "Provide live sandbox test assessing typical vehicle scratch and bumper damage photos.",
+    postUrl: "https://x.com/search?q=ai+motor+insurance+claims+kenya",
+    suggestedMessage:
+      "Hi Gladys,\nDetecting claim fraud while speeding up legitimate settlements is crucial for underwriting profitability. Our computer vision models evaluate vehicle damage severity instantly from everyday smartphone photos.",
   },
   {
     id: 25,
-    signal: "Looking for a CRM that handles field technician dispatch and equipment leasing schedules for off-grid solar systems.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Commercial Lead",
-    company: "Zenith Solar",
-    location: "Takoradi, Ghana\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Field service & leasing CRM",
-    score: 87,
-    profile: "Patrick Mensah",
+    signal: "What is the average agency fee in Kenya for deploying automated AI outbound lead generation campaigns?",
+    source: "Reddit Post",
+    sourceIcon: "r",
+    persona: "Growth Lead",
+    company: "Individual",
+    location: "Eldoret, Kenya",
+    intent: "Price",
+    intentColor: "#67b7f4",
+    description: "AI outbound agency fee comparison",
+    score: 78,
+    profile: "Erick Ngetich",
     reasons: [
-      "Clear industry-specific workflow requirements",
-      "Commercial decision maker with growth agenda",
-      "High fit for Sales Engine pipeline customizations",
-      "Recent activity (Posted 14 hours ago)",
+      "Active buyer seeking pricing clarity in Kenyan market",
+      "Evaluating outsourced agency vs self-serve outbound platform",
+      "Clear intent to launch outbound campaign this quarter",
+      "Recent activity (Posted 12 hours ago)",
     ],
-    signalType: "Recommendation",
-    buyingStage: "Solution Discovery",
-    problem: "Disconnected systems for customer sales and field maintenance",
-    urgency: "High",
-    entityType: "company",
-    industry: "Renewable Energy",
-    keyTopics: ["Field Service CRM", "Equipment Leasing", "Solar Operations"],
-    competitors: ["Salesforce Field Service", "Zoho FSM"],
-    followUpStrategy: "Schedule consultative review showing unified customer and asset management.",
-    postUrl: "https://www.linkedin.com/feed/",
+    signalType: "Price",
+    buyingStage: "Budgeting",
+    problem: "Opaque retainers and unverified lead counts from local marketing agencies",
+    urgency: "Medium",
+    entityType: "individual",
+    industry: "B2B Professional Services",
+    keyTopics: ["Outbound Pricing", "Lead Generation ROI", "Agency Retainers"],
+    competitors: ["Traditional PR Agencies", "Freelance Marketers"],
+    followUpStrategy: "Share our transparent B2B lead generation cost per qualified meeting model.",
+    postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
-      "Hi Patrick,\nManaging both lease contracts and field technician routes in one unified hub eliminates dropped service calls. We can show how renewable energy providers organize this workflow.",
+      "Hi Erick,\nMany agencies in Kenya bill high monthly retainers without guaranteeing pipeline outcomes. We can share transparent benchmarks for cost-per-qualified B2B lead so you know exactly what to budget.",
   },
 ];
 
@@ -966,6 +962,7 @@ const sourceFilterOptions: SelectOption[] = [
   { value: "LinkedIn Post", label: "LinkedIn Post" },
   { value: "X/Twitter Post", label: "X/Twitter Post" },
   { value: "Reddit Post", label: "Reddit Post" },
+  { value: "Google Search", label: "Google Search" },
 ];
 
 const signalTypeFilterOptions: SelectOption[] = [
@@ -1907,6 +1904,24 @@ function SalesEngineTabs({
 function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
   const isLinkedIn = sourceIcon === "in";
   const isReddit = sourceIcon === "r";
+  const isGoogle = sourceIcon === "G" || sourceIcon.toLowerCase() === "google";
+
+  if (isGoogle) {
+    return (
+      <span
+        aria-label="Google Search"
+        className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-white text-[11px] font-bold shadow-sm border border-gray-200"
+      >
+        <svg viewBox="0 0 24 24" className="size-3.5" aria-hidden="true">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" />
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z" />
+          <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
+        </svg>
+      </span>
+    );
+  }
+
   return (
     <span
       className={`grid size-[22px] shrink-0 place-items-center rounded-[6px] text-[10px] font-bold text-white shadow-sm ${
@@ -1939,10 +1954,12 @@ function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) 
 
 function SignalActionMenu({
   signal,
+  isActive = false,
   onRemove,
   onSelect,
 }: {
   signal: SocialSignal;
+  isActive?: boolean;
   onRemove?: (id: number) => void;
   onSelect?: (signal: SocialSignal) => void;
 }) {
@@ -2006,13 +2023,15 @@ function SignalActionMenu({
           onSelect?.(signal);
           setIsOpen((prev) => !prev);
         }}
-        className={`grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer ${
-          isOpen ? "bg-black/10 group-hover:bg-white/20" : ""
-        }`}
+        className={`grid size-6 place-items-center rounded-full transition cursor-pointer ${
+          isActive
+            ? "hover:bg-white/20 text-white"
+            : "hover:bg-black/10 text-[#616263]"
+        } ${isOpen ? (isActive ? "bg-white/20" : "bg-black/10") : ""}`}
       >
         <MoreVertical
           size={16}
-          className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+          className={`transition-colors ${isActive ? "text-white" : "text-[#616263]"}`}
         />
       </button>
 
@@ -2090,26 +2109,30 @@ function SignalActionMenu({
 function SocialSignalRow({
   signal,
   isActive = false,
-  onHover,
+  onSelect,
   onRemoveSignal,
 }: {
   signal: SocialSignal;
   isActive?: boolean;
-  onHover: (signal: SocialSignal) => void;
+  onSelect: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
 }) {
   const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
 
   return (
     <tr
-      onClick={() => onHover(signal)}
-      onMouseEnter={() => onHover(signal)}
-      onFocus={() => onHover(signal)}
+      onClick={() => onSelect(signal)}
       tabIndex={0}
-      className={`group cursor-pointer outline-none transition-colors duration-200 ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(signal);
+        }
+      }}
+      className={`cursor-pointer outline-none transition-colors duration-150 ${
         isActive
           ? "bg-[#09232d] text-white"
-          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#eaeaea] hover:text-[#09232d]"
       }`}
     >
       <td className="rounded-l-[20px] px-4 py-3">
@@ -2117,7 +2140,7 @@ function SocialSignalRow({
           <SourceBadge sourceIcon={signal.sourceIcon} />
           <p
             className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
-              isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              isActive ? "text-white" : "text-[#616263]"
             }`}
           >
             {signal.signal}
@@ -2128,7 +2151,7 @@ function SocialSignalRow({
         <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
         <p
           className={`mt-1 text-[8px] transition-colors ${
-            isActive ? "text-white/70" : "text-[#616263]/70 group-hover:text-white/70 group-focus:text-white/70"
+            isActive ? "text-white/70" : "text-[#616263]/70"
           }`}
         >
           2hr ago
@@ -2143,13 +2166,13 @@ function SocialSignalRow({
             <User
               size={20}
               className={`shrink-0 transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             />
           ) : (
             <CompanyBuildingIcon
               className={`size-5 shrink-0 transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             />
           )}
@@ -2171,12 +2194,7 @@ function SocialSignalRow({
         <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
       </td>
       <td className="px-3 py-3 align-middle">
-        <div className={isActive ? "hidden" : "block group-hover:hidden group-focus:hidden"}>
-          <ScoreGauge score={signal.score} />
-        </div>
-        <div className={isActive ? "block" : "hidden group-hover:block group-focus:block"}>
-          <ScoreGauge score={signal.score} dark />
-        </div>
+        <ScoreGauge score={signal.score} dark={isActive} />
       </td>
       <td className="rounded-r-[20px] px-4 py-3 align-middle">
         <div className="flex items-center gap-3">
@@ -2185,19 +2203,26 @@ function SocialSignalRow({
             aria-label={`Message ${signal.profile || signal.company}`}
             onClick={(e) => {
               e.stopPropagation();
-              onHover(signal);
+              onSelect(signal);
               toast.info(`Opening message composer for ${signal.profile || signal.company}…`);
             }}
-            className="grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer"
+            className={`grid size-6 place-items-center rounded-full transition cursor-pointer ${
+              isActive ? "hover:bg-white/20" : "hover:bg-black/10"
+            }`}
           >
             <MessageCircle
               size={15}
               className={`transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             />
           </button>
-          <SignalActionMenu signal={signal} onRemove={onRemoveSignal} onSelect={onHover} />
+          <SignalActionMenu
+            signal={signal}
+            isActive={isActive}
+            onRemove={onRemoveSignal}
+            onSelect={onSelect}
+          />
         </div>
       </td>
     </tr>
@@ -2209,12 +2234,12 @@ const SIGNALS_PAGE_SIZE = 10;
 function SocialSignalsTable({
   signals,
   activeSignalId,
-  onHoverSignal,
+  onSelectSignal,
   onRemoveSignal,
 }: {
   signals: SocialSignal[];
   activeSignalId?: number;
-  onHoverSignal: (signal: SocialSignal) => void;
+  onSelectSignal: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -2268,7 +2293,7 @@ function SocialSignalsTable({
                 key={signal.id}
                 signal={signal}
                 isActive={signal.id === activeSignalId}
-                onHover={onHoverSignal}
+                onSelect={onSelectSignal}
                 onRemoveSignal={onRemoveSignal}
               />
             ))}
@@ -2440,6 +2465,8 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
       ? "https://www.linkedin.com"
       : signal.source === "X/Twitter Post"
       ? "https://x.com"
+      : signal.source === "Google Search"
+      ? `https://www.google.com/search?q=${encodeURIComponent(signal.signal)}`
       : "https://www.reddit.com");
 
   return (
@@ -2464,11 +2491,15 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
             }}
             className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
           >
-            <span className="underline underline-offset-2">See Post</span>
+            <span className="underline underline-offset-2">
+              {signal.source === "Google Search" ? "See Search Result" : "See Post"}
+            </span>
             <span className="not-italic no-underline">→</span>
           </a>
         </div>
-        <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">{signal.source} • Public • 2hrs ago</p>
+        <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
+          {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} • 2hrs ago
+        </p>
       </div>
 
       {/* 2. Middle Content (SCROLLABLE) */}
@@ -2856,7 +2887,7 @@ function SocialListeningTab() {
           <SocialSignalsTable
             signals={filteredSignals}
             activeSignalId={activeSignal.id}
-            onHoverSignal={(signal) => setActiveSignalId(signal.id)}
+            onSelectSignal={(signal) => setActiveSignalId(signal.id)}
             onRemoveSignal={handleRemoveSignal}
           />
         </div>
