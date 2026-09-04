@@ -57,6 +57,7 @@ type SalesEngineTab = "smart-lead" | "social-listening";
 type SocialSignal = {
   id: number;
   signal: string;
+  summary?: string;
   source: "LinkedIn Post" | "X/Twitter Post" | "Reddit Post" | "Google Search";
   sourceIcon: string;
   persona: string;
@@ -161,6 +162,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 1,
     signal: "We're looking to automate our B2B outbound pipeline in Kenya. Most global AI sales SDR tools hallucinate or fail on Kenyan local company domains. Recommendations for platforms that actually understand East Africa?",
+    summary: "Seeking East Africa-native AI sales SDR tools to automate B2B outbound pipeline.",
     source: "LinkedIn Post",
     sourceIcon: "in",
     persona: "Head of Growth & AI",
@@ -198,6 +200,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 2,
     signal: "best ai customer support automation mpesa daraja api kenya",
+    summary: "Evaluating AI customer support automation integrated with M-Pesa Daraja APIs.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Chief Technology Officer",
@@ -235,6 +238,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 3,
     signal: "Our manual invoice data entry for KRA eTIMS is becoming a nightmare across 400+ FMCG distributor accounts. Anyone using an AI vision agent that extracts Kenyan tax invoices with >99% accuracy?",
+    summary: "Seeking high-accuracy AI vision extraction for KRA eTIMS invoices across 400+ distributors.",
     source: "X/Twitter Post",
     sourceIcon: "X",
     persona: "VP of Engineering",
@@ -272,6 +276,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 4,
     signal: "How much does it cost in Kenya to build or buy an AI WhatsApp chatbot that answers farmer queries in Swahili and English?",
+    summary: "Scoping pricing and budget for a bilingual Swahili/English AI WhatsApp chatbot.",
     source: "Reddit Post",
     sourceIcon: "r",
     persona: "Managing Director",
@@ -308,6 +313,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 5,
     signal: "predictive ai credit scoring and churn reduction software for saccos kenya",
+    summary: "Researching predictive AI credit scoring and member churn reduction software for SACCOs.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Head of Digital Channels",
@@ -344,6 +350,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 6,
     signal: "We are evaluating AI triage assistants for private clinics across Western Kenya. Needs to work smoothly over low-bandwidth mobile networks and sync back to our EMR.",
+    summary: "Evaluating offline-capable, low-bandwidth AI clinical triage assistants for Western Kenya clinics.",
     source: "LinkedIn Post",
     sourceIcon: "in",
     persona: "Commercial Operations Director",
@@ -380,6 +387,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 7,
     signal: "ai route optimization dynamic fuel tracking kenya northern corridor",
+    summary: "Searching for AI route optimization and dynamic fuel tracking along the Northern Corridor.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Chief Executive Officer",
@@ -416,6 +424,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 8,
     signal: "HubSpot is charging us $1,200/mo and doesn't even have automated WhatsApp triggers for East African phone numbers. Looking to switch to a modern AI CRM built for our market.",
+    summary: "Looking to replace HubSpot ($1,200/mo) with an AI CRM featuring East African WhatsApp triggers.",
     source: "X/Twitter Post",
     sourceIcon: "X",
     persona: "Head of Marketing",
@@ -452,6 +461,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 9,
     signal: "automated ai lead qualification tool for paygo solar sales reps nairobi",
+    summary: "Searching for automated AI lead qualification tools for distributed PayGo solar field sales.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Operations Lead",
@@ -488,6 +498,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 10,
     signal: "What are leading private hospitals in East Africa paying for AI transcription and clinical documentation assistants?",
+    summary: "Benchmarking market pricing for clinical AI transcription and documentation assistants.",
     source: "Reddit Post",
     sourceIcon: "r",
     persona: "Chief Medical Officer",
@@ -524,6 +535,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 11,
     signal: "Looking for an automated AI agent to conduct continuous SOC2 and Kenya Data Protection Act (KDPA) compliance audits across our AWS infrastructure.",
+    summary: "Seeking an automated AI agent for continuous SOC2 and KDPA compliance audits on AWS.",
     source: "LinkedIn Post",
     sourceIcon: "in",
     persona: "Chief Information Security Officer",
@@ -560,6 +572,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 12,
     signal: "ai automated inventory demand forecasting fmcg distributors kenya",
+    summary: "Researching AI inventory demand forecasting and stockout prevention for FMCG distribution.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Commercial Director",
@@ -596,6 +609,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 13,
     signal: "Traditional SMS recovery blasts have a 4% collection rate. Any fintechs using conversational AI voice/chat agents for ethical debt recovery in Kenya?",
+    summary: "Evaluating conversational AI voice and chat agents for ethical micro-loan recovery.",
     source: "X/Twitter Post",
     sourceIcon: "X",
     persona: "Head of Digital Lending",
@@ -632,6 +646,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 14,
     signal: "How much are Kenyan software agencies charging to implement an AI document search engine over company contracts and policies?",
+    summary: "Scoping agency implementation costs for an enterprise RAG contract search engine.",
     source: "Reddit Post",
     sourceIcon: "r",
     persona: "Founder & CEO",
@@ -667,6 +682,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 15,
     signal: "b2b ai sales prospecting software verified east africa contact numbers",
+    summary: "Searching for B2B sales prospecting software with verified East African phone numbers.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Head of Sales",
@@ -703,6 +719,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 16,
     signal: "We receive 1,500+ applications per open engineering role. Looking for an AI resume screening platform that understands Kenyan university degrees and local tech bootcamps.",
+    summary: "Seeking an AI resume screening tool tuned to Kenyan university degrees and tech bootcamps.",
     source: "LinkedIn Post",
     sourceIcon: "in",
     persona: "Head of People & Culture",
@@ -739,6 +756,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 17,
     signal: "ai vision quality grading conveyor belt automated sorting kenya",
+    summary: "Searching for conveyor belt computer vision AI for automated export quality grading.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Managing Director",
@@ -775,6 +793,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 18,
     signal: "Trying to integrate local Kenyan payment gateways (Paybill, Till, Bank EFT) into our SaaS. Anyone solved automated webhook reconciliations without writing 5,000 lines of custom glue code?",
+    summary: "Seeking turnkey automated webhook reconciliation for M-Pesa Paybill, Till, and local banks.",
     source: "X/Twitter Post",
     sourceIcon: "X",
     persona: "Founder",
@@ -811,6 +830,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 19,
     signal: "Replacing our enterprise ERP dispatch module. Looking for a vendor that integrates AI dynamic route planning with live WhatsApp delivery notifications for pharmacies across Kenya.",
+    summary: "Replacing ERP dispatch with AI dynamic routing and live customer WhatsApp delivery alerts.",
     source: "LinkedIn Post",
     sourceIcon: "in",
     persona: "Chief Operating Officer",
@@ -847,6 +867,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 20,
     signal: "best ai contract lifecycle management and supplier compliance audit kenya",
+    summary: "Searching for AI contract lifecycle management and supplier SLA compliance auditing.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Head of Procurement",
@@ -883,6 +904,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 21,
     signal: "What is the fastest way to add Swahili speech-to-text into our customer service app in Kenya? Whisper vs Google Cloud Speech pricing comparison?",
+    summary: "Comparing pricing and latency for Swahili speech-to-text integration in customer apps.",
     source: "Reddit Post",
     sourceIcon: "r",
     persona: "Lead Developer",
@@ -918,6 +940,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 22,
     signal: "Hiring 6 new B2B sales development reps in Nairobi. We need an AI sales coaching tool that reviews sales call recordings and scores objection handling on East African financial products.",
+    summary: "Seeking an AI sales coaching platform to analyze SDR calls and regional financial objection handling.",
     source: "LinkedIn Post",
     sourceIcon: "in",
     persona: "Head of Marketing & Sales",
@@ -954,6 +977,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 23,
     signal: "ai workflow automation core banking migration kenya",
+    summary: "Searching for AI workflow automation and ledger data cleansing for core banking migration.",
     source: "Google Search",
     sourceIcon: "G",
     persona: "Head of Digital Transformation",
@@ -990,6 +1014,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 24,
     signal: "Motor insurance claim fraud is eating our underwriting margins. Need an AI image damage assessment tool that works reliably on photos taken with budget Android phones.",
+    summary: "Seeking mobile computer vision AI for vehicle damage assessment and fraud detection.",
     source: "X/Twitter Post",
     sourceIcon: "X",
     persona: "Chief Technology Officer",
@@ -1026,6 +1051,7 @@ const socialSignals: SocialSignal[] = [
   {
     id: 25,
     signal: "What is the average agency fee in Kenya for deploying automated AI outbound lead generation campaigns?",
+    summary: "Benchmarking Kenyan agency fees for automated AI outbound lead generation campaigns.",
     source: "Reddit Post",
     sourceIcon: "r",
     persona: "Growth Lead",
@@ -2551,6 +2577,8 @@ function SocialListeningFilters({
 function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
   const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
+  const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
+  const showFullSignal = expandedSignalId === signal.id;
 
   const handleCopyMessage = async () => {
     try {
@@ -2581,10 +2609,13 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
           <ScoreGauge score={signal.score} dark />
         </div>
         <SourceBadge sourceIcon={signal.sourceIcon} />
-        <p className="mt-3 max-w-[250px] text-[10px] font-light leading-[12px]">
-          {signal.signal}
+        <p
+          className="mt-3 max-w-[250px] text-[10px] font-light leading-[13px] text-white"
+          title={showFullSignal ? undefined : `Full Signal: ${signal.signal}`}
+        >
+          {showFullSignal ? signal.signal : (signal.summary || signal.description)}
         </p>
-        <div className="mt-2">
+        <div className="mt-2 flex items-center gap-3">
           <a
             href={postHref}
             target="_blank"
@@ -2600,6 +2631,15 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
             </span>
             <span className="not-italic no-underline">→</span>
           </a>
+          {signal.summary && signal.summary !== signal.signal && (
+            <button
+              type="button"
+              onClick={() => setExpandedSignalId(showFullSignal ? null : signal.id)}
+              className="text-[10px] italic text-white/70 underline underline-offset-2 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
+            >
+              {showFullSignal ? "Show Summary" : "Show Full"}
+            </button>
+          )}
         </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
           {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} • 2hrs ago
