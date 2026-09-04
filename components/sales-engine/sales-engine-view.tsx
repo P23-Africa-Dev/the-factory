@@ -17,7 +17,6 @@ import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { formatRelativeTime, type ChatIntent, type ChatLead } from "@/lib/api/sales-engine";
 import {
-  Building2,
   Check,
   ChevronDown,
   CircleCheck,
@@ -2219,12 +2218,13 @@ function SocialSignalsTable({
   onRemoveSignal?: (id: number) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(signals.length / SIGNALS_PAGE_SIZE));
-
-  useEffect(() => {
+  const [prevSignals, setPrevSignals] = useState(signals);
+  if (signals !== prevSignals) {
+    setPrevSignals(signals);
     setCurrentPage(1);
-  }, [signals]);
+  }
 
+  const totalPages = Math.max(1, Math.ceil(signals.length / SIGNALS_PAGE_SIZE));
   const safePage = Math.min(Math.max(1, currentPage), totalPages);
   const startIndex = (safePage - 1) * SIGNALS_PAGE_SIZE;
   const paginatedSignals = useMemo(() => {
@@ -2249,8 +2249,8 @@ function SocialSignalsTable({
 
   return (
     <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1">
-        <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1 [&::-webkit-scrollbar:horizontal]:hidden [&::-webkit-scrollbar]:h-0">
+        <table className="w-full min-w-0 border-separate border-spacing-y-2">
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
               <th className="bg-white px-4 py-1 text-left">Signal</th>
