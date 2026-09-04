@@ -30,7 +30,7 @@ import {
   Minimize2,
   MoreVertical,
   Plus,
-  Scan,
+  RefreshCw,
   Search,
   Send,
   SlidersHorizontal,
@@ -112,7 +112,7 @@ const INTENT_MODE_CONFIG: Record<
     icon: <Globe2 size={12} className="shrink-0" />,
   },
   generate_leads: {
-    label: "Generate New Leads",
+    label: "Generate New Prospects",
     tint: "bg-[#e4faff]",
     chipTint: "bg-[#c8f0ff] text-[#09232d]",
     icon: <UsersRound size={12} className="shrink-0" />,
@@ -1114,7 +1114,7 @@ const initialMessages: ChatMessage[] = [
     id: 1,
     role: "assistant",
     body:
-      "Welcome to Sales Engine.\n\nI'm your AI-powered assistant built to help you discover high-quality leads, craft personalized outreach messages, and develop smart follow-up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain leads aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new leads, analyze your outreach performance, suggest improvements, or create follow-up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
+      "Welcome to Sales Engine.\n\nI'm your AI-powered assistant built to help you discover high-quality prospects, craft personalized outreach messages, and develop smart follow-up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain prospects aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new prospects, analyze your outreach performance, suggest improvements, or create follow-up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
   },
 ];
 
@@ -1123,7 +1123,7 @@ function MetricCard({
   value,
   percent,
   active = false,
-  unit = "Leads",
+  unit = "Prospects",
 }: {
   title: string;
   value: string;
@@ -1666,7 +1666,7 @@ function ChatWorkspace({
           />
           <PromptButton
             icon={<UsersRound size={17} />}
-            label="Generate New Leads"
+            label="Generate New Prospects"
             active={selectedIntent === "generate_leads"}
             onSelect={() => selectIntent("generate_leads")}
             tint={INTENT_MODE_CONFIG.generate_leads.tint}
@@ -2558,9 +2558,9 @@ function SocialListeningFilters({
         {isScanning ? (
           <Loader2 size={13} className="animate-spin text-[#09232d]" />
         ) : (
-          <Scan size={13} className="text-[#09232d]" />
+          <RefreshCw size={13} className="text-[#09232d]" />
         )}
-        <span>{isScanning ? "Scanning…" : "Scan"}</span>
+        <span>{isScanning ? "Refreshing…" : "Refresh"}</span>
       </button>
       <button
         type="button"
@@ -2976,10 +2976,10 @@ function SocialListeningTab() {
 
   const handleScan = () => {
     setIsScanning(true);
-    toast.loading("Scanning web, social channels, and public registries…", { id: "social-scan" });
+    toast.loading("Refreshing web, social channels, and public registries…", { id: "social-scan" });
     window.setTimeout(() => {
       setIsScanning(false);
-      toast.success("Scan complete. 4 new social opportunities identified.", { id: "social-scan" });
+      toast.success("Refresh complete. 4 new social opportunities identified.", { id: "social-scan" });
     }, 1500);
   };
 
@@ -3051,7 +3051,7 @@ function SocialListeningTab() {
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<SalesEngineTab>("social-listening");
+  const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: metrics } = useSalesEngineMetrics();
 
@@ -3078,8 +3078,8 @@ export function SalesEngineView() {
           <>
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
-            <MetricCard title="Qualified Lead Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
+            <MetricCard title="Prospect Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
+            <MetricCard title="Qualified Prospect Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">

@@ -340,7 +340,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
               <p className="text-[11px] text-white/70">
                 {currentMode === "list"
                   ? "Select, manage or switch targeting models for Sales Engine"
-                  : "Define target criteria & qualification rules for lead discovery"}
+                  : "Define target criteria & qualification rules for prospect discovery"}
               </p>
             </div>
           </div>
@@ -515,7 +515,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
             {/* List Footer */}
             <div className="border-t border-gray-200/80 bg-white px-6 py-4 flex items-center justify-between shrink-0">
               <span className="text-[12px] text-gray-500">
-                Active ICP drives lead ranking & auto-qualification.
+                Active ICP drives prospect ranking & auto-qualification.
               </span>
               <button
                 type="button"
@@ -865,7 +865,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           Minimum ICP Match Threshold
                         </span>
                         <p className="text-[11px] text-gray-500">
-                          Leads scoring below this will be filtered out
+                          Prospects scoring below this will be filtered out
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-white shadow-xs">
@@ -907,7 +907,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           Auto-Push Qualified to CRM Pipeline
                         </span>
                         <p className="text-[11px] text-gray-500 leading-snug mt-0.5">
-                          Automatically sync discovered leads that exceed match threshold to CRM.
+                          Automatically sync discovered prospects that exceed match threshold to CRM.
                         </p>
                       </div>
                       <Toggle
