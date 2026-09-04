@@ -79,6 +79,10 @@ type SocialSignal = {
   keyTopics?: string[];
   competitors?: string[];
   followUpStrategy?: string;
+  recommendedAction?: {
+    title: string;
+    detail: string;
+  };
 };
 
 type SocialStatCard = {
@@ -186,6 +190,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi Esther,\nI saw your post on automating B2B outbound in Kenya. Most Western AI SDRs fail because they lack local domain directories and verified phone data. Factory 23 Sales Engine is trained specifically on East African commercial registries and intent data.",
+    recommendedAction: {
+      title: "Reach out within 2 hours",
+      detail: "Share our East Africa B2B firmographic benchmark and offer a 15-minute SDR workflow walkthrough.",
+    },
   },
   {
     id: 2,
@@ -219,6 +227,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=best+ai+customer+support+automation+mpesa+daraja+api+kenya",
     suggestedMessage:
       "Hi Kevin,\nSaw your team is exploring AI support automation for M-Pesa Daraja payment workflows. We integrate directly with Daraja APIs to resolve failed STK push inquiries and instant reversals without human agent delay.",
+    recommendedAction: {
+      title: "Schedule architecture scoping call",
+      detail: "Offer technical review demonstrating real-time M-Pesa Daraja payment query resolution.",
+    },
   },
   {
     id: 3,
@@ -252,6 +264,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://x.com/search?q=etims+ai+invoice",
     suggestedMessage:
       "Hi Brian,\nHandling KRA eTIMS invoices manually across hundreds of distributors creates serious compliance delays. We build localized vision-language extraction models optimized for Kenyan PINs and eTIMS QR formats.",
+    recommendedAction: {
+      title: "Send eTIMS OCR sample extraction test",
+      detail: "Demonstrate sub-second vision extraction on Kenyan VAT and eTIMS QR invoice batches.",
+    },
   },
   {
     id: 4,
@@ -284,6 +300,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
       "Hi Faith,\nBuilding bilingual English/Swahili AI WhatsApp bots for smallholder farming no longer requires tens of thousands of dollars. We can share benchmark pricing and architecture patterns running on localized open LLMs.",
+    recommendedAction: {
+      title: "Send WhatsApp AI Chatbot Cost & ROI calculator",
+      detail: "Provide benchmark pricing for bilingual English/Swahili conversational models.",
+    },
   },
   {
     id: 5,
@@ -316,6 +336,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=predictive+ai+credit+scoring+saccos+kenya",
     suggestedMessage:
       "Hi Dennis,\nModern SACCOs in Kenya are shifting from reactive loan recovery to predictive AI health scoring. We've modeled member contribution patterns to flag churn and default risks 60 days in advance.",
+    recommendedAction: {
+      title: "Request confidential SACCO analytics briefing",
+      detail: "Present predictive member churn and loan default risk scorecards tailored for SASRA institutions.",
+    },
   },
   {
     id: 6,
@@ -348,6 +372,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi Mercy,\nOutpatient triage in regional health networks requires ultra-low bandwidth models that don't stall when fiber is down. We specialize in offline-first AI workflow engines for Kenyan healthcare providers.",
+    recommendedAction: {
+      title: "Share offline-first clinical AI whitepaper",
+      detail: "Demonstrate lightweight edge-LLM triage architecture for distributed regional clinics.",
+    },
   },
   {
     id: 7,
@@ -380,6 +408,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=ai+route+optimization+dynamic+fuel+tracking+kenya",
     suggestedMessage:
       "Hi David,\nManaging long-haul truck turnaround times between Mombasa Port and inland depots is heavily impacted by weighbridge congestion. Our AI dispatch models dynamically reroute trucks and audit fuel sensor anomalies in real-time.",
+    recommendedAction: {
+      title: "Send Northern Corridor fuel telematics benchmark",
+      detail: "Showcase dynamic route optimization and real-time weighbridge avoidance analytics.",
+    },
   },
   {
     id: 8,
@@ -412,6 +444,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://x.com/search?q=hubspot+alternative+kenya",
     suggestedMessage:
       "Hi Sharon,\nPaying exorbitant enterprise fees for US CRMs that lack native WhatsApp webhook automation is a common pain in Nairobi. Factory 23 Sales Engine includes native WhatsApp cadences and automated lead scoring built for African sales teams.",
+    recommendedAction: {
+      title: "Deliver HubSpot replacement cost comparison",
+      detail: "Highlight 65% software savings and native East African WhatsApp sales triggers.",
+    },
   },
   {
     id: 9,
@@ -444,6 +480,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=automated+ai+lead+qualification+paygo+solar+kenya",
     suggestedMessage:
       "Hi Patrick,\nField agents in solar distribution waste immense hours on leads who fail subsequent credit checks. Our AI lead scoring engine validates phone, location, and propensity data before reps even hit the field.",
+    recommendedAction: {
+      title: "Send PayGo pre-qualification case study",
+      detail: "Illustrate automated lead verification before dispatching field sales agents.",
+    },
   },
   {
     id: 10,
@@ -476,6 +516,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
       "Hi Dr. Yusuf,\nPhysician documentation burden is acute across major hospital centers in Nairobi. We can share a transparent breakdown of speech-to-clinical note AI models fine-tuned on East African medical accents and terminology.",
+    recommendedAction: {
+      title: "Provide clinical documentation economics breakdown",
+      detail: "Share compliant local hosting options and doctor time-saving metrics.",
+    },
   },
   {
     id: 11,
@@ -508,6 +552,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi Victor,\nODPC regulatory audits in Kenya require clear data residency and processing telemetry. Our automated governance agents monitor cloud permissions and flag non-compliant data flows 24/7.",
+    recommendedAction: {
+      title: "Deliver KDPA compliance mapping matrix",
+      detail: "Show continuous AWS permissions monitoring aligned with ODPC regulations.",
+    },
   },
   {
     id: 12,
@@ -540,6 +588,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=ai+automated+inventory+demand+forecasting+kenya",
     suggestedMessage:
       "Hi Wanjiku,\nFMCG distributors lose substantial margin to stockouts on key staples while holding dead inventory elsewhere. Our predictive replenishment engine accurately models localized supermarket demand cycles.",
+    recommendedAction: {
+      title: "Schedule demand replenishment demo",
+      detail: "Showcase dynamic safety stock models based on historical Kenyan order cycles.",
+    },
   },
   {
     id: 13,
@@ -572,6 +624,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://x.com/search?q=ai+debt+collection+kenya",
     suggestedMessage:
       "Hi Collins,\nOne-way SMS collections alienate borrowers and produce single-digit recovery. Conversational AI recovery agents that negotiate realistic installment plans recover up to 3x more capital while maintaining regulatory goodwill.",
+    recommendedAction: {
+      title: "Share conversational recovery benchmark",
+      detail: "Present data showing 3x higher capital recovery using two-way conversational agents.",
+    },
   },
   {
     id: 14,
@@ -603,6 +659,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
       "Hi Beatrice,\nSetting up private document RAG pipelines for contracts can be done securely without open-ended agency bills. We can outline a quick proof-of-concept timeline that indexes your repository within days.",
+    recommendedAction: {
+      title: "Send enterprise RAG proof-of-concept roadmap",
+      detail: "Outline fixed milestone pricing and private indexing of company contracts.",
+    },
   },
   {
     id: 15,
@@ -635,6 +695,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=b2b+ai+sales+prospecting+software+kenya",
     suggestedMessage:
       "Hi Samuel,\nUS-centric data platforms have abysmal coverage in East Africa, resulting in wasted sales rep hours. Factory 23 maintains verified direct mobile and WhatsApp indexes for commercial leaders across Kenya.",
+    recommendedAction: {
+      title: "Provide sample verified lead batch",
+      detail: "Deliver 30 verified logistics decision-makers in Mombasa and Nairobi with direct mobile data.",
+    },
   },
   {
     id: 16,
@@ -667,6 +731,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi Grace,\nStandard Western ATS filters miss exceptional local engineers from Moringa, ALX, and JKUAT because of rigid keyword templates. We build intelligent applicant ranking models tuned to local engineering pipelines.",
+    recommendedAction: {
+      title: "Demonstrate localized semantic resume parser",
+      detail: "Show how local tech bootcamp and university qualifications are ranked accurately.",
+    },
   },
   {
     id: 17,
@@ -699,6 +767,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=ai+vision+quality+grading+conveyor+belt+kenya",
     suggestedMessage:
       "Hi Juma,\nAutomating export grade classification on high-speed conveyor lines eliminates costly shipment rejections at port. We deploy rugged edge AI vision cameras that grade product dimensions and freshness in real-time.",
+    recommendedAction: {
+      title: "Send industrial edge vision case study",
+      detail: "Demonstrate real-time fish size and freshness grading on high-speed conveyor lines.",
+    },
   },
   {
     id: 18,
@@ -731,6 +803,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://x.com/search?q=daraja+mpesa+reconciliation",
     suggestedMessage:
       "Hi Kipchumba,\nDaraja webhook drops during Safaricom maintenance windows cause major billing headaches. We provide resilient event-driven reconciliation connectors that auto-retry and balance your SaaS ledger automatically.",
+    recommendedAction: {
+      title: "Share zero-drop payment webhook architecture",
+      detail: "Provide resilient event-driven retry connectors for M-Pesa Daraja and local banks.",
+    },
   },
   {
     id: 19,
@@ -763,6 +839,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi Lucy,\nDelivering medical supplies on tight cold-chain schedules requires intelligent multi-stop routing and transparent recipient alerts. We connect your ERP straight into automated route planning and instant WhatsApp status updates.",
+    recommendedAction: {
+      title: "Present live dispatch console demo",
+      detail: "Illustrate multi-stop route optimization connected with real-time customer WhatsApp delivery alerts.",
+    },
   },
   {
     id: 20,
@@ -795,6 +875,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=best+ai+contract+lifecycle+management+kenya",
     suggestedMessage:
       "Hi Kennedy,\nProcurement teams in heavy agro-processing frequently lose capital when supplier contracts auto-renew without renegotiation. Our AI contract intelligence platform flags renewals and audits supplier compliance automatically.",
+    recommendedAction: {
+      title: "Offer 50-contract compliance audit trial",
+      detail: "Scan legacy supplier contracts to identify auto-renewals and SLA breach penalties.",
+    },
   },
   {
     id: 21,
@@ -826,6 +910,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
       "Hi Daniel,\nTranscribing Swahili at scale using generic US cloud APIs gets expensive very quickly. We can share benchmark latency and cost numbers comparing fine-tuned local models against proprietary cloud APIs.",
+    recommendedAction: {
+      title: "Send Swahili STT latency & cost comparison",
+      detail: "Compare open fine-tuned models against commercial cloud APIs for voice triage.",
+    },
   },
   {
     id: 22,
@@ -858,6 +946,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.linkedin.com/feed/",
     suggestedMessage:
       "Hi Phyllis,\nOnboarding new SDRs in Nairobi without standardized call coaching leads to months of missed quotas. Our sales intelligence platform automatically analyzes call recordings, highlights objection patterns, and boosts rep productivity in weeks.",
+    recommendedAction: {
+      title: "Deliver localized objection-handling scorecard",
+      detail: "Share AI sales coaching templates tuned to East African commercial banking sales.",
+    },
   },
   {
     id: 23,
@@ -890,6 +982,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.google.com/search?q=ai+workflow+automation+core+banking+kenya",
     suggestedMessage:
       "Hi Anthony,\nCore banking migrations carry tremendous risk of corrupted legacy records and member transaction discrepancies. Our automated reconciliation agents validate every ledger balance before and after migration cutover.",
+    recommendedAction: {
+      title: "Schedule core banking migration audit briefing",
+      detail: "Walk through automated balance verification and ledger integrity checks.",
+    },
   },
   {
     id: 24,
@@ -922,6 +1018,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://x.com/search?q=ai+motor+insurance+claims+kenya",
     suggestedMessage:
       "Hi Gladys,\nDetecting claim fraud while speeding up legitimate settlements is crucial for underwriting profitability. Our computer vision models evaluate vehicle damage severity instantly from everyday smartphone photos.",
+    recommendedAction: {
+      title: "Provide mobile damage assessment sandbox",
+      detail: "Test vehicle scratch and dent classification directly on smartphone photographs.",
+    },
   },
   {
     id: 25,
@@ -954,6 +1054,10 @@ const socialSignals: SocialSignal[] = [
     postUrl: "https://www.reddit.com/r/Kenya/",
     suggestedMessage:
       "Hi Erick,\nMany agencies in Kenya bill high monthly retainers without guaranteeing pipeline outcomes. We can share transparent benchmarks for cost-per-qualified B2B lead so you know exactly what to budget.",
+    recommendedAction: {
+      title: "Send transparent B2B lead generation pricing guide",
+      detail: "Share cost-per-qualified meeting benchmarks for Kenyan commercial outreach.",
+    },
   },
 ];
 
@@ -2596,7 +2700,13 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
         <div className="space-y-[5px] px-2 py-2">
           <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
             <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
-            <p className="mt-1 text-[9px] leading-[12px]"><span className="font-semibold">Reach out within 24 hours</span><br />This prospect is actively looking for solutions.</p>
+            <p className="mt-1 text-[9px] leading-[12px]">
+              <span className="font-semibold">
+                {signal.recommendedAction?.title || "Reach out within 24 hours"}
+              </span>
+              <br />
+              {signal.recommendedAction?.detail || "This prospect is actively evaluating solutions."}
+            </p>
           </div>
           <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
             <div className="flex items-center justify-between gap-2">
