@@ -220,7 +220,7 @@ function MetricCard({
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
           {title}
         </p>
-        {/* <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} /> */}
+        
       </div>
 
       <div className="absolute left-5 top-[48px]">
