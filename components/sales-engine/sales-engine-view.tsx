@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { IcpBuilderModal } from "./icp-builder-modal";
+import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
 import { ChatMessageBody } from "./chat-message-body";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
@@ -50,7 +50,86 @@ type ChatMessage = {
   body: string;
   intent?: ChatIntent;
   leads?: ChatLead[];
+  /** Renders an inline ICP confirmation card instead of the normal chat bubble. */
+  kind?: "confirm-icp";
+  /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
+  targetCount?: number;
 };
+
+type CrmPipelineOption = { id: string; name: string };
+
+const MOCK_CRM_PIPELINES: CrmPipelineOption[] = [
+  { id: "new-leads", name: "New Leads" },
+  { id: "qualified", name: "Qualified" },
+  { id: "negotiation", name: "In Negotiation" },
+];
+
+type SearchUsage = { used: number; limit: number };
+
+const SEARCH_USAGE_STORAGE_KEY = "sales_engine_search_usage_v1";
+const CRM_CONTACTS_STORAGE_KEY = "sales_engine_crm_contacts_v1";
+const DEFAULT_SEARCH_USAGE_LIMIT = 500;
+const DEFAULT_PROSPECT_COUNT = 100;
+const EXPLICIT_COUNT_PATTERN = /\b(\d{1,4})\b/;
+const USAGE_QUESTION_PATTERN =
+  /how many (search|token|credit)(es)?|(search|token|credit)(es)?\s+(left|remaining)|remaining\s+(search|token)/i;
+
+function readSearchUsage(): SearchUsage {
+  if (typeof window === "undefined") return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
+  try {
+    const raw = window.localStorage.getItem(SEARCH_USAGE_STORAGE_KEY);
+    if (!raw) return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
+    const parsed = JSON.parse(raw) as Partial<SearchUsage>;
+    return {
+      used: typeof parsed.used === "number" ? parsed.used : 0,
+      limit: typeof parsed.limit === "number" ? parsed.limit : DEFAULT_SEARCH_USAGE_LIMIT,
+    };
+  } catch {
+    return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
+  }
+}
+
+function writeSearchUsage(usage: SearchUsage): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SEARCH_USAGE_STORAGE_KEY, JSON.stringify(usage));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function readCrmContacts(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(CRM_CONTACTS_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? new Set(parsed.filter((v): v is string => typeof v === "string")) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCrmContacts(names: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CRM_CONTACTS_STORAGE_KEY, JSON.stringify(Array.from(names)));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is, else appends a default-100 instruction. */
+function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number } {
+  const match = prompt.match(EXPLICIT_COUNT_PATTERN);
+  if (match) {
+    return { body: prompt, targetCount: Number(match[1]) };
+  }
+  return {
+    body: `${prompt} (Find ${DEFAULT_PROSPECT_COUNT} prospects unless a different number is specified.)`,
+    targetCount: DEFAULT_PROSPECT_COUNT,
+  };
+}
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
 type SalesEngineTab = "smart-lead" | "social-listening";
@@ -1317,7 +1396,13 @@ function ThinkingBubble({ stage }: { stage: string }) {
   );
 }
 
-function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
+function LeadInlineResults({
+  leads,
+  onAddToCrm,
+}: {
+  leads: ChatLead[];
+  onAddToCrm: (lead: ChatLead) => void;
+}) {
   return (
     <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
       {leads.map((lead) => (
@@ -1330,8 +1415,94 @@ function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
           </div>
           <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
           <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+          <button
+            type="button"
+            onClick={() => onAddToCrm(lead)}
+            className="mt-2 flex items-center gap-1 rounded-full bg-[#09232d]/5 px-2 py-1 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/10"
+          >
+            <UserPlus size={10} />
+            Add to CRM
+          </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+function IcpConfirmationCard({
+  icpProfiles,
+  isLoading,
+  isSwitching,
+  switchingId,
+  onSelectIcp,
+  onConfirm,
+  onManageIcps,
+}: {
+  icpProfiles: IcpProfile[];
+  isLoading: boolean;
+  isSwitching: boolean;
+  switchingId?: string;
+  onSelectIcp: (id: string) => void;
+  onConfirm: () => void;
+  onManageIcps: () => void;
+}) {
+  const activeIcp = icpProfiles.find((profile) => profile.isActive);
+
+  return (
+    <div className="max-w-[480px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
+      <p className="text-[11px] font-semibold">Before I generate prospects…</p>
+      <p className="mt-1 text-[10px] leading-[14px] text-[#09232d]/70">
+        {activeIcp ? (
+          <>
+            I&apos;ll use the <strong>{activeIcp.name}</strong> ICP build. Confirm to proceed, or pick a different
+            one below.
+          </>
+        ) : (
+          "No ICP build is active yet — select one below to continue."
+        )}
+      </p>
+
+      {isLoading ? (
+        <p className="mt-2 text-[10px] text-[#09232d]/50">Loading ICP builds…</p>
+      ) : icpProfiles.length === 0 ? (
+        <p className="mt-2 text-[10px] text-[#09232d]/50">No ICP builds yet — create one to continue.</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {icpProfiles.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              disabled={isSwitching}
+              onClick={() => onSelectIcp(profile.id)}
+              className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold transition disabled:opacity-60 ${
+                profile.isActive
+                  ? "border-[#09232d] bg-[#09232d] text-white"
+                  : "border-[#d7d7d7] bg-white text-[#09232d] hover:bg-gray-100"
+              }`}
+            >
+              {isSwitching && switchingId === profile.id ? "Switching…" : profile.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!activeIcp}
+          className="h-7 rounded-full bg-[#09232d] px-3 text-[9px] font-semibold text-white transition disabled:opacity-50"
+        >
+          Confirm & Generate
+        </button>
+        <button
+          type="button"
+          onClick={onManageIcps}
+          className="text-[9px] font-semibold text-[#09232d]/60 underline underline-offset-2 hover:text-[#09232d]"
+        >
+          Manage ICP Builds
+        </button>
+      </div>
     </div>
   );
 }
@@ -1340,16 +1511,23 @@ function ChatWorkspace({
   expanded,
   onToggleExpanded,
   onOpenIcpBuilder,
+  crmContactNames,
+  onAddToCrm,
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
   onOpenIcpBuilder: () => void;
+  crmContactNames: Set<string>;
+  onAddToCrm: (prospect: { id: number | string; name: string }) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
   const [thinkingStage, setThinkingStage] = useState<string>(thinkingStagesByIntent.freeform[0]);
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
+  const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
+  const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
+  const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
@@ -1398,13 +1576,20 @@ function ChatWorkspace({
 
   const sendMessage = useSendChatMessage({
     onSuccess: ({ assistant_message }) => {
+      const rawLeads = assistant_message.leads ?? undefined;
+      const leads = rawLeads?.filter((lead) => !crmContactNames.has(lead.name.toLowerCase()));
+      const excludedCount = rawLeads ? rawLeads.length - (leads?.length ?? 0) : 0;
+      const excludedNote =
+        excludedCount > 0
+          ? `\n\n_${excludedCount} prospect${excludedCount === 1 ? "" : "s"} excluded — already in your CRM._`
+          : "";
       setMessages((current) => [
         ...current,
         {
           id: nextMessageId(),
           role: "assistant",
-          body: assistant_message.body,
-          leads: assistant_message.leads ?? undefined,
+          body: assistant_message.body + excludedNote,
+          leads: leads && leads.length > 0 ? leads : undefined,
         },
       ]);
     },
@@ -1416,7 +1601,7 @@ function ChatWorkspace({
       );
     },
   });
-  const isThinking = sendMessage.isPending;
+  const isThinking = sendMessage.isPending || isSyntheticThinking;
 
   function stopThinkingCycle() {
     if (thinkingIntervalRef.current != null) {
@@ -1452,6 +1637,45 @@ function ChatWorkspace({
     const trimmed = prompt.trim();
     if (!trimmed || isThinking) return;
 
+    // Item 3: token/search usage lookup — answered locally, no real request sent.
+    if (USAGE_QUESTION_PATTERN.test(trimmed)) {
+      setMessages((current) => [
+        ...current,
+        { id: nextMessageId(), role: "user", body: trimmed, intent },
+      ]);
+      setDraft("");
+      setIsSyntheticThinking(true);
+      startThinkingCycle(intent);
+      const timer = window.setTimeout(() => {
+        stopThinkingCycle();
+        setIsSyntheticThinking(false);
+        const remaining = Math.max(usage.limit - usage.used, 0);
+        setMessages((current) => [
+          ...current,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle — ${remaining} remaining.`,
+          },
+        ]);
+      }, 900);
+      timersRef.current.push(timer);
+      return;
+    }
+
+    // Item 1/2: gate prospect generation behind an inline ICP confirmation card.
+    if (intent === "generate_leads") {
+      const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
+      setMessages((current) => [
+        ...current,
+        { id: nextMessageId(), role: "user", body: trimmed, intent, targetCount },
+        { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
+      ]);
+      setDraft("");
+      setPendingGenerateRequest({ prompt: trimmed });
+      return;
+    }
+
     setMessages((current) => [
       ...current,
       { id: nextMessageId(), role: "user", body: trimmed, intent },
@@ -1461,6 +1685,40 @@ function ChatWorkspace({
 
     sendMessage.mutate(
       { body: trimmed, intent },
+      { onSettled: () => stopThinkingCycle() }
+    );
+  }
+
+  function confirmGenerateLeads() {
+    if (!pendingGenerateRequest) return;
+    const activeIcp = icpProfiles.find((profile) => profile.isActive);
+    if (!activeIcp) {
+      toast.error("Select an ICP profile first.");
+      return;
+    }
+
+    const { body, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    setMessages((current) =>
+      current.map((message) =>
+        message.kind === "confirm-icp"
+          ? {
+              ...message,
+              kind: undefined,
+              body: `Using **${activeIcp.name}** — generating up to ${targetCount} prospects…`,
+            }
+          : message
+      )
+    );
+    setPendingGenerateRequest(null);
+    startThinkingCycle("generate_leads");
+    setUsage((current) => {
+      const next = { used: current.used + 1, limit: current.limit };
+      writeSearchUsage(next);
+      return next;
+    });
+
+    sendMessage.mutate(
+      { body, intent: "generate_leads" },
       { onSettled: () => stopThinkingCycle() }
     );
   }
@@ -1593,21 +1851,43 @@ function ChatWorkspace({
                   <IntentModeChip intent={message.intent} compact />
                 </div>
               )}
-              <div
-                className={
-                  message.role === "user"
-                    ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
-                    : index === 0
-                      ? "text-[12px] leading-[15px] text-[#09232d]"
-                      : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
-                }
-              >
-                <ChatMessageBody
-                  content={message.body}
-                  variant={message.role === "user" ? "user" : index === 0 ? "welcome" : "assistant"}
+              {message.kind === "confirm-icp" ? (
+                <IcpConfirmationCard
+                  icpProfiles={icpProfiles}
+                  isLoading={isIcpProfilesLoading}
+                  isSwitching={activateIcpProfile.isPending}
+                  switchingId={activateIcpProfile.variables}
+                  onSelectIcp={(id) => activateIcpProfile.mutate(id)}
+                  onConfirm={confirmGenerateLeads}
+                  onManageIcps={onOpenIcpBuilder}
                 />
-              </div>
-              {message.leads && <LeadInlineResults leads={message.leads} />}
+              ) : (
+                <div
+                  className={
+                    message.role === "user"
+                      ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
+                      : index === 0
+                        ? "text-[12px] leading-[15px] text-[#09232d]"
+                        : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
+                  }
+                >
+                  <ChatMessageBody
+                    content={message.body}
+                    variant={message.role === "user" ? "user" : index === 0 ? "welcome" : "assistant"}
+                  />
+                </div>
+              )}
+              {message.role === "user" && message.targetCount != null && (
+                <p className="mt-1 text-right text-[8px] font-medium text-[#09232d]/40">
+                  Target: {message.targetCount} prospects
+                </p>
+              )}
+              {message.leads && (
+                <LeadInlineResults
+                  leads={message.leads}
+                  onAddToCrm={(lead) => onAddToCrm({ id: lead.id, name: lead.name })}
+                />
+              )}
               {index === 0 && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
                   <ThumbsUp size={14} />
@@ -2087,11 +2367,13 @@ function SignalActionMenu({
   isActive = false,
   onRemove,
   onSelect,
+  onAddToCrm,
 }: {
   signal: SocialSignal;
   isActive?: boolean;
   onRemove?: (id: number) => void;
   onSelect?: (signal: SocialSignal) => void;
+  onAddToCrm?: (prospect: { id: number | string; name: string }) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -2194,7 +2476,7 @@ function SignalActionMenu({
               onClick={(e) => {
                 e.stopPropagation();
                 setIsOpen(false);
-                toast.success(`Added ${signal.company} to CRM pipeline.`);
+                onAddToCrm?.({ id: signal.id, name: signal.profile || signal.company });
               }}
               className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
             >
@@ -2241,11 +2523,13 @@ function SocialSignalRow({
   isActive = false,
   onSelect,
   onRemoveSignal,
+  onAddToCrm,
 }: {
   signal: SocialSignal;
   isActive?: boolean;
   onSelect: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
+  onAddToCrm?: (prospect: { id: number | string; name: string }) => void;
 }) {
   const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
 
@@ -2352,6 +2636,7 @@ function SocialSignalRow({
             isActive={isActive}
             onRemove={onRemoveSignal}
             onSelect={onSelect}
+            onAddToCrm={onAddToCrm}
           />
         </div>
       </td>
@@ -2366,11 +2651,13 @@ function SocialSignalsTable({
   activeSignalId,
   onSelectSignal,
   onRemoveSignal,
+  onAddToCrm,
 }: {
   signals: SocialSignal[];
   activeSignalId?: number;
   onSelectSignal: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
+  onAddToCrm?: (prospect: { id: number | string; name: string }) => void;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [prevSignals, setPrevSignals] = useState(signals);
@@ -2425,6 +2712,7 @@ function SocialSignalsTable({
                 isActive={signal.id === activeSignalId}
                 onSelect={onSelectSignal}
                 onRemoveSignal={onRemoveSignal}
+                onAddToCrm={onAddToCrm}
               />
             ))}
           </tbody>
@@ -2574,7 +2862,13 @@ function SocialListeningFilters({
   );
 }
 
-function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
+function SocialOpportunityDetail({
+  signal,
+  onAddToCrm,
+}: {
+  signal: SocialSignal;
+  onAddToCrm: (prospect: { id: number | string; name: string }) => void;
+}) {
   const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
   const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
@@ -2793,7 +3087,7 @@ function SocialOpportunityDetail({ signal }: { signal: SocialSignal }) {
         </button>
         <button
           type="button"
-          onClick={() => toast.success(`Added ${signal.company} to CRM pipeline.`)}
+          onClick={() => onAddToCrm({ id: signal.id, name: signal.profile || signal.company })}
           className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer"
         >
           Add to CRM
@@ -2960,7 +3254,103 @@ function ListeningSettingsModal({
   );
 }
 
-function SocialListeningTab() {
+function AddToCrmPipelineModal({
+  isOpen,
+  onClose,
+  prospectName,
+  pipelines,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  prospectName: string | null;
+  pipelines: CrmPipelineOption[];
+  onConfirm: (pipelineId: string) => void;
+}) {
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(() => pipelines[0]?.id ?? null);
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 18 }}
+            transition={{ type: "spring", duration: 0.32 }}
+            className="relative z-10 w-full max-w-[400px] overflow-hidden rounded-[24px] bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-5">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#09232d]/40">
+                  Add to CRM
+                </p>
+                <h3 className="mt-1 text-[16px] font-semibold text-[#09232d]">
+                  {prospectName ? `Select a pipeline for ${prospectName}` : "Select a pipeline"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="grid size-8 shrink-0 place-items-center rounded-full text-[#09232d]/50 transition hover:bg-black/5 hover:text-[#09232d] cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-1.5 px-6 py-4">
+              {pipelines.map((pipeline) => (
+                <button
+                  key={pipeline.id}
+                  type="button"
+                  onClick={() => setSelectedPipelineId(pipeline.id)}
+                  className={`flex w-full items-center justify-between rounded-[12px] border px-3.5 py-2.5 text-left text-[12px] font-medium transition cursor-pointer ${
+                    selectedPipelineId === pipeline.id
+                      ? "border-[#09232d] bg-[#09232d]/5 text-[#09232d]"
+                      : "border-[#e4e4e9] text-[#09232d]/70 hover:bg-gray-50"
+                  }`}
+                >
+                  {pipeline.name}
+                  {selectedPipelineId === pipeline.id && <Check size={14} className="text-[#09232d]" />}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-black/5 px-6 py-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-9 rounded-[10px] px-4 text-[12px] font-semibold text-[#09232d]/60 transition hover:bg-gray-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedPipelineId}
+                onClick={() => selectedPipelineId && onConfirm(selectedPipelineId)}
+                className="h-9 rounded-[10px] bg-[#09232d] px-4 text-[12px] font-semibold text-white transition disabled:opacity-50 cursor-pointer"
+              >
+                Add Prospect
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function SocialListeningTab({
+  onAddToCrm,
+}: {
+  onAddToCrm: (prospect: { id: number | string; name: string }) => void;
+}) {
   const [search, setSearch] = useState("");
   const [source, setSource] = useState("all");
   const [signalType, setSignalType] = useState("all");
@@ -3039,9 +3429,10 @@ function SocialListeningTab() {
             activeSignalId={activeSignal.id}
             onSelectSignal={(signal) => setActiveSignalId(signal.id)}
             onRemoveSignal={handleRemoveSignal}
+            onAddToCrm={onAddToCrm}
           />
         </div>
-        <SocialOpportunityDetail signal={activeSignal} />
+        <SocialOpportunityDetail signal={activeSignal} onAddToCrm={onAddToCrm} />
       </div>
       <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </>
@@ -3054,6 +3445,42 @@ export function SalesEngineView() {
   const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: metrics } = useSalesEngineMetrics();
+
+  const [pipelines, setPipelines] = useState<CrmPipelineOption[]>(MOCK_CRM_PIPELINES);
+  const [crmContactNames, setCrmContactNames] = useState<Set<string>>(() => readCrmContacts());
+  const [pendingCrmProspect, setPendingCrmProspect] = useState<{ id: number | string; name: string } | null>(
+    null
+  );
+  const [isAddToCrmModalOpen, setIsAddToCrmModalOpen] = useState(false);
+
+  function markAddedToCrm(name: string) {
+    setCrmContactNames((current) => {
+      const next = new Set(current);
+      next.add(name.toLowerCase());
+      writeCrmContacts(next);
+      return next;
+    });
+  }
+
+  function handleAddToCrm(prospect: { id: number | string; name: string }) {
+    if (pipelines.length === 0) {
+      setPipelines([{ id: "default", name: "Default Pipeline" }]);
+      markAddedToCrm(prospect.name);
+      toast.success(`No pipeline found — created Default Pipeline and added ${prospect.name}.`);
+      return;
+    }
+    setPendingCrmProspect(prospect);
+    setIsAddToCrmModalOpen(true);
+  }
+
+  function handleConfirmAddToCrm(pipelineId: string) {
+    if (!pendingCrmProspect) return;
+    const pipeline = pipelines.find((p) => p.id === pipelineId);
+    markAddedToCrm(pendingCrmProspect.name);
+    toast.success(`${pendingCrmProspect.name} added to ${pipeline?.name ?? "pipeline"}.`);
+    setIsAddToCrmModalOpen(false);
+    setPendingCrmProspect(null);
+  }
 
   const leadsDiscovered = metrics?.leads_discovered ?? 0;
   const qualifiedLeads = metrics?.qualified_leads ?? 0;
@@ -3073,7 +3500,7 @@ export function SalesEngineView() {
         )}
 
         {activeTab === "social-listening" && !chatExpanded ? (
-          <SocialListeningTab />
+          <SocialListeningTab onAddToCrm={handleAddToCrm} />
         ) : (
           <>
         {!chatExpanded && (
@@ -3123,6 +3550,8 @@ export function SalesEngineView() {
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
             onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
+            crmContactNames={crmContactNames}
+            onAddToCrm={handleAddToCrm}
           />
           {!chatExpanded && <OutreachPanel />}
         </div>
@@ -3131,6 +3560,14 @@ export function SalesEngineView() {
       </div>
 
       <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
+      <AddToCrmPipelineModal
+        key={pendingCrmProspect?.id ?? "add-to-crm-modal"}
+        isOpen={isAddToCrmModalOpen}
+        onClose={() => setIsAddToCrmModalOpen(false)}
+        prospectName={pendingCrmProspect?.name ?? null}
+        pipelines={pipelines}
+        onConfirm={handleConfirmAddToCrm}
+      />
     </div>
   );
 }
