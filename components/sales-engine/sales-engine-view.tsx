@@ -11,7 +11,6 @@ import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
 import { ChatMessageBody } from "./chat-message-body";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
-import { isMissingActiveIcp, useSendChatMessage } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
 import { getApiErrorMessage } from "@/lib/api/errors";
@@ -128,6 +127,72 @@ function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount
   return {
     body: `${prompt} (Find ${DEFAULT_PROSPECT_COUNT} prospects unless a different number is specified.)`,
     targetCount: DEFAULT_PROSPECT_COUNT,
+  };
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+type DummyChatLeadSeed = { name: string; source: string; summary: string };
+
+/** Fixed pool (not random) so repeated "generate_leads" runs tend to resurface the same
+ *  names — that's what makes the Item 5 CRM-exclusion note demonstrable in a demo. */
+const DUMMY_LEAD_POOL: DummyChatLeadSeed[] = [
+  { name: "Esther Nyambura — Savannah AI Labs", source: "LinkedIn", summary: "Head of Growth evaluating East Africa-native AI SDR tooling." },
+  { name: "Kevin Kiprop — Kilimani Microfinance", source: "Web Search", summary: "CTO researching automated M-Pesa customer support." },
+  { name: "Brian Otieno — Twiga Logistics", source: "X/Twitter", summary: "VP Engineering scoping AI invoice extraction for eTIMS compliance." },
+  { name: "Faith Muthoni — Rift Valley AgriTech", source: "Reddit", summary: "MD pricing a bilingual Swahili/English WhatsApp chatbot." },
+  { name: "Dennis Odhiambo — Harambee Sacco", source: "Web Search", summary: "Head of Digital Channels vetting predictive credit-scoring tools." },
+  { name: "Mercy Chebet — Boma Care Health", source: "LinkedIn", summary: "Ops Director evaluating offline-capable clinical triage AI." },
+  { name: "David Kamau — SafariFleet Logistics", source: "Web Search", summary: "CEO comparing AI route-optimization vendors." },
+  { name: "Sharon Achieng — Kifaru Pay", source: "X/Twitter", summary: "Head of Marketing replacing HubSpot with a WhatsApp-native CRM." },
+  { name: "Patrick Kariuki — Simba Solar Energy", source: "Web Search", summary: "Ops Lead scoping AI lead qualification for PayGo solar reps." },
+  { name: "Victor Omondi — Lake Basin FinTech", source: "LinkedIn", summary: "CISO seeking continuous SOC2/KDPA compliance automation." },
+  { name: "Wanjiku Mwangi — Tatu Retail Hub", source: "Web Search", summary: "Commercial Director exploring AI demand forecasting." },
+  { name: "Samuel Karanja — Chui Logistics", source: "Web Search", summary: "Head of Sales frustrated with low-accuracy East African contact data." },
+];
+
+function buildDummyLeads(count: number): ChatLead[] {
+  const size = Math.max(1, Math.min(count, DUMMY_LEAD_POOL.length));
+  return Array.from({ length: size }, (_, index) => {
+    const seed = DUMMY_LEAD_POOL[index % DUMMY_LEAD_POOL.length];
+    return {
+      id: index + 1,
+      name: seed.name,
+      source: seed.source,
+      score: 78 + ((index * 7) % 20),
+      summary: seed.summary,
+    };
+  });
+}
+
+/** Placeholder assistant reply — no network call. Swap for a real API response once the backend is ready. */
+function buildDummyAssistantReply(
+  intent: ChatIntent,
+  body: string,
+  targetCount?: number
+): { body: string; leads?: ChatLead[] } {
+  if (intent === "generate_leads") {
+    const count = targetCount ?? DEFAULT_PROSPECT_COUNT;
+    const leads = buildDummyLeads(count);
+    return {
+      body: `Found ${count} matching prospects for your active ICP. Here are the top ${leads.length}:`,
+      leads,
+    };
+  }
+  if (intent === "quick_research") {
+    return {
+      body: "Here's a quick synthesis: East African B2B buyers are increasingly prioritizing WhatsApp-native workflows, verified local contact data, and Swahili-capable support — three consistent themes across recent market signals.",
+    };
+  }
+  if (intent === "create_outreach") {
+    return {
+      body: `Here's a draft outreach message:\n\nHi there,\n\nI noticed your team might be exploring solutions related to "${body}". Factory 23 Sales Engine specializes in East African B2B outreach automation — happy to share how we could help.\n\nBest,\nYour Sales Team`,
+    };
+  }
+  return {
+    body: "Got it — let me know if you'd like me to research the market, generate new prospects, or draft an outreach message.",
   };
 }
 
@@ -1434,6 +1499,7 @@ function IcpConfirmationCard({
   isLoading,
   isSwitching,
   switchingId,
+  isConfirming,
   onSelectIcp,
   onConfirm,
   onManageIcps,
@@ -1442,6 +1508,7 @@ function IcpConfirmationCard({
   isLoading: boolean;
   isSwitching: boolean;
   switchingId?: string;
+  isConfirming: boolean;
   onSelectIcp: (id: string) => void;
   onConfirm: () => void;
   onManageIcps: () => void;
@@ -1490,10 +1557,10 @@ function IcpConfirmationCard({
         <button
           type="button"
           onClick={onConfirm}
-          disabled={!activeIcp}
+          disabled={!activeIcp || isConfirming}
           className="h-7 rounded-full bg-[#09232d] px-3 text-[9px] font-semibold text-white transition disabled:opacity-50"
         >
-          Confirm & Generate
+          {isConfirming ? "Generating…" : "Confirm & Generate"}
         </button>
         <button
           type="button"
@@ -1574,34 +1641,37 @@ function ChatWorkspace({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isIcpMenuOpen]);
 
-  const sendMessage = useSendChatMessage({
-    onSuccess: ({ assistant_message }) => {
-      const rawLeads = assistant_message.leads ?? undefined;
-      const leads = rawLeads?.filter((lead) => !crmContactNames.has(lead.name.toLowerCase()));
-      const excludedCount = rawLeads ? rawLeads.length - (leads?.length ?? 0) : 0;
-      const excludedNote =
-        excludedCount > 0
-          ? `\n\n_${excludedCount} prospect${excludedCount === 1 ? "" : "s"} excluded — already in your CRM._`
-          : "";
-      setMessages((current) => [
-        ...current,
-        {
-          id: nextMessageId(),
-          role: "assistant",
-          body: assistant_message.body + excludedNote,
-          leads: leads && leads.length > 0 ? leads : undefined,
-        },
-      ]);
-    },
-    onError: (error) => {
-      toast.error(
-        isMissingActiveIcp(error)
-          ? "Select an active ICP profile first — open ICP Builder to create or activate one."
-          : getApiErrorMessage(error, "Sales Engine couldn't process that request.")
-      );
-    },
-  });
-  const isThinking = sendMessage.isPending || isSyntheticThinking;
+  const [isSending, setIsSending] = useState(false);
+  const isThinking = isSending || isSyntheticThinking;
+
+  // Dummy, local-only reply — no network call. Swap for the real chat API once the backend
+  // is ready to answer generate_leads/quick_research/create_outreach synchronously.
+  async function sendDummyMessage(bodyToSend: string, intent: ChatIntent, targetCount?: number) {
+    setIsSending(true);
+    startThinkingCycle(intent);
+    await wait(1100 + Math.random() * 700);
+
+    const reply = buildDummyAssistantReply(intent, bodyToSend, targetCount);
+    const rawLeads = reply.leads;
+    const leads = rawLeads?.filter((lead) => !crmContactNames.has(lead.name.toLowerCase()));
+    const excludedCount = rawLeads ? rawLeads.length - (leads?.length ?? 0) : 0;
+    const excludedNote =
+      excludedCount > 0
+        ? `\n\n_${excludedCount} prospect${excludedCount === 1 ? "" : "s"} excluded — already in your CRM._`
+        : "";
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: nextMessageId(),
+        role: "assistant",
+        body: reply.body + excludedNote,
+        leads: leads && leads.length > 0 ? leads : undefined,
+      },
+    ]);
+    stopThinkingCycle();
+    setIsSending(false);
+  }
 
   function stopThinkingCycle() {
     if (thinkingIntervalRef.current != null) {
@@ -1681,16 +1751,11 @@ function ChatWorkspace({
       { id: nextMessageId(), role: "user", body: trimmed, intent },
     ]);
     setDraft("");
-    startThinkingCycle(intent);
-
-    sendMessage.mutate(
-      { body: trimmed, intent },
-      { onSettled: () => stopThinkingCycle() }
-    );
+    void sendDummyMessage(trimmed, intent);
   }
 
   function confirmGenerateLeads() {
-    if (!pendingGenerateRequest) return;
+    if (isThinking || !pendingGenerateRequest) return;
     const activeIcp = icpProfiles.find((profile) => profile.isActive);
     if (!activeIcp) {
       toast.error("Select an ICP profile first.");
@@ -1710,17 +1775,16 @@ function ChatWorkspace({
       )
     );
     setPendingGenerateRequest(null);
-    startThinkingCycle("generate_leads");
+    // Clear the intent chip so a follow-up reply (e.g. "yes") is treated as freeform
+    // instead of re-triggering the ICP confirmation gate.
+    setSelectedIntent("freeform");
     setUsage((current) => {
       const next = { used: current.used + 1, limit: current.limit };
       writeSearchUsage(next);
       return next;
     });
 
-    sendMessage.mutate(
-      { body, intent: "generate_leads" },
-      { onSettled: () => stopThinkingCycle() }
-    );
+    void sendDummyMessage(body, "generate_leads", targetCount);
   }
 
   function scrollTranscriptToBottom() {
@@ -1857,6 +1921,7 @@ function ChatWorkspace({
                   isLoading={isIcpProfilesLoading}
                   isSwitching={activateIcpProfile.isPending}
                   switchingId={activateIcpProfile.variables}
+                  isConfirming={isThinking}
                   onSelectIcp={(id) => activateIcpProfile.mutate(id)}
                   onConfirm={confirmGenerateLeads}
                   onManageIcps={onOpenIcpBuilder}
