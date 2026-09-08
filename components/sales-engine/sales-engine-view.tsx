@@ -60,6 +60,7 @@ import {
 } from "@/lib/icp-advisory-leads";
 import {
   formatRelativeTime,
+  isFreshSignal,
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
@@ -1392,6 +1393,7 @@ function SocialSignalRow({
 }) {
   const isIndividual =
     signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const fresh = isFreshSignal(signal.posted_at);
 
   return (
     <tr
@@ -1408,13 +1410,26 @@ function SocialSignalRow({
       <td className="rounded-l-[20px] px-4 py-3">
         <div className="flex min-w-[230px] gap-3">
           <SourceBadge sourceIcon={signal.sourceIcon} />
-          <p
-            className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
-              isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
-            }`}
-          >
-            {signal.signal}
-          </p>
+          <div className="min-w-0">
+            {fresh && (
+              <span
+                className={`mb-1 inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold uppercase tracking-wide ${
+                  isActive
+                    ? "bg-[#8dec66]/25 text-[#8dec66]"
+                    : "bg-[#e8f8df] text-[#2f6b1f] group-hover:bg-[#8dec66]/25 group-hover:text-[#8dec66] group-focus:bg-[#8dec66]/25 group-focus:text-[#8dec66]"
+                }`}
+              >
+                Fresh
+              </span>
+            )}
+            <p
+              className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
+                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+              }`}
+            >
+              {signal.signal}
+            </p>
+          </div>
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
@@ -1829,6 +1844,7 @@ function SocialOpportunityDetail({
         </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
           {signal.source} • Public • {formatRelativeTime(signal.posted_at)}
+          {isFreshSignal(signal.posted_at) ? " • Fresh" : ""}
         </p>
       </div>
 
@@ -2032,6 +2048,7 @@ function ListeningSettingsModal({
   const [enabledSources, setEnabledSources] = useState<string[]>([]);
   const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
   const [minScore, setMinScore] = useState(70);
+  const [freshnessWindowDays, setFreshnessWindowDays] = useState<7 | 14 | 30>(14);
   const [intentFilters, setIntentFilters] = useState<string[]>([]);
   const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
   const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
@@ -2042,6 +2059,7 @@ function ListeningSettingsModal({
     setEnabledSources(settings.enabled_sources ?? []);
     setCadenceDays(settings.cadence_days ?? 14);
     setMinScore(settings.min_score ?? 70);
+    setFreshnessWindowDays(settings.freshness_window_days ?? 14);
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
@@ -2056,6 +2074,7 @@ function ListeningSettingsModal({
         enabled_sources: enabledSources,
         cadence_days: cadenceDays,
         min_score: minScore,
+        freshness_window_days: freshnessWindowDays,
         intent_filters: intentFilters,
         crm_destination: crmDestination,
         outreach_channel_default: outreachChannel,
@@ -2185,6 +2204,34 @@ function ListeningSettingsModal({
                       <span>Strict</span>
                     </div>
                   </div>
+                </div>
+              </section>
+
+              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[13px] font-semibold">Freshness window</p>
+                <p className="mt-1 text-[11px] leading-[15px] text-white/45">
+                  Only keep opportunities dated within this window. Searches also prefer recent posts.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-white/70">
+                  {[
+                    { label: "Last 7 days", value: 7 as const },
+                    { label: "Last 14 days", value: 14 as const },
+                    { label: "Last 30 days", value: 30 as const },
+                  ].map((option) => (
+                    <label
+                      key={option.value}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2"
+                    >
+                      <input
+                        type="radio"
+                        name="social-listening-freshness"
+                        checked={freshnessWindowDays === option.value}
+                        onChange={() => setFreshnessWindowDays(option.value)}
+                        className="accent-[#8dec66]"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
                 </div>
               </section>
 

@@ -709,6 +709,15 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   return date.toLocaleDateString();
 }
 
+/** True when posted_at is within the last 48 hours (fresh opportunity window). */
+export function isFreshSignal(iso: string | null | undefined, withinHours = 48): boolean {
+  if (!iso) return false;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return false;
+  const ageMs = Date.now() - date.getTime();
+  return ageMs >= 0 && ageMs <= withinHours * 60 * 60 * 1000;
+}
+
 // ── Social Listening ────────────────────────────────────────────────────────
 
 export type RecommendedActionApi = { title: string; detail: string };
@@ -783,6 +792,7 @@ export type SocialListeningSettings = {
   enabled_sources: string[];
   cadence_days: 14 | 30;
   min_score: number;
+  freshness_window_days: 7 | 14 | 30;
   intent_filters: string[];
   crm_destination: "qualified_pipeline" | "human_review";
   outreach_channel_default: "email" | "human_follow_up";
