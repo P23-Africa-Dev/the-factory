@@ -53,11 +53,7 @@ import {
   useUpdateOutreachSenderSettings,
 } from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import {
-  hasMixedIcpRecommendations,
-  icpBadgeLabel,
-  showIcpAdvisoryBanner,
-} from "@/lib/icp-advisory-leads";
+import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
   formatRelativeTime,
   isFreshSignal,
@@ -141,14 +137,14 @@ function writeSearchUsage(usage: SearchUsage): void {
   }
 }
 
-/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is, else appends a default-100 instruction. */
+/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is for the Target caption. */
 function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number } {
   const match = prompt.match(EXPLICIT_COUNT_PATTERN);
   if (match) {
     return { body: prompt, targetCount: Number(match[1]) };
   }
   return {
-    body: `${prompt} (Find ${DEFAULT_PROSPECT_COUNT} prospects unless a different number is specified.)`,
+    body: prompt,
     targetCount: DEFAULT_PROSPECT_COUNT,
   };
 }
@@ -207,6 +203,7 @@ const SOURCE_SETTING_OPTIONS = [
   { key: "x_mentions", label: "X/Twitter mentions" },
   { key: "reddit", label: "Reddit communities" },
   { key: "meta_pages", label: "Meta business pages" },
+  { key: "meta_graph_pages", label: "Meta pages (direct monitoring)" },
 ] as const;
 
 const INTENT_SETTING_OPTIONS = [
@@ -463,9 +460,6 @@ function LeadInlineResults({
     );
   }
 
-  const showAdvisoryBanner = showIcpAdvisoryBanner(leads);
-  const mixedRecommendations = hasMixedIcpRecommendations(leads);
-
   return (
     <div className="mt-3 max-w-[640px]">
       {!canSyncToCrm && (
@@ -473,17 +467,10 @@ function LeadInlineResults({
           {crmBlockMessage}
         </p>
       )}
-      {showAdvisoryBanner && (
-        <p className="mb-2 rounded-[12px] bg-[#fff7ed] px-3 py-2 text-[8px] leading-[11px] text-[#92400e]">
-          {mixedRecommendations
-            ? "These answer your search. Leads marked ICP match align with your profile; Outside ICP leads still match what you asked for."
-            : "These answer your search but may fall outside your ICP. You can still review and save any lead below."}
-        </p>
-      )}
       {unsavedIds.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[9px] font-medium text-[#616263]">
-            Review leads below. Save the ones you want in CRM.
+            Review leads below. Save the ones you want in CRM. Scores show Overall, Search, ICP, and Intent fit.
           </p>
           <button
             type="button"
@@ -512,7 +499,8 @@ function LeadInlineResults({
       <div className="grid gap-2 sm:grid-cols-3">
         {leads.map((lead) => {
           const isSynced = lead.crm_synced || lead.save_status === "saved";
-          const badge = icpBadgeLabel(lead);
+          const { overall, search: searchPct, icp: icpPct, intent: intentPct } =
+            leadScoreBreakdown(lead);
 
           return (
             <div
@@ -521,20 +509,45 @@ function LeadInlineResults({
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-                <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
-                  {lead.score}
+                <span
+                  className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
+                  title="Overall priority score from Search, ICP fit, and Intent"
+                >
+                  Overall {overall}%
                 </span>
               </div>
-              {badge && (
-                <span
-                  className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
-                    badge === "ICP match"
-                      ? "bg-[#16b37d]/10 text-[#087652]"
-                      : "bg-[#fef3c7] text-[#92400e]"
-                  }`}
-                >
-                  {badge}
-                </span>
+              {(searchPct != null || icpPct != null || intentPct != null) && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {searchPct != null && (
+                    <span
+                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
+                      title="How well this result matches your search"
+                    >
+                      Search {searchPct}%
+                    </span>
+                  )}
+                  {icpPct != null && (
+                    <span
+                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
+                      title="How well this fits your active ICP"
+                    >
+                      ICP {icpPct}%
+                    </span>
+                  )}
+                  {intentPct != null && (
+                    <span
+                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
+                      title="General intent / opportunity signal"
+                    >
+                      Intent {intentPct}%
+                    </span>
+                  )}
+                </div>
+              )}
+              {lead.icp_relevance_reason && (
+                <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                  {lead.icp_relevance_reason}
+                </p>
               )}
               <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
               {(lead.title || lead.company) && (
@@ -545,15 +558,38 @@ function LeadInlineResults({
               {lead.location && (
                 <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
               )}
-              {lead.profile_urls && lead.profile_urls.length > 0 && (
-                <a
-                  href={lead.profile_urls[0]}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                >
-                  View profile
-                </a>
+              {(lead.email || lead.phone || lead.linkedin_url || (lead.profile_urls && lead.profile_urls.length > 0)) && (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {lead.email && (
+                    <a
+                      href={`mailto:${lead.email}`}
+                      className="truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      {lead.email}
+                    </a>
+                  )}
+                  {lead.phone && (
+                    <a
+                      href={`tel:${lead.phone}`}
+                      className="truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      {lead.phone}
+                    </a>
+                  )}
+                  {(lead.linkedin_url || (lead.profile_urls && lead.profile_urls[0])) && (
+                    <a
+                      href={lead.linkedin_url || lead.profile_urls![0]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      View profile
+                    </a>
+                  )}
+                </div>
+              )}
+              {lead.contact_ready === false && (
+                <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
               )}
               <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
               {lead.low_confidence && (
@@ -882,7 +918,7 @@ function ChatWorkspace({
           ? {
               ...message,
               kind: undefined,
-              body: `Using **${activeIcp.name}** — generating up to ${targetCount} prospects…`,
+              body: `Using **${activeIcp.name}** · generating up to ${targetCount} prospects…`,
             }
           : message
       )
@@ -1108,9 +1144,12 @@ function ChatWorkspace({
                   Target: {message.targetCount} prospects
                 </p>
               )}
-              {message.intent === "generate_leads" && !message.leads?.length && !isPendingMessage && (
+              {message.role === "assistant" &&
+                message.intent === "generate_leads" &&
+                !message.leads?.length &&
+                !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads could be extracted for this search — try rephrasing with specific names, companies, or territories.
+                  No leads could be extracted for this search · try rephrasing with specific names, companies, or territories.
                 </p>
               )}
               {message.leads && message.leads.length > 0 && (
@@ -2319,6 +2358,7 @@ function ListeningSettingsModal({
   const triggerRun = useTriggerSocialListeningRun();
 
   const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [metaPageIdsText, setMetaPageIdsText] = useState("");
   const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
   const [minScore, setMinScore] = useState(70);
   const [freshnessWindowDays, setFreshnessWindowDays] = useState<7 | 14 | 30>(14);
@@ -2330,6 +2370,7 @@ function ListeningSettingsModal({
   useEffect(() => {
     if (!settings) return;
     setEnabledSources(settings.enabled_sources ?? []);
+    setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
     setMinScore(settings.min_score ?? 70);
     setFreshnessWindowDays(settings.freshness_window_days ?? 14);
@@ -2343,8 +2384,14 @@ function ListeningSettingsModal({
 
   const handleSave = async () => {
     try {
+      const metaPageIds = metaPageIdsText
+        .split(/[\n,]+/)
+        .map((item) => item.trim().replace(/^@/, ""))
+        .filter(Boolean);
+
       await updateSettings.mutateAsync({
         enabled_sources: enabledSources,
+        meta_page_ids: metaPageIds,
         cadence_days: cadenceDays,
         min_score: minScore,
         freshness_window_days: freshnessWindowDays,
@@ -2436,6 +2483,27 @@ function ListeningSettingsModal({
                     </label>
                   ))}
                 </div>
+                {enabledSources.includes("meta_graph_pages") && (
+                  <div className="mt-4">
+                    <label
+                      htmlFor="meta-page-ids"
+                      className="text-[12px] font-medium text-white/80"
+                    >
+                      Meta Pages to monitor
+                    </label>
+                    <p className="mt-1 text-[11px] leading-[15px] text-white/45">
+                      Page ID or @username, one per line. Direct Graph API monitoring of these pages.
+                    </p>
+                    <textarea
+                      id="meta-page-ids"
+                      value={metaPageIdsText}
+                      onChange={(event) => setMetaPageIdsText(event.target.value)}
+                      rows={4}
+                      placeholder={"AcmeCorp\n123456789\ncompetitor-page"}
+                      className="mt-2 w-full resize-y rounded-[12px] border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/30 focus:border-[#8dec66]/40"
+                    />
+                  </div>
+                )}
               </section>
 
               <section className="grid gap-4 sm:grid-cols-2">

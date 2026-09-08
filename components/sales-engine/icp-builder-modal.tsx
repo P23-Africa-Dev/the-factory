@@ -865,7 +865,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           Minimum ICP Match Threshold
                         </span>
                         <p className="text-[11px] text-gray-500">
-                          Leads below this score are still shown when you ask directly — they&apos;ll be labeled as outside your ICP.
+                          Leads below this score are still shown when you ask directly — they&apos;ll show a lower ICP % on the card instead of being hidden.
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-white shadow-xs">

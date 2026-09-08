@@ -11,7 +11,7 @@ export function formatLeadRoleLine(lead: ChatLead): string | null {
 }
 
 export function primaryProfileUrl(lead: ChatLead): string | null {
-  return lead.profile_urls?.[0] ?? null;
+  return lead.linkedin_url || lead.profile_urls?.[0] || null;
 }
 
 describe("enriched lead card fields", () => {

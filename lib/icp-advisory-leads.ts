@@ -1,24 +1,24 @@
 import type { ChatLead } from "@/lib/api/sales-engine";
 
-export function hasMixedIcpRecommendations(leads: ChatLead[]): boolean {
-  const hasRecommended = leads.some((lead) => lead.icp_recommended === true);
-  const hasOutside = leads.some((lead) => lead.icp_recommended === false);
-
-  return hasRecommended && hasOutside;
-}
-
-export function showIcpAdvisoryBanner(leads: ChatLead[]): boolean {
-  return leads.some((lead) => lead.icp_recommended === false);
-}
-
-export function icpBadgeLabel(lead: ChatLead): "ICP match" | "Outside ICP" | null {
-  if (lead.icp_recommended === true) {
-    return "ICP match";
+/** Round a 0–100 score for display; returns null when missing. */
+export function scorePercent(value: number | null | undefined): number | null {
+  if (value == null || Number.isNaN(Number(value))) {
+    return null;
   }
 
-  if (lead.icp_recommended === false) {
-    return "Outside ICP";
-  }
+  return Math.max(0, Math.min(100, Math.round(Number(value))));
+}
 
-  return null;
+export function leadScoreBreakdown(lead: ChatLead): {
+  overall: number;
+  search: number | null;
+  icp: number | null;
+  intent: number | null;
+} {
+  return {
+    overall: scorePercent(lead.score) ?? 0,
+    search: scorePercent(lead.query_relevance_score),
+    icp: scorePercent(lead.icp_fit_score),
+    intent: scorePercent(lead.intent_score),
+  };
 }

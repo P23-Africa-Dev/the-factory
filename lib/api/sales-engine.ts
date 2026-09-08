@@ -350,7 +350,11 @@ export type ChatLead = {
   company?: string | null;
   location?: string | null;
   website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  linkedin_url?: string | null;
   profile_urls?: string[] | null;
+  contact_ready?: boolean;
   next_action?: string | null;
   source_url?: string | null;
   save_status?: "draft" | "saved";
@@ -359,7 +363,10 @@ export type ChatLead = {
   low_confidence?: boolean;
   icp_recommended?: boolean;
   icp_fit_score?: number;
+  intent_score?: number;
+  query_relevance_score?: number;
   query_match?: boolean;
+  icp_relevance_reason?: string | null;
 };
 
 export type ChatMessageApi = {
@@ -790,6 +797,7 @@ export type SocialListeningMetrics = {
 
 export type SocialListeningSettings = {
   enabled_sources: string[];
+  meta_page_ids: string[];
   cadence_days: 14 | 30;
   min_score: number;
   freshness_window_days: 7 | 14 | 30;
