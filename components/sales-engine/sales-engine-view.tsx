@@ -8,7 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ProcessingPanel } from "./processing-panel";
-import { IcpBuilderModal } from "./icp-builder-modal";
+import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
 import { SocialScanPanel } from "./social-scan-panel";
 import {
   SocialOpportunityEmptyState,
@@ -81,7 +81,7 @@ import {
   Minimize2,
   MoreVertical,
   Plus,
-  Scan,
+  RefreshCw,
   Search,
   Send,
   SlidersHorizontal,
@@ -102,7 +102,56 @@ type ChatMessage = {
   intent?: ChatIntent;
   leads?: ChatLead[];
   meta?: Record<string, unknown> | null;
+  /** Renders an inline ICP confirmation card instead of the normal chat bubble. */
+  kind?: "confirm-icp";
+  /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
+  targetCount?: number;
 };
+
+type SearchUsage = { used: number; limit: number };
+
+const SEARCH_USAGE_STORAGE_KEY = "sales_engine_search_usage_v1";
+const DEFAULT_SEARCH_USAGE_LIMIT = 500;
+const DEFAULT_PROSPECT_COUNT = 100;
+const EXPLICIT_COUNT_PATTERN = /\b(\d{1,4})\b/;
+const USAGE_QUESTION_PATTERN =
+  /how many (search|token|credit)(es)?|(search|token|credit)(es)?\s+(left|remaining)|remaining\s+(search|token)/i;
+
+function readSearchUsage(): SearchUsage {
+  if (typeof window === "undefined") return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
+  try {
+    const raw = window.localStorage.getItem(SEARCH_USAGE_STORAGE_KEY);
+    if (!raw) return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
+    const parsed = JSON.parse(raw) as Partial<SearchUsage>;
+    return {
+      used: typeof parsed.used === "number" ? parsed.used : 0,
+      limit: typeof parsed.limit === "number" ? parsed.limit : DEFAULT_SEARCH_USAGE_LIMIT,
+    };
+  } catch {
+    return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
+  }
+}
+
+function writeSearchUsage(usage: SearchUsage): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SEARCH_USAGE_STORAGE_KEY, JSON.stringify(usage));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is, else appends a default-100 instruction. */
+function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number } {
+  const match = prompt.match(EXPLICIT_COUNT_PATTERN);
+  if (match) {
+    return { body: prompt, targetCount: Number(match[1]) };
+  }
+  return {
+    body: `${prompt} (Find ${DEFAULT_PROSPECT_COUNT} prospects unless a different number is specified.)`,
+    targetCount: DEFAULT_PROSPECT_COUNT,
+  };
+}
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
 type SalesEngineTab = "smart-lead" | "social-listening";
@@ -134,7 +183,7 @@ const INTENT_MODE_CONFIG: Record<
     icon: <Globe2 size={12} className="shrink-0" />,
   },
   generate_leads: {
-    label: "Generate New Leads",
+    label: "Generate New Prospects",
     tint: "bg-[#e4faff]",
     chipTint: "bg-[#c8f0ff] text-[#09232d]",
     icon: <UsersRound size={12} className="shrink-0" />,
@@ -178,6 +227,7 @@ const sourceFilterOptions: SelectOption[] = [
   { value: "LinkedIn Post", label: "LinkedIn Post" },
   { value: "X/Twitter Post", label: "X/Twitter Post" },
   { value: "Reddit Post", label: "Reddit Post" },
+  { value: "Google Search", label: "Google Search" },
 ];
 
 const signalTypeFilterOptions: SelectOption[] = [
@@ -205,7 +255,7 @@ const initialMessages: ChatMessage[] = [
     id: 1,
     role: "assistant",
     body:
-      "Welcome to Sales Engine.\n\nI'm your AI-powered assistant built to help you discover high-quality leads, craft personalized outreach messages, and develop smart follow-up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain leads aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new leads, analyze your outreach performance, suggest improvements, or create follow-up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
+      "Welcome to Sales Engine.\n\nI'm your AI-powered assistant built to help you discover high-quality prospects, craft personalized outreach messages, and develop smart follow-up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain prospects aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new prospects, analyze your outreach performance, suggest improvements, or create follow-up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
   },
 ];
 
@@ -544,6 +594,86 @@ function LeadInlineResults({
   );
 }
 
+function IcpConfirmationCard({
+  icpProfiles,
+  isLoading,
+  isSwitching,
+  switchingId,
+  isConfirming,
+  onSelectIcp,
+  onConfirm,
+  onManageIcps,
+}: {
+  icpProfiles: IcpProfile[];
+  isLoading: boolean;
+  isSwitching: boolean;
+  switchingId?: string;
+  isConfirming: boolean;
+  onSelectIcp: (id: string) => void;
+  onConfirm: () => void;
+  onManageIcps: () => void;
+}) {
+  const activeIcp = icpProfiles.find((profile) => profile.isActive);
+
+  return (
+    <div className="max-w-[480px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
+      <p className="text-[11px] font-semibold">Before I generate prospects…</p>
+      <p className="mt-1 text-[10px] leading-[14px] text-[#09232d]/70">
+        {activeIcp ? (
+          <>
+            I&apos;ll use the <strong>{activeIcp.name}</strong> ICP build. Confirm to proceed, or pick a different
+            one below.
+          </>
+        ) : (
+          "No ICP build is active yet — select one below to continue."
+        )}
+      </p>
+
+      {isLoading ? (
+        <p className="mt-2 text-[10px] text-[#09232d]/50">Loading ICP builds…</p>
+      ) : icpProfiles.length === 0 ? (
+        <p className="mt-2 text-[10px] text-[#09232d]/50">No ICP builds yet — create one to continue.</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {icpProfiles.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              disabled={isSwitching}
+              onClick={() => onSelectIcp(profile.id)}
+              className={`rounded-full border px-2.5 py-1 text-[9px] font-semibold transition disabled:opacity-60 ${
+                profile.isActive
+                  ? "border-[#09232d] bg-[#09232d] text-white"
+                  : "border-[#d7d7d7] bg-white text-[#09232d] hover:bg-gray-100"
+              }`}
+            >
+              {isSwitching && switchingId === profile.id ? "Switching…" : profile.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!activeIcp || isConfirming}
+          className="h-7 rounded-full bg-[#09232d] px-3 text-[9px] font-semibold text-white transition disabled:opacity-50"
+        >
+          {isConfirming ? "Generating…" : "Confirm & Generate"}
+        </button>
+        <button
+          type="button"
+          onClick={onManageIcps}
+          className="text-[9px] font-semibold text-[#09232d]/60 underline underline-offset-2 hover:text-[#09232d]"
+        >
+          Manage ICP Builds
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ChatWorkspace({
   expanded,
   onToggleExpanded,
@@ -559,11 +689,15 @@ function ChatWorkspace({
   const [draft, setDraft] = useState("");
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
+  const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
+  const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
+  const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const timersRef = useRef<number[]>([]);
   const nextMessageIdRef = useRef(2);
   function nextMessageId() {
     return nextMessageIdRef.current++;
@@ -671,7 +805,7 @@ function ChatWorkspace({
     toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
   }
 
-  const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode);
+  const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode) || isSyntheticThinking;
   const showWelcomeMessage = messages.length > 0 && messages[0]?.id === 1;
 
   function selectIntent(intent: ActionIntent) {
@@ -688,12 +822,82 @@ function ChatWorkspace({
     const trimmed = prompt.trim();
     if (!trimmed || isThinking) return;
 
+    // Item 3: token/search usage lookup — answered locally, no real request sent.
+    if (USAGE_QUESTION_PATTERN.test(trimmed)) {
+      setMessages((current) => [
+        ...current,
+        { id: nextMessageId(), role: "user", body: trimmed, intent },
+      ]);
+      setDraft("");
+      setIsSyntheticThinking(true);
+      const timer = window.setTimeout(() => {
+        setIsSyntheticThinking(false);
+        const remaining = Math.max(usage.limit - usage.used, 0);
+        setMessages((current) => [
+          ...current,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle — ${remaining} remaining.`,
+          },
+        ]);
+      }, 900);
+      timersRef.current.push(timer);
+      return;
+    }
+
+    // Item 1/2: gate prospect generation behind an inline ICP confirmation card.
+    if (intent === "generate_leads") {
+      const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
+      setMessages((current) => [
+        ...current,
+        { id: nextMessageId(), role: "user", body: trimmed, intent, targetCount },
+        { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
+      ]);
+      setDraft("");
+      setPendingGenerateRequest({ prompt: trimmed });
+      return;
+    }
+
     setMessages((current) => [
       ...current,
       { id: nextMessageId(), role: "user", body: trimmed, intent },
     ]);
     setDraft("");
     sendMessage.mutate({ body: trimmed, intent });
+  }
+
+  function confirmGenerateLeads() {
+    if (isThinking || !pendingGenerateRequest) return;
+    const activeIcp = icpProfiles.find((profile) => profile.isActive);
+    if (!activeIcp) {
+      toast.error("Select an ICP profile first.");
+      return;
+    }
+
+    const { body, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    setMessages((current) =>
+      current.map((message) =>
+        message.kind === "confirm-icp"
+          ? {
+              ...message,
+              kind: undefined,
+              body: `Using **${activeIcp.name}** — generating up to ${targetCount} prospects…`,
+            }
+          : message
+      )
+    );
+    setPendingGenerateRequest(null);
+    // Clear the intent chip so a follow-up reply (e.g. "yes") is treated as freeform
+    // instead of re-triggering the ICP confirmation gate.
+    setSelectedIntent("freeform");
+    setUsage((current) => {
+      const next = { used: current.used + 1, limit: current.limit };
+      writeSearchUsage(next);
+      return next;
+    });
+
+    sendMessage.mutate({ body, intent: "generate_leads" });
   }
 
   function scrollTranscriptToBottom() {
@@ -709,6 +913,14 @@ function ChatWorkspace({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [messages, isThinking, sendMessage.processingState]);
+
+  useEffect(
+    () => () => {
+      timersRef.current.forEach((timer) => window.clearTimeout(timer));
+      timersRef.current = [];
+    },
+    []
+  );
 
 
   return (
@@ -864,20 +1076,38 @@ function ChatWorkspace({
                   </span>
                 </div>
               )}
-              <div
-                className={
-                  message.role === "user"
-                    ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
-                    : showWelcomeMessage && index === 0
-                      ? "text-[12px] leading-[15px] text-[#09232d]"
-                      : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
-                }
-              >
-                <ChatMessageBody
-                  content={message.body}
-                  variant={message.role === "user" ? "user" : showWelcomeMessage && index === 0 ? "welcome" : "assistant"}
+              {message.kind === "confirm-icp" ? (
+                <IcpConfirmationCard
+                  icpProfiles={icpProfiles}
+                  isLoading={isIcpProfilesLoading}
+                  isSwitching={activateIcpProfile.isPending}
+                  switchingId={activateIcpProfile.variables}
+                  isConfirming={isThinking}
+                  onSelectIcp={(id) => activateIcpProfile.mutate(id)}
+                  onConfirm={confirmGenerateLeads}
+                  onManageIcps={onOpenIcpBuilder}
                 />
-              </div>
+              ) : (
+                <div
+                  className={
+                    message.role === "user"
+                      ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
+                      : showWelcomeMessage && index === 0
+                        ? "text-[12px] leading-[15px] text-[#09232d]"
+                        : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
+                  }
+                >
+                  <ChatMessageBody
+                    content={message.body}
+                    variant={message.role === "user" ? "user" : showWelcomeMessage && index === 0 ? "welcome" : "assistant"}
+                  />
+                </div>
+              )}
+              {message.role === "user" && message.targetCount != null && (
+                <p className="mt-1 text-right text-[8px] font-medium text-[#09232d]/40">
+                  Target: {message.targetCount} prospects
+                </p>
+              )}
               {message.intent === "generate_leads" && !message.leads?.length && !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
                   No leads could be extracted for this search — try rephrasing with specific names, companies, or territories.
@@ -957,7 +1187,7 @@ function ChatWorkspace({
           />
           <PromptButton
             icon={<UsersRound size={17} />}
-            label="Generate New Leads"
+            label="Generate New Prospects"
             active={selectedIntent === "generate_leads"}
             onSelect={() => selectIntent("generate_leads")}
             tint={INTENT_MODE_CONFIG.generate_leads.tint}
@@ -1173,6 +1403,24 @@ function SalesEngineTabs({
 function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
   const isLinkedIn = sourceIcon === "in";
   const isReddit = sourceIcon === "r";
+  const isGoogle = sourceIcon === "G" || sourceIcon.toLowerCase() === "google";
+
+  if (isGoogle) {
+    return (
+      <span
+        aria-label="Google Search"
+        className="grid size-[22px] shrink-0 place-items-center rounded-[6px] bg-white text-[11px] font-bold shadow-sm border border-gray-200"
+      >
+        <svg viewBox="0 0 24 24" className="size-3.5" aria-hidden="true">
+          <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" />
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z" />
+          <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
+        </svg>
+      </span>
+    );
+  }
+
   return (
     <span
       className={`grid size-[22px] shrink-0 place-items-center rounded-full text-[10px] font-bold text-white ${
@@ -1205,6 +1453,7 @@ function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) 
 
 function SignalActionMenu({
   signal,
+  isActive = false,
   onRemove,
   onSelect,
   onCreateOutreach,
@@ -1212,6 +1461,7 @@ function SignalActionMenu({
   onSetReminder,
 }: {
   signal: SocialSignal;
+  isActive?: boolean;
   onRemove?: (id: number) => void;
   onSelect?: (signal: SocialSignal) => void;
   onCreateOutreach?: (signal: SocialSignal) => void;
@@ -1278,13 +1528,15 @@ function SignalActionMenu({
           onSelect?.(signal);
           setIsOpen((prev) => !prev);
         }}
-        className={`grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer ${
-          isOpen ? "bg-black/10 group-hover:bg-white/20" : ""
-        }`}
+        className={`grid size-6 place-items-center rounded-full transition cursor-pointer ${
+          isActive
+            ? "hover:bg-white/20 text-white"
+            : "hover:bg-black/10 text-[#616263]"
+        } ${isOpen ? (isActive ? "bg-white/20" : "bg-black/10") : ""}`}
       >
         <MoreVertical
           size={16}
-          className="text-[#616263] transition-colors group-hover:text-white group-focus:text-white"
+          className={`transition-colors ${isActive ? "text-white" : "text-[#616263]"}`}
         />
       </button>
 
@@ -1377,7 +1629,7 @@ function SignalActionMenu({
 function SocialSignalRow({
   signal,
   isActive = false,
-  onHover,
+  onSelect,
   onRemoveSignal,
   onCreateOutreach,
   onAddToCrm,
@@ -1385,7 +1637,7 @@ function SocialSignalRow({
 }: {
   signal: SocialSignal;
   isActive?: boolean;
-  onHover: (signal: SocialSignal) => void;
+  onSelect: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
   onCreateOutreach?: (signal: SocialSignal) => void;
   onAddToCrm?: (signal: SocialSignal) => void;
@@ -1397,14 +1649,18 @@ function SocialSignalRow({
 
   return (
     <tr
-      onClick={() => onHover(signal)}
-      onMouseEnter={() => onHover(signal)}
-      onFocus={() => onHover(signal)}
+      onClick={() => onSelect(signal)}
       tabIndex={0}
-      className={`group cursor-pointer outline-none transition-colors duration-200 ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(signal);
+        }
+      }}
+      className={`cursor-pointer outline-none transition-colors duration-150 ${
         isActive
           ? "bg-[#09232d] text-white"
-          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#09232d] hover:text-white focus:bg-[#09232d] focus:text-white"
+          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#eaeaea] hover:text-[#09232d]"
       }`}
     >
       <td className="rounded-l-[20px] px-4 py-3">
@@ -1436,7 +1692,7 @@ function SocialSignalRow({
         <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
         <p
           className={`mt-1 text-[8px] transition-colors ${
-            isActive ? "text-white/70" : "text-[#616263]/70 group-hover:text-white/70 group-focus:text-white/70"
+            isActive ? "text-white/70" : "text-[#616263]/70"
           }`}
         >
           {formatRelativeTime(signal.posted_at)}
@@ -1451,13 +1707,13 @@ function SocialSignalRow({
             <User
               size={20}
               className={`shrink-0 transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             />
           ) : (
             <CompanyBuildingIcon
               className={`size-5 shrink-0 transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             />
           )}
@@ -1479,12 +1735,7 @@ function SocialSignalRow({
         <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
       </td>
       <td className="px-3 py-3 align-middle">
-        <div className={isActive ? "hidden" : "block group-hover:hidden group-focus:hidden"}>
-          <ScoreGauge score={signal.score} />
-        </div>
-        <div className={isActive ? "block" : "hidden group-hover:block group-focus:block"}>
-          <ScoreGauge score={signal.score} dark />
-        </div>
+        <ScoreGauge score={signal.score} dark={isActive} />
       </td>
       <td className="rounded-r-[20px] px-4 py-3 align-middle">
         <div className="flex items-center gap-3">
@@ -1493,26 +1744,29 @@ function SocialSignalRow({
             aria-label={`Message ${signal.profile || signal.company}`}
             onClick={(e) => {
               e.stopPropagation();
-              onHover(signal);
+              onSelect(signal);
               if (onCreateOutreach) {
                 onCreateOutreach(signal);
               } else {
                 toast.info(`Opening message composer for ${signal.profile || signal.company}…`);
               }
             }}
-            className="grid size-6 place-items-center rounded-full transition hover:bg-black/10 group-hover:hover:bg-white/20 cursor-pointer"
+            className={`grid size-6 place-items-center rounded-full transition cursor-pointer ${
+              isActive ? "hover:bg-white/20" : "hover:bg-black/10"
+            }`}
           >
             <MessageCircle
               size={15}
               className={`transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             />
           </button>
           <SignalActionMenu
             signal={signal}
+            isActive={isActive}
             onRemove={onRemoveSignal}
-            onSelect={onHover}
+            onSelect={onSelect}
             onCreateOutreach={onCreateOutreach}
             onAddToCrm={onAddToCrm}
             onSetReminder={onSetReminder}
@@ -1585,7 +1839,7 @@ function SocialSignalsTable({
   return (
     <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
       {isScanning && scanPanel}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1.5 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-button]:hidden [scrollbar-width:thin] [scrollbar-color:#e5e7eb_transparent]">
         <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
@@ -1604,7 +1858,7 @@ function SocialSignalsTable({
                 key={signal.id}
                 signal={signal}
                 isActive={signal.id === activeSignalId}
-                onHover={onHoverSignal}
+                onSelect={onHoverSignal}
                 onRemoveSignal={onRemoveSignal}
                 onCreateOutreach={onCreateOutreach}
                 onAddToCrm={onAddToCrm}
@@ -1751,7 +2005,7 @@ function SocialListeningFilters({
         {scanBusy ? (
           <Loader2 size={13} className="animate-spin text-[#09232d]" />
         ) : (
-          <Scan size={13} className="text-[#09232d]" />
+          <RefreshCw size={13} className="text-[#09232d]" />
         )}
         <span>{scanBusy ? "Scanning…" : "Scan"}</span>
       </button>
@@ -1787,6 +2041,8 @@ function SocialOpportunityDetail({
   const isIndividual =
     signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
+  const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
+  const showFullSignal = expandedSignalId === signal.id;
   const recommendedAction = normalizeRecommendedAction(
     signal.recommendedAction ?? {
       title: "Reach out soon",
@@ -1818,7 +2074,9 @@ function SocialOpportunityDetail({
       ? "https://www.linkedin.com"
       : signal.source === "X/Twitter Post"
         ? "https://x.com"
-        : "https://www.reddit.com");
+        : signal.source === "Google Search"
+          ? `https://www.google.com/search?q=${encodeURIComponent(signal.signal)}`
+          : "https://www.reddit.com");
 
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
@@ -1827,10 +2085,13 @@ function SocialOpportunityDetail({
           <ScoreGauge score={signal.score} dark />
         </div>
         <SourceBadge sourceIcon={signal.sourceIcon} />
-        <p className="mt-3 max-w-[250px] text-[10px] font-light leading-[12px]">
-          {signal.signal}
+        <p
+          className="mt-3 max-w-[250px] text-[10px] font-light leading-[13px] text-white"
+          title={showFullSignal ? undefined : `Full Signal: ${signal.signal}`}
+        >
+          {showFullSignal ? signal.signal : (signal.summary || signal.description)}
         </p>
-        <div className="mt-2">
+        <div className="mt-2 flex items-center gap-3">
           <a
             href={postHref}
             target="_blank"
@@ -1838,12 +2099,24 @@ function SocialOpportunityDetail({
             onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
           >
-            <span className="underline underline-offset-2">See Post</span>
+            <span className="underline underline-offset-2">
+              {signal.source === "Google Search" ? "See Search Result" : "See Post"}
+            </span>
             <span className="not-italic no-underline">→</span>
           </a>
+          {signal.summary && signal.summary !== signal.signal && (
+            <button
+              type="button"
+              onClick={() => setExpandedSignalId(showFullSignal ? null : signal.id)}
+              className="text-[10px] italic text-white/70 underline underline-offset-2 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
+            >
+              {showFullSignal ? "Show Summary" : "Show Full"}
+            </button>
+          )}
         </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
-          {signal.source} • Public • {formatRelativeTime(signal.posted_at)}
+          {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} •{" "}
+          {formatRelativeTime(signal.posted_at)}
           {isFreshSignal(signal.posted_at) ? " • Fresh" : ""}
         </p>
       </div>
@@ -2625,7 +2898,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<SalesEngineTab>("social-listening");
+  const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: metrics } = useSalesEngineMetrics();
 
