@@ -60,6 +60,7 @@ import {
 } from "@/lib/icp-advisory-leads";
 import {
   formatRelativeTime,
+  normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
   type SocialListeningSettings,
@@ -163,6 +164,12 @@ const INTENT_SETTING_OPTIONS = [
   { key: "switching", label: "Switching" },
   { key: "pricing", label: "Pricing questions" },
   { key: "hiring_expansion", label: "Hiring or expansion" },
+  { key: "investment_opportunity", label: "Investment opportunities" },
+  { key: "funding_event", label: "Funding events" },
+  { key: "market_signal", label: "Market signals" },
+  { key: "partnership_opportunity", label: "Partnership opportunities" },
+  { key: "competitive_move", label: "Competitive moves" },
+  { key: "regulatory_change", label: "Regulatory changes" },
 ] as const;
 
 const sourceFilterOptions: SelectOption[] = [
@@ -177,6 +184,12 @@ const signalTypeFilterOptions: SelectOption[] = [
   { value: "Recommendation", label: "Recommendation" },
   { value: "Switching", label: "Switching" },
   { value: "Price", label: "Price" },
+  { value: "Investment Opportunity", label: "Investment Opportunity" },
+  { value: "Funding Event", label: "Funding Event" },
+  { value: "Market Signal", label: "Market Signal" },
+  { value: "Partnership Opportunity", label: "Partnership Opportunity" },
+  { value: "Competitive Move", label: "Competitive Move" },
+  { value: "Regulatory Change", label: "Regulatory Change" },
 ];
 
 const intentFilterOptions: SelectOption[] = [
@@ -1759,9 +1772,19 @@ function SocialOpportunityDetail({
   const isIndividual =
     signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
-  const recommendedAction =
-    signal.recommendedAction ??
-    "Reach out within 24 hours — this prospect may be actively looking for solutions.";
+  const recommendedAction = normalizeRecommendedAction(
+    signal.recommendedAction ?? {
+      title: "Reach out soon",
+      detail: "this prospect may be actively looking for solutions.",
+    }
+  );
+  const personalRecommendedAction = signal.personalRecommendedAction
+    ? normalizeRecommendedAction(signal.personalRecommendedAction)
+    : null;
+  const hasDistinctPersonalAction =
+    personalRecommendedAction &&
+    (personalRecommendedAction.title !== recommendedAction.title ||
+      personalRecommendedAction.detail !== recommendedAction.detail);
 
   const handleCopyMessage = async () => {
     try {
@@ -1841,7 +1864,12 @@ function SocialOpportunityDetail({
 
         <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
           <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
-          {signal.reasons.map((item) => (
+          {signal.whyThisMattersToYou && (
+            <p className="mb-2 text-[10px] font-medium leading-[13px] text-[#09232d]">
+              {signal.whyThisMattersToYou}
+            </p>
+          )}
+          {(signal.benefits && signal.benefits.length > 0 ? signal.benefits : signal.reasons).map((item) => (
             <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
               <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
               {item}
@@ -1906,9 +1934,30 @@ function SocialOpportunityDetail({
         )}
 
         <div className="space-y-[5px] px-2 py-2">
+          {hasDistinctPersonalAction && personalRecommendedAction && (
+            <div className="rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+              <p className="text-[10px] font-bold leading-[12px] text-[#09232d]">Your Next Step</p>
+              {personalRecommendedAction.title && (
+                <p className="mt-1 text-[9px] font-semibold leading-[12px]">{personalRecommendedAction.title}</p>
+              )}
+              {personalRecommendedAction.detail && (
+                <p className="mt-0.5 text-[9px] leading-[12px]">{personalRecommendedAction.detail}</p>
+              )}
+            </div>
+          )}
           <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
             <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
-            <p className="mt-1 text-[9px] leading-[12px]">{recommendedAction}</p>
+            {recommendedAction.title && (
+              <p className="mt-1 text-[9px] font-semibold leading-[12px]">{recommendedAction.title}</p>
+            )}
+            {recommendedAction.detail && (
+              <p className="mt-0.5 text-[9px] leading-[12px]">{recommendedAction.detail}</p>
+            )}
+            {!recommendedAction.title && !recommendedAction.detail && (
+              <p className="mt-1 text-[9px] leading-[12px]">
+                Reach out within 24 hours — this prospect may be actively looking for solutions.
+              </p>
+            )}
           </div>
           <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
             <div className="flex items-center justify-between gap-2">
@@ -2373,8 +2422,9 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   };
 
   const handleSetReminder = (signal: SocialSignal) => {
+    const actionNote = normalizeRecommendedAction(signal.recommendedAction);
     setReminder.mutate(
-      { id: signal.id, note: signal.recommendedAction },
+      { id: signal.id, note: [actionNote.title, actionNote.detail].filter(Boolean).join(" — ") || undefined },
       {
         onSuccess: () => toast.success("Reminder set for 24 hours from now."),
         onError: (error) =>

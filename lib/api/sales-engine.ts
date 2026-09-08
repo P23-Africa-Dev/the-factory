@@ -711,9 +711,12 @@ export function formatRelativeTime(iso: string | null | undefined): string {
 
 // ── Social Listening ────────────────────────────────────────────────────────
 
+export type RecommendedActionApi = { title: string; detail: string };
+
 export type SocialSignalApi = {
   id: number;
   signal: string;
+  summary?: string;
   source: string;
   sourceIcon: string;
   persona: string;
@@ -730,7 +733,11 @@ export type SocialSignalApi = {
   problem: string;
   urgency: string;
   suggestedMessage: string;
-  recommendedAction?: string;
+  /** Object shape from newer API responses; string tolerated for defensive/cached-response compatibility. */
+  recommendedAction?: RecommendedActionApi | string;
+  whyThisMattersToYou?: string;
+  benefits?: string[];
+  personalRecommendedAction?: RecommendedActionApi | string;
   status?: string;
   posted_at?: string | null;
   post_url?: string | null;
@@ -742,6 +749,15 @@ export type SocialSignalApi = {
   competitors?: string[];
   followUpStrategy?: string;
 };
+
+/** Normalizes recommendedAction/personalRecommendedAction, which may arrive as an object or a legacy plain string. */
+export function normalizeRecommendedAction(
+  value: RecommendedActionApi | string | null | undefined
+): RecommendedActionApi {
+  if (!value) return { title: "", detail: "" };
+  if (typeof value === "string") return { title: value, detail: "" };
+  return { title: value.title ?? "", detail: value.detail ?? "" };
+}
 
 export type SocialListeningRunStatus = {
   id: number;

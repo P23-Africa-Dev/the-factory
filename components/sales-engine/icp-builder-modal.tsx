@@ -959,7 +959,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       onChange={(e) =>
                         setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
                       }
-                      placeholder="Provide specific guidelines, regional quirks, or exclusions for the AI model..."
+                      placeholder="Provide specific guidelines, regional quirks, or exclusions for the AI model. You can also state opportunity interests beyond sales leads — e.g. investments, partnerships, market or funding news you want surfaced..."
                       className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
                     />
                   </div>
