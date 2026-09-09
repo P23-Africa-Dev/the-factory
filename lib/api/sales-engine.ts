@@ -355,6 +355,8 @@ export type ChatLead = {
   linkedin_url?: string | null;
   profile_urls?: string[] | null;
   contact_ready?: boolean;
+  contact_enrichment_tier?: string | null;
+  contact_enrichment_provider?: string | null;
   next_action?: string | null;
   source_url?: string | null;
   save_status?: "draft" | "saved";

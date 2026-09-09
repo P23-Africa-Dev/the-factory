@@ -73,9 +73,11 @@ import {
   Globe2,
   Lightbulb,
   Loader2,
+  Mail,
   MessageCircle,
   Minimize2,
   MoreVertical,
+  Phone,
   Plus,
   RefreshCw,
   Search,
@@ -574,17 +576,21 @@ function LeadInlineResults({
                   {lead.email && (
                     <a
                       href={`mailto:${lead.email}`}
-                      className="truncate text-[8px] font-medium text-[#087652] underline"
+                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                      title={lead.email}
                     >
-                      {lead.email}
+                      <Mail size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate">{lead.email}</span>
                     </a>
                   )}
                   {lead.phone && (
                     <a
                       href={`tel:${lead.phone}`}
-                      className="truncate text-[8px] font-medium text-[#087652] underline"
+                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                      title={lead.phone}
                     >
-                      {lead.phone}
+                      <Phone size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate">{lead.phone}</span>
                     </a>
                   )}
                   {(lead.linkedin_url || (lead.profile_urls && lead.profile_urls[0])) && (
@@ -597,10 +603,31 @@ function LeadInlineResults({
                       View profile
                     </a>
                   )}
+                  {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                    <span
+                      className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                      title={
+                        lead.contact_enrichment_provider
+                          ? `Contact via ${lead.contact_enrichment_provider}`
+                          : "Contact enrichment source"
+                      }
+                    >
+                      {lead.contact_enrichment_tier === "tier1"
+                        ? "Contact from web"
+                        : lead.contact_enrichment_tier === "tier2"
+                          ? "Contact enriched"
+                          : "Contact verified"}
+                    </span>
+                  )}
                 </div>
               )}
               {lead.contact_ready === false && (
                 <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
+              )}
+              {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                <p className="mt-1 text-[7px] font-medium text-[#616263]">
+                  Profile found · email/phone still missing
+                </p>
               )}
               <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
               {lead.low_confidence && (
