@@ -25,13 +25,13 @@ export type OutreachSettingsModalProps = {
 function connectionLabel(status: string | undefined): string {
   switch (status) {
     case "verified":
-      return "Verified";
+      return "Org email verified";
     case "failed":
-      return "DNS not detected yet";
+      return "Org DNS not detected";
     case "pending":
-      return "Pending DNS verification";
+      return "Org DNS pending";
     default:
-      return "Not connected";
+      return "Org email not connected";
   }
 }
 
