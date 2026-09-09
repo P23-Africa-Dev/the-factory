@@ -6,7 +6,13 @@ function Shimmer({ className }: { className?: string }) {
   );
 }
 
-export function SocialSignalRowSkeleton({ index = 0 }: { index?: number }) {
+export function SocialSignalRowSkeleton({
+  index = 0,
+  selectionMode = false,
+}: {
+  index?: number;
+  selectionMode?: boolean;
+}) {
   const opacity = 1 - index * 0.08;
 
   return (
@@ -14,7 +20,12 @@ export function SocialSignalRowSkeleton({ index = 0 }: { index?: number }) {
       className="bg-[#f4f4f4]/80 text-[#616263]"
       style={{ opacity: Math.max(opacity, 0.45) }}
     >
-      <td className="rounded-l-[20px] px-4 py-3">
+      {selectionMode && (
+        <td className="rounded-l-[20px] px-2 py-3">
+          <Shimmer className="ml-2 size-3.5 rounded-sm" />
+        </td>
+      )}
+      <td className={`px-4 py-3 ${selectionMode ? "" : "rounded-l-[20px]"}`}>
         <div className="flex min-w-[230px] gap-3">
           <Shimmer className="size-[22px] shrink-0 rounded-full" />
           <div className="flex-1 space-y-1.5">
@@ -59,11 +70,17 @@ export function SocialSignalRowSkeleton({ index = 0 }: { index?: number }) {
   );
 }
 
-export function SocialSignalsTableSkeleton({ rows = 5 }: { rows?: number }) {
+export function SocialSignalsTableSkeleton({
+  rows = 5,
+  selectionMode = false,
+}: {
+  rows?: number;
+  selectionMode?: boolean;
+}) {
   return (
     <>
       {Array.from({ length: rows }, (_, index) => (
-        <SocialSignalRowSkeleton key={index} index={index} />
+        <SocialSignalRowSkeleton key={index} index={index} selectionMode={selectionMode} />
       ))}
     </>
   );

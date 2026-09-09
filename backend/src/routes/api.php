@@ -593,6 +593,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
+                Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -642,6 +643,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
                     ->name('leads.update');
+                Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
                     ->middleware('throttle:api')
                     ->name('leads.destroy');
@@ -805,6 +809,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -830,6 +835,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
                     ->name('leads.update');
+                Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
                     ->middleware('throttle:api')
                     ->name('leads.destroy');
@@ -1222,6 +1230,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
     Route::prefix('crm')->name('crm.')->group(function (): void {
         Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
         Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
+        Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
         Route::post('/leads', [LeadController::class, 'store'])
             ->middleware('throttle:api')
             ->name('leads.store');
@@ -1271,6 +1280,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:api')
             ->name('leads.update');
+        Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
+            ->middleware('throttle:api')
+            ->name('leads.merge');
         Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
             ->middleware('throttle:api')
             ->name('leads.destroy');

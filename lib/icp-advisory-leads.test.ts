@@ -1,45 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatLead } from "@/lib/api/sales-engine";
-import {
-  hasMixedIcpRecommendations,
-  icpBadgeLabel,
-  showIcpAdvisoryBanner,
-} from "@/lib/icp-advisory-leads";
+import { leadScoreBreakdown, scorePercent } from "@/lib/icp-advisory-leads";
 
-const sampleLeads: ChatLead[] = [
-  {
-    id: 1,
-    name: "Elon Musk",
-    source: "serper",
-    score: 88,
-    summary: "Tech founder",
-    icp_recommended: false,
-  },
-  {
-    id: 2,
-    name: "HealthCo CEO",
-    source: "serper",
-    score: 92,
-    summary: "Health tech leader",
-    icp_recommended: true,
-  },
-];
+const sampleLead: ChatLead = {
+  id: 1,
+  name: "Acme Distributors",
+  source: "serper",
+  score: 79.4,
+  summary: "Tech distributor",
+  icp_fit_score: 74,
+  intent_score: 68,
+  query_relevance_score: 82,
+};
 
-describe("icp-advisory-leads", () => {
-  it("shows advisory banner when any lead is outside ICP", () => {
-    expect(showIcpAdvisoryBanner(sampleLeads)).toBe(true);
-    expect(showIcpAdvisoryBanner([sampleLeads[1]])).toBe(false);
+describe("lead score display helpers", () => {
+  it("rounds score percents into 0–100", () => {
+    expect(scorePercent(79.4)).toBe(79);
+    expect(scorePercent(null)).toBeNull();
+    expect(scorePercent(undefined)).toBeNull();
   });
 
-  it("detects mixed recommended and outside leads", () => {
-    expect(hasMixedIcpRecommendations(sampleLeads)).toBe(true);
-    expect(hasMixedIcpRecommendations([sampleLeads[0]])).toBe(false);
-  });
-
-  it("returns badge labels for ICP recommendation state", () => {
-    expect(icpBadgeLabel(sampleLeads[0])).toBe("Outside ICP");
-    expect(icpBadgeLabel(sampleLeads[1])).toBe("ICP match");
-    expect(icpBadgeLabel({ ...sampleLeads[0], icp_recommended: undefined })).toBeNull();
+  it("builds Overall / Search / ICP / Intent breakdown", () => {
+    expect(leadScoreBreakdown(sampleLead)).toEqual({
+      overall: 79,
+      search: 82,
+      icp: 74,
+      intent: 68,
+    });
   });
 });

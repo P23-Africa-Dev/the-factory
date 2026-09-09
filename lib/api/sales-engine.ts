@@ -350,16 +350,28 @@ export type ChatLead = {
   company?: string | null;
   location?: string | null;
   website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  linkedin_url?: string | null;
   profile_urls?: string[] | null;
+  contact_ready?: boolean;
+  contact_enrichment_tier?: string | null;
+  contact_enrichment_provider?: string | null;
   next_action?: string | null;
   source_url?: string | null;
   save_status?: "draft" | "saved";
   crm_synced?: boolean;
+  crm_duplicate?: boolean;
+  crm_duplicate_reason?: string | null;
+  crm_fields_updated?: string[] | null;
   f23_lead_id?: string | number | null;
   low_confidence?: boolean;
   icp_recommended?: boolean;
   icp_fit_score?: number;
+  intent_score?: number;
+  query_relevance_score?: number;
   query_match?: boolean;
+  icp_relevance_reason?: string | null;
 };
 
 export type ChatMessageApi = {
@@ -674,6 +686,17 @@ export function fetchMetrics(): Promise<SalesEngineMetrics> {
 
 // ── Outreach ────────────────────────────────────────────────────────────────
 
+export type OutreachDeliveryStatus =
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "dropped"
+  | "spam"
+  | "unsubscribed"
+  | null;
+
 export type OutreachActivity = {
   id: number;
   name: string;
@@ -682,11 +705,51 @@ export type OutreachActivity = {
   accentBg: string;
   accentIcon: string;
   occurred_at: string;
+  delivery_status?: OutreachDeliveryStatus;
+  last_event_at?: string | null;
+  bounce_reason?: string | null;
 };
 
 export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
   return withSessionRetry(async () =>
     seRequest<OutreachActivity[]>({ method: "GET", path: "/outreach/recent" })
+  );
+}
+
+export function sendOutreachActivity(
+  activityId: number,
+  payload: { to_email: string; subject?: string; body: string }
+): Promise<{ message_id: string | null; sent: boolean; activity_id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<{ message_id: string | null; sent: boolean; activity_id: number }>({
+      method: "POST",
+      path: `/outreach/activities/${activityId}/send`,
+      body: payload,
+    })
+  );
+}
+
+export function fetchOutreachActivity(
+  id: number
+): Promise<OutreachDraft & { activity_id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDraft & { activity_id: number }>({
+      method: "GET",
+      path: `/outreach/activities/${id}`,
+    })
+  );
+}
+
+export function regenerateOutreachActivity(
+  id: number,
+  payload?: { instructions?: string; channel?: "email" | "whatsapp" }
+): Promise<OutreachDraft & { activity_id: number; regeneration_count?: number }> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDraft & { activity_id: number; regeneration_count?: number }>({
+      method: "POST",
+      path: `/outreach/activities/${id}/regenerate`,
+      body: payload ?? {},
+    })
   );
 }
 
@@ -736,6 +799,8 @@ export type SocialSignalApi = {
   description: string;
   score: number;
   profile: string;
+  author_profile_url?: string | null;
+  platform?: string | null;
   reasons: string[];
   signalType: string;
   buyingStage: string;
@@ -790,6 +855,7 @@ export type SocialListeningMetrics = {
 
 export type SocialListeningSettings = {
   enabled_sources: string[];
+  meta_page_ids: string[];
   cadence_days: 14 | 30;
   min_score: number;
   freshness_window_days: 7 | 14 | 30;
@@ -808,8 +874,44 @@ export type OutreachSenderSettings = {
   reply_to_email: string;
   org_verified_from_email?: string | null;
   org_verified_domain?: string | null;
+  /** Legacy; prefer org_connection_status for UI labels. */
   verification_status: "pending" | "verified" | "failed";
+  org_connection_status: "not_connected" | "pending" | "failed" | "verified";
   platform_from_email?: string | null;
+};
+
+export type OutreachDnsRecord = {
+  label: string;
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+};
+
+export type OutreachDomainAuthentication = {
+  domain: string;
+  from_email: string | null;
+  dns_records: OutreachDnsRecord[];
+  verification_status: "pending" | "verified" | "failed";
+  valid: boolean;
+  verified_at?: string | null;
+  last_checked_at?: string | null;
+} | null;
+
+export type OutreachDraft = {
+  channel: "email" | "whatsapp";
+  subject?: string | null;
+  body: string;
+  sent: boolean;
+  to_email?: string | null;
+  activity_id?: number | null;
+  target_lead_ids?: number[];
+  activity_ids?: number[];
+  icp_alignment_note?: string;
+  regeneration_count?: number;
+  name?: string | null;
+  social_signal_id?: number | null;
+  leads?: Array<{ id: number; name: string; email?: string | null; phone?: string | null; [key: string]: unknown }>;
 };
 
 export type PaginatedMeta = {
@@ -989,9 +1091,23 @@ export function fetchSocialListeningRun(id: number): Promise<SocialListeningRunS
 export function createSignalOutreach(
   id: number,
   opts?: { send?: boolean; to_email?: string }
-): Promise<{ subject?: string; body: string; activity_id?: number; sent?: boolean }> {
+): Promise<{
+  subject?: string | null;
+  body: string;
+  to_email?: string | null;
+  activity_id?: number;
+  sent?: boolean;
+  channel?: "email" | "whatsapp";
+}> {
   return withSessionRetry(async () =>
-    seRequest<{ subject?: string; body: string; activity_id?: number; sent?: boolean }>({
+    seRequest<{
+      subject?: string | null;
+      body: string;
+      to_email?: string | null;
+      activity_id?: number;
+      sent?: boolean;
+      channel?: "email" | "whatsapp";
+    }>({
       method: "POST",
       path: `/social-listening/signals/${id}/outreach`,
       body: opts ?? {},
@@ -1058,6 +1174,37 @@ export function updateOutreachSenderSettings(
   );
 }
 
+export function fetchOutreachDomain(): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({ method: "GET", path: "/outreach/domain" })
+  );
+}
+
+export function authenticateOutreachDomain(payload: {
+  domain: string;
+  from_email: string;
+}): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({
+      method: "POST",
+      path: "/outreach/domain",
+      body: payload,
+    })
+  );
+}
+
+export function verifyOutreachDomain(): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({ method: "POST", path: "/outreach/domain/verify" })
+  );
+}
+
+export function deleteOutreachDomain(): Promise<void> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: "/outreach/domain" });
+  });
+}
+
 export type Factory23IntegrationStatus = {
   configured: boolean;
   global_enabled: boolean;
@@ -1097,6 +1244,12 @@ export function pushLeadToCrm(leadId: number): Promise<{
   save_status?: string;
   synced?: boolean;
   f23_lead_id?: string | number | null;
+  already_synced?: boolean;
+  updated?: boolean;
+  fields_updated?: string[];
+  crm_duplicate?: boolean;
+  crm_duplicate_reason?: string | null;
+  crm_fields_updated?: string[];
 }> {
   return withSessionRetry(async () => {
     try {
@@ -1105,6 +1258,12 @@ export function pushLeadToCrm(leadId: number): Promise<{
         save_status?: string;
         synced?: boolean;
         f23_lead_id?: string | number | null;
+        already_synced?: boolean;
+        updated?: boolean;
+        fields_updated?: string[];
+        crm_duplicate?: boolean;
+        crm_duplicate_reason?: string | null;
+        crm_fields_updated?: string[];
       }>({
         method: "POST",
         path: `/leads/${leadId}/sync-to-crm`,
@@ -1120,6 +1279,12 @@ export function pushLeadToCrm(leadId: number): Promise<{
           save_status?: string;
           synced?: boolean;
           f23_lead_id?: string | number | null;
+          already_synced?: boolean;
+          updated?: boolean;
+          fields_updated?: string[];
+          crm_duplicate?: boolean;
+          crm_duplicate_reason?: string | null;
+          crm_fields_updated?: string[];
         }>({
           method: "POST",
           path: `/leads/${leadId}/sync-to-crm`,

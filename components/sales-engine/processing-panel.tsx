@@ -142,7 +142,9 @@ export function ProcessingPanel({
 
           {showLongRunHint && (
             <p className="mt-2 text-[8px] leading-[11px] text-[#616263]">
-              Still working — large scans can take 1–2 minutes.
+              {state.intent === "generate_leads"
+                ? "Still working — high-volume lead searches scan multiple sources and can take 30–60 seconds."
+                : "Still working — large scans can take 1–2 minutes."}
             </p>
           )}
 

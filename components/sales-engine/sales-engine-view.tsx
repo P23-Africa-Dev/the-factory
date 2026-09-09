@@ -9,6 +9,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ProcessingPanel } from "./processing-panel";
 import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
+import { OutreachPreviewModal } from "./outreach-preview-modal";
+import { OutreachSettingsModal } from "./outreach-settings-modal";
 import { SocialScanPanel } from "./social-scan-panel";
 import {
   SocialOpportunityEmptyState,
@@ -48,22 +50,16 @@ import {
   useSocialListeningSettings,
   useUpdateSocialListeningSettings,
 } from "@/hooks/use-sales-engine-social-settings";
-import {
-  useOutreachSenderSettings,
-  useUpdateOutreachSenderSettings,
-} from "@/hooks/use-sales-engine-outreach-sender";
+import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import {
-  hasMixedIcpRecommendations,
-  icpBadgeLabel,
-  showIcpAdvisoryBanner,
-} from "@/lib/icp-advisory-leads";
+import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
   formatRelativeTime,
   isFreshSignal,
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
+  type OutreachDraft,
   type SocialListeningSettings,
   type SocialSignalApi,
 } from "@/lib/api/sales-engine";
@@ -77,13 +73,16 @@ import {
   Globe2,
   Lightbulb,
   Loader2,
+  Mail,
   MessageCircle,
   Minimize2,
   MoreVertical,
+  Phone,
   Plus,
   RefreshCw,
   Search,
   Send,
+  Settings,
   SlidersHorizontal,
   Sparkles,
   ThumbsDown,
@@ -92,6 +91,7 @@ import {
   User,
   UserPlus,
   UsersRound,
+  ListChecks,
   X,
 } from "lucide-react";
 
@@ -108,12 +108,28 @@ type ChatMessage = {
   targetCount?: number;
 };
 
+type OutreachPreviewState = {
+  activityId: number | null;
+  channel: "email" | "whatsapp";
+  subject?: string | null;
+  body: string;
+  toEmail?: string;
+  contextLabel?: string;
+  alignmentNote?: string;
+  /** Chat message id — used to mark the transcript draft as sent. */
+  messageId?: number;
+  /** Social signal id — used to show Sent badge in the detail panel. */
+  signalId?: number;
+};
+
 type SearchUsage = { used: number; limit: number };
 
 const SEARCH_USAGE_STORAGE_KEY = "sales_engine_search_usage_v1";
 const DEFAULT_SEARCH_USAGE_LIMIT = 500;
-const DEFAULT_PROSPECT_COUNT = 100;
-const EXPLICIT_COUNT_PATTERN = /\b(\d{1,4})\b/;
+const DEFAULT_PROSPECT_COUNT = 20;
+const MAX_PROSPECT_COUNT = 150;
+const LEADS_PER_PAGE = 20;
+const EXPLICIT_COUNT_PATTERN = /\b(\d{1,3})\b/;
 const USAGE_QUESTION_PATTERN =
   /how many (search|token|credit)(es)?|(search|token|credit)(es)?\s+(left|remaining)|remaining\s+(search|token)/i;
 
@@ -141,15 +157,27 @@ function writeSearchUsage(usage: SearchUsage): void {
   }
 }
 
-/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is, else appends a default-100 instruction. */
-function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number } {
+/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is for the Target caption. */
+function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number; apiBody: string } {
   const match = prompt.match(EXPLICIT_COUNT_PATTERN);
-  if (match) {
-    return { body: prompt, targetCount: Number(match[1]) };
-  }
+  const targetCount = match
+    ? Math.min(MAX_PROSPECT_COUNT, Math.max(1, Number(match[1])))
+    : DEFAULT_PROSPECT_COUNT;
+
+  // Ensure the backend parseLimit sees the requested count without mutating the displayed user bubble.
+  const hasParseableCount =
+    /\b(?:give me|find|get|show|list|need|want)\s+\d{1,3}\b/i.test(prompt) ||
+    /\b\d{1,3}\s+(?:people|persons|leads|prospects|contacts|names|executives|companies|accounts|men|women)\b/i.test(
+      prompt
+    ) ||
+    /\btop\s+\d{1,3}\b/i.test(prompt);
+
+  const apiBody = hasParseableCount ? prompt : `Find ${targetCount} leads. ${prompt}`.trim();
+
   return {
-    body: `${prompt} (Find ${DEFAULT_PROSPECT_COUNT} prospects unless a different number is specified.)`,
-    targetCount: DEFAULT_PROSPECT_COUNT,
+    body: prompt,
+    targetCount,
+    apiBody,
   };
 }
 
@@ -207,6 +235,7 @@ const SOURCE_SETTING_OPTIONS = [
   { key: "x_mentions", label: "X/Twitter mentions" },
   { key: "reddit", label: "Reddit communities" },
   { key: "meta_pages", label: "Meta business pages" },
+  { key: "meta_graph_pages", label: "Meta pages (direct monitoring)" },
 ] as const;
 
 const INTENT_SETTING_OPTIONS = [
@@ -447,24 +476,35 @@ function LeadInlineResults({
   const syncLead = useSyncLeadToCrm();
   const syncBatch = useSyncLeadsBatchToCrm();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
+  const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
   const canSyncToCrm = integrationStatus?.can_sync ?? true;
   const crmBlockMessage =
     integrationStatus?.block_message ??
     "CRM sync is unavailable. Sign out and sign back in to link Factory23, or contact your admin.";
-  const unsavedIds = leads.filter((lead) => !lead.crm_synced && lead.save_status !== "saved").map((lead) => lead.id);
+  const unsavedIds = leads
+    .filter((lead) => !lead.crm_synced && !lead.crm_duplicate && lead.save_status !== "saved")
+    .map((lead) => lead.id);
+  const visibleLeads = leads.slice(0, displayCount);
+  const hasMore = displayCount < leads.length;
+  const remaining = Math.max(leads.length - displayCount, 0);
 
-  function markSynced(ids: number[]) {
+  function markSynced(
+    ids: number[],
+    extras?: Partial<Pick<ChatLead, "crm_duplicate" | "crm_duplicate_reason" | "crm_fields_updated">>
+  ) {
     onLeadsChange?.(
       leads.map((lead) =>
         ids.includes(lead.id)
-          ? { ...lead, crm_synced: true, save_status: "saved" as const }
+          ? {
+              ...lead,
+              crm_synced: true,
+              save_status: "saved" as const,
+              ...(extras ?? {}),
+            }
           : lead
       )
     );
   }
-
-  const showAdvisoryBanner = showIcpAdvisoryBanner(leads);
-  const mixedRecommendations = hasMixedIcpRecommendations(leads);
 
   return (
     <div className="mt-3 max-w-[640px]">
@@ -473,17 +513,11 @@ function LeadInlineResults({
           {crmBlockMessage}
         </p>
       )}
-      {showAdvisoryBanner && (
-        <p className="mb-2 rounded-[12px] bg-[#fff7ed] px-3 py-2 text-[8px] leading-[11px] text-[#92400e]">
-          {mixedRecommendations
-            ? "These answer your search. Leads marked ICP match align with your profile; Outside ICP leads still match what you asked for."
-            : "These answer your search but may fall outside your ICP. You can still review and save any lead below."}
-        </p>
-      )}
       {unsavedIds.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[9px] font-medium text-[#616263]">
-            Review leads below. Save the ones you want in CRM.
+            Showing {visibleLeads.length} of {leads.length} leads. Save the ones you want in CRM.
+            Scores show Overall, Search, ICP, and Intent fit.
           </p>
           <button
             type="button"
@@ -509,10 +543,17 @@ function LeadInlineResults({
           </button>
         </div>
       )}
+      {unsavedIds.length === 0 && leads.length > LEADS_PER_PAGE && (
+        <p className="mb-2 text-[9px] font-medium text-[#616263]">
+          Showing {visibleLeads.length} of {leads.length} leads
+        </p>
+      )}
       <div className="grid gap-2 sm:grid-cols-3">
-        {leads.map((lead) => {
-          const isSynced = lead.crm_synced || lead.save_status === "saved";
-          const badge = icpBadgeLabel(lead);
+        {visibleLeads.map((lead) => {
+          const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+          const fieldsUpdated = lead.crm_fields_updated ?? [];
+          const { overall, search: searchPct, icp: icpPct, intent: intentPct } =
+            leadScoreBreakdown(lead);
 
           return (
             <div
@@ -521,20 +562,45 @@ function LeadInlineResults({
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-                <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
-                  {lead.score}
+                <span
+                  className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
+                  title="Overall priority score from Search, ICP fit, and Intent"
+                >
+                  Overall {overall}%
                 </span>
               </div>
-              {badge && (
-                <span
-                  className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
-                    badge === "ICP match"
-                      ? "bg-[#16b37d]/10 text-[#087652]"
-                      : "bg-[#fef3c7] text-[#92400e]"
-                  }`}
-                >
-                  {badge}
-                </span>
+              {(searchPct != null || icpPct != null || intentPct != null) && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {searchPct != null && (
+                    <span
+                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
+                      title="How well this result matches your search"
+                    >
+                      Search {searchPct}%
+                    </span>
+                  )}
+                  {icpPct != null && (
+                    <span
+                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
+                      title="How well this fits your active ICP"
+                    >
+                      ICP {icpPct}%
+                    </span>
+                  )}
+                  {intentPct != null && (
+                    <span
+                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
+                      title="General intent / opportunity signal"
+                    >
+                      Intent {intentPct}%
+                    </span>
+                  )}
+                </div>
+              )}
+              {lead.icp_relevance_reason && (
+                <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                  {lead.icp_relevance_reason}
+                </p>
               )}
               <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
               {(lead.title || lead.company) && (
@@ -545,15 +611,63 @@ function LeadInlineResults({
               {lead.location && (
                 <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
               )}
-              {lead.profile_urls && lead.profile_urls.length > 0 && (
-                <a
-                  href={lead.profile_urls[0]}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                >
-                  View profile
-                </a>
+              {(lead.email || lead.phone || lead.linkedin_url || (lead.profile_urls && lead.profile_urls.length > 0)) && (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {lead.email && (
+                    <a
+                      href={`mailto:${lead.email}`}
+                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                      title={lead.email}
+                    >
+                      <Mail size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate">{lead.email}</span>
+                    </a>
+                  )}
+                  {lead.phone && (
+                    <a
+                      href={`tel:${lead.phone}`}
+                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                      title={lead.phone}
+                    >
+                      <Phone size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate">{lead.phone}</span>
+                    </a>
+                  )}
+                  {(lead.linkedin_url || (lead.profile_urls && lead.profile_urls[0])) && (
+                    <a
+                      href={lead.linkedin_url || lead.profile_urls![0]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      View profile
+                    </a>
+                  )}
+                  {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                    <span
+                      className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                      title={
+                        lead.contact_enrichment_provider
+                          ? `Contact via ${lead.contact_enrichment_provider}`
+                          : "Contact enrichment source"
+                      }
+                    >
+                      {lead.contact_enrichment_tier === "tier1"
+                        ? "Contact from web"
+                        : lead.contact_enrichment_tier === "tier2"
+                          ? "Contact enriched"
+                          : "Contact verified"}
+                    </span>
+                  )}
+                </div>
+              )}
+              {lead.contact_ready === false && (
+                <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
+              )}
+              {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                <p className="mt-1 text-[7px] font-medium text-[#616263]">
+                  Profile found · email/phone still missing
+                </p>
               )}
               <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
               {lead.low_confidence && (
@@ -561,9 +675,18 @@ function LeadInlineResults({
               )}
               <div className="mt-2">
                 {isSynced ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]"
+                    title={
+                      fieldsUpdated.length > 0
+                        ? `Updated in CRM: ${fieldsUpdated.join(", ")}`
+                        : lead.crm_duplicate_reason ?? "Already saved in CRM"
+                    }
+                  >
                     <CircleCheck size={10} />
-                    In CRM
+                    {fieldsUpdated.length > 0
+                      ? `Updated in CRM (${fieldsUpdated.join(", ")})`
+                      : "In CRM"}
                   </span>
                 ) : (
                   <button
@@ -572,9 +695,26 @@ function LeadInlineResults({
                     title={!canSyncToCrm ? crmBlockMessage : undefined}
                     onClick={() => {
                       syncLead.mutate(lead.id, {
-                        onSuccess: () => {
-                          markSynced([lead.id]);
-                          toast.success(`Saved "${lead.name}" to CRM.`);
+                        onSuccess: (result) => {
+                          const updatedFields = Array.isArray(result.crm_fields_updated)
+                            ? result.crm_fields_updated
+                            : Array.isArray(result.fields_updated)
+                              ? result.fields_updated
+                              : [];
+                          markSynced([lead.id], {
+                            crm_duplicate: Boolean(result.crm_duplicate),
+                            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
+                            crm_fields_updated: updatedFields,
+                          });
+                          if (result.updated && updatedFields.length > 0) {
+                            toast.success(
+                              `Updated existing CRM lead with new ${updatedFields.join(", ")}.`
+                            );
+                          } else if (result.crm_duplicate || result.already_synced) {
+                            toast.success(`"${lead.name}" is already in CRM.`);
+                          } else {
+                            toast.success(`Saved "${lead.name}" to CRM.`);
+                          }
                         },
                         onError: (error) =>
                           toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
@@ -590,8 +730,83 @@ function LeadInlineResults({
           );
         })}
       </div>
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setDisplayCount((prev) => prev + LEADS_PER_PAGE)}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-[#09232d]/15 bg-white px-3 py-2 text-[10px] font-semibold text-[#09232d] transition-colors hover:bg-[#f8f8f8]"
+        >
+          See {Math.min(LEADS_PER_PAGE, remaining)} more lead
+          {Math.min(LEADS_PER_PAGE, remaining) === 1 ? "" : "s"}
+          <ChevronDown size={14} className="opacity-70" />
+        </button>
+      )}
     </div>
   );
+}
+
+function ChatOutreachReviewCard({
+  draft,
+  onReview,
+}: {
+  draft: OutreachDraft;
+  onReview: () => void;
+}) {
+  if (draft.sent) {
+    return (
+      <div className="mt-2 max-w-[420px] rounded-[14px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2.5">
+        <p className="text-[9px] font-semibold text-[#087652]">✓ Outreach sent</p>
+      </div>
+    );
+  }
+
+  const leadNames = draft.leads?.map((lead) => lead.name).filter(Boolean).slice(0, 2).join(", ");
+  const preview = draft.body.trim().slice(0, 120);
+
+  return (
+    <div className="mt-2 max-w-[420px] rounded-[14px] border border-[#dbe7ff] bg-[#f5f8ff] px-3.5 py-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[9px] font-bold leading-[12px] text-[#09232d]">
+            {draft.channel === "whatsapp" ? "WhatsApp draft ready" : "Email draft ready"}
+          </p>
+          {leadNames && (
+            <p className="mt-0.5 text-[8px] text-[#616263]">For {leadNames}</p>
+          )}
+          {preview && (
+            <p className="mt-1 line-clamp-2 text-[8px] leading-[11px] text-[#616263]">{preview}{draft.body.length > 120 ? "…" : ""}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onReview}
+          className="h-7 shrink-0 rounded-[8px] bg-[#09232d] px-3 text-[9px] font-semibold text-white transition hover:bg-[#0f3340]"
+        >
+          Review &amp; Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function buildChatOutreachPreview(
+  messageId: number,
+  draft: OutreachDraft
+): OutreachPreviewState {
+  const activityId = draft.activity_id ?? draft.activity_ids?.[0] ?? null;
+  const lead = draft.leads?.find((item) => Boolean(item.email)) ?? draft.leads?.[0];
+  const leadNames = draft.leads?.map((item) => item.name).filter(Boolean).slice(0, 2).join(", ");
+
+  return {
+    activityId,
+    channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+    subject: draft.subject,
+    body: draft.body,
+    toEmail: draft.to_email ?? lead?.email ?? "",
+    contextLabel: leadNames ? `For ${leadNames}` : undefined,
+    alignmentNote: draft.icp_alignment_note,
+    messageId,
+  };
 }
 
 function IcpConfirmationCard({
@@ -678,10 +893,12 @@ function ChatWorkspace({
   expanded,
   onToggleExpanded,
   onOpenIcpBuilder,
+  onOpenOutreachSettings,
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
   onOpenIcpBuilder: () => void;
+  onOpenOutreachSettings?: () => void;
 }) {
   const { data: activeProfile } = useActiveIcpProfile();
   const activeIcpId = activeProfile?.id;
@@ -692,6 +909,7 @@ function ChatWorkspace({
   const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
   const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
   const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
+  const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
@@ -766,6 +984,7 @@ function ChatWorkspace({
   const sendMessage = useSendChatMessage(activeIcpId, {
     onSuccess: ({ assistant_message, pending }) => {
       if (!assistant_message) return;
+
       setMessages((current) => {
         const alreadyPresent = current.some(
           (message) =>
@@ -775,17 +994,33 @@ function ChatWorkspace({
         );
         if (alreadyPresent) return current;
 
-        return [
+        const createdMessageId = nextMessageId();
+        const nextMessages = [
           ...current,
           {
-            id: nextMessageId(),
-            role: "assistant",
+            id: createdMessageId,
+            role: "assistant" as const,
             body: assistant_message.body,
             intent: assistant_message.intent,
             leads: assistant_message.leads ?? undefined,
             meta: assistant_message.meta ?? undefined,
           },
         ];
+
+        if (
+          assistant_message.intent === "create_outreach" &&
+          assistant_message.meta?.outreach
+        ) {
+          const draft = assistant_message.meta.outreach as OutreachDraft;
+          if (!draft.sent) {
+            // Defer so we don't update another component during this setState.
+            queueMicrotask(() => {
+              setOutreachPreview(buildChatOutreachPreview(createdMessageId, draft));
+            });
+          }
+        }
+
+        return nextMessages;
       });
     },
     onError: (error) => {
@@ -875,14 +1110,18 @@ function ChatWorkspace({
       return;
     }
 
-    const { body, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    const largeRequestHint =
+      targetCount >= 50
+        ? ` Searching multiple sources for ${targetCount} leads — this may take 30–60 seconds.`
+        : "";
     setMessages((current) =>
       current.map((message) =>
         message.kind === "confirm-icp"
           ? {
               ...message,
               kind: undefined,
-              body: `Using **${activeIcp.name}** — generating up to ${targetCount} prospects…`,
+              body: `Using **${activeIcp.name}** · generating up to ${targetCount} prospects…${largeRequestHint}`,
             }
           : message
       )
@@ -897,7 +1136,7 @@ function ChatWorkspace({
       return next;
     });
 
-    sendMessage.mutate({ body, intent: "generate_leads" });
+    sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
   }
 
   function scrollTranscriptToBottom() {
@@ -924,6 +1163,7 @@ function ChatWorkspace({
 
 
   return (
+    <>
     <section
       className={`relative flex flex-col overflow-hidden rounded-[35px] bg-white shadow-[0_8px_6px_rgba(0,0,0,0.15),0_4px_2px_rgba(0,0,0,0.3)] transition-[height] duration-300 ${
         expanded ? "h-[calc(100vh-112px)] min-h-[720px]" : "h-[600px]"
@@ -1108,9 +1348,12 @@ function ChatWorkspace({
                   Target: {message.targetCount} prospects
                 </p>
               )}
-              {message.intent === "generate_leads" && !message.leads?.length && !isPendingMessage && (
+              {message.role === "assistant" &&
+                message.intent === "generate_leads" &&
+                !message.leads?.length &&
+                !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads could be extracted for this search — try rephrasing with specific names, companies, or territories.
+                  No leads could be extracted for this search · try rephrasing with specific names, companies, or territories.
                 </p>
               )}
               {message.leads && message.leads.length > 0 && (
@@ -1123,6 +1366,18 @@ function ChatWorkspace({
                   }}
                 />
               )}
+              {message.role === "assistant" &&
+                message.intent === "create_outreach" &&
+                message.meta?.outreach != null && (
+                  <ChatOutreachReviewCard
+                    draft={message.meta.outreach as OutreachDraft}
+                    onReview={() =>
+                      setOutreachPreview(
+                        buildChatOutreachPreview(message.id, message.meta?.outreach as OutreachDraft)
+                      )
+                    }
+                  />
+                )}
               {showWelcomeMessage && index === 0 && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
                   <ThumbsUp size={14} />
@@ -1204,8 +1459,52 @@ function ChatWorkspace({
         </div>
       </div>
     </section>
+
+    <OutreachPreviewModal
+      open={outreachPreview != null}
+      onClose={() => setOutreachPreview(null)}
+      activityId={outreachPreview?.activityId ?? null}
+      channel={outreachPreview?.channel ?? "email"}
+      initialSubject={outreachPreview?.subject}
+      initialBody={outreachPreview?.body ?? ""}
+      initialToEmail={outreachPreview?.toEmail}
+      contextLabel={outreachPreview?.contextLabel}
+      alignmentNote={outreachPreview?.alignmentNote}
+      onConfigureSender={onOpenOutreachSettings}
+      onSent={() => {
+        const messageId = outreachPreview?.messageId;
+        if (messageId != null) {
+          setMessages((current) =>
+            current.map((item) =>
+              item.id === messageId
+                ? {
+                    ...item,
+                    meta: {
+                      ...item.meta,
+                      outreach: { ...(item.meta?.outreach as OutreachDraft), sent: true },
+                    },
+                  }
+                : item
+            )
+          );
+        }
+        setOutreachPreview(null);
+      }}
+    />
+    </>
   );
 }
+
+const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  sent: { label: "Sent", className: "bg-white/70 text-[#09232d]" },
+  delivered: { label: "Delivered", className: "bg-[#16b37d]/20 text-[#087652]" },
+  opened: { label: "Opened", className: "bg-[#2563eb]/15 text-[#1d4ed8]" },
+  clicked: { label: "Clicked", className: "bg-[#7c3aed]/15 text-[#6d28d9]" },
+  bounced: { label: "Bounced", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  dropped: { label: "Dropped", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  spam: { label: "Marked spam", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  unsubscribed: { label: "Unsubscribed", className: "bg-[#f59e0b]/20 text-[#92400e]" },
+};
 
 function OutreachCard({
   color,
@@ -1215,6 +1514,8 @@ function OutreachCard({
   channel,
   preview,
   time,
+  deliveryStatus,
+  bounceReason,
 }: {
   color: string;
   icon: string;
@@ -1223,7 +1524,11 @@ function OutreachCard({
   channel: string;
   preview: string;
   time: string;
+  deliveryStatus?: string | null;
+  bounceReason?: string | null;
 }) {
+  const badge = deliveryStatus ? DELIVERY_STATUS_BADGES[deliveryStatus] : null;
+
   return (
     <article
       className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
@@ -1246,7 +1551,16 @@ function OutreachCard({
             </p>
           </div>
         </div>
-        <MoreVertical size={24} className="shrink-0 text-[#09232d]" />
+        {badge ? (
+          <span
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-wide ${badge.className}`}
+            title={bounceReason ?? undefined}
+          >
+            {badge.label}
+          </span>
+        ) : (
+          <MoreVertical size={24} className="shrink-0 text-[#09232d]" />
+        )}
       </div>
       <p className="ml-[88px] mt-2 text-[5px] font-light leading-[9px] text-[#09232d]">{time}</p>
     </article>
@@ -1260,19 +1574,47 @@ const OUTREACH_FALLBACK_COLORS = [
   { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
 ] as const;
 
-function OutreachPanel() {
+function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { data: items = [] } = useSalesEngineOutreach();
+  const { data: senderSettings } = useOutreachSenderSettings(true);
+
+  const senderHint =
+    senderSettings?.sender_mode === "organization" &&
+    senderSettings.org_connection_status === "verified" &&
+    senderSettings.org_verified_domain
+      ? senderSettings.org_verified_domain
+      : "The Factory";
 
   return (
     <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
-      <header className="mb-8 flex items-center justify-center gap-2">
-        <h2 className="text-[13px] font-bold">Recent Outreach Activities</h2>
-        <ChevronDown size={14} className="text-white/70" />
+      <header className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+          <h2 className="text-[13px] font-bold">Recent Outreach Activities</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-white/80 transition hover:bg-white/15 hover:text-white"
+          aria-label="Open email settings"
+          title="Email settings"
+        >
+          <Settings size={15} />
+        </button>
       </header>
+      <p className="mb-6 text-center text-[9px] text-white/50">
+        Sending as {senderHint}
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="ml-1.5 underline underline-offset-2 hover:text-white/80"
+        >
+          Configure
+        </button>
+      </p>
       {items.length > 0 ? (
         <>
           <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
-          <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
+          <div className="mx-auto flex h-[440px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[360px]">
             {items.map((item, index) => {
               const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
               const useApiColors = item.accentBg?.startsWith("#");
@@ -1286,13 +1628,15 @@ function OutreachPanel() {
                   channel={item.channel}
                   preview={item.preview}
                   time={formatRelativeTime(item.occurred_at)}
+                  deliveryStatus={item.delivery_status}
+                  bounceReason={item.bounce_reason}
                 />
               );
             })}
           </div>
         </>
       ) : (
-        <div className="flex h-[460px] flex-col items-center justify-center max-xl:h-[380px]">
+        <div className="flex h-[420px] flex-col items-center justify-center max-xl:h-[340px]">
           <Image
             src="/message_empty.png"
             alt="No recent outreach activities"
@@ -1570,19 +1914,21 @@ function SignalActionMenu({
             <button
               type="button"
               role="menuitem"
+              disabled={Boolean(signal.lead_id)}
               onClick={(e) => {
                 e.stopPropagation();
                 setIsOpen(false);
+                if (signal.lead_id) return;
                 if (onAddToCrm) {
                   onAddToCrm(signal);
                 } else {
                   toast.success(`Added ${signal.company} to CRM pipeline.`);
                 }
               }}
-              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus size={13} className="shrink-0 text-[#09232d]" />
-              <span>Add to CRM</span>
+              <span>{signal.lead_id ? "Already in CRM" : "Add to CRM"}</span>
             </button>
             <button
               type="button"
@@ -1629,6 +1975,9 @@ function SignalActionMenu({
 function SocialSignalRow({
   signal,
   isActive = false,
+  selected = false,
+  selectionMode = false,
+  onToggleSelect,
   onSelect,
   onRemoveSignal,
   onCreateOutreach,
@@ -1637,6 +1986,9 @@ function SocialSignalRow({
 }: {
   signal: SocialSignal;
   isActive?: boolean;
+  selected?: boolean;
+  selectionMode?: boolean;
+  onToggleSelect?: (signal: SocialSignal) => void;
   onSelect: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
   onCreateOutreach?: (signal: SocialSignal) => void;
@@ -1646,6 +1998,7 @@ function SocialSignalRow({
   const isIndividual =
     signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const fresh = isFreshSignal(signal.posted_at);
+  const inCrm = Boolean(signal.lead_id);
 
   return (
     <tr
@@ -1657,30 +2010,60 @@ function SocialSignalRow({
           onSelect(signal);
         }
       }}
-      className={`cursor-pointer outline-none transition-colors duration-150 ${
+      className={`group cursor-pointer outline-none transition-colors duration-150 ${
         isActive
           ? "bg-[#09232d] text-white"
           : "bg-[#f4f4f4] text-[#616263] hover:bg-[#eaeaea] hover:text-[#09232d]"
       }`}
     >
-      <td className="rounded-l-[20px] px-4 py-3">
+      {selectionMode && (
+        <td className="rounded-l-[20px] px-2 py-3">
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={inCrm}
+            aria-label={`Select ${signal.profile || signal.company}`}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.(signal);
+            }}
+            className="ml-2 size-3.5 cursor-pointer accent-[#09232d] disabled:cursor-not-allowed disabled:opacity-40"
+          />
+        </td>
+      )}
+      <td className={`px-4 py-3 ${selectionMode ? "" : "rounded-l-[20px]"}`}>
         <div className="flex min-w-[230px] gap-3">
           <SourceBadge sourceIcon={signal.sourceIcon} />
           <div className="min-w-0">
-            {fresh && (
-              <span
-                className={`mb-1 inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold uppercase tracking-wide ${
-                  isActive
-                    ? "bg-[#8dec66]/25 text-[#8dec66]"
-                    : "bg-[#e8f8df] text-[#2f6b1f] group-hover:bg-[#8dec66]/25 group-hover:text-[#8dec66] group-focus:bg-[#8dec66]/25 group-focus:text-[#8dec66]"
-                }`}
-              >
-                Fresh
-              </span>
-            )}
+            <div className="mb-1 flex flex-wrap items-center gap-1">
+              {fresh && (
+                <span
+                  className={`inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold uppercase tracking-wide ${
+                    isActive
+                      ? "bg-[#8dec66]/25 text-[#8dec66]"
+                      : "bg-[#e8f8df] text-[#2f6b1f]"
+                  }`}
+                >
+                  Fresh
+                </span>
+              )}
+              {inCrm && (
+                <span
+                  className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
+                    isActive
+                      ? "bg-[#8dec66]/25 text-[#8dec66]"
+                      : "bg-[#16b37d]/10 text-[#087652]"
+                  }`}
+                >
+                  <CircleCheck size={9} />
+                  In CRM
+                </span>
+              )}
+            </div>
             <p
               className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
-                isActive ? "text-white" : "text-[#616263] group-hover:text-white group-focus:text-white"
+                isActive ? "text-white" : "text-[#616263]"
               }`}
             >
               {signal.signal}
@@ -1780,6 +2163,12 @@ function SocialSignalRow({
 function SocialSignalsTable({
   signals,
   activeSignalId,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+  onClearSelection,
+  onBulkAddToCrm,
+  isBulkSyncing,
   onHoverSignal,
   onRemoveSignal,
   onCreateOutreach,
@@ -1800,6 +2189,12 @@ function SocialSignalsTable({
 }: {
   signals: SocialSignal[];
   activeSignalId?: number | null;
+  selectedIds: number[];
+  onToggleSelect: (signal: SocialSignal) => void;
+  onToggleSelectAll: () => void;
+  onClearSelection: () => void;
+  onBulkAddToCrm: () => void;
+  isBulkSyncing?: boolean;
   onHoverSignal: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
   onCreateOutreach?: (signal: SocialSignal) => void;
@@ -1818,6 +2213,7 @@ function SocialSignalsTable({
   enabledSources?: string[];
   scanPanel?: ReactNode;
 }) {
+  const [selectionMode, setSelectionMode] = useState(false);
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(page * perPage, total);
   const safePage = Math.min(Math.max(1, page), Math.max(lastPage, 1));
@@ -1835,14 +2231,76 @@ function SocialSignalsTable({
   }, [safePage, lastPage]);
   const showSkeleton = (isLoading || isScanning) && signals.length === 0;
   const skeletonRows = isScanning ? 5 : 4;
+  const selectableSignals = signals.filter((signal) => !signal.lead_id);
+  const allSelectableSelected =
+    selectableSignals.length > 0 &&
+    selectableSignals.every((signal) => selectedIds.includes(signal.id));
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    onClearSelection();
+  };
 
   return (
     <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
       {isScanning && scanPanel}
+      <div className="mb-2 flex items-center justify-end gap-2 px-2 pt-1">
+        {selectionMode ? (
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-[14px] border border-[#09232d]/10 bg-[#f8f8f8] px-3 py-2">
+            <p className="text-[9px] font-medium text-[#616263]">
+              {selectedIds.length > 0
+                ? `${selectedIds.length} signal${selectedIds.length === 1 ? "" : "s"} selected`
+                : "Select signals to add to CRM"}
+            </p>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  disabled={isBulkSyncing}
+                  onClick={onBulkAddToCrm}
+                  className="rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
+                >
+                  {isBulkSyncing ? "Adding…" : `Add ${selectedIds.length} to CRM`}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={exitSelectionMode}
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-[#d1d1d1] bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#f3f3f3]"
+              >
+                <X size={10} />
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSelectionMode(true)}
+            disabled={signals.length === 0}
+            className="inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[9px] font-medium text-[#34373c] transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ListChecks size={13} />
+            Select
+          </button>
+        )}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1.5 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-button]:hidden [scrollbar-width:thin] [scrollbar-color:#e5e7eb_transparent]">
-        <table className="w-full min-w-[860px] border-separate border-spacing-y-2">
+        <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
+              {selectionMode && (
+                <th className="bg-white px-2 py-1 text-left">
+                  <input
+                    type="checkbox"
+                    checked={allSelectableSelected}
+                    disabled={selectableSignals.length === 0}
+                    aria-label="Select all unsynced signals"
+                    onChange={onToggleSelectAll}
+                    className="ml-2 size-3.5 cursor-pointer accent-[#09232d] disabled:cursor-not-allowed disabled:opacity-40"
+                  />
+                </th>
+              )}
               <th className="bg-white px-4 py-1 text-left">Signal</th>
               <th className="bg-white px-3 py-1 text-left">Source</th>
               <th className="bg-white px-3 py-1 text-left">Persona</th>
@@ -1858,6 +2316,9 @@ function SocialSignalsTable({
                 key={signal.id}
                 signal={signal}
                 isActive={signal.id === activeSignalId}
+                selected={selectedIds.includes(signal.id)}
+                selectionMode={selectionMode}
+                onToggleSelect={onToggleSelect}
                 onSelect={onHoverSignal}
                 onRemoveSignal={onRemoveSignal}
                 onCreateOutreach={onCreateOutreach}
@@ -1865,7 +2326,9 @@ function SocialSignalsTable({
                 onSetReminder={onSetReminder}
               />
             ))}
-            {showSkeleton && <SocialSignalsTableSkeleton rows={skeletonRows} />}
+            {showSkeleton && (
+              <SocialSignalsTableSkeleton rows={skeletonRows} selectionMode={selectionMode} />
+            )}
           </tbody>
         </table>
         {!isLoading && !isScanning && signals.length === 0 && emptyState && (
@@ -2029,6 +2492,7 @@ function SocialOpportunityDetail({
   isCreatingOutreach,
   isSettingReminder,
   isSyncingToCrm,
+  outreachSent,
 }: {
   signal: SocialSignal;
   onCreateOutreach: () => void;
@@ -2037,6 +2501,7 @@ function SocialOpportunityDetail({
   isCreatingOutreach?: boolean;
   isSettingReminder?: boolean;
   isSyncingToCrm?: boolean;
+  outreachSent?: boolean;
 }) {
   const isIndividual =
     signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
@@ -2132,7 +2597,19 @@ function SocialOpportunityDetail({
               className="size-[25px] rounded-full object-cover"
             />
             <div>
-              <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+              {signal.author_profile_url ? (
+                <a
+                  href={signal.author_profile_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] font-semibold leading-[12px] text-[#09232d] underline underline-offset-2 hover:text-[#087652]"
+                >
+                  {signal.profile}
+                </a>
+              ) : (
+                <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+              )}
               <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
             </div>
           </div>
@@ -2266,6 +2743,11 @@ function SocialOpportunityDetail({
             </div>
             <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
           </div>
+          {outreachSent && (
+            <p className="rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2 text-[9px] font-semibold text-[#087652]">
+              ✓ Sent
+            </p>
+          )}
           {signal.followUpStrategy && (
             <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
               <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
@@ -2292,14 +2774,24 @@ function SocialOpportunityDetail({
         >
           {isSettingReminder ? "Saving…" : "Set Reminder"}
         </button>
-        <button
-          type="button"
-          disabled={isSyncingToCrm}
-          onClick={onSyncToCrm}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
-        >
-          {isSyncingToCrm ? "Syncing…" : "Add to CRM"}
-        </button>
+        {signal.lead_id ? (
+          <div className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3 text-[10px] font-semibold text-[#087652]">
+            <CircleCheck size={14} />
+            <span>
+              In CRM
+              {signal.f23_lead_id ? ` · #${signal.f23_lead_id}` : ""}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={isSyncingToCrm}
+            onClick={onSyncToCrm}
+            className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
+          >
+            {isSyncingToCrm ? "Adding…" : "Add to CRM"}
+          </button>
+        )}
       </div>
     </aside>
   );
@@ -2313,47 +2805,47 @@ function ListeningSettingsModal({
   onClose: () => void;
 }) {
   const { data: settings, isLoading } = useSocialListeningSettings(isOpen);
-  const { data: senderSettings } = useOutreachSenderSettings(isOpen);
   const updateSettings = useUpdateSocialListeningSettings();
-  const updateSender = useUpdateOutreachSenderSettings();
   const triggerRun = useTriggerSocialListeningRun();
 
   const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [metaPageIdsText, setMetaPageIdsText] = useState("");
   const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
   const [minScore, setMinScore] = useState(70);
   const [freshnessWindowDays, setFreshnessWindowDays] = useState<7 | 14 | 30>(14);
   const [intentFilters, setIntentFilters] = useState<string[]>([]);
   const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
   const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
-  const [senderMode, setSenderMode] = useState<"platform" | "organization">("platform");
 
   useEffect(() => {
     if (!settings) return;
     setEnabledSources(settings.enabled_sources ?? []);
+    setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
     setMinScore(settings.min_score ?? 70);
     setFreshnessWindowDays(settings.freshness_window_days ?? 14);
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
-    setSenderMode(senderSettings?.sender_mode ?? settings.sender_mode ?? "platform");
-  }, [settings, senderSettings]);
-
-  const orgVerified = senderSettings?.verification_status === "verified";
+  }, [settings]);
 
   const handleSave = async () => {
     try {
+      const metaPageIds = metaPageIdsText
+        .split(/[\n,]+/)
+        .map((item) => item.trim().replace(/^@/, ""))
+        .filter(Boolean);
+
       await updateSettings.mutateAsync({
         enabled_sources: enabledSources,
+        meta_page_ids: metaPageIds,
         cadence_days: cadenceDays,
         min_score: minScore,
         freshness_window_days: freshnessWindowDays,
         intent_filters: intentFilters,
         crm_destination: crmDestination,
         outreach_channel_default: outreachChannel,
-        sender_mode: senderMode,
       });
-      await updateSender.mutateAsync({ sender_mode: senderMode });
       await triggerRun.mutateAsync(true);
       toast.success("Listening settings saved. A refresh run has been queued.");
       onClose();
@@ -2436,6 +2928,27 @@ function ListeningSettingsModal({
                     </label>
                   ))}
                 </div>
+                {enabledSources.includes("meta_graph_pages") && (
+                  <div className="mt-4">
+                    <label
+                      htmlFor="meta-page-ids"
+                      className="text-[12px] font-medium text-white/80"
+                    >
+                      Meta Pages to monitor
+                    </label>
+                    <p className="mt-1 text-[11px] leading-[15px] text-white/45">
+                      Page ID or @username, one per line. Direct Graph API monitoring of these pages.
+                    </p>
+                    <textarea
+                      id="meta-page-ids"
+                      value={metaPageIdsText}
+                      onChange={(event) => setMetaPageIdsText(event.target.value)}
+                      rows={4}
+                      placeholder={"AcmeCorp\n123456789\ncompetitor-page"}
+                      className="mt-2 w-full resize-y rounded-[12px] border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/30 focus:border-[#8dec66]/40"
+                    />
+                  </div>
+                )}
               </section>
 
               <section className="grid gap-4 sm:grid-cols-2">
@@ -2561,43 +3074,6 @@ function ListeningSettingsModal({
                   </label>
                 </div>
               </section>
-
-              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[13px] font-semibold">Email sender</p>
-                  <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] uppercase tracking-wide text-white/60">
-                    {senderSettings?.verification_status ?? "pending"}
-                  </span>
-                </div>
-                <div className="mt-3 space-y-2 text-[12px] text-white/70">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="social-listening-sender"
-                      checked={senderMode === "platform"}
-                      onChange={() => setSenderMode("platform")}
-                      className="accent-[#8dec66]"
-                    />
-                    Send using The Factory (recommended)
-                  </label>
-                  <label className={`flex items-center gap-2 ${orgVerified ? "" : "opacity-50"}`}>
-                    <input
-                      type="radio"
-                      name="social-listening-sender"
-                      checked={senderMode === "organization"}
-                      onChange={() => orgVerified && setSenderMode("organization")}
-                      disabled={!orgVerified}
-                      className="accent-[#8dec66]"
-                    />
-                    Send using my organization email
-                  </label>
-                  {!orgVerified && (
-                    <p className="text-[11px] text-white/45">
-                      Verify your domain in SendGrid to enable organization sending.
-                    </p>
-                  )}
-                </div>
-              </section>
                 </>
               )}
             </div>
@@ -2612,7 +3088,7 @@ function ListeningSettingsModal({
               </button>
               <button
                 type="button"
-                disabled={updateSettings.isPending || updateSender.isPending || triggerRun.isPending}
+                disabled={updateSettings.isPending || triggerRun.isPending}
                 onClick={handleSave}
                 className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-60"
               >
@@ -2626,7 +3102,13 @@ function ListeningSettingsModal({
   );
 }
 
-function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void }) {
+function SocialListeningTab({
+  onOpenIcpBuilder,
+  onOpenOutreachSettings,
+}: {
+  onOpenIcpBuilder: () => void;
+  onOpenOutreachSettings?: () => void;
+}) {
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: listenSettings } = useSocialListeningSettings();
   const [search, setSearch] = useState("");
@@ -2636,6 +3118,8 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   const [intent, setIntent] = useState("all");
   const [page, setPage] = useState(1);
   const [activeSignalId, setActiveSignalId] = useState<number | null>(null);
+  const [selectedSignalIds, setSelectedSignalIds] = useState<number[]>([]);
+  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const perPage = 10;
 
@@ -2649,6 +3133,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
 
   useEffect(() => {
     setPage(1);
+    setSelectedSignalIds([]);
   }, [source, signalType, intent]);
 
   const { metrics, metricsLoading, latestRun, isScanning, bootstrap } =
@@ -2670,10 +3155,19 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
     { refetchInterval: isScanning ? 5000 : false }
   );
 
+  useEffect(() => {
+    const items = signalsResult?.items ?? [];
+    setSelectedSignalIds((current) =>
+      current.filter((id) => items.some((signal) => signal.id === id && !signal.lead_id))
+    );
+  }, [signalsResult?.items]);
+
   const createOutreach = useCreateSignalOutreach();
   const setReminder = useSetSignalReminder();
   const syncToCrm = useSyncSignalToCrm();
   const dismissSignalMutation = useDismissSignal();
+  const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
+  const [sentOutreachSignalIds, setSentOutreachSignalIds] = useState<Set<number>>(new Set());
 
   const signals = signalsResult?.items ?? [];
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
@@ -2734,7 +3228,19 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
     createOutreach.mutate(
       { id: signal.id },
       {
-        onSuccess: () => toast.success("Outreach draft created."),
+        onSuccess: (result) => {
+          const contextName = signal.profile || signal.company || "Social prospect";
+          setOutreachPreview({
+            activityId: result.activity_id ?? null,
+            channel: result.channel === "whatsapp" ? "whatsapp" : "email",
+            subject: result.subject ?? null,
+            body: result.body,
+            toEmail: result.to_email ?? "",
+            contextLabel: `Re: ${contextName}`,
+            signalId: signal.id,
+          });
+          toast.success("Outreach drafted and ready for review before sending.");
+        },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not create outreach draft.")),
       }
@@ -2754,11 +3260,66 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   };
 
   const handleSyncToCrm = (signal: SocialSignal) => {
+    if (signal.lead_id) {
+      toast.message(`"${signal.profile || signal.company}" is already in CRM.`);
+      return;
+    }
     syncToCrm.mutate(signal.id, {
-      onSuccess: () => toast.success("Signal synced to CRM."),
+      onSuccess: () => {
+        toast.success(`Added "${signal.profile || signal.company}" to CRM.`);
+        setSelectedSignalIds((current) => current.filter((id) => id !== signal.id));
+      },
       onError: (error) =>
         toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
     });
+  };
+
+  const handleToggleSelect = (signal: SocialSignal) => {
+    if (signal.lead_id) return;
+    setSelectedSignalIds((current) =>
+      current.includes(signal.id)
+        ? current.filter((id) => id !== signal.id)
+        : [...current, signal.id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    const selectable = signals.filter((signal) => !signal.lead_id).map((signal) => signal.id);
+    const allSelected =
+      selectable.length > 0 && selectable.every((id) => selectedSignalIds.includes(id));
+    setSelectedSignalIds(allSelected ? [] : selectable);
+  };
+
+  const handleBulkAddToCrm = async () => {
+    const pending = signals.filter(
+      (signal) => selectedSignalIds.includes(signal.id) && !signal.lead_id
+    );
+    if (pending.length === 0) return;
+
+    setIsBulkSyncing(true);
+    let successCount = 0;
+    let errorCount = 0;
+    try {
+      for (const signal of pending) {
+        try {
+          await syncToCrm.mutateAsync(signal.id);
+          successCount += 1;
+        } catch {
+          errorCount += 1;
+        }
+      }
+      if (successCount > 0) {
+        toast.success(
+          `Added ${successCount} poster${successCount === 1 ? "" : "s"} to CRM.`
+        );
+      }
+      if (errorCount > 0) {
+        toast.error(`Could not sync ${errorCount} signal${errorCount === 1 ? "" : "s"}.`);
+      }
+      setSelectedSignalIds([]);
+    } finally {
+      setIsBulkSyncing(false);
+    }
   };
 
   const handleRemoveSignal = (id: number) => {
@@ -2854,6 +3415,12 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
             <SocialSignalsTable
               signals={signals}
               activeSignalId={activeSignalId}
+              selectedIds={selectedSignalIds}
+              onToggleSelect={handleToggleSelect}
+              onToggleSelectAll={handleToggleSelectAll}
+              onClearSelection={() => setSelectedSignalIds([])}
+              onBulkAddToCrm={handleBulkAddToCrm}
+              isBulkSyncing={isBulkSyncing}
               onHoverSignal={(signal) => setActiveSignalId(signal.id)}
               onRemoveSignal={handleRemoveSignal}
               onCreateOutreach={handleCreateOutreach}
@@ -2883,6 +3450,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
             onCreateOutreach={() => handleCreateOutreach(activeSignal)}
             onSetReminder={() => handleSetReminder(activeSignal)}
             onSyncToCrm={() => handleSyncToCrm(activeSignal)}
+            outreachSent={sentOutreachSignalIds.has(activeSignal.id)}
           />
         ) : isScanning ? (
           <SocialOpportunityDetailSkeleton />
@@ -2891,6 +3459,24 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
         )}
       </div>
       <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <OutreachPreviewModal
+        open={outreachPreview != null}
+        onClose={() => setOutreachPreview(null)}
+        activityId={outreachPreview?.activityId ?? null}
+        channel={outreachPreview?.channel ?? "email"}
+        initialSubject={outreachPreview?.subject}
+        initialBody={outreachPreview?.body ?? ""}
+        initialToEmail={outreachPreview?.toEmail}
+        contextLabel={outreachPreview?.contextLabel}
+        alignmentNote={outreachPreview?.alignmentNote}
+        onConfigureSender={onOpenOutreachSettings}
+        onSent={() => {
+          if (outreachPreview?.signalId != null) {
+            setSentOutreachSignalIds((current) => new Set(current).add(outreachPreview.signalId!));
+          }
+          setOutreachPreview(null);
+        }}
+      />
     </>
   );
 }
@@ -2898,6 +3484,7 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
+  const [isOutreachSettingsOpen, setIsOutreachSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: metrics } = useSalesEngineMetrics();
@@ -2920,7 +3507,10 @@ export function SalesEngineView() {
         )}
 
         {activeTab === "social-listening" && !chatExpanded ? (
-          <SocialListeningTab onOpenIcpBuilder={() => setIsIcpModalOpen(true)} />
+          <SocialListeningTab
+            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
+            onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
+          />
         ) : (
           <>
         {!chatExpanded && (
@@ -2981,14 +3571,21 @@ export function SalesEngineView() {
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
             onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
+            onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
           />
-          {!chatExpanded && <OutreachPanel />}
+          {!chatExpanded && (
+            <OutreachPanel onOpenSettings={() => setIsOutreachSettingsOpen(true)} />
+          )}
         </div>
           </>
         )}
       </div>
 
       <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
+      <OutreachSettingsModal
+        open={isOutreachSettingsOpen}
+        onClose={() => setIsOutreachSettingsOpen(false)}
+      />
     </div>
   );
 }
