@@ -753,6 +753,17 @@ export function regenerateOutreachActivity(
   );
 }
 
+export function deleteOutreachActivity(
+  id: number
+): Promise<{ deleted: boolean; id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<{ deleted: boolean; id: number }>({
+      method: "DELETE",
+      path: `/outreach/activities/${id}`,
+    })
+  );
+}
+
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  deleteOutreachActivity,
   fetchOutreachActivity,
   fetchRecentOutreach,
   regenerateOutreachActivity,
@@ -101,6 +102,22 @@ export function useRegenerateOutreach() {
       if (data.activity_id) {
         queryClient.setQueryData(SALES_ENGINE_OUTREACH_KEYS.activity(data.activity_id), data);
       }
+    },
+    onError: (error) => {
+      if (isUnauthorized(error)) resetAuth();
+    },
+  });
+}
+
+export function useDeleteOutreachActivity() {
+  const queryClient = useQueryClient();
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useMutation({
+    mutationFn: (activityId: number) => deleteOutreachActivity(activityId),
+    onSuccess: (_data, activityId) => {
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });
+      queryClient.removeQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.activity(activityId) });
     },
     onError: (error) => {
       if (isUnauthorized(error)) resetAuth();

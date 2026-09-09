@@ -41,7 +41,7 @@ import {
   useSendChatMessage,
 } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
-import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
+import { useSalesEngineOutreach, useDeleteOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import {
   useCreateSignalOutreach,
   useDismissSignal,
@@ -65,11 +65,13 @@ import { getApiErrorMessage } from "@/lib/api/errors";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
 import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
+  fetchOutreachActivity,
   formatRelativeTime,
   isFreshSignal,
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
+  type OutreachActivity,
   type OutreachDraft,
   type SocialListeningSettings,
   type SocialSignalApi,
@@ -81,6 +83,7 @@ import {
   Clock,
   Copy,
   Expand,
+  Eye,
   Globe2,
   Lightbulb,
   Loader2,
@@ -1564,6 +1567,126 @@ const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string 
   unsubscribed: { label: "Unsubscribed", className: "bg-[#f59e0b]/20 text-[#92400e]" },
 };
 
+function OutreachActionMenu({
+  onView,
+  onDelete,
+  isDeleting = false,
+}: {
+  onView: () => void;
+  onDelete: () => void;
+  isDeleting?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 150;
+    const menuHeight = 96;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < menuHeight ? rect.top - menuHeight : rect.bottom + 4;
+    const left = Math.max(12, rect.right - menuWidth);
+    setPosition({ top, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    function handleScroll() {
+      setIsOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleScroll);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Outreach actions"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen((prev) => !prev);
+        }}
+        className={`grid size-6 shrink-0 place-items-center rounded-full text-[#09232d] transition hover:bg-black/10 cursor-pointer ${
+          isOpen ? "bg-black/10" : ""
+        }`}
+      >
+        <MoreVertical size={16} />
+      </button>
+
+      {isOpen &&
+        position &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: position.top, left: position.left }}
+            className="fixed z-50 w-[150px] rounded-[14px] border border-black/10 bg-white p-1.5 text-[#09232d] shadow-[0_12px_28px_rgba(9,35,45,0.18)]"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onView();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <Eye size={13} className="shrink-0 text-[#09232d]" />
+              <span>Open draft</span>
+            </button>
+            <div className="my-1 border-t border-gray-100" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={isDeleting}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onDelete();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-red-600 transition hover:bg-red-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={13} className="shrink-0 text-red-500" />
+              <span>{isDeleting ? "Deleting…" : "Delete"}</span>
+            </button>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 function OutreachCard({
   color,
   icon,
@@ -1574,6 +1697,9 @@ function OutreachCard({
   time,
   deliveryStatus,
   bounceReason,
+  onView,
+  onDelete,
+  isDeleting = false,
 }: {
   color: string;
   icon: string;
@@ -1584,12 +1710,15 @@ function OutreachCard({
   time: string;
   deliveryStatus?: string | null;
   bounceReason?: string | null;
+  onView: () => void;
+  onDelete: () => void;
+  isDeleting?: boolean;
 }) {
   const badge = deliveryStatus ? DELIVERY_STATUS_BADGES[deliveryStatus] : null;
 
   return (
     <article
-      className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      className={`${color} h-[108px] w-full shrink-0 rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
       style={color.startsWith("#") ? { backgroundColor: color } : undefined}
     >
       <div className="flex items-start justify-between gap-3">
@@ -1609,16 +1738,17 @@ function OutreachCard({
             </p>
           </div>
         </div>
-        {badge ? (
-          <span
-            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-wide ${badge.className}`}
-            title={bounceReason ?? undefined}
-          >
-            {badge.label}
-          </span>
-        ) : (
-          <MoreVertical size={24} className="shrink-0 text-[#09232d]" />
-        )}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <OutreachActionMenu onView={onView} onDelete={onDelete} isDeleting={isDeleting} />
+          {badge ? (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-wide ${badge.className}`}
+              title={bounceReason ?? undefined}
+            >
+              {badge.label}
+            </span>
+          ) : null}
+        </div>
       </div>
       <p className="ml-[88px] mt-2 text-[5px] font-light leading-[9px] text-[#09232d]">{time}</p>
     </article>
@@ -1635,6 +1765,9 @@ const OUTREACH_FALLBACK_COLORS = [
 function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { data: items = [] } = useSalesEngineOutreach();
   const { data: senderSettings } = useOutreachSenderSettings(true);
+  const deleteOutreach = useDeleteOutreachActivity();
+  const [preview, setPreview] = useState<OutreachPreviewState | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
 
   const senderHint =
     senderSettings?.sender_mode === "organization" &&
@@ -1642,6 +1775,36 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
     senderSettings.org_verified_domain
       ? senderSettings.org_verified_domain
       : "The Factory";
+
+  const handleView = async (item: OutreachActivity) => {
+    setOpeningId(item.id);
+    try {
+      const draft = await fetchOutreachActivity(item.id);
+      setPreview({
+        activityId: draft.activity_id ?? item.id,
+        channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+        subject: draft.subject ?? null,
+        body: draft.body || item.preview,
+        toEmail: draft.to_email ?? "",
+        contextLabel: item.name,
+      });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not open outreach draft."));
+    } finally {
+      setOpeningId(null);
+    }
+  };
+
+  const handleDelete = (item: OutreachActivity) => {
+    deleteOutreach.mutate(item.id, {
+      onSuccess: () => {
+        if (preview?.activityId === item.id) setPreview(null);
+        toast.success(`Removed outreach for ${item.name}.`);
+      },
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not delete outreach activity.")),
+    });
+  };
 
   return (
     <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
@@ -1670,29 +1833,29 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         </button>
       </p>
       {items.length > 0 ? (
-        <>
-          <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
-          <div className="mx-auto flex h-[440px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[360px]">
-            {items.map((item, index) => {
-              const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-              const useApiColors = item.accentBg?.startsWith("#");
-              return (
-                <OutreachCard
-                  key={item.id}
-                  color={useApiColors ? item.accentBg : fallback.color}
-                  icon={useApiColors ? "" : fallback.icon}
-                  iconColor={useApiColors ? item.accentIcon : undefined}
-                  name={item.name}
-                  channel={item.channel}
-                  preview={item.preview}
-                  time={formatRelativeTime(item.occurred_at)}
-                  deliveryStatus={item.delivery_status}
-                  bounceReason={item.bounce_reason}
-                />
-              );
-            })}
-          </div>
-        </>
+        <div className="mx-auto flex h-[440px] w-full max-w-[285px] flex-col gap-4 overflow-y-auto overflow-x-hidden pr-1 max-xl:h-[360px] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 hover:[&::-webkit-scrollbar-thumb]:bg-white/40">
+          {items.map((item, index) => {
+            const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
+            const useApiColors = item.accentBg?.startsWith("#");
+            return (
+              <OutreachCard
+                key={item.id}
+                color={useApiColors ? item.accentBg : fallback.color}
+                icon={useApiColors ? "" : fallback.icon}
+                iconColor={useApiColors ? item.accentIcon : undefined}
+                name={item.name}
+                channel={item.channel}
+                preview={item.preview}
+                time={formatRelativeTime(item.occurred_at)}
+                deliveryStatus={item.delivery_status}
+                bounceReason={item.bounce_reason}
+                onView={() => void handleView(item)}
+                onDelete={() => handleDelete(item)}
+                isDeleting={deleteOutreach.isPending && deleteOutreach.variables === item.id}
+              />
+            );
+          })}
+        </div>
       ) : (
         <div className="flex h-[420px] flex-col items-center justify-center max-xl:h-[340px]">
           <Image
@@ -1705,6 +1868,28 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           />
         </div>
       )}
+
+      {openingId != null && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#09232d]/40">
+          <Loader2 size={22} className="animate-spin text-white/80" />
+        </div>
+      )}
+
+      <OutreachPreviewModal
+        open={Boolean(preview)}
+        onClose={() => setPreview(null)}
+        activityId={preview?.activityId ?? null}
+        channel={preview?.channel ?? "email"}
+        initialSubject={preview?.subject}
+        initialBody={preview?.body ?? ""}
+        initialToEmail={preview?.toEmail}
+        contextLabel={preview?.contextLabel}
+        onSent={() => {
+          toast.success("Outreach sent.");
+          setPreview(null);
+        }}
+        onConfigureSender={onOpenSettings}
+      />
     </aside>
   );
 }
