@@ -103,7 +103,7 @@ export function SocialSignalsEmptyState({
                 className="flex h-8 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-white"
               >
                 <Sparkles size={12} />
-                Scan now
+                Refresh
               </button>
             )}
             {onOpenSettings && (

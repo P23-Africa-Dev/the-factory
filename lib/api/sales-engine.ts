@@ -1128,12 +1128,19 @@ export function setSignalReminder(
   );
 }
 
-export function syncSignalToCrm(id: number): Promise<{
+export function syncSignalToCrm(
+  id: number,
+  opts?: { pipeline_id?: number | string }
+): Promise<{
   lead_id: number;
   f23_lead_id?: number | null;
   crm?: unknown;
   signal: SocialSignalApi;
 }> {
+  const body =
+    opts?.pipeline_id != null && opts.pipeline_id !== ""
+      ? { pipeline_id: opts.pipeline_id }
+      : undefined;
   return withSessionRetry(async () =>
     seRequest<{
       lead_id: number;
@@ -1143,6 +1150,7 @@ export function syncSignalToCrm(id: number): Promise<{
     }>({
       method: "POST",
       path: `/social-listening/signals/${id}/sync-to-crm`,
+      body,
     })
   );
 }
@@ -1239,7 +1247,10 @@ export async function fetchFactory23IntegrationStatusWithAutoEnsure(): Promise<F
   return status;
 }
 
-export function pushLeadToCrm(leadId: number): Promise<{
+export function pushLeadToCrm(
+  leadId: number,
+  opts?: { pipeline_id?: number | string }
+): Promise<{
   lead_id: number;
   save_status?: string;
   synced?: boolean;
@@ -1251,6 +1262,10 @@ export function pushLeadToCrm(leadId: number): Promise<{
   crm_duplicate_reason?: string | null;
   crm_fields_updated?: string[];
 }> {
+  const body =
+    opts?.pipeline_id != null && opts.pipeline_id !== ""
+      ? { pipeline_id: opts.pipeline_id }
+      : undefined;
   return withSessionRetry(async () => {
     try {
       return await seRequest<{
@@ -1267,6 +1282,7 @@ export function pushLeadToCrm(leadId: number): Promise<{
       }>({
         method: "POST",
         path: `/leads/${leadId}/sync-to-crm`,
+        body,
       });
     } catch (error) {
       if (
@@ -1288,6 +1304,7 @@ export function pushLeadToCrm(leadId: number): Promise<{
         }>({
           method: "POST",
           path: `/leads/${leadId}/sync-to-crm`,
+          body,
         });
       }
       throw error;

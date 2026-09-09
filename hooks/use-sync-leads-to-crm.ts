@@ -10,7 +10,8 @@ export function useSyncLeadToCrm() {
   const resetAuth = useResetSalesEngineAuth();
 
   return useMutation({
-    mutationFn: (leadId: number) => pushLeadToCrm(leadId),
+    mutationFn: (vars: { leadId: number; pipeline_id?: number | string }) =>
+      pushLeadToCrm(vars.leadId, { pipeline_id: vars.pipeline_id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_METRICS_KEYS.all });
     },
