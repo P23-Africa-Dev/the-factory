@@ -137,7 +137,6 @@ type SearchUsage = { used: number; limit: number };
 
 const SEARCH_USAGE_STORAGE_KEY = "sales_engine_search_usage_v1";
 const DEFAULT_SEARCH_USAGE_LIMIT = 500;
-const DEFAULT_PROSPECT_COUNT = 20;
 const MAX_PROSPECT_COUNT = 150;
 const LEADS_PER_PAGE = 20;
 const EXPLICIT_COUNT_PATTERN = /\b(\d{1,3})\b/;
@@ -168,14 +167,8 @@ function writeSearchUsage(usage: SearchUsage): void {
   }
 }
 
-/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is for the Target caption. */
-function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number; apiBody: string } {
-  const match = prompt.match(EXPLICIT_COUNT_PATTERN);
-  const targetCount = match
-    ? Math.min(MAX_PROSPECT_COUNT, Math.max(1, Number(match[1])))
-    : DEFAULT_PROSPECT_COUNT;
-
-  // Ensure the backend parseLimit sees the requested count without mutating the displayed user bubble.
+/** Resolves the outgoing generate_leads prompt. Only preserves an explicit user count — never injects a default. */
+function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number | null; apiBody: string } {
   const hasParseableCount =
     /\b(?:give me|find|get|show|list|need|want)\s+\d{1,3}\b/i.test(prompt) ||
     /\b\d{1,3}\s+(?:people|persons|leads|prospects|contacts|names|executives|companies|accounts|men|women)\b/i.test(
@@ -183,7 +176,13 @@ function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount
     ) ||
     /\btop\s+\d{1,3}\b/i.test(prompt);
 
-  const apiBody = hasParseableCount ? prompt : `Find ${targetCount} leads. ${prompt}`.trim();
+  const match = hasParseableCount ? prompt.match(EXPLICIT_COUNT_PATTERN) : null;
+  const targetCount = match
+    ? Math.min(MAX_PROSPECT_COUNT, Math.max(1, Number(match[1])))
+    : null;
+
+  // When the user did not ask for a count, send the prompt as-is and let the backend default apply.
+  const apiBody = prompt.trim();
 
   return {
     body: prompt,
@@ -1143,7 +1142,13 @@ function ChatWorkspace({
       const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
       setMessages((current) => [
         ...current,
-        { id: nextMessageId(), role: "user", body: trimmed, intent, targetCount },
+        {
+          id: nextMessageId(),
+          role: "user",
+          body: trimmed,
+          intent,
+          ...(targetCount != null ? { targetCount } : {}),
+        },
         { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
       ]);
       setDraft("");
@@ -1169,8 +1174,8 @@ function ChatWorkspace({
 
     const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
     const largeRequestHint =
-      targetCount >= 50
-        ? ` Searching multiple sources for ${targetCount} leads — this may take 30–60 seconds.`
+      targetCount != null && targetCount >= 50
+        ? " Searching multiple sources — this may take 30–60 seconds."
         : "";
     setMessages((current) =>
       current.map((message) =>
@@ -1178,7 +1183,8 @@ function ChatWorkspace({
           ? {
               ...message,
               kind: undefined,
-              body: `Using **${activeIcp.name}** · generating up to ${targetCount} prospects…${largeRequestHint}`,
+              body: `Using **${activeIcp.name}** · generating prospects…${largeRequestHint}`,
+              intent: "generate_leads",
             }
           : message
       )
@@ -1399,11 +1405,6 @@ function ChatWorkspace({
                     variant={message.role === "user" ? "user" : showWelcomeMessage && index === 0 ? "welcome" : "assistant"}
                   />
                 </div>
-              )}
-              {message.role === "user" && message.targetCount != null && (
-                <p className="mt-1 text-right text-[8px] font-medium text-[#09232d]/40">
-                  Target: {message.targetCount} prospects
-                </p>
               )}
               {message.role === "assistant" &&
                 message.intent === "generate_leads" &&
