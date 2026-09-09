@@ -11,6 +11,12 @@ import { ProcessingPanel } from "./processing-panel";
 import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
 import { OutreachPreviewModal } from "./outreach-preview-modal";
 import { OutreachSettingsModal } from "./outreach-settings-modal";
+import {
+  AddToCrmPipelineModal,
+  CreateOutreachConfirmModal,
+  SetReminderConfirmModal,
+  type CrmPipelineOption,
+} from "./crm-action-modals";
 import { SocialScanPanel } from "./social-scan-panel";
 import {
   SocialOpportunityEmptyState,
@@ -51,7 +57,12 @@ import {
   useUpdateSocialListeningSettings,
 } from "@/hooks/use-sales-engine-social-settings";
 import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
+import { useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { getApiErrorMessage } from "@/lib/api/errors";
+import type { ApiRoleBasePath } from "@/lib/api/crm";
 import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
   formatRelativeTime,
@@ -192,6 +203,35 @@ type SocialStatCard = {
   unit: string;
   active?: boolean;
 };
+
+function useSalesEngineCrmPipelines() {
+  const user = useAuthStore((s) => s.user);
+  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
+  const apiBasePath: ApiRoleBasePath = role === "agent" ? "/agent" : "/admin";
+  const { data: pipelines = [], isLoading } = useCrmPipelines(companyId ?? undefined, apiBasePath);
+  const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
+
+  const options = useMemo<CrmPipelineOption[]>(
+    () => pipelines.map((pipeline) => ({ id: String(pipeline.id), name: pipeline.name })),
+    [pipelines]
+  );
+
+  const preferredId = resolveCrmPipelineId(
+    pipelines,
+    preferences?.preferred_pipeline_id,
+    preferences?.company_default_pipeline_id
+  );
+
+  const orderedOptions = useMemo(() => {
+    if (preferredId == null) return options;
+    const preferredKey = String(preferredId);
+    const preferred = options.find((option) => option.id === preferredKey);
+    if (!preferred) return options;
+    return [preferred, ...options.filter((option) => option.id !== preferredKey)];
+  }, [options, preferredId]);
+
+  return { pipelines: orderedOptions, isLoading };
+}
 
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
@@ -476,7 +516,9 @@ function LeadInlineResults({
   const syncLead = useSyncLeadToCrm();
   const syncBatch = useSyncLeadsBatchToCrm();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
+  const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
   const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
+  const [pendingCrmLead, setPendingCrmLead] = useState<ChatLead | null>(null);
   const canSyncToCrm = integrationStatus?.can_sync ?? true;
   const crmBlockMessage =
     integrationStatus?.block_message ??
@@ -503,6 +545,37 @@ function LeadInlineResults({
             }
           : lead
       )
+    );
+  }
+
+  function handleConfirmSaveToCrm(pipelineId: string) {
+    if (!pendingCrmLead) return;
+    const lead = pendingCrmLead;
+    syncLead.mutate(
+      { leadId: lead.id, pipeline_id: pipelineId },
+      {
+        onSuccess: (result) => {
+          const updatedFields = Array.isArray(result.crm_fields_updated)
+            ? result.crm_fields_updated
+            : Array.isArray(result.fields_updated)
+              ? result.fields_updated
+              : [];
+          markSynced([lead.id], {
+            crm_duplicate: Boolean(result.crm_duplicate),
+            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
+            crm_fields_updated: updatedFields,
+          });
+          if (result.updated && updatedFields.length > 0) {
+            toast.success(`Updated existing CRM lead with new ${updatedFields.join(", ")}.`);
+          } else if (result.crm_duplicate || result.already_synced) {
+            toast.success(`"${lead.name}" is already in CRM.`);
+          } else {
+            toast.success(`Saved "${lead.name}" to CRM.`);
+          }
+          setPendingCrmLead(null);
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
+      }
     );
   }
 
@@ -693,33 +766,7 @@ function LeadInlineResults({
                     type="button"
                     disabled={syncLead.isPending || !canSyncToCrm}
                     title={!canSyncToCrm ? crmBlockMessage : undefined}
-                    onClick={() => {
-                      syncLead.mutate(lead.id, {
-                        onSuccess: (result) => {
-                          const updatedFields = Array.isArray(result.crm_fields_updated)
-                            ? result.crm_fields_updated
-                            : Array.isArray(result.fields_updated)
-                              ? result.fields_updated
-                              : [];
-                          markSynced([lead.id], {
-                            crm_duplicate: Boolean(result.crm_duplicate),
-                            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
-                            crm_fields_updated: updatedFields,
-                          });
-                          if (result.updated && updatedFields.length > 0) {
-                            toast.success(
-                              `Updated existing CRM lead with new ${updatedFields.join(", ")}.`
-                            );
-                          } else if (result.crm_duplicate || result.already_synced) {
-                            toast.success(`"${lead.name}" is already in CRM.`);
-                          } else {
-                            toast.success(`Saved "${lead.name}" to CRM.`);
-                          }
-                        },
-                        onError: (error) =>
-                          toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
-                      });
-                    }}
+                    onClick={() => setPendingCrmLead(lead)}
                     className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] hover:bg-[#09232d]/5 disabled:opacity-60"
                   >
                     Save to CRM
@@ -741,6 +788,16 @@ function LeadInlineResults({
           <ChevronDown size={14} className="opacity-70" />
         </button>
       )}
+      <AddToCrmPipelineModal
+        key={pendingCrmLead?.id ?? "smart-lead-crm-modal"}
+        isOpen={pendingCrmLead != null}
+        onClose={() => setPendingCrmLead(null)}
+        prospectName={pendingCrmLead?.name ?? null}
+        pipelines={pipelines}
+        isLoading={pipelinesLoading}
+        isConfirming={syncLead.isPending}
+        onConfirm={handleConfirmSaveToCrm}
+      />
     </div>
   );
 }
@@ -2405,7 +2462,7 @@ function SocialListeningFilters({
   onSignalTypeChange,
   onIntentChange,
   onOpenSettings,
-  onScanNow,
+  onRefresh,
   isScanning,
   isScanPending,
 }: {
@@ -2418,11 +2475,11 @@ function SocialListeningFilters({
   onSignalTypeChange: (value: string) => void;
   onIntentChange: (value: string) => void;
   onOpenSettings: () => void;
-  onScanNow: () => void;
+  onRefresh: () => void;
   isScanning?: boolean;
   isScanPending?: boolean;
 }) {
-  const scanBusy = isScanning || isScanPending;
+  const refreshBusy = isScanning || isScanPending;
   return (
     <div className="flex flex-nowrap items-center gap-2 xl:gap-2.5 overflow-x-auto py-1">
       <label className="flex h-9 w-[150px] xl:w-[170px] shrink-0 items-center gap-2 rounded-full bg-white px-3.5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.18)]">
@@ -2461,16 +2518,16 @@ function SocialListeningFilters({
       </button>
       <button
         type="button"
-        onClick={onScanNow}
-        disabled={scanBusy}
+        onClick={onRefresh}
+        disabled={refreshBusy}
         className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
       >
-        {scanBusy ? (
+        {refreshBusy ? (
           <Loader2 size={13} className="animate-spin text-[#09232d]" />
         ) : (
           <RefreshCw size={13} className="text-[#09232d]" />
         )}
-        <span>{scanBusy ? "Scanning…" : "Scan"}</span>
+        <span>{refreshBusy ? "Refreshing…" : "Refresh"}</span>
       </button>
       <button
         type="button"
@@ -3166,8 +3223,12 @@ function SocialListeningTab({
   const setReminder = useSetSignalReminder();
   const syncToCrm = useSyncSignalToCrm();
   const dismissSignalMutation = useDismissSignal();
+  const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
   const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
   const [sentOutreachSignalIds, setSentOutreachSignalIds] = useState<Set<number>>(new Set());
+  const [pendingOutreachSignal, setPendingOutreachSignal] = useState<SocialSignal | null>(null);
+  const [pendingReminderSignal, setPendingReminderSignal] = useState<SocialSignal | null>(null);
+  const [pendingCrmSignal, setPendingCrmSignal] = useState<SocialSignal | null>(null);
 
   const signals = signalsResult?.items ?? [];
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
@@ -3216,15 +3277,15 @@ function SocialListeningTab({
     />
   ) : null;
 
-  const handleScanNow = () => {
+  const handleRefresh = () => {
     triggerRun.mutate(true, {
-      onSuccess: () => toast.success("Social listening scan queued."),
+      onSuccess: () => toast.success("Social listening refresh queued."),
       onError: (error) =>
-        toast.error(getApiErrorMessage(error, "Could not start social listening scan.")),
+        toast.error(getApiErrorMessage(error, "Could not refresh social listening data.")),
     });
   };
 
-  const handleCreateOutreach = (signal: SocialSignal) => {
+  const executeCreateOutreach = (signal: SocialSignal) => {
     createOutreach.mutate(
       { id: signal.id },
       {
@@ -3239,6 +3300,7 @@ function SocialListeningTab({
             contextLabel: `Re: ${contextName}`,
             signalId: signal.id,
           });
+          setPendingOutreachSignal(null);
           toast.success("Outreach drafted and ready for review before sending.");
         },
         onError: (error) =>
@@ -3247,32 +3309,61 @@ function SocialListeningTab({
     );
   };
 
-  const handleSetReminder = (signal: SocialSignal) => {
+  const executeSetReminder = (signal: SocialSignal) => {
     const actionNote = normalizeRecommendedAction(signal.recommendedAction);
     setReminder.mutate(
-      { id: signal.id, note: [actionNote.title, actionNote.detail].filter(Boolean).join(" — ") || undefined },
       {
-        onSuccess: () => toast.success("Reminder set for 24 hours from now."),
+        id: signal.id,
+        note: [actionNote.title, actionNote.detail].filter(Boolean).join(" — ") || undefined,
+      },
+      {
+        onSuccess: () => {
+          setPendingReminderSignal(null);
+          toast.success("Reminder set for 24 hours from now.");
+        },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not set reminder.")),
       }
     );
   };
 
-  const handleSyncToCrm = (signal: SocialSignal) => {
+  const executeSyncToCrm = (signal: SocialSignal, pipelineId?: string) => {
     if (signal.lead_id) {
       toast.message(`"${signal.profile || signal.company}" is already in CRM.`);
+      setPendingCrmSignal(null);
       return;
     }
-    syncToCrm.mutate(signal.id, {
-      onSuccess: () => {
-        toast.success(`Added "${signal.profile || signal.company}" to CRM.`);
-        setSelectedSignalIds((current) => current.filter((id) => id !== signal.id));
-      },
-      onError: (error) =>
-        toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
-    });
+    syncToCrm.mutate(
+      { id: signal.id, pipeline_id: pipelineId },
+      {
+        onSuccess: () => {
+          toast.success(`Added "${signal.profile || signal.company}" to CRM.`);
+          setSelectedSignalIds((current) => current.filter((id) => id !== signal.id));
+          setPendingCrmSignal(null);
+        },
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
+      }
+    );
   };
+
+  const reminderNoteForPending = pendingReminderSignal
+    ? (() => {
+        const actionNote = normalizeRecommendedAction(pendingReminderSignal.recommendedAction);
+        return [actionNote.title, actionNote.detail].filter(Boolean).join(" — ");
+      })()
+    : "";
+
+  const reminderAtLabel = useMemo(() => {
+    const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    return when.toLocaleString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }, [pendingReminderSignal?.id]);
 
   const handleToggleSelect = (signal: SocialSignal) => {
     if (signal.lead_id) return;
@@ -3302,7 +3393,7 @@ function SocialListeningTab({
     try {
       for (const signal of pending) {
         try {
-          await syncToCrm.mutateAsync(signal.id);
+          await syncToCrm.mutateAsync({ id: signal.id });
           successCount += 1;
         } catch {
           errorCount += 1;
@@ -3402,7 +3493,7 @@ function SocialListeningTab({
               onSignalTypeChange={setSignalType}
               onIntentChange={setIntent}
               onOpenSettings={() => setIsSettingsOpen(true)}
-              onScanNow={handleScanNow}
+              onRefresh={handleRefresh}
               isScanning={isScanning}
               isScanPending={triggerRun.isPending || bootstrap.isPending}
             />
@@ -3423,9 +3514,9 @@ function SocialListeningTab({
               isBulkSyncing={isBulkSyncing}
               onHoverSignal={(signal) => setActiveSignalId(signal.id)}
               onRemoveSignal={handleRemoveSignal}
-              onCreateOutreach={handleCreateOutreach}
-              onAddToCrm={handleSyncToCrm}
-              onSetReminder={handleSetReminder}
+              onCreateOutreach={setPendingOutreachSignal}
+              onAddToCrm={setPendingCrmSignal}
+              onSetReminder={setPendingReminderSignal}
               page={meta.current_page}
               lastPage={Math.max(meta.last_page, 1)}
               total={meta.total}
@@ -3434,7 +3525,7 @@ function SocialListeningTab({
               isLoading={signalsLoading}
               isScanning={isScanning}
               emptyState={emptyState}
-              onEmptyScanNow={handleScanNow}
+              onEmptyScanNow={handleRefresh}
               onEmptyOpenSettings={() => setIsSettingsOpen(true)}
               enabledSources={listenSettings?.enabled_sources}
               scanPanel={scanPanel}
@@ -3444,12 +3535,12 @@ function SocialListeningTab({
         {activeSignal ? (
           <SocialOpportunityDetail
             signal={activeSignal}
-            isCreatingOutreach={createOutreach.isPending}
-            isSettingReminder={setReminder.isPending}
-            isSyncingToCrm={syncToCrm.isPending}
-            onCreateOutreach={() => handleCreateOutreach(activeSignal)}
-            onSetReminder={() => handleSetReminder(activeSignal)}
-            onSyncToCrm={() => handleSyncToCrm(activeSignal)}
+            isCreatingOutreach={createOutreach.isPending && pendingOutreachSignal?.id === activeSignal.id}
+            isSettingReminder={setReminder.isPending && pendingReminderSignal?.id === activeSignal.id}
+            isSyncingToCrm={syncToCrm.isPending && pendingCrmSignal?.id === activeSignal.id}
+            onCreateOutreach={() => setPendingOutreachSignal(activeSignal)}
+            onSetReminder={() => setPendingReminderSignal(activeSignal)}
+            onSyncToCrm={() => setPendingCrmSignal(activeSignal)}
             outreachSent={sentOutreachSignalIds.has(activeSignal.id)}
           />
         ) : isScanning ? (
@@ -3459,6 +3550,46 @@ function SocialListeningTab({
         )}
       </div>
       <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <CreateOutreachConfirmModal
+        key={pendingOutreachSignal ? `outreach-${pendingOutreachSignal.id}` : "outreach-modal"}
+        isOpen={pendingOutreachSignal != null}
+        onClose={() => setPendingOutreachSignal(null)}
+        prospectName={pendingOutreachSignal?.profile || pendingOutreachSignal?.company || "Prospect"}
+        company={pendingOutreachSignal?.company || "—"}
+        channel={
+          listenSettings?.outreach_channel_default === "human_follow_up"
+            ? "Human follow-up"
+            : "Email"
+        }
+        suggestedMessage={pendingOutreachSignal?.suggestedMessage || ""}
+        source={pendingOutreachSignal?.source || ""}
+        intent={pendingOutreachSignal?.intent || ""}
+        isConfirming={createOutreach.isPending}
+        onConfirm={() => pendingOutreachSignal && executeCreateOutreach(pendingOutreachSignal)}
+      />
+      <SetReminderConfirmModal
+        key={pendingReminderSignal ? `reminder-${pendingReminderSignal.id}` : "reminder-modal"}
+        isOpen={pendingReminderSignal != null}
+        onClose={() => setPendingReminderSignal(null)}
+        prospectName={pendingReminderSignal?.profile || pendingReminderSignal?.company || "Prospect"}
+        company={pendingReminderSignal?.company || "—"}
+        remindAtLabel={reminderAtLabel}
+        note={reminderNoteForPending}
+        isConfirming={setReminder.isPending}
+        onConfirm={() => pendingReminderSignal && executeSetReminder(pendingReminderSignal)}
+      />
+      <AddToCrmPipelineModal
+        key={pendingCrmSignal ? `crm-${pendingCrmSignal.id}` : "crm-modal"}
+        isOpen={pendingCrmSignal != null}
+        onClose={() => setPendingCrmSignal(null)}
+        prospectName={pendingCrmSignal?.profile || pendingCrmSignal?.company || null}
+        pipelines={pipelines}
+        isLoading={pipelinesLoading}
+        isConfirming={syncToCrm.isPending}
+        onConfirm={(pipelineId) =>
+          pendingCrmSignal && executeSyncToCrm(pendingCrmSignal, pipelineId)
+        }
+      />
       <OutreachPreviewModal
         open={outreachPreview != null}
         onClose={() => setOutreachPreview(null)}

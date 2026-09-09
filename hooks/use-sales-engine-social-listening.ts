@@ -199,7 +199,10 @@ export function useSetSignalReminder() {
 }
 
 export function useSyncSignalToCrm() {
-  return useSocialMutation((id: number) => syncSignalToCrm(id));
+  return useSocialMutation(
+    ({ id, pipeline_id }: { id: number; pipeline_id?: number | string }) =>
+      syncSignalToCrm(id, { pipeline_id })
+  );
 }
 
 export function useDismissSignal() {
