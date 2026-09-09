@@ -359,6 +359,9 @@ export type ChatLead = {
   source_url?: string | null;
   save_status?: "draft" | "saved";
   crm_synced?: boolean;
+  crm_duplicate?: boolean;
+  crm_duplicate_reason?: string | null;
+  crm_fields_updated?: string[] | null;
   f23_lead_id?: string | number | null;
   low_confidence?: boolean;
   icp_recommended?: boolean;
@@ -1105,6 +1108,12 @@ export function pushLeadToCrm(leadId: number): Promise<{
   save_status?: string;
   synced?: boolean;
   f23_lead_id?: string | number | null;
+  already_synced?: boolean;
+  updated?: boolean;
+  fields_updated?: string[];
+  crm_duplicate?: boolean;
+  crm_duplicate_reason?: string | null;
+  crm_fields_updated?: string[];
 }> {
   return withSessionRetry(async () => {
     try {
@@ -1113,6 +1122,12 @@ export function pushLeadToCrm(leadId: number): Promise<{
         save_status?: string;
         synced?: boolean;
         f23_lead_id?: string | number | null;
+        already_synced?: boolean;
+        updated?: boolean;
+        fields_updated?: string[];
+        crm_duplicate?: boolean;
+        crm_duplicate_reason?: string | null;
+        crm_fields_updated?: string[];
       }>({
         method: "POST",
         path: `/leads/${leadId}/sync-to-crm`,
@@ -1128,6 +1143,12 @@ export function pushLeadToCrm(leadId: number): Promise<{
           save_status?: string;
           synced?: boolean;
           f23_lead_id?: string | number | null;
+          already_synced?: boolean;
+          updated?: boolean;
+          fields_updated?: string[];
+          crm_duplicate?: boolean;
+          crm_duplicate_reason?: string | null;
+          crm_fields_updated?: string[];
         }>({
           method: "POST",
           path: `/leads/${leadId}/sync-to-crm`,

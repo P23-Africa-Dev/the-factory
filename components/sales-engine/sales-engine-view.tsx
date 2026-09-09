@@ -448,13 +448,23 @@ function LeadInlineResults({
   const crmBlockMessage =
     integrationStatus?.block_message ??
     "CRM sync is unavailable. Sign out and sign back in to link Factory23, or contact your admin.";
-  const unsavedIds = leads.filter((lead) => !lead.crm_synced && lead.save_status !== "saved").map((lead) => lead.id);
+  const unsavedIds = leads
+    .filter((lead) => !lead.crm_synced && !lead.crm_duplicate && lead.save_status !== "saved")
+    .map((lead) => lead.id);
 
-  function markSynced(ids: number[]) {
+  function markSynced(
+    ids: number[],
+    extras?: Partial<Pick<ChatLead, "crm_duplicate" | "crm_duplicate_reason" | "crm_fields_updated">>
+  ) {
     onLeadsChange?.(
       leads.map((lead) =>
         ids.includes(lead.id)
-          ? { ...lead, crm_synced: true, save_status: "saved" as const }
+          ? {
+              ...lead,
+              crm_synced: true,
+              save_status: "saved" as const,
+              ...(extras ?? {}),
+            }
           : lead
       )
     );
@@ -498,7 +508,8 @@ function LeadInlineResults({
       )}
       <div className="grid gap-2 sm:grid-cols-3">
         {leads.map((lead) => {
-          const isSynced = lead.crm_synced || lead.save_status === "saved";
+          const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+          const fieldsUpdated = lead.crm_fields_updated ?? [];
           const { overall, search: searchPct, icp: icpPct, intent: intentPct } =
             leadScoreBreakdown(lead);
 
@@ -597,9 +608,18 @@ function LeadInlineResults({
               )}
               <div className="mt-2">
                 {isSynced ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]"
+                    title={
+                      fieldsUpdated.length > 0
+                        ? `Updated in CRM: ${fieldsUpdated.join(", ")}`
+                        : lead.crm_duplicate_reason ?? "Already saved in CRM"
+                    }
+                  >
                     <CircleCheck size={10} />
-                    In CRM
+                    {fieldsUpdated.length > 0
+                      ? `Updated in CRM (${fieldsUpdated.join(", ")})`
+                      : "In CRM"}
                   </span>
                 ) : (
                   <button
@@ -608,9 +628,26 @@ function LeadInlineResults({
                     title={!canSyncToCrm ? crmBlockMessage : undefined}
                     onClick={() => {
                       syncLead.mutate(lead.id, {
-                        onSuccess: () => {
-                          markSynced([lead.id]);
-                          toast.success(`Saved "${lead.name}" to CRM.`);
+                        onSuccess: (result) => {
+                          const updatedFields = Array.isArray(result.crm_fields_updated)
+                            ? result.crm_fields_updated
+                            : Array.isArray(result.fields_updated)
+                              ? result.fields_updated
+                              : [];
+                          markSynced([lead.id], {
+                            crm_duplicate: Boolean(result.crm_duplicate),
+                            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
+                            crm_fields_updated: updatedFields,
+                          });
+                          if (result.updated && updatedFields.length > 0) {
+                            toast.success(
+                              `Updated existing CRM lead with new ${updatedFields.join(", ")}.`
+                            );
+                          } else if (result.crm_duplicate || result.already_synced) {
+                            toast.success(`"${lead.name}" is already in CRM.`);
+                          } else {
+                            toast.success(`Saved "${lead.name}" to CRM.`);
+                          }
                         },
                         onError: (error) =>
                           toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
