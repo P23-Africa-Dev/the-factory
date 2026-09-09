@@ -1,12 +1,19 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchRecentOutreach, sendOutreachActivity, SalesEngineApiError } from "@/lib/api/sales-engine";
+import {
+  fetchOutreachActivity,
+  fetchRecentOutreach,
+  regenerateOutreachActivity,
+  sendOutreachActivity,
+  SalesEngineApiError,
+} from "@/lib/api/sales-engine";
 import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
 
 export const SALES_ENGINE_OUTREACH_KEYS = {
   all: ["sales-engine", "outreach"] as const,
   recent: () => ["sales-engine", "outreach", "recent"] as const,
+  activity: (id: number) => ["sales-engine", "outreach", "activity", id] as const,
 };
 
 function isUnauthorized(error: unknown) {
@@ -14,7 +21,7 @@ function isUnauthorized(error: unknown) {
 }
 
 export function useSalesEngineOutreach() {
-  const { data: token, isLoading: isAuthLoading, error: authError } = useSalesEngineAuth();
+  const { data: token, isLoading: isAuthLoading } = useSalesEngineAuth();
   const resetAuth = useResetSalesEngineAuth();
 
   return useQuery({
@@ -29,6 +36,26 @@ export function useSalesEngineOutreach() {
     },
     enabled: Boolean(token) && !isAuthLoading,
     staleTime: 1000 * 30,
+  });
+}
+
+export function useOutreachActivity(id: number | null) {
+  const { data: token, isLoading: isAuthLoading } = useSalesEngineAuth();
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useQuery({
+    queryKey: id != null ? SALES_ENGINE_OUTREACH_KEYS.activity(id) : ["sales-engine", "outreach", "activity", "none"],
+    queryFn: async () => {
+      if (id == null) return null;
+      try {
+        return await fetchOutreachActivity(id);
+      } catch (error) {
+        if (isUnauthorized(error)) resetAuth();
+        throw error;
+      }
+    },
+    enabled: Boolean(token) && !isAuthLoading && id != null,
+    staleTime: 1000 * 15,
   });
 }
 
@@ -48,6 +75,32 @@ export function useSendOutreachActivity() {
     }) => sendOutreachActivity(activityId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });
+    },
+    onError: (error) => {
+      if (isUnauthorized(error)) resetAuth();
+    },
+  });
+}
+
+export function useRegenerateOutreach() {
+  const queryClient = useQueryClient();
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useMutation({
+    mutationFn: ({
+      activityId,
+      instructions,
+      channel,
+    }: {
+      activityId: number;
+      instructions?: string;
+      channel?: "email" | "whatsapp";
+    }) => regenerateOutreachActivity(activityId, { instructions, channel }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });
+      if (data.activity_id) {
+        queryClient.setQueryData(SALES_ENGINE_OUTREACH_KEYS.activity(data.activity_id), data);
+      }
     },
     onError: (error) => {
       if (isUnauthorized(error)) resetAuth();

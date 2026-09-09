@@ -52,6 +52,7 @@ export function useAuthenticateOutreachDomain() {
       authenticateOutreachDomain(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_DOMAIN_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_SENDER_KEYS.all });
     },
     onError: (error) => {
       if (isUnauthorized(error)) resetAuth();

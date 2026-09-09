@@ -729,6 +729,30 @@ export function sendOutreachActivity(
   );
 }
 
+export function fetchOutreachActivity(
+  id: number
+): Promise<OutreachDraft & { activity_id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDraft & { activity_id: number }>({
+      method: "GET",
+      path: `/outreach/activities/${id}`,
+    })
+  );
+}
+
+export function regenerateOutreachActivity(
+  id: number,
+  payload?: { instructions?: string; channel?: "email" | "whatsapp" }
+): Promise<OutreachDraft & { activity_id: number; regeneration_count?: number }> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDraft & { activity_id: number; regeneration_count?: number }>({
+      method: "POST",
+      path: `/outreach/activities/${id}/regenerate`,
+      body: payload ?? {},
+    })
+  );
+}
+
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
@@ -775,6 +799,8 @@ export type SocialSignalApi = {
   description: string;
   score: number;
   profile: string;
+  author_profile_url?: string | null;
+  platform?: string | null;
   reasons: string[];
   signalType: string;
   buyingStage: string;
@@ -848,7 +874,9 @@ export type OutreachSenderSettings = {
   reply_to_email: string;
   org_verified_from_email?: string | null;
   org_verified_domain?: string | null;
+  /** Legacy; prefer org_connection_status for UI labels. */
   verification_status: "pending" | "verified" | "failed";
+  org_connection_status: "not_connected" | "pending" | "failed" | "verified";
   platform_from_email?: string | null;
 };
 
@@ -875,9 +903,14 @@ export type OutreachDraft = {
   subject?: string | null;
   body: string;
   sent: boolean;
+  to_email?: string | null;
+  activity_id?: number | null;
   target_lead_ids?: number[];
   activity_ids?: number[];
   icp_alignment_note?: string;
+  regeneration_count?: number;
+  name?: string | null;
+  social_signal_id?: number | null;
   leads?: Array<{ id: number; name: string; email?: string | null; phone?: string | null; [key: string]: unknown }>;
 };
 
@@ -1058,9 +1091,23 @@ export function fetchSocialListeningRun(id: number): Promise<SocialListeningRunS
 export function createSignalOutreach(
   id: number,
   opts?: { send?: boolean; to_email?: string }
-): Promise<{ subject?: string; body: string; activity_id?: number; sent?: boolean }> {
+): Promise<{
+  subject?: string | null;
+  body: string;
+  to_email?: string | null;
+  activity_id?: number;
+  sent?: boolean;
+  channel?: "email" | "whatsapp";
+}> {
   return withSessionRetry(async () =>
-    seRequest<{ subject?: string; body: string; activity_id?: number; sent?: boolean }>({
+    seRequest<{
+      subject?: string | null;
+      body: string;
+      to_email?: string | null;
+      activity_id?: number;
+      sent?: boolean;
+      channel?: "email" | "whatsapp";
+    }>({
       method: "POST",
       path: `/social-listening/signals/${id}/outreach`,
       body: opts ?? {},
