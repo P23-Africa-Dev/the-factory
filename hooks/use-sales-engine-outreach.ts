@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { fetchRecentOutreach, SalesEngineApiError } from "@/lib/api/sales-engine";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchRecentOutreach, sendOutreachActivity, SalesEngineApiError } from "@/lib/api/sales-engine";
 import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
 
 export const SALES_ENGINE_OUTREACH_KEYS = {
@@ -29,5 +29,28 @@ export function useSalesEngineOutreach() {
     },
     enabled: Boolean(token) && !isAuthLoading,
     staleTime: 1000 * 30,
+  });
+}
+
+export function useSendOutreachActivity() {
+  const queryClient = useQueryClient();
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useMutation({
+    mutationFn: ({
+      activityId,
+      ...payload
+    }: {
+      activityId: number;
+      to_email: string;
+      subject?: string;
+      body: string;
+    }) => sendOutreachActivity(activityId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });
+    },
+    onError: (error) => {
+      if (isUnauthorized(error)) resetAuth();
+    },
   });
 }

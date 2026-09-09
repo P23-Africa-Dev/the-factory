@@ -33,7 +33,7 @@ import {
   useSendChatMessage,
 } from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
-import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
+import { useSalesEngineOutreach, useSendOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import {
   useCreateSignalOutreach,
   useDismissSignal,
@@ -52,6 +52,12 @@ import {
   useOutreachSenderSettings,
   useUpdateOutreachSenderSettings,
 } from "@/hooks/use-sales-engine-outreach-sender";
+import {
+  useAuthenticateOutreachDomain,
+  useOutreachDomain,
+  useResetOutreachDomain,
+  useVerifyOutreachDomain,
+} from "@/hooks/use-sales-engine-outreach-domain";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
@@ -60,6 +66,7 @@ import {
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
+  type OutreachDraft,
   type SocialListeningSettings,
   type SocialSignalApi,
 } from "@/lib/api/sales-engine";
@@ -104,6 +111,13 @@ type ChatMessage = {
   kind?: "confirm-icp";
   /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
   targetCount?: number;
+};
+
+type OutreachDraftState = {
+  activityId: number | null;
+  subject?: string | null;
+  body: string;
+  sent?: boolean;
 };
 
 type SearchUsage = { used: number; limit: number };
@@ -694,6 +708,61 @@ function LeadInlineResults({
   );
 }
 
+function ChatOutreachSendPanel({
+  draft,
+  onSent,
+}: {
+  draft: OutreachDraft;
+  onSent: () => void;
+}) {
+  const sendOutreach = useSendOutreachActivity();
+  const defaultToEmail = draft.leads?.find((lead) => Boolean(lead.email))?.email ?? "";
+  const [toEmail, setToEmail] = useState(defaultToEmail);
+  const activityId = draft.activity_ids?.[0] ?? null;
+
+  if (draft.channel !== "email" || draft.sent) return null;
+
+  return (
+    <div className="mt-2 max-w-[420px] rounded-[14px] border border-[#dbe7ff] bg-[#f5f8ff] px-3.5 py-2.5">
+      <p className="mb-1.5 text-[9px] font-bold leading-[12px] text-[#09232d]">Send this email</p>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="email"
+          value={toEmail}
+          onChange={(e) => setToEmail(e.target.value)}
+          placeholder="recipient@company.com"
+          className="h-7 flex-1 rounded-[8px] border border-[#d1d1d1] bg-white px-2 text-[9px] text-[#09232d] outline-none focus:border-[#09232d]/40"
+        />
+        <button
+          type="button"
+          disabled={sendOutreach.isPending || !activityId || !toEmail.trim()}
+          onClick={() => {
+            if (!activityId) return;
+            sendOutreach.mutate(
+              { activityId, to_email: toEmail.trim(), subject: draft.subject ?? undefined, body: draft.body },
+              {
+                onSuccess: () => {
+                  toast.success(`Outreach sent to ${toEmail.trim()}.`);
+                  onSent();
+                },
+                onError: (error) => toast.error(getApiErrorMessage(error, "Could not send outreach email.")),
+              }
+            );
+          }}
+          className="h-7 shrink-0 rounded-[8px] bg-[#09232d] px-3 text-[9px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
+        >
+          {sendOutreach.isPending ? "Sending…" : "Send email"}
+        </button>
+      </div>
+      {!activityId && (
+        <p className="mt-1 text-[8px] text-[#b91c1c]">
+          This draft isn&apos;t linked to a sendable record — try the request again.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function IcpConfirmationCard({
   icpProfiles,
   isLoading,
@@ -1226,6 +1295,28 @@ function ChatWorkspace({
                   }}
                 />
               )}
+              {message.role === "assistant" &&
+                message.intent === "create_outreach" &&
+                message.meta?.outreach != null && (
+                  <ChatOutreachSendPanel
+                    draft={message.meta.outreach as OutreachDraft}
+                    onSent={() => {
+                      setMessages((current) =>
+                        current.map((item) =>
+                          item.id === message.id
+                            ? {
+                                ...item,
+                                meta: {
+                                  ...item.meta,
+                                  outreach: { ...(item.meta?.outreach as OutreachDraft), sent: true },
+                                },
+                              }
+                            : item
+                        )
+                      );
+                    }}
+                  />
+                )}
               {showWelcomeMessage && index === 0 && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
                   <ThumbsUp size={14} />
@@ -1310,6 +1401,17 @@ function ChatWorkspace({
   );
 }
 
+const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  sent: { label: "Sent", className: "bg-white/70 text-[#09232d]" },
+  delivered: { label: "Delivered", className: "bg-[#16b37d]/20 text-[#087652]" },
+  opened: { label: "Opened", className: "bg-[#2563eb]/15 text-[#1d4ed8]" },
+  clicked: { label: "Clicked", className: "bg-[#7c3aed]/15 text-[#6d28d9]" },
+  bounced: { label: "Bounced", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  dropped: { label: "Dropped", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  spam: { label: "Marked spam", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  unsubscribed: { label: "Unsubscribed", className: "bg-[#f59e0b]/20 text-[#92400e]" },
+};
+
 function OutreachCard({
   color,
   icon,
@@ -1318,6 +1420,8 @@ function OutreachCard({
   channel,
   preview,
   time,
+  deliveryStatus,
+  bounceReason,
 }: {
   color: string;
   icon: string;
@@ -1326,7 +1430,11 @@ function OutreachCard({
   channel: string;
   preview: string;
   time: string;
+  deliveryStatus?: string | null;
+  bounceReason?: string | null;
 }) {
+  const badge = deliveryStatus ? DELIVERY_STATUS_BADGES[deliveryStatus] : null;
+
   return (
     <article
       className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
@@ -1349,7 +1457,16 @@ function OutreachCard({
             </p>
           </div>
         </div>
-        <MoreVertical size={24} className="shrink-0 text-[#09232d]" />
+        {badge ? (
+          <span
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-wide ${badge.className}`}
+            title={bounceReason ?? undefined}
+          >
+            {badge.label}
+          </span>
+        ) : (
+          <MoreVertical size={24} className="shrink-0 text-[#09232d]" />
+        )}
       </div>
       <p className="ml-[88px] mt-2 text-[5px] font-light leading-[9px] text-[#09232d]">{time}</p>
     </article>
@@ -1389,6 +1506,8 @@ function OutreachPanel() {
                   channel={item.channel}
                   preview={item.preview}
                   time={formatRelativeTime(item.occurred_at)}
+                  deliveryStatus={item.delivery_status}
+                  bounceReason={item.bounce_reason}
                 />
               );
             })}
@@ -2132,6 +2251,9 @@ function SocialOpportunityDetail({
   isCreatingOutreach,
   isSettingReminder,
   isSyncingToCrm,
+  outreachDraft,
+  onSendOutreach,
+  isSendingOutreach,
 }: {
   signal: SocialSignal;
   onCreateOutreach: () => void;
@@ -2140,7 +2262,16 @@ function SocialOpportunityDetail({
   isCreatingOutreach?: boolean;
   isSettingReminder?: boolean;
   isSyncingToCrm?: boolean;
+  outreachDraft?: OutreachDraftState | null;
+  onSendOutreach?: (payload: { activityId: number; toEmail: string; subject?: string; body: string }) => void;
+  isSendingOutreach?: boolean;
 }) {
+  const [toEmail, setToEmail] = useState("");
+
+  useEffect(() => {
+    setToEmail("");
+  }, [signal.id]);
+
   const isIndividual =
     signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
@@ -2369,6 +2500,48 @@ function SocialOpportunityDetail({
             </div>
             <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
           </div>
+          {outreachDraft && !outreachDraft.sent && (
+            <div className="rounded-[10px] border border-[#dbe7ff] bg-[#f5f8ff] px-3.5 py-2.5 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+              <p className="mb-1.5 text-[10px] font-bold leading-[12px] text-[#09232d]">Send this outreach</p>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="email"
+                  value={toEmail}
+                  onChange={(e) => setToEmail(e.target.value)}
+                  placeholder="recipient@company.com"
+                  className="h-7 flex-1 rounded-[8px] border border-[#d1d1d1] bg-white px-2 text-[9px] text-[#09232d] outline-none focus:border-[#09232d]/40"
+                />
+                <button
+                  type="button"
+                  disabled={
+                    isSendingOutreach || !outreachDraft.activityId || !toEmail.trim()
+                  }
+                  onClick={() =>
+                    outreachDraft.activityId &&
+                    onSendOutreach?.({
+                      activityId: outreachDraft.activityId,
+                      toEmail: toEmail.trim(),
+                      subject: outreachDraft.subject ?? undefined,
+                      body: outreachDraft.body,
+                    })
+                  }
+                  className="h-7 shrink-0 rounded-[8px] bg-[#09232d] px-3 text-[9px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
+                >
+                  {isSendingOutreach ? "Sending…" : "Send email"}
+                </button>
+              </div>
+              {!outreachDraft.activityId && (
+                <p className="mt-1 text-[8px] text-[#b91c1c]">
+                  This draft isn&apos;t linked to a sendable record — try creating outreach again.
+                </p>
+              )}
+            </div>
+          )}
+          {outreachDraft?.sent && (
+            <p className="rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2 text-[9px] font-semibold text-[#087652]">
+              ✓ Sent
+            </p>
+          )}
           {signal.followUpStrategy && (
             <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
               <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
@@ -2405,6 +2578,190 @@ function SocialOpportunityDetail({
         </button>
       </div>
     </aside>
+  );
+}
+
+function DnsRecordRow({ record }: { record: { host: string; type: string; data: string; valid: boolean } }) {
+  const [copiedField, setCopiedField] = useState<"host" | "data" | null>(null);
+
+  const copy = async (field: "host" | "data", value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(field);
+      window.setTimeout(() => setCopiedField(null), 1500);
+    } catch {
+      toast.error("Could not copy to clipboard.");
+    }
+  };
+
+  return (
+    <div className="rounded-[10px] border border-white/10 bg-white/[0.03] p-2.5 text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-white/40">
+          {record.type.toUpperCase()} record
+        </span>
+        {record.valid && (
+          <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-[#8dec66]">
+            <Check size={11} /> Detected
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span className="w-10 shrink-0 text-white/40">Host</span>
+        <code className="flex-1 truncate rounded bg-black/30 px-2 py-1 text-white/85">{record.host}</code>
+        <button
+          type="button"
+          onClick={() => copy("host", record.host)}
+          className="grid size-6 shrink-0 place-items-center rounded text-white/50 hover:bg-white/10 hover:text-white"
+          aria-label="Copy host"
+        >
+          {copiedField === "host" ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+      </div>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span className="w-10 shrink-0 text-white/40">Value</span>
+        <code className="flex-1 truncate rounded bg-black/30 px-2 py-1 text-white/85">{record.data}</code>
+        <button
+          type="button"
+          onClick={() => copy("data", record.data)}
+          className="grid size-6 shrink-0 place-items-center rounded text-white/50 hover:bg-white/10 hover:text-white"
+          aria-label="Copy value"
+        >
+          {copiedField === "data" ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DomainAuthenticationWizard({ isOpen }: { isOpen: boolean }) {
+  const { data: domainAuth, isLoading } = useOutreachDomain(isOpen);
+  const authenticate = useAuthenticateOutreachDomain();
+  const verify = useVerifyOutreachDomain();
+  const reset = useResetOutreachDomain();
+
+  const [domain, setDomain] = useState("");
+  const [fromEmail, setFromEmail] = useState("");
+
+  if (!isOpen) return null;
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 flex items-center gap-2 text-[11px] text-white/50">
+        <Loader2 size={13} className="animate-spin" /> Checking domain status…
+      </div>
+    );
+  }
+
+  if (!domainAuth) {
+    return (
+      <div className="mt-3 rounded-[12px] border border-white/10 bg-white/[0.03] p-3">
+        <p className="text-[11px] font-medium text-white/70">Connect your organization&apos;s domain</p>
+        <p className="mt-1 text-[10px] leading-[14px] text-white/45">
+          Enter your domain and a from-address on it. We&apos;ll generate DNS records to prove ownership —
+          email still sends through our platform, only the &quot;From&quot; domain changes.
+        </p>
+        <div className="mt-2.5 space-y-2">
+          <input
+            type="text"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="yourcompany.com"
+            className="h-9 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-[11px] text-white outline-none placeholder:text-white/30"
+          />
+          <input
+            type="email"
+            value={fromEmail}
+            onChange={(e) => setFromEmail(e.target.value)}
+            placeholder="sales@yourcompany.com"
+            className="h-9 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-[11px] text-white outline-none placeholder:text-white/30"
+          />
+          <button
+            type="button"
+            disabled={authenticate.isPending || !domain.trim() || !fromEmail.trim()}
+            onClick={() =>
+              authenticate.mutate(
+                { domain: domain.trim(), from_email: fromEmail.trim() },
+                {
+                  onSuccess: () => toast.success("DNS records generated — add them at your DNS host."),
+                  onError: (error) =>
+                    toast.error(getApiErrorMessage(error, "Could not start domain authentication.")),
+                }
+              )
+            }
+            className="h-9 w-full rounded-[10px] bg-[#8dec66] text-[11px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-50"
+          >
+            {authenticate.isPending ? "Generating…" : "Generate DNS records"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-[12px] border border-white/10 bg-white/[0.03] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-medium text-white/70">{domainAuth.domain}</p>
+        <button
+          type="button"
+          onClick={() =>
+            reset.mutate(undefined, {
+              onSuccess: () => {
+                setDomain("");
+                setFromEmail("");
+                toast.success("Domain removed. You can connect a different one.");
+              },
+              onError: (error) => toast.error(getApiErrorMessage(error, "Could not remove domain.")),
+            })
+          }
+          disabled={reset.isPending}
+          className="text-[10px] font-medium text-white/40 underline hover:text-white/70 disabled:opacity-50"
+        >
+          Use a different domain
+        </button>
+      </div>
+
+      {domainAuth.verification_status === "verified" ? (
+        <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#8dec66]">
+          <Check size={13} /> Verified — sending as {domainAuth.from_email}
+        </p>
+      ) : (
+        <>
+          <p className="mt-1 text-[10px] leading-[14px] text-white/45">
+            Add these DNS records at your domain host, then verify. Propagation can take up to 48 hours.
+          </p>
+          <div className="mt-2 space-y-2">
+            {domainAuth.dns_records.map((record) => (
+              <DnsRecordRow key={record.label} record={record} />
+            ))}
+          </div>
+          {domainAuth.verification_status === "failed" && (
+            <p className="mt-2 text-[10px] text-[#f79787]">
+              DNS records weren&apos;t detected yet — double-check them at your DNS host and try again.
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={verify.isPending}
+            onClick={() =>
+              verify.mutate(undefined, {
+                onSuccess: (result) => {
+                  if (result?.verification_status === "verified") {
+                    toast.success("Domain verified! You can now send as your organization.");
+                  } else {
+                    toast("DNS not detected yet — this can take up to 48 hours.");
+                  }
+                },
+                onError: (error) => toast.error(getApiErrorMessage(error, "Could not verify domain.")),
+              })
+            }
+            className="mt-3 h-9 w-full rounded-[10px] bg-[#8dec66] text-[11px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-50"
+          >
+            {verify.isPending ? "Checking…" : "I've added these records — Verify"}
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2725,10 +3082,11 @@ function ListeningSettingsModal({
                   </label>
                   {!orgVerified && (
                     <p className="text-[11px] text-white/45">
-                      Verify your domain in SendGrid to enable organization sending.
+                      Connect and verify your domain below to enable organization sending.
                     </p>
                   )}
                 </div>
+                <DomainAuthenticationWizard isOpen={isOpen} />
               </section>
                 </>
               )}
@@ -2803,9 +3161,11 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
   );
 
   const createOutreach = useCreateSignalOutreach();
+  const sendOutreach = useSendOutreachActivity();
   const setReminder = useSetSignalReminder();
   const syncToCrm = useSyncSignalToCrm();
   const dismissSignalMutation = useDismissSignal();
+  const [outreachDrafts, setOutreachDrafts] = useState<Record<number, OutreachDraftState>>({});
 
   const signals = signalsResult?.items ?? [];
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
@@ -2866,9 +3226,44 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
     createOutreach.mutate(
       { id: signal.id },
       {
-        onSuccess: () => toast.success("Outreach draft created."),
+        onSuccess: (result) => {
+          setOutreachDrafts((current) => ({
+            ...current,
+            [signal.id]: {
+              activityId: result.activity_id ?? null,
+              subject: result.subject ?? null,
+              body: result.body,
+              sent: Boolean(result.sent),
+            },
+          }));
+          toast.success("Outreach draft created — add a recipient email to send it.");
+        },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not create outreach draft.")),
+      }
+    );
+  };
+
+  const handleSendOutreach = (
+    signal: SocialSignal,
+    payload: { activityId: number; toEmail: string; subject?: string; body: string }
+  ) => {
+    sendOutreach.mutate(
+      {
+        activityId: payload.activityId,
+        to_email: payload.toEmail,
+        subject: payload.subject,
+        body: payload.body,
+      },
+      {
+        onSuccess: () => {
+          setOutreachDrafts((current) => ({
+            ...current,
+            [signal.id]: { ...current[signal.id], activityId: payload.activityId, body: payload.body, sent: true },
+          }));
+          toast.success(`Outreach sent to ${payload.toEmail}.`);
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, "Could not send outreach email.")),
       }
     );
   };
@@ -3015,6 +3410,9 @@ function SocialListeningTab({ onOpenIcpBuilder }: { onOpenIcpBuilder: () => void
             onCreateOutreach={() => handleCreateOutreach(activeSignal)}
             onSetReminder={() => handleSetReminder(activeSignal)}
             onSyncToCrm={() => handleSyncToCrm(activeSignal)}
+            outreachDraft={outreachDrafts[activeSignal.id] ?? null}
+            onSendOutreach={(payload) => handleSendOutreach(activeSignal, payload)}
+            isSendingOutreach={sendOutreach.isPending}
           />
         ) : isScanning ? (
           <SocialOpportunityDetailSkeleton />

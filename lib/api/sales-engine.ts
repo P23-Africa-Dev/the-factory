@@ -686,6 +686,17 @@ export function fetchMetrics(): Promise<SalesEngineMetrics> {
 
 // ── Outreach ────────────────────────────────────────────────────────────────
 
+export type OutreachDeliveryStatus =
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "dropped"
+  | "spam"
+  | "unsubscribed"
+  | null;
+
 export type OutreachActivity = {
   id: number;
   name: string;
@@ -694,11 +705,27 @@ export type OutreachActivity = {
   accentBg: string;
   accentIcon: string;
   occurred_at: string;
+  delivery_status?: OutreachDeliveryStatus;
+  last_event_at?: string | null;
+  bounce_reason?: string | null;
 };
 
 export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
   return withSessionRetry(async () =>
     seRequest<OutreachActivity[]>({ method: "GET", path: "/outreach/recent" })
+  );
+}
+
+export function sendOutreachActivity(
+  activityId: number,
+  payload: { to_email: string; subject?: string; body: string }
+): Promise<{ message_id: string | null; sent: boolean; activity_id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<{ message_id: string | null; sent: boolean; activity_id: number }>({
+      method: "POST",
+      path: `/outreach/activities/${activityId}/send`,
+      body: payload,
+    })
   );
 }
 
@@ -823,6 +850,35 @@ export type OutreachSenderSettings = {
   org_verified_domain?: string | null;
   verification_status: "pending" | "verified" | "failed";
   platform_from_email?: string | null;
+};
+
+export type OutreachDnsRecord = {
+  label: string;
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+};
+
+export type OutreachDomainAuthentication = {
+  domain: string;
+  from_email: string | null;
+  dns_records: OutreachDnsRecord[];
+  verification_status: "pending" | "verified" | "failed";
+  valid: boolean;
+  verified_at?: string | null;
+  last_checked_at?: string | null;
+} | null;
+
+export type OutreachDraft = {
+  channel: "email" | "whatsapp";
+  subject?: string | null;
+  body: string;
+  sent: boolean;
+  target_lead_ids?: number[];
+  activity_ids?: number[];
+  icp_alignment_note?: string;
+  leads?: Array<{ id: number; name: string; email?: string | null; phone?: string | null; [key: string]: unknown }>;
 };
 
 export type PaginatedMeta = {
@@ -1069,6 +1125,37 @@ export function updateOutreachSenderSettings(
       body: payload,
     })
   );
+}
+
+export function fetchOutreachDomain(): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({ method: "GET", path: "/outreach/domain" })
+  );
+}
+
+export function authenticateOutreachDomain(payload: {
+  domain: string;
+  from_email: string;
+}): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({
+      method: "POST",
+      path: "/outreach/domain",
+      body: payload,
+    })
+  );
+}
+
+export function verifyOutreachDomain(): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({ method: "POST", path: "/outreach/domain/verify" })
+  );
+}
+
+export function deleteOutreachDomain(): Promise<void> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: "/outreach/domain" });
+  });
 }
 
 export type Factory23IntegrationStatus = {
