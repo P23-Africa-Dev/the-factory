@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useRegenerateOutreach, useSendOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
-import { SalesEngineApiError } from "@/lib/api/sales-engine";
+import { normalizeOutreachSubjectBody, SalesEngineApiError } from "@/lib/api/sales-engine";
 
 export type OutreachPreviewModalProps = {
   open: boolean;
@@ -63,9 +64,10 @@ export function OutreachPreviewModal({
 
   useEffect(() => {
     if (!open) return;
+    const normalized = normalizeOutreachSubjectBody(initialBody, initialSubject);
     setToEmail(initialToEmail);
-    setSubject(initialSubject ?? "");
-    setBody(initialBody);
+    setSubject(normalized.subject);
+    setBody(normalized.body);
     setInstructions("");
     setShowRegen(false);
     setAlignmentDismissed(false);
@@ -114,8 +116,9 @@ export function OutreachPreviewModal({
       },
       {
         onSuccess: (result) => {
-          setSubject(result.subject ?? "");
-          setBody(result.body);
+          const normalized = normalizeOutreachSubjectBody(result.body, result.subject);
+          setSubject(normalized.subject);
+          setBody(normalized.body);
           toast.success("Draft regenerated.");
         },
         onError: (error) =>
@@ -145,28 +148,29 @@ export function OutreachPreviewModal({
     );
   };
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => !isBusy && onClose()}
-            className="fixed inset-0 bg-black/55 backdrop-blur-sm"
-          />
+  return typeof document !== "undefined"
+    ? createPortal(
+        <AnimatePresence>
+          {open && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => !isBusy && onClose()}
+                className="fixed inset-0 bg-black/55 backdrop-blur-sm"
+              />
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 16 }}
-            transition={{ type: "spring", duration: 0.32 }}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Review outreach"
-            className="relative z-10 flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[24px] border border-[#e8e8e8] bg-white text-[#09232d] shadow-2xl"
-          >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                transition={{ type: "spring", duration: 0.32 }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Review outreach"
+                className="relative z-10 flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[24px] border border-[#e8e8e8] bg-white text-[#09232d] shadow-2xl"
+              >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#ececec] px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -367,6 +371,8 @@ export function OutreachPreviewModal({
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
-  );
+    </AnimatePresence>,
+        document.body
+      )
+    : null;
 }

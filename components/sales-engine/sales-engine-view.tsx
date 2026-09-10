@@ -68,6 +68,7 @@ import {
   fetchOutreachActivity,
   formatRelativeTime,
   isFreshSignal,
+  normalizeOutreachSubjectBody,
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
@@ -858,12 +859,13 @@ function buildChatOutreachPreview(
   const activityId = draft.activity_id ?? draft.activity_ids?.[0] ?? null;
   const lead = draft.leads?.find((item) => Boolean(item.email)) ?? draft.leads?.[0];
   const leadNames = draft.leads?.map((item) => item.name).filter(Boolean).slice(0, 2).join(", ");
+  const normalized = normalizeOutreachSubjectBody(draft.body, draft.subject);
 
   return {
     activityId,
     channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
-    subject: draft.subject,
-    body: draft.body,
+    subject: normalized.subject,
+    body: normalized.body,
     toEmail: draft.to_email ?? lead?.email ?? "",
     contextLabel: leadNames ? `For ${leadNames}` : undefined,
     alignmentNote: draft.icp_alignment_note,
@@ -1857,11 +1859,12 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
     setOpeningId(item.id);
     try {
       const draft = await fetchOutreachActivity(item.id);
+      const normalized = normalizeOutreachSubjectBody(draft.body || item.preview, draft.subject);
       setPreview({
         activityId: draft.activity_id ?? item.id,
         channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
-        subject: draft.subject ?? null,
-        body: draft.body || item.preview,
+        subject: normalized.subject,
+        body: normalized.body,
         toEmail: draft.to_email ?? "",
         contextLabel: item.name,
       });
@@ -1946,11 +1949,17 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         </div>
       )}
 
-      {openingId != null && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-[#09232d]/40">
-          <Loader2 size={22} className="animate-spin text-white/80" />
-        </div>
-      )}
+      {openingId != null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9998] grid place-items-center bg-black/40 backdrop-blur-[2px]">
+            <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[#09232d] shadow-lg">
+              <Loader2 size={16} className="animate-spin" />
+              <span className="text-[12px] font-medium">Opening draft…</span>
+            </div>
+          </div>,
+          document.body
+        )}
 
       <OutreachPreviewModal
         open={Boolean(preview)}
@@ -3554,11 +3563,12 @@ function SocialListeningTab({
       {
         onSuccess: (result) => {
           const contextName = signal.profile || signal.company || "Social prospect";
+          const normalized = normalizeOutreachSubjectBody(result.body, result.subject);
           setOutreachPreview({
             activityId: result.activity_id ?? null,
             channel: result.channel === "whatsapp" ? "whatsapp" : "email",
-            subject: result.subject ?? null,
-            body: result.body,
+            subject: normalized.subject,
+            body: normalized.body,
             toEmail: result.to_email ?? "",
             contextLabel: `Re: ${contextName}`,
             signalId: signal.id,

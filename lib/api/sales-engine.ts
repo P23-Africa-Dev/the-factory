@@ -764,6 +764,30 @@ export function deleteOutreachActivity(
   );
 }
 
+/**
+ * Move a leading "Subject: …" line out of the message body into the subject field.
+ * Keeps Review outreach (and copy/send) consistent when models embed the subject in body.
+ */
+export function normalizeOutreachSubjectBody(
+  body: string,
+  existingSubject?: string | null
+): { subject: string; body: string } {
+  const trimmedBody = body.trim();
+  const match = trimmedBody.match(/^\s*subject\s*:\s*(.+?)\s*(?:\r?\n)+([\s\S]*)$/i);
+  if (match) {
+    const peeledSubject = match[1].trim();
+    return {
+      subject: peeledSubject || (existingSubject ?? "").trim(),
+      body: match[2].trim(),
+    };
+  }
+
+  return {
+    subject: (existingSubject ?? "").trim(),
+    body: trimmedBody,
+  };
+}
+
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
