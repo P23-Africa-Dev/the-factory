@@ -94,6 +94,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Settings,
@@ -120,6 +121,8 @@ type ChatMessage = {
   kind?: "confirm-icp";
   /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
   targetCount?: number;
+  /** True when the outbound send for this user prompt failed and can be retried. */
+  failed?: boolean;
 };
 
 type OutreachPreviewState = {
@@ -976,6 +979,7 @@ function ChatWorkspace({
   const inputRef = useRef<HTMLInputElement>(null);
   const timersRef = useRef<number[]>([]);
   const nextMessageIdRef = useRef(2);
+  const pendingUserMessageIdRef = useRef<number | null>(null);
   function nextMessageId() {
     return nextMessageIdRef.current++;
   }
@@ -1042,6 +1046,16 @@ function ChatWorkspace({
 
   const sendMessage = useSendChatMessage(activeIcpId, {
     onSuccess: ({ assistant_message, pending }) => {
+      const pendingUserId = pendingUserMessageIdRef.current;
+      pendingUserMessageIdRef.current = null;
+      if (pendingUserId != null) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === pendingUserId ? { ...message, failed: false } : message
+          )
+        );
+      }
+
       if (!assistant_message) return;
 
       setMessages((current) => {
@@ -1083,6 +1097,26 @@ function ChatWorkspace({
       });
     },
     onError: (error) => {
+      const pendingUserId = pendingUserMessageIdRef.current;
+      pendingUserMessageIdRef.current = null;
+      if (pendingUserId != null) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === pendingUserId ? { ...message, failed: true } : message
+          )
+        );
+      } else {
+        setMessages((current) => {
+          for (let i = current.length - 1; i >= 0; i -= 1) {
+            if (current[i].role === "user") {
+              return current.map((message, index) =>
+                index === i ? { ...message, failed: true } : message
+              );
+            }
+          }
+          return current;
+        });
+      }
       toast.error(
         isMissingActiveIcp(error)
           ? "Select an active ICP profile first — open ICP Builder to create or activate one."
@@ -1159,12 +1193,28 @@ function ChatWorkspace({
       return;
     }
 
+    const userMessageId = nextMessageId();
+    pendingUserMessageIdRef.current = userMessageId;
     setMessages((current) => [
       ...current,
-      { id: nextMessageId(), role: "user", body: trimmed, intent },
+      { id: userMessageId, role: "user", body: trimmed, intent },
     ]);
     setDraft("");
     sendMessage.mutate({ body: trimmed, intent });
+  }
+
+  function handleRetryFailedPrompt(message: ChatMessage) {
+    if (!message.failed || isThinking) return;
+    const intent = message.intent ?? "freeform";
+    pendingUserMessageIdRef.current = message.id;
+    setMessages((current) =>
+      current.map((item) => (item.id === message.id ? { ...item, failed: false } : item))
+    );
+    const body =
+      intent === "generate_leads"
+        ? resolveGenerateLeadsPrompt(message.body).apiBody
+        : message.body;
+    sendMessage.mutate({ body, intent });
   }
 
   function confirmGenerateLeads() {
@@ -1180,6 +1230,16 @@ function ChatWorkspace({
       targetCount != null && targetCount >= 50
         ? " Searching multiple sources — this may take 30–60 seconds."
         : "";
+
+    let lastUserId: number | null = null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "user") {
+        lastUserId = messages[i].id;
+        break;
+      }
+    }
+    pendingUserMessageIdRef.current = lastUserId;
+
     setMessages((current) =>
       current.map((message) =>
         message.kind === "confirm-icp"
@@ -1187,7 +1247,7 @@ function ChatWorkspace({
               ...message,
               kind: undefined,
               body: `Using **${activeIcp.name}** · generating prospects…${largeRequestHint}`,
-              intent: "generate_leads",
+              intent: "generate_leads" as const,
             }
           : message
       )
@@ -1397,7 +1457,9 @@ function ChatWorkspace({
                 <div
                   className={
                     message.role === "user"
-                      ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
+                      ? `rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white ${
+                          message.failed ? "opacity-80 ring-1 ring-red-400/40" : ""
+                        }`
                       : showWelcomeMessage && index === 0
                         ? "text-[12px] leading-[15px] text-[#09232d]"
                         : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
@@ -1409,12 +1471,27 @@ function ChatWorkspace({
                   />
                 </div>
               )}
+              {message.role === "user" && message.failed && (
+                <div className="mt-1.5 flex items-center justify-end gap-1.5">
+                  <span className="text-[9px] font-medium text-[#9d9d9d]">Couldn’t send</span>
+                  <button
+                    type="button"
+                    aria-label="Retry prompt"
+                    title="Retry"
+                    disabled={isThinking}
+                    onClick={() => handleRetryFailedPrompt(message)}
+                    className="grid size-6 place-items-center rounded-full text-[#616263] transition hover:bg-[#09232d]/8 hover:text-[#09232d] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <RotateCcw size={12} />
+                  </button>
+                </div>
+              )}
               {message.role === "assistant" &&
                 message.intent === "generate_leads" &&
                 !message.leads?.length &&
                 !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads could be extracted for this search · try rephrasing with specific names, companies, or territories.
+                  No leads matched this search yet · try a broader industry or role, or run Generate Prospects with your ICP selected.
                 </p>
               )}
               {message.leads && message.leads.length > 0 && (
