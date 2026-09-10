@@ -596,7 +596,6 @@ function LeadInlineResults({
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[9px] font-medium text-[#616263]">
             Showing {visibleLeads.length} of {leads.length} leads. Save the ones you want in CRM.
-            Scores show Overall, Search, ICP, and Intent fit.
           </p>
           <button
             type="button"
@@ -631,8 +630,7 @@ function LeadInlineResults({
         {visibleLeads.map((lead) => {
           const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
           const fieldsUpdated = lead.crm_fields_updated ?? [];
-          const { overall, search: searchPct, icp: icpPct, intent: intentPct } =
-            leadScoreBreakdown(lead);
+          const { overall } = leadScoreBreakdown(lead);
 
           return (
             <div
@@ -643,39 +641,11 @@ function LeadInlineResults({
                 <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
                 <span
                   className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
-                  title="Overall priority score from Search, ICP fit, and Intent"
+                  title="Overall priority score"
                 >
                   Overall {overall}%
                 </span>
               </div>
-              {(searchPct != null || icpPct != null || intentPct != null) && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {searchPct != null && (
-                    <span
-                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
-                      title="How well this result matches your search"
-                    >
-                      Search {searchPct}%
-                    </span>
-                  )}
-                  {icpPct != null && (
-                    <span
-                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
-                      title="How well this fits your active ICP"
-                    >
-                      ICP {icpPct}%
-                    </span>
-                  )}
-                  {intentPct != null && (
-                    <span
-                      className="inline-flex rounded-full bg-[#f1f3f4] px-1.5 py-0.5 text-[7px] font-semibold text-[#494c4e]"
-                      title="General intent / opportunity signal"
-                    >
-                      Intent {intentPct}%
-                    </span>
-                  )}
-                </div>
-              )}
               {lead.icp_relevance_reason && (
                 <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
                   {lead.icp_relevance_reason}
