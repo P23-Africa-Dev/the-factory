@@ -413,7 +413,7 @@ export function SalesEnginePendingReviewView() {
             </div>
 
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold tracking-tight text-[#09232d]">
+              <span className="text-3xl font-bold tracking-tight text-[#09232d]">
                 {leads.length}
               </span>
               <span className="text-xs font-semibold text-slate-600">leads to review</span>
@@ -459,7 +459,7 @@ export function SalesEnginePendingReviewView() {
             </div>
 
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold tracking-tight text-[#09232d]">
+              <span className="text-3xl font-bold tracking-tight text-[#09232d]">
                 {highFitCount}
               </span>
               <span className="text-xs font-semibold text-slate-600">strong fits (80%+)</span>
@@ -505,7 +505,7 @@ export function SalesEnginePendingReviewView() {
             </div>
 
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold tracking-tight text-[#09232d]">
+              <span className="text-3xl font-bold tracking-tight text-[#09232d]">
                 {contactReadyCount}
               </span>
               <span className="text-xs font-semibold text-slate-600">with email or phone</span>
