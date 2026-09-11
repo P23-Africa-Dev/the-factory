@@ -79,6 +79,12 @@ const INTENT_PREFIXES: Record<Exclude<ChatIntent, "freeform">, string[]> = {
     "Scoring buying intent…",
     "Ranking top matches…",
   ],
+  generate_more_leads: [
+    "Looking for additional prospects…",
+    "Expanding search variations…",
+    "Scoring new matches…",
+    "Preparing more results…",
+  ],
   create_outreach: [
     "Reading target context…",
     "Matching tone to your ICP…",
@@ -158,6 +164,8 @@ export function intentDisplayLabel(intent: ChatIntent): string {
       return "Quick Research";
     case "generate_leads":
       return "Generate Leads";
+    case "generate_more_leads":
+      return "Generate More Prospects";
     case "create_outreach":
       return "Create Outreach";
     default:

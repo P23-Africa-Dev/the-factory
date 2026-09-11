@@ -216,6 +216,7 @@ const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
   quick_research: "Research market trends, competitors, or industry signals…",
   generate_leads: "Who are the top business prospects in your target market?",
+  generate_more_leads: "Find more prospects like the ones above…",
   create_outreach: "Draft a follow-up email or WhatsApp message for…",
 };
 
@@ -231,6 +232,12 @@ const INTENT_MODE_CONFIG: Record<
   },
   generate_leads: {
     label: "Generate New Prospects",
+    tint: "bg-[#e4faff]",
+    chipTint: "bg-[#c8f0ff] text-[#09232d]",
+    icon: <UsersRound size={12} className="shrink-0" />,
+  },
+  generate_more_leads: {
+    label: "Generate More Prospects",
     tint: "bg-[#e4faff]",
     chipTint: "bg-[#c8f0ff] text-[#09232d]",
     icon: <UsersRound size={12} className="shrink-0" />,
@@ -1419,7 +1426,7 @@ function ChatWorkspace({
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[78%]" : "max-w-full"}>
               {message.role === "user" && message.intent && message.intent !== "freeform" && (
                 <div className="mb-1.5 flex justify-end">
-                  <IntentModeChip intent={message.intent} compact />
+                  <IntentModeChip intent={message.intent as ActionIntent} compact />
                 </div>
               )}
               {isBackgroundPending && (
@@ -1475,7 +1482,7 @@ function ChatWorkspace({
                 </div>
               )}
               {message.role === "assistant" &&
-                message.intent === "generate_leads" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
                 !message.leads?.length &&
                 !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
@@ -1492,6 +1499,23 @@ function ChatWorkspace({
                   }}
                 />
               )}
+              {message.role === "assistant" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                Boolean(message.leads?.length) &&
+                !isPendingMessage &&
+                !isThinking && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSend("Generate more prospects for the same ICP", "generate_more_leads")
+                      }
+                      className="rounded-full border border-[#c8f0ff] bg-[#e4faff] px-3 py-1.5 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#d6f5ff]"
+                    >
+                      Generate more prospects
+                    </button>
+                  </div>
+                )}
               {message.role === "assistant" &&
                 message.intent === "create_outreach" &&
                 message.meta?.outreach != null && (

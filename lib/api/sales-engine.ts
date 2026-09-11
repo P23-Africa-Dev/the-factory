@@ -338,7 +338,7 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
 
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
-export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
+export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "generate_more_leads" | "create_outreach";
 
 export type ChatLead = {
   id: number;
@@ -428,7 +428,7 @@ export type DiscoveryStageInfo = {
   progress?: DiscoveryRunProgress | null;
 };
 
-const ASYNC_CHAT_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
+const ASYNC_CHAT_INTENTS: ChatIntent[] = ["quick_research", "generate_leads", "generate_more_leads"];
 const CHAT_OUTREACH_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_CHAT_OUTREACH_TIMEOUT_MS) || 120_000;
 const CHAT_POLL_INTERVAL_MS = 2_000;
@@ -462,7 +462,7 @@ const TOTAL_PIPELINE_STEPS = 4;
 function humanizeStageKey(stageKey: string, intent?: ChatIntent): string {
   if (stageKey === "queued") {
     if (intent === "quick_research") return "Reviewing your question…";
-    if (intent === "generate_leads") return "Parsing your ICP brief…";
+    if (intent === "generate_leads" || intent === "generate_more_leads") return "Parsing your ICP brief…";
     if (intent === "create_outreach") return "Reading target context…";
     return "Starting your request…";
   }

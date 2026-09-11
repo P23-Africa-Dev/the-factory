@@ -327,7 +327,11 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
       setProcessingState(null);
       setWaitMode("foreground");
       pendingRunIdRef.current = null;
-      if (variables.intent === "generate_leads" || variables.intent === "quick_research") {
+      if (
+        variables.intent === "generate_leads" ||
+        variables.intent === "generate_more_leads" ||
+        variables.intent === "quick_research"
+      ) {
         queryClient.invalidateQueries({ queryKey: SALES_ENGINE_METRICS_KEYS.all });
         queryClient.invalidateQueries({ queryKey: SALES_ENGINE_ICP_KEYS.all });
       }
