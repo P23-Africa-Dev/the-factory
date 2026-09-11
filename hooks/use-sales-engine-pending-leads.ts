@@ -37,7 +37,8 @@ export function usePendingReviewLeads(icpProfileId?: string) {
       }
     },
     enabled: Boolean(token) && !isAuthLoading,
-    staleTime: 1000 * 30,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const removeLeadLocally = (leadId: number) => {

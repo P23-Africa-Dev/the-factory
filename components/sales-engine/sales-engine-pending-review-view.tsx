@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -17,9 +17,7 @@ import {
   Eye,
   Filter,
   Globe,
-  Grid3X3,
   Layers,
-  LayoutList,
   Loader2,
   Mail,
   MapPin,
@@ -46,7 +44,6 @@ import type { ChatLead } from "@/lib/api/sales-engine";
 
 type FitFilter = "all" | "high" | "medium" | "contact_ready";
 type SortOption = "highest_score" | "lowest_score" | "name_asc" | "company_asc";
-type ViewMode = "grid" | "list";
 
 // Signature palette requested: #7BB6B8, #E3A5E9, #DBDBDB
 const LEAD_CARD_PALETTE = [
@@ -80,16 +77,17 @@ function getInitials(name: string): string {
 }
 
 export function SalesEnginePendingReviewView() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialIcpParam = searchParams.get("icp_id");
 
-  const { data: icpProfiles = [], isLoading: isProfilesLoading } = useIcpProfiles();
+  const { data: icpProfiles = [] } = useIcpProfiles();
   const { data: activeProfile } = useActiveIcpProfile();
 
-  // Selected ICP state: can be a specific profile ID or "all"
-  const [selectedIcpId, setSelectedIcpId] = useState<string>(
-    initialIcpParam || (activeProfile?.id ? String(activeProfile.id) : "all")
-  );
+  // null = not user-chosen yet; fall back to URL param, then active ICP, then "all"
+  const [selectedIcpId, setSelectedIcpId] = useState<string | null>(initialIcpParam);
+  const effectiveIcpId =
+    selectedIcpId ?? (activeProfile?.id ? String(activeProfile.id) : "all");
 
   const {
     data: leads = [],
@@ -99,7 +97,7 @@ export function SalesEnginePendingReviewView() {
     removeLeadLocally,
     removeLeadsLocally,
     invalidateAll,
-  } = usePendingReviewLeads(selectedIcpId);
+  } = usePendingReviewLeads(effectiveIcpId);
 
   const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
@@ -115,7 +113,6 @@ export function SalesEnginePendingReviewView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [fitFilter, setFitFilter] = useState<FitFilter>("all");
   const [sortOption, setSortOption] = useState<SortOption>("highest_score");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<number>>(new Set());
 
   // Modals & detail inspection
@@ -280,10 +277,10 @@ export function SalesEnginePendingReviewView() {
   };
 
   const selectedIcpName = useMemo(() => {
-    if (selectedIcpId === "all") return "All ICP Profiles";
-    const found = icpProfiles.find((p) => String(p.id) === selectedIcpId);
+    if (effectiveIcpId === "all") return "All ICP Profiles";
+    const found = icpProfiles.find((p) => String(p.id) === effectiveIcpId);
     return found ? found.name : "Active ICP";
-  }, [selectedIcpId, icpProfiles]);
+  }, [effectiveIcpId, icpProfiles]);
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
@@ -302,23 +299,13 @@ export function SalesEnginePendingReviewView() {
               <span>/</span>
               <span className="font-semibold text-[#09232d]">Pending Review</span>
             </div>
-
-            <div className="flex items-center gap-2.5">
-              <Link
-                href="/crm?source=sales_engine"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-[#09232d] shadow-sm transition-all hover:border-slate-400 hover:bg-slate-50 active:scale-[0.98]"
-              >
-                <Users className="h-4 w-4 text-slate-500" />
-                <span>View CRM Pipeline</span>
-              </Link>
-            </div>
           </div>
 
           {/* Header Row */}
           <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight text-[#09232d]">
+                <h1 className="text-2xl font-semibold tracking-tight text-[#09232d]">
                   Pending Review Leads
                 </h1>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200 px-3 py-0.5 text-xs font-semibold text-[#09232d]">
@@ -339,10 +326,18 @@ export function SalesEnginePendingReviewView() {
               <div className="relative">
                 <select
                   id="icp-selector"
-                  value={selectedIcpId}
+                  value={effectiveIcpId}
                   onChange={(e) => {
-                    setSelectedIcpId(e.target.value);
+                    const nextIcpId = e.target.value;
+                    setSelectedIcpId(nextIcpId);
                     setSelectedLeadIds(new Set());
+                    setInspectingLead(null);
+                    setPendingModalLead(null);
+                    const href =
+                      nextIcpId === "all"
+                        ? "/sales-engine/pending-review"
+                        : `/sales-engine/pending-review?icp_id=${encodeURIComponent(nextIcpId)}`;
+                    router.replace(href);
                   }}
                   className="h-9.5 rounded-xl border border-slate-300 bg-white pl-3.5 pr-8 text-xs font-semibold text-[#09232d] shadow-sm focus:border-[#09232d] focus:outline-none focus:ring-1 focus:ring-[#09232d]"
                 >
@@ -374,147 +369,6 @@ export function SalesEnginePendingReviewView() {
             <span className="font-semibold">CRM Notice:</span> {crmBlockMessage}
           </div>
         )}
-
-        {/* 3 Metric Cards with distinct white background and theme color accents */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {/* Card 1: Total Pending (#7BB6B8 Accent) */}
-          <button
-            type="button"
-            onClick={() => setFitFilter("all")}
-            className={`group relative overflow-hidden rounded-[20px] bg-white p-5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
-              fitFilter === "all"
-                ? "border-2 border-[#09232d] shadow-md ring-1 ring-[#09232d]/20"
-                : "border border-slate-200 shadow-sm hover:border-slate-300 hover:shadow"
-            }`}
-          >
-            {/* Top Accent Strip */}
-            <div
-              style={{ backgroundColor: "#7BB6B8" }}
-              className="absolute left-0 top-0 h-1.5 w-full"
-            />
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Total Pending
-                </span>
-                {fitFilter === "all" && (
-                  <span className="rounded-full bg-[#09232d] px-2 py-0.5 text-[9px] font-bold text-white">
-                    Active
-                  </span>
-                )}
-              </div>
-              <div
-                style={{ backgroundColor: "#7BB6B8" }}
-                className="grid size-9 place-items-center rounded-full shadow-xs transition-transform group-hover:scale-105"
-              >
-                <Clock className="h-4 w-4 text-[#09232d]" />
-              </div>
-            </div>
-
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-[#09232d]">
-                {leads.length}
-              </span>
-              <span className="text-xs font-semibold text-slate-600">leads to review</span>
-            </div>
-            <p className="mt-1 text-[11px] font-medium text-slate-500">
-              Click to view all drafts for {selectedIcpName}
-            </p>
-          </button>
-
-          {/* Card 2: High ICP Match (#E3A5E9 Accent) */}
-          <button
-            type="button"
-            onClick={() => setFitFilter("high")}
-            className={`group relative overflow-hidden rounded-[20px] bg-white p-5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
-              fitFilter === "high"
-                ? "border-2 border-[#09232d] shadow-md ring-1 ring-[#09232d]/20"
-                : "border border-slate-200 shadow-sm hover:border-slate-300 hover:shadow"
-            }`}
-          >
-            {/* Top Accent Strip */}
-            <div
-              style={{ backgroundColor: "#E3A5E9" }}
-              className="absolute left-0 top-0 h-1.5 w-full"
-            />
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  High ICP Match
-                </span>
-                {fitFilter === "high" && (
-                  <span className="rounded-full bg-[#09232d] px-2 py-0.5 text-[9px] font-bold text-white">
-                    Active
-                  </span>
-                )}
-              </div>
-              <div
-                style={{ backgroundColor: "#E3A5E9" }}
-                className="grid size-9 place-items-center rounded-full shadow-xs transition-transform group-hover:scale-105"
-              >
-                <Sparkles className="h-4 w-4 text-[#09232d]" />
-              </div>
-            </div>
-
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-[#09232d]">
-                {highFitCount}
-              </span>
-              <span className="text-xs font-semibold text-slate-600">strong fits (80%+)</span>
-            </div>
-            <p className="mt-1 text-[11px] font-medium text-slate-500">
-              Click to isolate high-confidence prospects
-            </p>
-          </button>
-
-          {/* Card 3: Contact Enriched (#DBDBDB Accent) */}
-          <button
-            type="button"
-            onClick={() => setFitFilter("contact_ready")}
-            className={`group relative overflow-hidden rounded-[20px] bg-white p-5 text-left transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
-              fitFilter === "contact_ready"
-                ? "border-2 border-[#09232d] shadow-md ring-1 ring-[#09232d]/20"
-                : "border border-slate-200 shadow-sm hover:border-slate-300 hover:shadow"
-            }`}
-          >
-            {/* Top Accent Strip */}
-            <div
-              style={{ backgroundColor: "#DBDBDB" }}
-              className="absolute left-0 top-0 h-1.5 w-full"
-            />
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Contact Enriched
-                </span>
-                {fitFilter === "contact_ready" && (
-                  <span className="rounded-full bg-[#09232d] px-2 py-0.5 text-[9px] font-bold text-white">
-                    Active
-                  </span>
-                )}
-              </div>
-              <div
-                style={{ backgroundColor: "#DBDBDB" }}
-                className="grid size-9 place-items-center rounded-full shadow-xs transition-transform group-hover:scale-105"
-              >
-                <Mail className="h-4 w-4 text-[#09232d]" />
-              </div>
-            </div>
-
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold tracking-tight text-[#09232d]">
-                {contactReadyCount}
-              </span>
-              <span className="text-xs font-semibold text-slate-600">with email or phone</span>
-            </div>
-            <p className="mt-1 text-[11px] font-medium text-slate-500">
-              Click to view leads with direct outreach info
-            </p>
-          </button>
-        </div>
 
         {/* Toolbar: Search, Filters, Sorting & View Toggle */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
@@ -564,7 +418,7 @@ export function SalesEnginePendingReviewView() {
             ))}
           </div>
 
-          {/* Sort Dropdown & View Mode Switcher */}
+          {/* Sort Dropdown */}
           <div className="flex items-center gap-2 border-l border-slate-200 pl-3 max-sm:border-l-0 max-sm:pl-0">
             <div className="relative">
               <select
@@ -579,29 +433,6 @@ export function SalesEnginePendingReviewView() {
               </select>
             </div>
 
-            {/* View Mode Toggle: Grid vs List */}
-            <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
-              <button
-                type="button"
-                onClick={() => setViewMode("grid")}
-                title="Grid View"
-                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
-                  viewMode === "grid" ? "bg-white text-[#09232d] shadow-xs font-bold" : "text-slate-500 hover:text-[#09232d]"
-                }`}
-              >
-                <Grid3X3 className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                title="List View"
-                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-all ${
-                  viewMode === "list" ? "bg-white text-[#09232d] shadow-xs font-bold" : "text-slate-500 hover:text-[#09232d]"
-                }`}
-              >
-                <LayoutList className="h-4 w-4" />
-              </button>
-            </div>
           </div>
         </div>
 
@@ -620,7 +451,7 @@ export function SalesEnginePendingReviewView() {
               </label>
 
               {selectedCount > 0 && (
-                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-bold text-[#09232d]">
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-semibold text-[#09232d]">
                   {selectedCount} selected
                 </span>
               )}
@@ -651,7 +482,7 @@ export function SalesEnginePendingReviewView() {
               <CheckCircle2 className="h-8 w-8" />
             </div>
             <div className="max-w-md">
-              <h3 className="text-lg font-bold text-[#09232d]">
+              <h3 className="text-lg font-semibold text-[#09232d]">
                 {leads.length === 0 ? "All caught up! No pending leads" : "No matching leads found"}
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
@@ -687,203 +518,6 @@ export function SalesEnginePendingReviewView() {
               </Link>
             </div>
           </div>
-        ) : viewMode === "grid" ? (
-          /* Cards Grid: #7BB6B8, #E3A5E9, #DBDBDB */
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {filteredLeads.map((lead, index) => {
-              const { overall, search, icp, intent } = leadScoreBreakdown(lead);
-              const isSelected = selectedLeadIds.has(lead.id);
-              const initials = getInitials(lead.name);
-              const palette = LEAD_CARD_PALETTE[index % LEAD_CARD_PALETTE.length];
-              const isCopied = copiedLeadId === lead.id;
-
-              return (
-                <article
-                  key={lead.id}
-                  style={{ backgroundColor: palette.bg }}
-                  className={`group relative flex flex-col justify-between rounded-[22px] p-5.5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_12px_24px_rgba(0,0,0,0.12),0_4px_8px_rgba(0,0,0,0.06)] ${
-                    isSelected ? "ring-2 ring-[#09232d] ring-offset-2 ring-offset-[#f8f8f8]" : ""
-                  }`}
-                >
-                  <div className="flex flex-col gap-3.5">
-                    {/* Card Top: Checkbox, Avatar, Name & Score */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectLead(lead.id)}
-                          className="mt-1 h-4 w-4 rounded border-slate-300 text-[#09232d] focus:ring-[#09232d] cursor-pointer shrink-0"
-                        />
-
-                        {/* Pure White Circular Avatar with Monogram */}
-                        <div
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white shadow-sm font-bold text-sm tracking-wide ${palette.avatarText}`}
-                        >
-                          {initials}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <h4
-                            className="truncate text-base font-bold leading-tight text-[#09232d]"
-                            title={lead.name}
-                          >
-                            {lead.name}
-                          </h4>
-                          {(lead.title || lead.company) && (
-                            <p className="flex items-center gap-1.5 truncate text-xs font-medium text-[#09232d]/80 mt-0.5">
-                              <Building2 className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                              <span className="truncate">
-                                {[lead.title, lead.company].filter(Boolean).join(" at ")}
-                              </span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Score Badge */}
-                      <span
-                        className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-[#09232d] shadow-sm border border-black/5"
-                        title={`Score Breakdown: Overall ${overall}%, ICP Fit ${icp ?? "—"}%, Relevance ${search ?? "—"}%`}
-                      >
-                        {overall}% Fit
-                      </span>
-                    </div>
-
-                    {/* Metadata Pills (Location, Source, Enrichment) */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-[#09232d]">
-                      {lead.location && (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-white/75 px-2.5 py-0.5 text-[11px] font-medium text-[#09232d] shadow-xs">
-                          <MapPin className="h-3 w-3 opacity-70" />
-                          <span className="truncate max-w-[120px]">{lead.location}</span>
-                        </span>
-                      )}
-                      <span className="rounded-lg bg-white/75 px-2.5 py-0.5 text-[11px] font-semibold text-[#09232d] shadow-xs">
-                        {lead.source}
-                      </span>
-                      {lead.website && (
-                        <a
-                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-lg bg-white/75 px-2 py-0.5 text-[11px] font-medium text-[#09232d] hover:bg-white shadow-xs"
-                          title={lead.website}
-                        >
-                          <Globe className="h-3 w-3 opacity-70" />
-                          <span className="truncate max-w-[90px]">Website</span>
-                        </a>
-                      )}
-                      {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
-                        <span className="rounded-lg bg-white/75 px-2.5 py-0.5 text-[11px] font-semibold text-[#09232d] shadow-xs">
-                          {lead.contact_enrichment_tier === "tier1"
-                            ? "Web verified"
-                            : lead.contact_enrichment_tier === "tier2"
-                              ? "Enriched contact"
-                              : "Verified direct"}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* ICP Alignment Insight / Quote */}
-                    {lead.icp_relevance_reason && (
-                      <div className="rounded-xl bg-white/80 p-2.5 text-[11px] leading-relaxed text-[#09232d] shadow-xs border border-black/5 flex items-start gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5 shrink-0 opacity-70 mt-0.5" />
-                        <span className="line-clamp-2 italic">{lead.icp_relevance_reason}</span>
-                      </div>
-                    )}
-
-                    {/* AI Research Excerpt */}
-                    {lead.summary && (
-                      <p className="line-clamp-2 text-xs leading-relaxed text-[#09232d]/85 font-normal">
-                        {lead.summary}
-                      </p>
-                    )}
-
-                    {/* Verified Contact Details with interactive pills */}
-                    <div className="flex flex-col gap-1.5 border-t border-black/10 pt-2.5 text-xs">
-                      {lead.email && (
-                        <a
-                          href={`mailto:${lead.email}`}
-                          className="flex items-center gap-1.5 truncate font-semibold text-[#09232d] hover:underline"
-                        >
-                          <Mail className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                          <span className="truncate">{lead.email}</span>
-                        </a>
-                      )}
-
-                      {lead.phone && (
-                        <a
-                          href={`tel:${lead.phone}`}
-                          className="flex items-center gap-1.5 truncate font-semibold text-[#09232d] hover:underline"
-                        >
-                          <Phone className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                          <span className="truncate">{lead.phone}</span>
-                        </a>
-                      )}
-
-                      {lead.linkedin_url && (
-                        <a
-                          href={lead.linkedin_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 font-semibold text-[#09232d] hover:underline"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                          <span>LinkedIn Profile</span>
-                        </a>
-                      )}
-
-                      {!lead.email && !lead.phone && !lead.linkedin_url && (
-                        <span className="text-[11px] font-medium text-[#09232d]/60">
-                          Direct email/phone pending enrichment
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Card Action Footer */}
-                  <div className="mt-4 flex items-center justify-between gap-2 border-t border-black/10 pt-3">
-                    <div className="flex items-center gap-1.5">
-                      {/* Inspect details button */}
-                      <button
-                        type="button"
-                        onClick={() => setInspectingLead(lead)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#09232d] shadow-sm transition-all hover:bg-white/90 active:scale-95 cursor-pointer"
-                        title="Inspect full lead profile"
-                      >
-                        <Eye className="h-4 w-4 opacity-75" />
-                      </button>
-
-                      {/* 1-Click Copy with feedback */}
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLead(lead)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-[#09232d] shadow-sm transition-all hover:bg-white/90 active:scale-95 cursor-pointer"
-                        title="Copy contact details"
-                      >
-                        {isCopied ? (
-                          <Check className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-4 w-4 opacity-75" />
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Primary Save to CRM button */}
-                    <button
-                      type="button"
-                      disabled={syncLead.isPending || !canSyncToCrm}
-                      onClick={() => setPendingModalLead(lead)}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#09232d] px-4 py-2 text-xs font-bold text-white shadow-md transition-all hover:bg-[#0c2e3b] active:scale-[0.98] disabled:opacity-60 cursor-pointer"
-                    >
-                      <UserCheck className="h-3.5 w-3.5" />
-                      <span>Save to CRM</span>
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
         ) : (
           /* List View Mode (Dense Layout for high productivity) */
           <div className="flex flex-col gap-2.5">
@@ -917,17 +551,17 @@ export function SalesEnginePendingReviewView() {
 
                     <div
                       style={{ backgroundColor: palette.bg }}
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold text-xs ${palette.avatarText} shadow-xs`}
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-semibold text-xs ${palette.avatarText} shadow-xs`}
                     >
                       {initials}
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-[#09232d] truncate">
+                        <span className="font-semibold text-sm text-[#09232d] truncate">
                           {lead.name}
                         </span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
                           {overall}% Fit
                         </span>
                       </div>
@@ -1014,7 +648,7 @@ export function SalesEnginePendingReviewView() {
           >
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-[#7BB6B8]" />
-              <span className="text-xs font-bold">
+              <span className="text-xs font-semibold">
                 {selectedCount} {selectedCount === 1 ? "lead" : "leads"} selected
               </span>
             </div>
@@ -1042,7 +676,7 @@ export function SalesEnginePendingReviewView() {
                 type="button"
                 disabled={syncBatch.isPending || !canSyncToCrm}
                 onClick={handleBatchSaveToCrm}
-                className="ml-2 flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-bold text-[#09232d] shadow-sm transition-all hover:bg-slate-100 active:scale-95 disabled:opacity-60 cursor-pointer"
+                className="ml-2 flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-[#09232d] shadow-sm transition-all hover:bg-slate-100 active:scale-95 disabled:opacity-60 cursor-pointer"
               >
                 {syncBatch.isPending ? (
                   <>
@@ -1081,11 +715,11 @@ export function SalesEnginePendingReviewView() {
               </button>
 
               <div className="flex items-start gap-3.5">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#09232d] font-bold text-white text-base">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#09232d] font-semibold text-white text-base">
                   {getInitials(inspectingLead.name)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-lg font-bold text-[#09232d]">{inspectingLead.name}</h3>
+                  <h3 className="text-lg font-semibold text-[#09232d]">{inspectingLead.name}</h3>
                   <p className="text-xs font-medium text-slate-600">
                     {[inspectingLead.title, inspectingLead.company].filter(Boolean).join(" at ")}
                   </p>
@@ -1095,7 +729,7 @@ export function SalesEnginePendingReviewView() {
                     </p>
                   )}
                 </div>
-                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-800">
+                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-800">
                   {leadScoreBreakdown(inspectingLead).overall}% Match
                 </span>
               </div>
@@ -1104,19 +738,19 @@ export function SalesEnginePendingReviewView() {
               <div className="mt-5 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center border border-slate-100 text-xs">
                 <div>
                   <p className="text-[10px] text-slate-500 font-semibold uppercase">ICP Fit</p>
-                  <p className="font-bold text-[#09232d] mt-0.5">
+                  <p className="font-semibold text-[#09232d] mt-0.5">
                     {leadScoreBreakdown(inspectingLead).icp ?? "—"}%
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-500 font-semibold uppercase">Query Match</p>
-                  <p className="font-bold text-[#09232d] mt-0.5">
+                  <p className="font-semibold text-[#09232d] mt-0.5">
                     {leadScoreBreakdown(inspectingLead).search ?? "—"}%
                   </p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-500 font-semibold uppercase">Buyer Intent</p>
-                  <p className="font-bold text-[#09232d] mt-0.5">
+                  <p className="font-semibold text-[#09232d] mt-0.5">
                     {leadScoreBreakdown(inspectingLead).intent ?? "—"}%
                   </p>
                 </div>
@@ -1125,7 +759,7 @@ export function SalesEnginePendingReviewView() {
               {/* Research Insight */}
               {inspectingLead.icp_relevance_reason && (
                 <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-700 border border-slate-100">
-                  <span className="font-bold block mb-1">Target Reasoning:</span>
+                  <span className="font-semibold block mb-1">Target Reasoning:</span>
                   <span className="italic">{inspectingLead.icp_relevance_reason}</span>
                 </div>
               )}
@@ -1133,7 +767,7 @@ export function SalesEnginePendingReviewView() {
               {/* Full Summary */}
               {inspectingLead.summary && (
                 <div className="mt-3 text-xs leading-relaxed text-slate-600">
-                  <span className="font-bold block text-slate-800 mb-1">AI Research Profile:</span>
+                  <span className="font-semibold block text-slate-800 mb-1">AI Research Profile:</span>
                   <p>{inspectingLead.summary}</p>
                 </div>
               )}
@@ -1198,7 +832,7 @@ export function SalesEnginePendingReviewView() {
                     setInspectingLead(null);
                     setPendingModalLead(lead);
                   }}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#09232d] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#0c2e3b]"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#09232d] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#0c2e3b]"
                 >
                   <UserCheck className="h-3.5 w-3.5" />
                   <span>Save Lead to CRM</span>
