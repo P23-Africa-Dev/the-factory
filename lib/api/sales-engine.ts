@@ -1381,80 +1381,91 @@ export function syncLeadsBatch(leadIds: number[]): Promise<{
   });
 }
 
+function isPendingReviewLead(lead: ChatLead | null | undefined): lead is ChatLead {
+  return Boolean(
+    lead &&
+      lead.id != null &&
+      !lead.crm_synced &&
+      lead.save_status !== "saved" &&
+      !lead.crm_duplicate
+  );
+}
+
+async function collectPendingLeadsFromChatSessions(
+  icpProfileIds: Array<string | undefined>
+): Promise<ChatLead[]> {
+  const targetSessionIds: number[] = [];
+
+  for (const icpId of icpProfileIds) {
+    try {
+      const session = await fetchCurrentChatSession(icpId);
+      if (session?.id && !targetSessionIds.includes(session.id)) {
+        targetSessionIds.push(session.id);
+      }
+    } catch {
+      // Ignore single session lookup failure
+    }
+  }
+
+  const leadMap = new Map<number, ChatLead>();
+  for (const sessionId of targetSessionIds) {
+    try {
+      const messages = await listChatMessages(sessionId);
+      for (const msg of messages) {
+        if (!Array.isArray(msg.leads)) continue;
+        for (const lead of msg.leads) {
+          if (isPendingReviewLead(lead)) {
+            leadMap.set(lead.id, lead);
+          }
+        }
+      }
+    } catch {
+      // Ignore single session failure
+    }
+  }
+
+  return Array.from(leadMap.values());
+}
+
 export async function fetchPendingReviewLeads(
   icpProfileId?: string
 ): Promise<ChatLead[]> {
   return withSessionRetry(async () => {
-    // 1. First attempt: call direct endpoint if implemented on SE backend
+    const scopedIcpId =
+      icpProfileId && icpProfileId !== "all" ? icpProfileId : undefined;
+
+    // ICP-scoped views must use that ICP's chat session. The /leads list endpoint
+    // often ignores icp_profile_id and returning it early made the filter look broken.
+    if (scopedIcpId) {
+      return collectPendingLeadsFromChatSessions([scopedIcpId]);
+    }
+
+    // "All ICPs": try the direct list endpoint first, then aggregate every session.
     try {
-      const query =
-        icpProfileId && icpProfileId !== "all"
-          ? `?icp_profile_id=${encodeURIComponent(icpProfileId)}&save_status=draft`
-          : "?save_status=draft";
       const res = await seRequest<ChatLead[] | { data: ChatLead[] }>({
         method: "GET",
-        path: `/leads${query}`,
+        path: "/leads?save_status=draft",
       });
       const list = Array.isArray(res) ? res : res?.data ?? [];
       if (Array.isArray(list) && list.length > 0) {
-        return list.filter(
-          (lead) => !lead.crm_synced && lead.save_status !== "saved" && !lead.crm_duplicate
-        );
+        const pending = list.filter(isPendingReviewLead);
+        if (pending.length > 0) return pending;
       }
     } catch {
-      // Direct endpoint not available, fallback to gathering from chat sessions
+      // Direct endpoint not available — fall through to chat aggregation
     }
 
-    // 2. Fallback: gather leads from ICP chat sessions
-    const targetSessionIds: number[] = [];
-    if (icpProfileId && icpProfileId !== "all") {
-      const session = await fetchCurrentChatSession(icpProfileId);
-      if (session?.id) targetSessionIds.push(session.id);
-    } else {
-      // Gather across current session and all ICP profiles
-      const defaultSession = await fetchCurrentChatSession();
-      if (defaultSession?.id) targetSessionIds.push(defaultSession.id);
-
-      try {
-        const profiles = await fetchIcpProfiles();
-        for (const p of profiles) {
-          if (p?.id) {
-            const s = await fetchCurrentChatSession(String(p.id));
-            if (s?.id && !targetSessionIds.includes(s.id)) {
-              targetSessionIds.push(s.id);
-            }
-          }
-        }
-      } catch {
-        // Ignore profile error
+    const profileIds: Array<string | undefined> = [undefined];
+    try {
+      const profiles = await fetchIcpProfiles();
+      for (const profile of profiles) {
+        if (profile?.id) profileIds.push(String(profile.id));
       }
+    } catch {
+      // Ignore profile error; still try the default session
     }
 
-    const leadMap = new Map<number, ChatLead>();
-    for (const sessionId of targetSessionIds) {
-      try {
-        const messages = await listChatMessages(sessionId);
-        for (const msg of messages) {
-          if (Array.isArray(msg.leads)) {
-            for (const lead of msg.leads) {
-              if (
-                lead &&
-                lead.id != null &&
-                !lead.crm_synced &&
-                lead.save_status !== "saved" &&
-                !lead.crm_duplicate
-              ) {
-                leadMap.set(lead.id, lead);
-              }
-            }
-          }
-        }
-      } catch {
-        // Ignore single session failure
-      }
-    }
-
-    return Array.from(leadMap.values());
+    return collectPendingLeadsFromChatSessions(profileIds);
   });
 }
 
