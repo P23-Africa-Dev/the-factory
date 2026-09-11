@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { mapDiscoveryStage } from "@/lib/api/sales-engine";
 import {
-  LATE_ENGAGEMENT_LABELS,
   labelsForFreeformMessage,
   labelsForIntent,
   nextProcessingLabelIndex,
@@ -43,9 +42,20 @@ describe("sales-engine-processing-labels", () => {
   it("includes late engagement fillers", () => {
     const labels = labelsForIntent("quick_research", "Research competitors");
 
-    for (const filler of LATE_ENGAGEMENT_LABELS) {
-      expect(labels).toContain(filler);
-    }
+    expect(labels).toContain("Cross-checking citations…");
+    expect(labels).toContain("Packaging sources…");
+    expect(labels.some((label) => /account|prospect|lead/i.test(label))).toBe(false);
+  });
+
+  it("grounds quick research in ICP without lead language", () => {
+    const labels = labelsForIntent("quick_research", "Are there any upcoming FinTech events?", {
+      industries: ["Fintech & Payments"],
+      territories: ["Lagos, NG"],
+      name: "My Tech ICP",
+    });
+
+    expect(labels.some((label) => label.includes("Grounding in Fintech & Payments"))).toBe(true);
+    expect(labels.some((label) => /accounts|prospects/i.test(label))).toBe(false);
   });
 
   it("loops label indexes", () => {

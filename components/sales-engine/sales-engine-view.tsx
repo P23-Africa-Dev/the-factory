@@ -8,6 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ProcessingPanel } from "./processing-panel";
+import { ResearchProcessingPanel } from "./research-processing-panel";
 import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
 import { IcpSetupPromptModal } from "./icp-setup-prompt-modal";
 import { OutreachPreviewModal } from "./outreach-preview-modal";
@@ -1552,10 +1553,17 @@ function ChatWorkspace({
             );
           })}
           {isThinking && sendMessage.processingState && (
-            <ProcessingPanel
-              state={sendMessage.processingState}
-              onDetachToBackground={handleDetachToBackground}
-            />
+            sendMessage.processingState.intent === "quick_research" ? (
+              <ResearchProcessingPanel
+                state={sendMessage.processingState}
+                onDetachToBackground={handleDetachToBackground}
+              />
+            ) : (
+              <ProcessingPanel
+                state={sendMessage.processingState}
+                onDetachToBackground={handleDetachToBackground}
+              />
+            )
           )}
           <div aria-hidden className="h-2" />
         </div>

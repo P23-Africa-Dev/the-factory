@@ -10,7 +10,7 @@ import {
 } from "@/lib/sales-engine-processing-labels";
 import type { ProcessingState } from "@/hooks/use-sales-engine-chat";
 
-const ASYNC_INTENTS: ChatIntent[] = ["quick_research", "generate_leads", "generate_more_leads"];
+const ASYNC_INTENTS: ChatIntent[] = ["generate_leads", "generate_more_leads"];
 
 function formatElapsed(ms: number): string {
   const seconds = Math.floor(ms / 1000);

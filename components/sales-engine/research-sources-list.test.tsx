@@ -66,5 +66,6 @@ describe("quick research processing labels", () => {
     expect(labels).toContain("Reviewing your question…");
     expect(labels).toContain("Searching sources in parallel…");
     expect(labels).toContain("Writing your brief…");
+    expect(labels.some((label) => /accounts|prospects/i.test(label))).toBe(false);
   });
 });

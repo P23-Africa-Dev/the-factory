@@ -6,13 +6,23 @@ export type SalesEngineIcpContext = {
   name?: string;
 };
 
-/** Late-stage fillers when a step hasn't changed for a while. */
+/** Late-stage fillers when a step hasn't changed for a while (lead / general flows). */
 export const LATE_ENGAGEMENT_LABELS = [
   "Cross-checking sources…",
   "Ranking by ICP fit…",
   "Validating match quality…",
   "Almost ready…",
   "Preparing your results…",
+  "Just a little more…",
+] as const;
+
+/** Research-only late fillers — no lead / prospect language. */
+export const RESEARCH_LATE_LABELS = [
+  "Cross-checking citations…",
+  "Comparing overlapping reports…",
+  "Tightening the brief…",
+  "Almost ready…",
+  "Packaging sources…",
   "Just a little more…",
 ] as const;
 
@@ -25,6 +35,9 @@ export const PROCESSING_PIPELINE_STEPS = [
   "Results",
 ] as const;
 
+/** Three-phase research pipeline shown on the dedicated research loading panel. */
+export const RESEARCH_PIPELINE_STEPS = ["Question", "Sources", "Brief"] as const;
+
 export const PROCESSING_TIPS = [
   "Leads with recent hiring signals often convert 2× faster.",
   "Personalized outreach referencing a prospect's public post boosts reply rates.",
@@ -34,13 +47,22 @@ export const PROCESSING_TIPS = [
   "Short, problem-focused emails outperform generic product pitches.",
 ] as const;
 
+export const RESEARCH_TIPS = [
+  "Cite primary sources when possible — secondary roundups drift from the facts.",
+  "Event calendars and trade-association pages often beat generic news summaries.",
+  "Ground findings in your ICP territories so the brief stays actionable.",
+  "Ask a follow-up Quick Research question to go deeper on one finding.",
+  "Recent funding or partnership news is often a stronger signal than evergreen listicles.",
+  "Prefer pages with clear dates so stale market claims don’t sneak into the brief.",
+] as const;
+
 const FORBIDDEN_LABELS = /queued/i;
 
-function withFillers(prefix: string[]): string[] {
+function withFillers(prefix: string[], lateLabels: readonly string[] = LATE_ENGAGEMENT_LABELS): string[] {
   const seen = new Set<string>();
   const merged: string[] = [];
 
-  for (const label of [...prefix, ...LATE_ENGAGEMENT_LABELS]) {
+  for (const label of [...prefix, ...lateLabels]) {
     if (seen.has(label) || FORBIDDEN_LABELS.test(label)) continue;
     seen.add(label);
     merged.push(label);
@@ -61,6 +83,28 @@ function icpScanLine(context?: SalesEngineIcpContext): string | null {
   }
   if (territory) {
     return `Searching prospects in ${territory}…`;
+  }
+
+  return null;
+}
+
+/** Research-oriented ICP grounding — never lead/account language. */
+function icpResearchLine(context?: SalesEngineIcpContext): string | null {
+  const industry = context?.industries?.[0];
+  const territory = context?.territories?.[0];
+  const name = context?.name?.trim();
+
+  if (industry && territory) {
+    return `Grounding in ${industry} · ${territory}…`;
+  }
+  if (industry) {
+    return `Grounding in your ${industry} ICP…`;
+  }
+  if (territory) {
+    return `Focusing on ${territory} market context…`;
+  }
+  if (name) {
+    return `Grounding in ${name}…`;
   }
 
   return null;
@@ -102,6 +146,15 @@ export function labelsForIntent(
   }
 
   const prefix = [...INTENT_PREFIXES[intent]];
+
+  if (intent === "quick_research") {
+    const researchLine = icpResearchLine(icpContext);
+    if (researchLine) {
+      prefix.splice(1, 0, researchLine);
+    }
+    return withFillers(prefix, RESEARCH_LATE_LABELS);
+  }
+
   const icpLine = icpScanLine(icpContext);
   if (icpLine) {
     prefix.splice(1, 0, icpLine);
