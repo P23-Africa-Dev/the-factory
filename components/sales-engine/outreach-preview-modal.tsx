@@ -1,9 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Loader2, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  Info,
+  Loader2,
+  Mail,
+  Pencil,
+  Radio,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  User,
+  Wand2,
+  X,
+  Zap,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useRegenerateOutreach, useSendOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
@@ -22,6 +38,13 @@ export type OutreachPreviewModalProps = {
   onSent: () => void;
   onConfigureSender?: () => void;
 };
+
+const AI_QUICK_PROMPTS = [
+  { label: "Make it punchier", prompt: "Make the message shorter, more punchy, and direct." },
+  { label: "Warmer tone", prompt: "Use a warmer, more conversational and consultative tone." },
+  { label: "Focus on ROI", prompt: "Emphasize concrete ROI, efficiency gains, and business value." },
+  { label: "Clear Call-to-Action", prompt: "Add a low-friction, compelling call to action at the end." },
+];
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -58,7 +81,8 @@ export function OutreachPreviewModal({
   const [subject, setSubject] = useState(initialSubject ?? "");
   const [body, setBody] = useState(initialBody);
   const [instructions, setInstructions] = useState("");
-  const [showRegen, setShowRegen] = useState(false);
+  const [showAiAssistant, setShowAiAssistant] = useState(false);
+  const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
   const [alignmentDismissed, setAlignmentDismissed] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -69,7 +93,8 @@ export function OutreachPreviewModal({
     setSubject(normalized.subject);
     setBody(normalized.body);
     setInstructions("");
-    setShowRegen(false);
+    setShowAiAssistant(false);
+    setActiveTab("edit");
     setAlignmentDismissed(false);
     setCopied(false);
   }, [open, activityId, initialSubject, initialBody, initialToEmail]);
@@ -79,6 +104,14 @@ export function OutreachPreviewModal({
   const isBusy = sendOutreach.isPending || regenerate.isPending;
   const canSendEmail =
     channel === "email" && Boolean(activityId) && emailValid && bodyReady && !isBusy;
+
+  const wordCount = useMemo(() => {
+    return body.trim() ? body.trim().split(/\s+/).length : 0;
+  }, [body]);
+
+  const readTimeSeconds = useMemo(() => {
+    return Math.max(10, Math.round((wordCount / 200) * 60));
+  }, [wordCount]);
 
   const fromAddress = useMemo(() => {
     if (
@@ -90,6 +123,11 @@ export function OutreachPreviewModal({
     }
     return senderSettings?.platform_from_email || "The Factory platform email";
   }, [senderSettings]);
+
+  const isVerifiedSender = Boolean(
+    senderSettings?.sender_mode === "organization" &&
+      senderSettings.org_connection_status === "verified"
+  );
 
   const handleCopy = async () => {
     try {
@@ -106,12 +144,13 @@ export function OutreachPreviewModal({
     }
   };
 
-  const handleRegenerate = () => {
+  const handleRegenerateWithPrompt = (customPrompt?: string) => {
     if (!activityId) return;
+    const promptToSend = customPrompt ?? instructions.trim();
     regenerate.mutate(
       {
         activityId,
-        instructions: instructions.trim() || undefined,
+        instructions: promptToSend || undefined,
         channel,
       },
       {
@@ -119,7 +158,7 @@ export function OutreachPreviewModal({
           const normalized = normalizeOutreachSubjectBody(result.body, result.subject);
           setSubject(normalized.subject);
           setBody(normalized.body);
-          toast.success("Draft regenerated.");
+          toast.success("Draft regenerated successfully.");
         },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not regenerate draft.")),
@@ -127,7 +166,7 @@ export function OutreachPreviewModal({
     );
   };
 
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     if (!activityId || !canSendEmail) return;
     sendOutreach.mutate(
       {
@@ -146,232 +185,436 @@ export function OutreachPreviewModal({
           toast.error(getApiErrorMessage(error, "Could not send outreach email.")),
       }
     );
-  };
+  }, [activityId, canSendEmail, onSent, onClose, sendOutreach, toEmail, subject, body]);
+
+  // Keyboard shortcut: Cmd+Enter / Ctrl+Enter to send
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (canSendEmail) {
+          handleSend();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, canSendEmail, handleSend]);
 
   return typeof document !== "undefined"
     ? createPortal(
         <AnimatePresence>
           {open && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6">
+              {/* Backdrop */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => !isBusy && onClose()}
-                className="fixed inset-0 bg-black/55 backdrop-blur-sm"
+                className="fixed inset-0 bg-slate-900/40 backdrop-blur-md"
               />
 
+              {/* Modal Card */}
               <motion.div
-                initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                initial={{ opacity: 0, scale: 0.95, y: 14 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 16 }}
-                transition={{ type: "spring", duration: 0.32 }}
+                exit={{ opacity: 0, scale: 0.95, y: 14 }}
+                transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Review outreach"
-                className="relative z-10 flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[24px] border border-[#e8e8e8] bg-white text-[#09232d] shadow-2xl"
+                className="relative z-10 flex max-h-[92vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[28px] border border-slate-200/90 bg-white text-slate-900 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.18),0_10px_20px_-10px_rgba(0,0,0,0.06)]"
               >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#ececec] px-5 py-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-[15px] font-semibold">Review outreach</h3>
-                  <span
-                    className={`rounded-[6px] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
-                      channel === "whatsapp"
-                        ? "bg-[#E8F8EF] text-[#16A34A]"
-                        : "bg-[#EEF2FF] text-[#4F46E5]"
-                    }`}
-                  >
-                    {channel === "whatsapp" ? "WhatsApp" : "Email"}
-                  </span>
-                </div>
-                {contextLabel && (
-                  <p className="mt-1 text-[11px] text-[#616263]">{contextLabel}</p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => !isBusy && onClose()}
-                className="grid size-8 place-items-center rounded-full text-[#616263] transition hover:bg-[#f3f3f3] hover:text-[#09232d]"
-                aria-label="Close review"
-              >
-                <X size={16} />
-              </button>
-            </div>
+                {/* Executive Top Banner */}
+                <div className="border-b border-slate-100 bg-white px-6 pt-5 pb-4 shrink-0">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      {/* Avatar Icon */}
+                      <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#09232d] text-white shadow-xs">
+                        <Mail size={18} />
+                      </div>
 
-            <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
-              {alignmentNote && !alignmentDismissed && (
-                <div className="flex items-start gap-2 rounded-[12px] border border-[#e8eef8] bg-[#f5f8ff] px-3 py-2.5">
-                  <p className="flex-1 text-[10px] leading-[14px] text-[#3b4a6b]">{alignmentNote}</p>
-                  <button
-                    type="button"
-                    onClick={() => setAlignmentDismissed(true)}
-                    className="shrink-0 text-[#9aa3b5] hover:text-[#09232d]"
-                    aria-label="Dismiss alignment note"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              )}
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-700">
+                            Outreach Dispatch
+                          </span>
 
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold text-[#616263]">To</span>
-                <input
-                  type="email"
-                  value={toEmail}
-                  onChange={(e) => setToEmail(e.target.value)}
-                  placeholder="recipient@company.com"
-                  disabled={channel === "whatsapp"}
-                  className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] text-[#09232d] outline-none focus:border-[#09232d]/50 disabled:bg-[#f7f7f7] disabled:text-[#9d9d9d]"
-                />
-                {channel === "email" && toEmail.trim() && !emailValid && (
-                  <p className="mt-1 text-[9px] text-[#b91c1c]">Enter a valid email address.</p>
-                )}
-              </label>
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${
+                              channel === "whatsapp"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border-blue-200 bg-blue-50 text-blue-800"
+                            }`}
+                          >
+                            <Radio
+                              size={10}
+                              className={
+                                channel === "whatsapp" ? "text-emerald-600" : "text-blue-600"
+                              }
+                            />
+                            {channel === "whatsapp" ? "WhatsApp" : "Direct Email"}
+                          </span>
 
-              {channel === "email" && (
-                <div className="rounded-[12px] border border-[#ececec] bg-[#fafafa] px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-semibold text-[#616263]">From</p>
-                      <p className="mt-0.5 truncate text-[11px] text-[#09232d]">{fromAddress}</p>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Ready to Send
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-semibold text-slate-900 tracking-tight leading-snug truncate">
+                          {contextLabel ? `Review Outreach for ${contextLabel}` : "Review & Dispatch Outreach"}
+                        </h3>
+                      </div>
                     </div>
-                    {onConfigureSender && (
+
+                    <button
+                      type="button"
+                      onClick={() => !isBusy && onClose()}
+                      aria-label="Close"
+                      className="grid size-8 shrink-0 place-items-center rounded-full border border-slate-200/80 bg-white text-slate-400 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Main Scrollable Canvas */}
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5 [scrollbar-width:thin]">
+                  {/* Alignment Note (if provided) */}
+                  {alignmentNote && !alignmentDismissed && (
+                    <div className="flex items-start gap-2.5 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-3 shadow-xs">
+                      <Zap size={15} className="mt-0.5 shrink-0 text-indigo-600" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-semibold text-indigo-900 uppercase tracking-wider">
+                          Context Alignment
+                        </p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-indigo-900/80 font-medium">
+                          {alignmentNote}
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={onConfigureSender}
-                        className="shrink-0 text-[10px] font-semibold text-[#09232d] underline underline-offset-2 hover:opacity-80"
+                        onClick={() => setAlignmentDismissed(true)}
+                        className="shrink-0 text-indigo-400 hover:text-indigo-700 transition cursor-pointer"
+                        aria-label="Dismiss note"
                       >
-                        Configure sender
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Envelope Section: Sender, Recipient & Subject Line */}
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                    {/* To Field */}
+                    <div className="flex items-center gap-3">
+                      <span className="w-14 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        To:
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="relative">
+                          <input
+                            type="email"
+                            value={toEmail}
+                            onChange={(e) => setToEmail(e.target.value)}
+                            placeholder="recipient@company.com"
+                            disabled={channel === "whatsapp"}
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#09232d] focus:ring-1 focus:ring-[#09232d] disabled:bg-slate-100 disabled:text-slate-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {channel === "email" && toEmail.trim() && !emailValid && (
+                      <p className="pl-[68px] text-[10px] font-semibold text-rose-600">
+                        Please enter a valid email address.
+                      </p>
+                    )}
+
+                    {/* From Field */}
+                    {channel === "email" && (
+                      <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200/60">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-14 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            From:
+                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate text-xs font-medium text-slate-800">
+                              {fromAddress}
+                            </span>
+                            {isVerifiedSender ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 shrink-0">
+                                <ShieldCheck size={12} />
+                                Verified
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 shrink-0">
+                                (Default sender)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {onConfigureSender && (
+                          <button
+                            type="button"
+                            onClick={onConfigureSender}
+                            className="shrink-0 text-[11px] font-semibold text-[#09232d] underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                          >
+                            Configure
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Subject Line */}
+                    {channel === "email" && (
+                      <div className="flex items-center gap-3 pt-2 border-t border-slate-200/60">
+                        <span className="w-14 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                          Subject:
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <input
+                            type="text"
+                            value={subject}
+                            onChange={(e) => setSubject(e.target.value)}
+                            placeholder="Email subject line…"
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#09232d] focus:ring-1 focus:ring-[#09232d]"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Message Workspace Card */}
+                  <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+                    {/* Workspace Sub-header & Mode Switcher */}
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-4 py-2.5">
+                      {/* Segmented Control */}
+                      <div className="flex items-center rounded-xl bg-slate-200/70 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("edit")}
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                            activeTab === "edit"
+                              ? "bg-white text-slate-900 shadow-xs"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          <Pencil size={11} />
+                          <span>Edit Draft</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("preview")}
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                            activeTab === "preview"
+                              ? "bg-white text-slate-900 shadow-xs"
+                              : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          <Eye size={11} />
+                          <span>Recipient Preview</span>
+                        </button>
+                      </div>
+
+                      {/* Live Counter Badges */}
+                      <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium">
+                        <span>{wordCount} words</span>
+                        <span>•</span>
+                        <span>~{readTimeSeconds}s read</span>
+                      </div>
+                    </div>
+
+                    {/* Mode 1: Editor View */}
+                    {activeTab === "edit" ? (
+                      <div className="p-3">
+                        <textarea
+                          value={body}
+                          onChange={(e) => setBody(e.target.value)}
+                          rows={9}
+                          placeholder="Draft message content…"
+                          className="min-h-[190px] w-full resize-y rounded-xl border border-slate-100 bg-slate-50/40 p-3 text-xs leading-relaxed text-slate-800 outline-none transition focus:border-[#09232d] focus:bg-white focus:ring-1 focus:ring-[#09232d]"
+                        />
+                      </div>
+                    ) : (
+                      /* Mode 2: Real Recipient Preview */
+                      <div className="p-5 min-h-[210px] bg-slate-50/40 space-y-4">
+                        <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-2 shadow-xs">
+                          {channel === "email" && subject.trim() && (
+                            <h4 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-2">
+                              {subject}
+                            </h4>
+                          )}
+                          <div className="whitespace-pre-line text-xs leading-relaxed text-slate-800">
+                            {body || <span className="italic text-slate-400">Empty message draft</span>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Copilot Quick Toolbar */}
+                    <div className="border-t border-slate-100 bg-slate-50/50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                          <Wand2 size={13} className="text-amber-500" />
+                          <span>AI Assist:</span>
+                        </div>
+
+                        {/* Quick Action Prompt Chips */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {AI_QUICK_PROMPTS.map((item) => (
+                            <button
+                              key={item.label}
+                              type="button"
+                              disabled={!activityId || regenerate.isPending}
+                              onClick={() => {
+                                setInstructions(item.prompt);
+                                setShowAiAssistant(true);
+                                handleRegenerateWithPrompt(item.prompt);
+                              }}
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 shadow-2xs transition hover:border-[#09232d] hover:text-[#09232d] hover:bg-slate-50 active:scale-95 disabled:opacity-50 cursor-pointer"
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+
+                          <button
+                            type="button"
+                            onClick={() => setShowAiAssistant((prev) => !prev)}
+                            className="rounded-lg bg-slate-200/70 px-2 py-1 text-[10px] font-semibold text-slate-700 transition hover:bg-slate-300/70 cursor-pointer"
+                          >
+                            {showAiAssistant ? "Hide Custom Prompt" : "Custom Prompt…"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custom Prompt Drawer */}
+                      {showAiAssistant && (
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 space-y-2">
+                          <input
+                            type="text"
+                            value={instructions}
+                            onChange={(e) => setInstructions(e.target.value)}
+                            placeholder="e.g. Add urgency, mention our fintech analytics module, keep it under 100 words…"
+                            className="h-8.5 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#09232d] focus:ring-1 focus:ring-[#09232d]"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              disabled={!activityId || regenerate.isPending}
+                              onClick={() => handleRegenerateWithPrompt()}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-[#09232d] px-3.5 text-xs font-semibold text-white shadow-xs transition hover:bg-[#153e4e] active:scale-95 disabled:opacity-50 cursor-pointer"
+                            >
+                              {regenerate.isPending ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin text-white" />
+                                  <span>Regenerating…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={12} className="text-amber-400" />
+                                  <span>Regenerate with AI</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Channel Guidance (WhatsApp) */}
+                  {channel === "whatsapp" && (
+                    <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900 font-medium">
+                      <Radio size={14} className="text-emerald-600 shrink-0" />
+                      <span>
+                        WhatsApp direct dispatch is in beta. Use <strong>Copy Message</strong> to paste and send directly into WhatsApp Web or mobile.
+                      </span>
+                    </div>
+                  )}
+
+                  {!activityId && (
+                    <p className="text-center text-[11px] font-semibold text-rose-600">
+                      Draft is not linked to a registered database activity record.
+                    </p>
+                  )}
+                </div>
+
+                {/* Polished Executive Footer */}
+                <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/80 px-6 py-4">
+                  {/* Left: Copy & Actions */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="inline-flex h-9.5 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
+                    >
+                      {copied ? (
+                        <>
+                          <Check size={13} className="text-emerald-600" />
+                          <span className="text-emerald-600 font-semibold">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={13} />
+                          <span>Copy Message</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Right: Cancel & Send */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={onClose}
+                      className="h-9.5 rounded-xl px-4 text-xs font-semibold text-slate-600 transition hover:bg-slate-200/60 hover:text-slate-800 disabled:opacity-50 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+
+                    {channel === "email" ? (
+                      <button
+                        type="button"
+                        disabled={!canSendEmail}
+                        onClick={handleSend}
+                        className="inline-flex h-9.5 items-center gap-2 rounded-xl bg-[#09232d] px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#153e4e] active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                      >
+                        {sendOutreach.isPending ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin text-white" />
+                            <span>Sending…</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send size={13} />
+                            <span>Send Email</span>
+                            <kbd className="hidden sm:inline-block text-[9px] bg-white/20 px-1.5 py-0.5 rounded text-white/90">
+                              ⌘↵
+                            </kbd>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex h-9.5 items-center gap-2 rounded-xl bg-[#09232d] px-5 text-xs font-semibold text-white opacity-40"
+                      >
+                        <Send size={13} />
+                        <span>Send</span>
                       </button>
                     )}
                   </div>
                 </div>
-              )}
-
-              {channel === "email" && (
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-semibold text-[#616263]">Subject</span>
-                  <input
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Email subject"
-                    className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] text-[#09232d] outline-none focus:border-[#09232d]/50"
-                  />
-                </label>
-              )}
-
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold text-[#616263]">Message</span>
-                <textarea
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  rows={10}
-                  placeholder="Outreach message body"
-                  className="min-h-[180px] w-full resize-y rounded-[12px] border border-[#d1d1d1] bg-white px-3 py-2.5 text-[12px] leading-[17px] text-[#09232d] outline-none focus:border-[#09232d]/50"
-                />
-              </label>
-
-              <div className="rounded-[12px] border border-[#ececec] bg-[#fafafa] px-3 py-2.5">
-                <button
-                  type="button"
-                  onClick={() => setShowRegen((v) => !v)}
-                  className="text-[10px] font-semibold text-[#09232d] hover:underline"
-                >
-                  {showRegen ? "Hide regenerate options" : "Regenerate with more context"}
-                </button>
-                {showRegen && (
-                  <div className="mt-2 space-y-2">
-                    <textarea
-                      value={instructions}
-                      onChange={(e) => setInstructions(e.target.value)}
-                      rows={3}
-                      maxLength={1000}
-                      placeholder="Add context to improve this draft (optional)"
-                      className="w-full resize-y rounded-[10px] border border-[#d1d1d1] bg-white px-3 py-2 text-[11px] leading-[15px] text-[#09232d] outline-none focus:border-[#09232d]/50"
-                    />
-                    <button
-                      type="button"
-                      disabled={!activityId || regenerate.isPending}
-                      onClick={handleRegenerate}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#d1d1d1] bg-white px-3 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#f3f3f3] disabled:opacity-50"
-                    >
-                      {regenerate.isPending ? (
-                        <>
-                          <Loader2 size={12} className="animate-spin" />
-                          Regenerating…
-                        </>
-                      ) : (
-                        "Regenerate"
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {channel === "whatsapp" && (
-                <p className="rounded-[10px] border border-[#e8f5ee] bg-[#f3fbf6] px-3 py-2 text-[10px] leading-[14px] text-[#166534]">
-                  WhatsApp sending isn&apos;t available yet — copy this message to send manually.
-                </p>
-              )}
-
-              {!activityId && (
-                <p className="text-[9px] text-[#b91c1c]">
-                  This draft isn&apos;t linked to a sendable record — try creating outreach again.
-                </p>
-              )}
+              </motion.div>
             </div>
-
-            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[#ececec] bg-[#f7f7f7] px-5 py-3.5">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[11px] font-medium text-[#09232d] transition hover:bg-[#f3f3f3]"
-              >
-                {copied ? <Check size={13} className="text-[#16b37d]" /> : <Copy size={13} />}
-                {copied ? "Copied" : "Copy"}
-              </button>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={onClose}
-                  className="h-9 rounded-[10px] border border-[#d1d1d1] bg-white px-4 text-[11px] font-medium text-[#09232d] transition hover:bg-[#f3f3f3] disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                {channel === "email" ? (
-                  <button
-                    type="button"
-                    disabled={!canSendEmail}
-                    onClick={handleSend}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-[#09232d] px-4 text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
-                  >
-                    {sendOutreach.isPending ? (
-                      <>
-                        <Loader2 size={13} className="animate-spin" />
-                        Sending…
-                      </>
-                    ) : (
-                      "Send"
-                    )}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="h-9 rounded-[10px] bg-[#09232d] px-4 text-[11px] font-semibold text-white opacity-50"
-                  >
-                    Send
-                  </button>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>,
+          )}
+        </AnimatePresence>,
         document.body
       )
     : null;

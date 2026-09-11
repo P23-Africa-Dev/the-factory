@@ -140,14 +140,14 @@ export function AddToCrmPipelineModal({
             {/* Pipeline Selection List */}
             <div className="max-h-[300px] space-y-2 overflow-y-auto px-6 py-4 [scrollbar-width:thin]">
               {isLoading ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-xs font-semisemibold text-slate-500">
+                <div className="flex flex-col items-center justify-center gap-2 py-10 text-xs font-semibold text-slate-500">
                   <Loader2 size={20} className="animate-spin text-[#09232d]" />
                   <span>Loading available pipelines…</span>
                 </div>
               ) : pipelines.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-500">
                   <FolderKanban size={24} className="mx-auto mb-2 text-slate-300" />
-                  <p className="font-semisemibold text-slate-700">No pipelines found</p>
+                  <p className="font-semibold text-slate-700">No pipelines found</p>
                   <p className="mt-0.5 text-slate-400">Please create a pipeline in CRM first.</p>
                 </div>
               ) : filteredPipelines.length === 0 ? (
@@ -188,7 +188,7 @@ export function AddToCrmPipelineModal({
                           </p>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[11px]">
                             {isSelected ? (
-                              <span className="inline-flex items-center gap-1 font-semisemibold text-[#09232d]">
+                              <span className="inline-flex items-center gap-1 font-semibold text-[#09232d]">
                                 <span className="size-1.5 rounded-full bg-emerald-500" />
                                 Selected destination
                               </span>
@@ -233,7 +233,7 @@ export function AddToCrmPipelineModal({
                   type="button"
                   onClick={onClose}
                   disabled={isConfirming}
-                  className="h-9.5 rounded-xl px-4 text-xs font-semisemibold text-slate-600 transition hover:bg-slate-200/60 hover:text-slate-800 cursor-pointer disabled:opacity-50"
+                  className="h-9.5 rounded-xl px-4 text-xs font-semibold text-slate-600 transition hover:bg-slate-200/60 hover:text-slate-800 cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -353,7 +353,7 @@ function ConfirmActionShell({
                 type="button"
                 onClick={onClose}
                 disabled={isConfirming}
-                className="h-9.5 rounded-xl px-4 text-xs font-semisemibold text-slate-600 transition hover:bg-slate-200/60 hover:text-slate-800 cursor-pointer disabled:opacity-50"
+                className="h-9.5 rounded-xl px-4 text-xs font-semibold text-slate-600 transition hover:bg-slate-200/60 hover:text-slate-800 cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -446,7 +446,7 @@ export function CreateOutreachConfirmModal({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white px-3 py-1 text-[11px] font-semisemibold text-slate-700 shadow-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-xs">
             <Radio size={11} className="text-emerald-500 shrink-0" />
             <span>{channel}</span>
           </span>
@@ -490,7 +490,7 @@ export function CreateOutreachConfirmModal({
               <button
                 type="button"
                 onClick={handleCopy}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semisemibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
               >
                 {hasCopied ? (
                   <>
