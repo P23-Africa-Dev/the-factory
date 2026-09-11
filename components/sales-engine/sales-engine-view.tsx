@@ -7,14 +7,87 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
+import { ProcessingPanel } from "./processing-panel";
+import { ResearchProcessingPanel } from "./research-processing-panel";
 import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
+import { IcpSetupPromptModal } from "./icp-setup-prompt-modal";
+import { OutreachPreviewModal } from "./outreach-preview-modal";
+import { OutreachSettingsModal } from "./outreach-settings-modal";
+import {
+  AddToCrmPipelineModal,
+  CreateOutreachConfirmModal,
+  SetReminderConfirmModal,
+  type CrmPipelineOption,
+} from "./crm-action-modals";
+import { SocialScanPanel } from "./social-scan-panel";
+import {
+  SocialOpportunityEmptyState,
+  SocialSignalsEmptyState,
+} from "./social-listening-empty-states";
+import {
+  SocialOpportunityDetailSkeleton,
+  SocialSignalsTableSkeleton,
+} from "./social-scan-skeletons";
 import { ChatMessageBody } from "./chat-message-body";
+import {
+  ResearchSourcesList,
+  researchSourcesFromMeta,
+} from "./research-sources-list";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
+import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
+import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration-status";
+import { usePendingChatDiscovery } from "@/hooks/use-pending-chat-discovery";
+import {
+  isForegroundChatWaiting,
+  isMissingActiveIcp,
+  mapApiMessagesToUi,
+  useChatHistory,
+  useClearChatHistory,
+  useSendChatMessage,
+} from "@/hooks/use-sales-engine-chat";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
-import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
+import { useSalesEngineOutreach, useDeleteOutreachActivity } from "@/hooks/use-sales-engine-outreach";
+import {
+  useCreateSignalOutreach,
+  useDismissSignal,
+  useSetSignalReminder,
+  useSocialListeningBootstrap,
+  useSocialListeningSignals,
+  useSyncSignalToCrm,
+  useTriggerSocialListeningRun,
+} from "@/hooks/use-sales-engine-social-listening";
+import { getSocialListeningEmptyState } from "@/lib/social-listening-empty-state";
+import {
+  useSocialListeningSettings,
+  useUpdateSocialListeningSettings,
+} from "@/hooks/use-sales-engine-social-settings";
+import { useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
+import { useAuthStore } from "@/store/auth";
+import { getActiveCompanyContext } from "@/lib/company-context";
+import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import { formatRelativeTime, type ChatIntent, type ChatLead } from "@/lib/api/sales-engine";
+import type { ApiRoleBasePath } from "@/lib/api/crm";
+import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
+import {
+  formatLeadContactLine,
+  formatLeadRoleLine,
+  leadEntityBadge,
+  primaryProfileUrl,
+} from "@/lib/enriched-lead-card";
+import {
+  fetchOutreachActivity,
+  formatRelativeTime,
+  isFreshSignal,
+  normalizeOutreachSubjectBody,
+  normalizeRecommendedAction,
+  type ChatIntent,
+  type ChatLead,
+  type OutreachActivity,
+  type OutreachDraft,
+  type SocialListeningSettings,
+  type SocialSignalApi,
+} from "@/lib/api/sales-engine";
 import {
   Check,
   ChevronDown,
@@ -22,16 +95,21 @@ import {
   Clock,
   Copy,
   Expand,
+  Eye,
   Globe2,
   Lightbulb,
   Loader2,
+  Mail,
   MessageCircle,
   Minimize2,
   MoreVertical,
+  Phone,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
+  Settings,
   SlidersHorizontal,
   Sparkles,
   ThumbsDown,
@@ -40,6 +118,7 @@ import {
   User,
   UserPlus,
   UsersRound,
+  ListChecks,
   X,
 } from "lucide-react";
 
@@ -49,27 +128,36 @@ type ChatMessage = {
   body: string;
   intent?: ChatIntent;
   leads?: ChatLead[];
+  meta?: Record<string, unknown> | null;
   /** Renders an inline ICP confirmation card instead of the normal chat bubble. */
   kind?: "confirm-icp";
   /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
   targetCount?: number;
+  /** True when the outbound send for this user prompt failed and can be retried. */
+  failed?: boolean;
 };
 
-type CrmPipelineOption = { id: string; name: string };
-
-const MOCK_CRM_PIPELINES: CrmPipelineOption[] = [
-  { id: "new-leads", name: "New Leads" },
-  { id: "qualified", name: "Qualified" },
-  { id: "negotiation", name: "In Negotiation" },
-];
+type OutreachPreviewState = {
+  activityId: number | null;
+  channel: "email" | "whatsapp";
+  subject?: string | null;
+  body: string;
+  toEmail?: string;
+  contextLabel?: string;
+  alignmentNote?: string;
+  /** Chat message id — used to mark the transcript draft as sent. */
+  messageId?: number;
+  /** Social signal id — used to show Sent badge in the detail panel. */
+  signalId?: number;
+};
 
 type SearchUsage = { used: number; limit: number };
 
 const SEARCH_USAGE_STORAGE_KEY = "sales_engine_search_usage_v1";
-const CRM_CONTACTS_STORAGE_KEY = "sales_engine_crm_contacts_v1";
 const DEFAULT_SEARCH_USAGE_LIMIT = 500;
-const DEFAULT_PROSPECT_COUNT = 100;
-const EXPLICIT_COUNT_PATTERN = /\b(\d{1,4})\b/;
+const MAX_PROSPECT_COUNT = 150;
+const LEADS_PER_PAGE = 20;
+const EXPLICIT_COUNT_PATTERN = /\b(\d{1,3})\b/;
 const USAGE_QUESTION_PATTERN =
   /how many (search|token|credit)(es)?|(search|token|credit)(es)?\s+(left|remaining)|remaining\s+(search|token)/i;
 
@@ -97,138 +185,33 @@ function writeSearchUsage(usage: SearchUsage): void {
   }
 }
 
-function readCrmContacts(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(CRM_CONTACTS_STORAGE_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? new Set(parsed.filter((v): v is string => typeof v === "string")) : new Set();
-  } catch {
-    return new Set();
-  }
-}
+/** Resolves the outgoing generate_leads prompt. Only preserves an explicit user count — never injects a default. */
+function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number | null; apiBody: string } {
+  const hasParseableCount =
+    /\b(?:give me|find|get|show|list|need|want)\s+\d{1,3}\b/i.test(prompt) ||
+    /\b\d{1,3}\s+(?:people|persons|leads|prospects|contacts|names|executives|companies|accounts|men|women)\b/i.test(
+      prompt
+    ) ||
+    /\btop\s+\d{1,3}\b/i.test(prompt);
 
-function writeCrmContacts(names: Set<string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CRM_CONTACTS_STORAGE_KEY, JSON.stringify(Array.from(names)));
-  } catch {
-    // ignore quota errors
-  }
-}
+  const match = hasParseableCount ? prompt.match(EXPLICIT_COUNT_PATTERN) : null;
+  const targetCount = match
+    ? Math.min(MAX_PROSPECT_COUNT, Math.max(1, Number(match[1])))
+    : null;
 
-/** Resolves the outgoing generate_leads prompt: keeps an explicit count as-is, else appends a default-100 instruction. */
-function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount: number } {
-  const match = prompt.match(EXPLICIT_COUNT_PATTERN);
-  if (match) {
-    return { body: prompt, targetCount: Number(match[1]) };
-  }
+  // When the user did not ask for a count, send the prompt as-is and let the backend default apply.
+  const apiBody = prompt.trim();
+
   return {
-    body: `${prompt} (Find ${DEFAULT_PROSPECT_COUNT} prospects unless a different number is specified.)`,
-    targetCount: DEFAULT_PROSPECT_COUNT,
-  };
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-type DummyChatLeadSeed = { name: string; source: string; summary: string };
-
-/** Fixed pool (not random) so repeated "generate_leads" runs tend to resurface the same
- *  names — that's what makes the Item 5 CRM-exclusion note demonstrable in a demo. */
-const DUMMY_LEAD_POOL: DummyChatLeadSeed[] = [
-  { name: "Esther Nyambura — Savannah AI Labs", source: "LinkedIn", summary: "Head of Growth evaluating East Africa-native AI SDR tooling." },
-  { name: "Kevin Kiprop — Kilimani Microfinance", source: "Web Search", summary: "CTO researching automated M-Pesa customer support." },
-  { name: "Brian Otieno — Twiga Logistics", source: "X/Twitter", summary: "VP Engineering scoping AI invoice extraction for eTIMS compliance." },
-  { name: "Faith Muthoni — Rift Valley AgriTech", source: "Reddit", summary: "MD pricing a bilingual Swahili/English WhatsApp chatbot." },
-  { name: "Dennis Odhiambo — Harambee Sacco", source: "Web Search", summary: "Head of Digital Channels vetting predictive credit-scoring tools." },
-  { name: "Mercy Chebet — Boma Care Health", source: "LinkedIn", summary: "Ops Director evaluating offline-capable clinical triage AI." },
-  { name: "David Kamau — SafariFleet Logistics", source: "Web Search", summary: "CEO comparing AI route-optimization vendors." },
-  { name: "Sharon Achieng — Kifaru Pay", source: "X/Twitter", summary: "Head of Marketing replacing HubSpot with a WhatsApp-native CRM." },
-  { name: "Patrick Kariuki — Simba Solar Energy", source: "Web Search", summary: "Ops Lead scoping AI lead qualification for PayGo solar reps." },
-  { name: "Victor Omondi — Lake Basin FinTech", source: "LinkedIn", summary: "CISO seeking continuous SOC2/KDPA compliance automation." },
-  { name: "Wanjiku Mwangi — Tatu Retail Hub", source: "Web Search", summary: "Commercial Director exploring AI demand forecasting." },
-  { name: "Samuel Karanja — Chui Logistics", source: "Web Search", summary: "Head of Sales frustrated with low-accuracy East African contact data." },
-];
-
-function buildDummyLeads(count: number): ChatLead[] {
-  const size = Math.max(1, Math.min(count, DUMMY_LEAD_POOL.length));
-  return Array.from({ length: size }, (_, index) => {
-    const seed = DUMMY_LEAD_POOL[index % DUMMY_LEAD_POOL.length];
-    return {
-      id: index + 1,
-      name: seed.name,
-      source: seed.source,
-      score: 78 + ((index * 7) % 20),
-      summary: seed.summary,
-    };
-  });
-}
-
-/** Placeholder assistant reply — no network call. Swap for a real API response once the backend is ready. */
-function buildDummyAssistantReply(
-  intent: ChatIntent,
-  body: string,
-  targetCount?: number
-): { body: string; leads?: ChatLead[] } {
-  if (intent === "generate_leads") {
-    const count = targetCount ?? DEFAULT_PROSPECT_COUNT;
-    const leads = buildDummyLeads(count);
-    return {
-      body: `Found ${count} matching prospects for your active ICP. Here are the top ${leads.length}:`,
-      leads,
-    };
-  }
-  if (intent === "quick_research") {
-    return {
-      body: "Here's a quick synthesis: East African B2B buyers are increasingly prioritizing WhatsApp-native workflows, verified local contact data, and Swahili-capable support — three consistent themes across recent market signals.",
-    };
-  }
-  if (intent === "create_outreach") {
-    return {
-      body: `Here's a draft outreach message:\n\nHi there,\n\nI noticed your team might be exploring solutions related to "${body}". Factory 23 Sales Engine specializes in East African B2B outreach automation — happy to share how we could help.\n\nBest,\nYour Sales Team`,
-    };
-  }
-  return {
-    body: "Got it — let me know if you'd like me to research the market, generate new prospects, or draft an outreach message.",
+    body: prompt,
+    targetCount,
+    apiBody,
   };
 }
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
 type SalesEngineTab = "smart-lead" | "social-listening";
-type SocialSignal = {
-  id: number;
-  signal: string;
-  summary?: string;
-  source: "LinkedIn Post" | "X/Twitter Post" | "Reddit Post" | "Google Search";
-  sourceIcon: string;
-  persona: string;
-  company: string;
-  location: string;
-  intent: string;
-  intentColor: string;
-  description: string;
-  score: number;
-  profile: string;
-  reasons: string[];
-  signalType: string;
-  buyingStage: string;
-  problem: string;
-  urgency: string;
-  suggestedMessage: string;
-  postUrl?: string;
-  entityType?: "company" | "individual";
-  industry?: string;
-  keyTopics?: string[];
-  competitors?: string[];
-  followUpStrategy?: string;
-  recommendedAction?: {
-    title: string;
-    detail: string;
-  };
-};
+type SocialSignal = SocialSignalApi;
 
 type SocialStatCard = {
   title: string;
@@ -238,10 +221,13 @@ type SocialStatCard = {
   active?: boolean;
 };
 
+import { useSalesEngineCrmPipelines } from "@/hooks/use-sales-engine-pipelines";
+
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
   quick_research: "Research market trends, competitors, or industry signals…",
-  generate_leads: "Who are the top business prospects in your target market?",
+  generate_leads: "Find people or companies that match your ICP…",
+  generate_more_leads: "Find more prospects like the ones above…",
   create_outreach: "Draft a follow-up email or WhatsApp message for…",
 };
 
@@ -261,6 +247,12 @@ const INTENT_MODE_CONFIG: Record<
     chipTint: "bg-[#c8f0ff] text-[#09232d]",
     icon: <UsersRound size={12} className="shrink-0" />,
   },
+  generate_more_leads: {
+    label: "Generate More Prospects",
+    tint: "bg-[#e4faff]",
+    chipTint: "bg-[#c8f0ff] text-[#09232d]",
+    icon: <UsersRound size={12} className="shrink-0" />,
+  },
   create_outreach: {
     label: "Create Outreach",
     tint: "bg-[#f2ffe9]",
@@ -269,967 +261,32 @@ const INTENT_MODE_CONFIG: Record<
   },
 };
 
-const thinkingStagesByIntent: Record<ChatIntent, readonly string[]> = {
-  freeform: ["Thinking…"],
-  quick_research: [
-    "Decomposing your research question…",
-    "Scanning web & registries…",
-    "Cross-referencing signals…",
-    "Synthesizing insights…",
-  ],
-  generate_leads: [
-    "Analyzing your brief…",
-    "Scanning web & social signals…",
-    "Extracting buying intent…",
-    "Compiling ranked results…",
-  ],
-  create_outreach: [
-    "Reviewing target context…",
-    "Drafting message…",
-    "Checking compliance tone…",
-  ],
-};
-
 const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
 const salesEngineTabs: Array<{ id: SalesEngineTab; label: string }> = [
   { id: "smart-lead", label: "Smart Lead" },
   { id: "social-listening", label: "Social Listening" },
 ];
 
-const socialStatCards: SocialStatCard[] = [
-  { title: "Signals Detected", value: "4,100", percent: "73", unit: "Signals", active: true },
-  { title: "High Opportunities", value: "1,100", percent: "43", unit: "Opportunities" },
-  { title: "Added to CRM", value: "34", percent: "43", unit: "Opportunities" },
-];
+const SOURCE_SETTING_OPTIONS = [
+  { key: "linkedin_public", label: "LinkedIn public index" },
+  { key: "x_mentions", label: "X/Twitter mentions" },
+  { key: "reddit", label: "Reddit communities" },
+  { key: "meta_pages", label: "Meta business pages" },
+  { key: "meta_graph_pages", label: "Meta pages (direct monitoring)" },
+] as const;
 
-const socialSignals: SocialSignal[] = [
-  {
-    id: 1,
-    signal: "We're looking to automate our B2B outbound pipeline in Kenya. Most global AI sales SDR tools hallucinate or fail on Kenyan local company domains. Recommendations for platforms that actually understand East Africa?",
-    summary: "Seeking East Africa-native AI sales SDR tools to automate B2B outbound pipeline.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Head of Growth & AI",
-    company: "Savannah AI Labs",
-    location: "Nairobi (Westlands), Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Outbound AI sales automation search",
-    score: 94,
-    profile: "Esther Nyambura",
-    reasons: [
-      "Explicit bottleneck with Western sales automation tools",
-      "Head of Growth actively seeking verified regional tools",
-      "Decision maker with allocated software budget",
-      "High fit with Factory 23 Sales Engine ICP",
-      "Recent activity (Posted 1 hour ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Evaluation",
-    problem: "Global AI SDRs lacking East African B2B firmographic data",
-    urgency: "High",
-    entityType: "company",
-    industry: "Enterprise AI & Cloud Services",
-    keyTopics: ["AI Sales SDR", "B2B Lead Generation", "Outbound Automation"],
-    competitors: ["11x.ai", "Regie.ai", "Apollo.io"],
-    followUpStrategy: "Share our East Africa B2B firmographic benchmark and demonstrate verified lead enrichment in Nairobi.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Esther,\nI saw your post on automating B2B outbound in Kenya. Most Western AI SDRs fail because they lack local domain directories and verified phone data. Factory 23 Sales Engine is trained specifically on East African commercial registries and intent data.",
-    recommendedAction: {
-      title: "Reach out within 2 hours",
-      detail: "Share our East Africa B2B firmographic benchmark and offer a 15-minute SDR workflow walkthrough.",
-    },
-  },
-  {
-    id: 2,
-    signal: "best ai customer support automation mpesa daraja api kenya",
-    summary: "Evaluating AI customer support automation integrated with M-Pesa Daraja APIs.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Chief Technology Officer",
-    company: "Kilimani Microfinance",
-    location: "Nairobi (Kilimani), Kenya\n101-250 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Automating M-Pesa billing inquiries",
-    score: 91,
-    profile: "Kevin Kiprop",
-    reasons: [
-      "High-intent inbound search for automated M-Pesa customer support",
-      "CTO evaluating API-driven alternatives to legacy helpdesks",
-      "Core operational bottleneck with STK push reversal queries",
-      "Regulated financial institution with enterprise budget",
-      "Recent search activity (Detected 1 hour ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Solution Evaluation",
-    problem: "High volume M-Pesa STK push failed payment support tickets",
-    urgency: "High",
-    entityType: "company",
-    industry: "Fintech & Digital Lending",
-    keyTopics: ["M-Pesa Daraja API", "AI Customer Support", "Payment Reconciliation"],
-    competitors: ["Zendesk", "Freshchat", "Custom Python Bot"],
-    followUpStrategy: "Offer an architecture review demonstrating real-time M-Pesa transaction lookup and automated conversational resolution.",
-    postUrl: "https://www.google.com/search?q=best+ai+customer+support+automation+mpesa+daraja+api+kenya",
-    suggestedMessage:
-      "Hi Kevin,\nSaw your team is exploring AI support automation for M-Pesa Daraja payment workflows. We integrate directly with Daraja APIs to resolve failed STK push inquiries and instant reversals without human agent delay.",
-    recommendedAction: {
-      title: "Schedule architecture scoping call",
-      detail: "Offer technical review demonstrating real-time M-Pesa Daraja payment query resolution.",
-    },
-  },
-  {
-    id: 3,
-    signal: "Our manual invoice data entry for KRA eTIMS is becoming a nightmare across 400+ FMCG distributor accounts. Anyone using an AI vision agent that extracts Kenyan tax invoices with >99% accuracy?",
-    summary: "Seeking high-accuracy AI vision extraction for KRA eTIMS invoices across 400+ distributors.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "VP of Engineering",
-    company: "Twiga Logistics",
-    location: "Nairobi (Industrial Area), Kenya\n201-500 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "AI eTIMS invoice extraction RFP",
-    score: 89,
-    profile: "Brian Otieno",
-    reasons: [
-      "Severe operational overhead from manual eTIMS tax compliance",
-      "Executive tech buyer seeking enterprise-grade AI extraction",
-      "400+ distributor network represents high-volume pipeline",
-      "Immediate quarterly compliance deadline",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Manual KRA eTIMS invoice processing creating delivery bottlenecks",
-    urgency: "High",
-    entityType: "company",
-    industry: "Supply Chain & FMCG Distribution",
-    keyTopics: ["KRA eTIMS", "Document AI", "Invoice OCR", "Supply Chain"],
-    competitors: ["ABBYY", "Google Document AI", "Manual Data Entry"],
-    followUpStrategy: "Share a sample OCR evaluation test processing Kenyan VAT & eTIMS QR codes with sub-second extraction.",
-    postUrl: "https://x.com/search?q=etims+ai+invoice",
-    suggestedMessage:
-      "Hi Brian,\nHandling KRA eTIMS invoices manually across hundreds of distributors creates serious compliance delays. We build localized vision-language extraction models optimized for Kenyan PINs and eTIMS QR formats.",
-    recommendedAction: {
-      title: "Send eTIMS OCR sample extraction test",
-      detail: "Demonstrate sub-second vision extraction on Kenyan VAT and eTIMS QR invoice batches.",
-    },
-  },
-  {
-    id: 4,
-    signal: "How much does it cost in Kenya to build or buy an AI WhatsApp chatbot that answers farmer queries in Swahili and English?",
-    summary: "Scoping pricing and budget for a bilingual Swahili/English AI WhatsApp chatbot.",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Managing Director",
-    company: "Rift Valley AgriTech",
-    location: "Nakuru, Kenya\n20-50 employees",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Swahili LLM chatbot pricing",
-    score: 83,
-    profile: "Faith Muthoni",
-    reasons: [
-      "Active buyer researching budget for localized AI agent",
-      "Specific multilingual demand (English & Swahili)",
-      "Decision maker with allocated agribusiness capital",
-      "Recent activity (Posted 2 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Budgeting",
-    problem: "High cost of hiring bilingual agronomy call agents",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Agritech & Smart Farming",
-    keyTopics: ["Swahili NLP", "WhatsApp AI Agent", "Agritech Chatbot"],
-    competitors: ["Turn.io", "Yellow.ai", "Twilio Flex"],
-    followUpStrategy: "Send our WhatsApp AI Chatbot Cost & ROI calculator for Kenyan agribusinesses.",
-    postUrl: "https://www.reddit.com/r/Kenya/",
-    suggestedMessage:
-      "Hi Faith,\nBuilding bilingual English/Swahili AI WhatsApp bots for smallholder farming no longer requires tens of thousands of dollars. We can share benchmark pricing and architecture patterns running on localized open LLMs.",
-    recommendedAction: {
-      title: "Send WhatsApp AI Chatbot Cost & ROI calculator",
-      detail: "Provide benchmark pricing for bilingual English/Swahili conversational models.",
-    },
-  },
-  {
-    id: 5,
-    signal: "predictive ai credit scoring and churn reduction software for saccos kenya",
-    summary: "Researching predictive AI credit scoring and member churn reduction software for SACCOs.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Head of Digital Channels",
-    company: "Harambee Sacco",
-    location: "Nairobi (Upper Hill), Kenya\n201-500 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "SACCO credit scoring & churn reduction",
-    score: 92,
-    profile: "Dennis Odhiambo",
-    reasons: [
-      "Direct search query for SACCO predictive intelligence software",
-      "Tier-1 cooperative institution subject to SASRA guidelines",
-      "Urgent operational need to curb member loan defaults",
-      "Recent search activity (Detected 2 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Evaluation",
-    problem: "Member loan defaults and account dormancy in Tier-1 SACCOs",
-    urgency: "High",
-    entityType: "company",
-    industry: "SACCO & Cooperative Banking",
-    keyTopics: ["SACCO AI", "Credit Scoring", "Member Retention", "Predictive Churn"],
-    competitors: ["Coretec", "Finserve", "Legacy SAS Models"],
-    followUpStrategy: "Offer a confidential briefing showcasing predictive member churn models tailored for SASRA-regulated SACCOs.",
-    postUrl: "https://www.google.com/search?q=predictive+ai+credit+scoring+saccos+kenya",
-    suggestedMessage:
-      "Hi Dennis,\nModern SACCOs in Kenya are shifting from reactive loan recovery to predictive AI health scoring. We've modeled member contribution patterns to flag churn and default risks 60 days in advance.",
-    recommendedAction: {
-      title: "Request confidential SACCO analytics briefing",
-      detail: "Present predictive member churn and loan default risk scorecards tailored for SASRA institutions.",
-    },
-  },
-  {
-    id: 6,
-    signal: "We are evaluating AI triage assistants for private clinics across Western Kenya. Needs to work smoothly over low-bandwidth mobile networks and sync back to our EMR.",
-    summary: "Evaluating offline-capable, low-bandwidth AI clinical triage assistants for Western Kenya clinics.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Commercial Operations Director",
-    company: "Boma Care Health",
-    location: "Eldoret, Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Clinical AI triage for Western Kenya",
-    score: 88,
-    profile: "Mercy Chebet",
-    reasons: [
-      "Large regional healthcare network expanding clinical capacity",
-      "Clear technical requirement (low-bandwidth offline sync)",
-      "Executive stakeholder with procurement mandate",
-      "Recent activity (Posted 3 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Consideration",
-    problem: "Clinic nurse overwhelm during morning outpatient surges",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Healthcare & Telemedicine",
-    keyTopics: ["Clinical AI Triage", "Offline First", "EMR Integration"],
-    competitors: ["Babyl", "Ada Health", "Paper Records"],
-    followUpStrategy: "Share a technical overview of lightweight edge-LLM triage deployed over offline-capable Progressive Web Apps.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Mercy,\nOutpatient triage in regional health networks requires ultra-low bandwidth models that don't stall when fiber is down. We specialize in offline-first AI workflow engines for Kenyan healthcare providers.",
-    recommendedAction: {
-      title: "Share offline-first clinical AI whitepaper",
-      detail: "Demonstrate lightweight edge-LLM triage architecture for distributed regional clinics.",
-    },
-  },
-  {
-    id: 7,
-    signal: "ai route optimization dynamic fuel tracking kenya northern corridor",
-    summary: "Searching for AI route optimization and dynamic fuel tracking along the Northern Corridor.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Chief Executive Officer",
-    company: "SafariFleet Logistics",
-    location: "Mombasa, Kenya\n51-200 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Fleet AI route optimization & fuel leak prevention",
-    score: 87,
-    profile: "David Kamau",
-    reasons: [
-      "Commercial freight operator looking to cut fleet overhead",
-      "Northern corridor haulage heavily penalized by transit delays",
-      "Direct CEO intent to replace passive GPS trackers with predictive AI",
-      "Recent search activity (Detected 3 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Solution Discovery",
-    problem: "High fuel theft and suboptimal transit times between Mombasa port and Nairobi",
-    urgency: "High",
-    entityType: "company",
-    industry: "Haulage & Marine Logistics",
-    keyTopics: ["Northern Corridor", "AI Route Optimization", "Fuel Telematics", "IoT Fleet"],
-    competitors: ["Cartrack Kenya", "Tramigo", "Manual GPS Logs"],
-    followUpStrategy: "Provide our Northern Corridor transit benchmark showing 18% fuel savings via predictive traffic & weighbridge routing.",
-    postUrl: "https://www.google.com/search?q=ai+route+optimization+dynamic+fuel+tracking+kenya",
-    suggestedMessage:
-      "Hi David,\nManaging long-haul truck turnaround times between Mombasa Port and inland depots is heavily impacted by weighbridge congestion. Our AI dispatch models dynamically reroute trucks and audit fuel sensor anomalies in real-time.",
-    recommendedAction: {
-      title: "Send Northern Corridor fuel telematics benchmark",
-      detail: "Showcase dynamic route optimization and real-time weighbridge avoidance analytics.",
-    },
-  },
-  {
-    id: 8,
-    signal: "HubSpot is charging us $1,200/mo and doesn't even have automated WhatsApp triggers for East African phone numbers. Looking to switch to a modern AI CRM built for our market.",
-    summary: "Looking to replace HubSpot ($1,200/mo) with an AI CRM featuring East African WhatsApp triggers.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Head of Marketing",
-    company: "Kifaru Pay",
-    location: "Nairobi (Kilimani), Kenya\n20-50 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Replacing HubSpot with WhatsApp AI CRM",
-    score: 90,
-    profile: "Sharon Achieng",
-    reasons: [
-      "High SaaS friction and price dissatisfaction with HubSpot",
-      "Critical need for automated WhatsApp triggers in sales pipeline",
-      "Marketing director holds direct credit card buying authority",
-      "Recent activity (Posted 4 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Vendor Evaluation",
-    problem: "High SaaS overhead with zero localized messaging automation",
-    urgency: "High",
-    entityType: "company",
-    industry: "Fintech & Merchant Payments",
-    keyTopics: ["CRM Migration", "WhatsApp Triggers", "SaaS Cost Reduction"],
-    competitors: ["HubSpot CRM", "ActiveCampaign", "Zoho CRM"],
-    followUpStrategy: "Send a migration matrix showing 65% software cost reduction with native Safaricom/Airtel SMS and WhatsApp automation.",
-    postUrl: "https://x.com/search?q=hubspot+alternative+kenya",
-    suggestedMessage:
-      "Hi Sharon,\nPaying exorbitant enterprise fees for US CRMs that lack native WhatsApp webhook automation is a common pain in Nairobi. Factory 23 Sales Engine includes native WhatsApp cadences and automated lead scoring built for African sales teams.",
-    recommendedAction: {
-      title: "Deliver HubSpot replacement cost comparison",
-      detail: "Highlight 65% software savings and native East African WhatsApp sales triggers.",
-    },
-  },
-  {
-    id: 9,
-    signal: "automated ai lead qualification tool for paygo solar sales reps nairobi",
-    summary: "Searching for automated AI lead qualification tools for distributed PayGo solar field sales.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Operations Lead",
-    company: "Simba Solar Energy",
-    location: "Nairobi (Westlands), Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Pay-As-You-Go solar lead qualification",
-    score: 86,
-    profile: "Patrick Kariuki",
-    reasons: [
-      "High-intent search for automated solar sales pre-qualification",
-      "Distributed sales force requires mobile lead verification",
-      "High commercial viability in off-grid renewable distribution",
-      "Recent search activity (Detected 4 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Field reps spending 60% of time pursuing unqualified off-grid leads",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Renewable Energy & PayGo",
-    keyTopics: ["PayGo Solar", "Lead Qualification", "Field Sales Enablement"],
-    competitors: ["Angaza", "Salesforce Energy", "Manual Excel Sheets"],
-    followUpStrategy: "Share case study on automated credit pre-qualification scoring via mobile data proxies.",
-    postUrl: "https://www.google.com/search?q=automated+ai+lead+qualification+paygo+solar+kenya",
-    suggestedMessage:
-      "Hi Patrick,\nField agents in solar distribution waste immense hours on leads who fail subsequent credit checks. Our AI lead scoring engine validates phone, location, and propensity data before reps even hit the field.",
-    recommendedAction: {
-      title: "Send PayGo pre-qualification case study",
-      detail: "Illustrate automated lead verification before dispatching field sales agents.",
-    },
-  },
-  {
-    id: 10,
-    signal: "What are leading private hospitals in East Africa paying for AI transcription and clinical documentation assistants?",
-    summary: "Benchmarking market pricing for clinical AI transcription and documentation assistants.",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Chief Medical Officer",
-    company: "Mara Health System",
-    location: "Nairobi (Parklands), Kenya\n501-1000 employees",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Clinical AI transcription budgeting",
-    score: 85,
-    profile: "Dr. Amina Yusuf",
-    reasons: [
-      "Executive decision maker budgeting hospital AI rollouts",
-      "Looking for market pricing benchmarks for medical transcription",
-      "Severe documentation backlog impacting doctor retention",
-      "Recent activity (Posted 5 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Budget Allocation",
-    problem: "Doctors spending 3 hours daily typing patient notes into legacy hospital software",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Hospital Networks & Specialized Clinics",
-    keyTopics: ["Clinical AI", "Medical Transcription", "Doctor Burnout"],
-    competitors: ["Nuance DAX", "Abridge", "Manual Transcriptionists"],
-    followUpStrategy: "Share our healthcare AI economics breakdown with compliant local data hosting.",
-    postUrl: "https://www.reddit.com/r/Kenya/",
-    suggestedMessage:
-      "Hi Dr. Yusuf,\nPhysician documentation burden is acute across major hospital centers in Nairobi. We can share a transparent breakdown of speech-to-clinical note AI models fine-tuned on East African medical accents and terminology.",
-    recommendedAction: {
-      title: "Provide clinical documentation economics breakdown",
-      detail: "Share compliant local hosting options and doctor time-saving metrics.",
-    },
-  },
-  {
-    id: 11,
-    signal: "Looking for an automated AI agent to conduct continuous SOC2 and Kenya Data Protection Act (KDPA) compliance audits across our AWS infrastructure.",
-    summary: "Seeking an automated AI agent for continuous SOC2 and KDPA compliance audits on AWS.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Chief Information Security Officer",
-    company: "Lake Basin FinTech",
-    location: "Kisumu, Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "AI KDPA & SOC2 compliance auditing",
-    score: 93,
-    profile: "Victor Omondi",
-    reasons: [
-      "Regulatory enforcement by ODPC creating compliance urgency",
-      "CISO actively evaluating continuous compliance automation",
-      "High-value fintech tier with immediate audit timeline",
-      "Recent activity (Posted 5 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Partner Selection",
-    problem: "Pending Office of Data Protection Commissioner (ODPC) annual audit compliance",
-    urgency: "High",
-    entityType: "company",
-    industry: "Financial Services & Payment Gateway",
-    keyTopics: ["KDPA Compliance", "SOC2 Audit", "Automated Security Agent"],
-    competitors: ["Vanta", "Drata", "Big 4 Advisory"],
-    followUpStrategy: "Provide an automated KDPA compliance mapping matrix illustrating continuous control monitoring.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Victor,\nODPC regulatory audits in Kenya require clear data residency and processing telemetry. Our automated governance agents monitor cloud permissions and flag non-compliant data flows 24/7.",
-    recommendedAction: {
-      title: "Deliver KDPA compliance mapping matrix",
-      detail: "Show continuous AWS permissions monitoring aligned with ODPC regulations.",
-    },
-  },
-  {
-    id: 12,
-    signal: "ai automated inventory demand forecasting fmcg distributors kenya",
-    summary: "Researching AI inventory demand forecasting and stockout prevention for FMCG distribution.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Commercial Director",
-    company: "Tatu Retail Hub",
-    location: "Thika, Kenya\n101-250 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "AI FMCG inventory & stockout forecasting",
-    score: 88,
-    profile: "Wanjiku Mwangi",
-    reasons: [
-      "Direct search query for predictive FMCG inventory planning",
-      "Commercial leader seeking to replace manual spreadsheet forecasting",
-      "Fast-expanding warehouse footprint in Kiambu County",
-      "Recent search activity (Detected 6 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Research",
-    problem: "Excess stock in slow lines and frequent stockouts in fast-moving staples",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Wholesale & FMCG Distribution",
-    keyTopics: ["Demand Forecasting", "Stockout Prevention", "FMCG Supply Chain"],
-    competitors: ["SAP Business One", "Sage Evolution", "Excel Forecasting"],
-    followUpStrategy: "Schedule demo showcasing dynamic safety stock optimization based on historical regional order cycles.",
-    postUrl: "https://www.google.com/search?q=ai+automated+inventory+demand+forecasting+kenya",
-    suggestedMessage:
-      "Hi Wanjiku,\nFMCG distributors lose substantial margin to stockouts on key staples while holding dead inventory elsewhere. Our predictive replenishment engine accurately models localized supermarket demand cycles.",
-    recommendedAction: {
-      title: "Schedule demand replenishment demo",
-      detail: "Showcase dynamic safety stock models based on historical Kenyan order cycles.",
-    },
-  },
-  {
-    id: 13,
-    signal: "Traditional SMS recovery blasts have a 4% collection rate. Any fintechs using conversational AI voice/chat agents for ethical debt recovery in Kenya?",
-    summary: "Evaluating conversational AI voice and chat agents for ethical micro-loan recovery.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Head of Digital Lending",
-    company: "PesaQuick Micro-Loans",
-    location: "Nairobi (Upper Hill), Kenya\n20-50 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "AI conversational debt collection",
-    score: 90,
-    profile: "Collins Koech",
-    reasons: [
-      "Direct pain point with one-way SMS collection failure",
-      "Lending head searching for two-way conversational agents",
-      "Immediate revenue uplift from improved loan recovery",
-      "Recent activity (Posted 6 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Vendor Evaluation",
-    problem: "Skyrocketing NPLs and low borrower responsiveness to one-way SMS",
-    urgency: "High",
-    entityType: "company",
-    industry: "Digital Lending & Microfinance",
-    keyTopics: ["Debt Collection AI", "NPL Recovery", "Conversational AI"],
-    competitors: ["Manual Call Centers", "Bulk SMS Blasts"],
-    followUpStrategy: "Share conversion statistics of two-way conversational recovery agents operating in Swahili and English.",
-    postUrl: "https://x.com/search?q=ai+debt+collection+kenya",
-    suggestedMessage:
-      "Hi Collins,\nOne-way SMS collections alienate borrowers and produce single-digit recovery. Conversational AI recovery agents that negotiate realistic installment plans recover up to 3x more capital while maintaining regulatory goodwill.",
-    recommendedAction: {
-      title: "Share conversational recovery benchmark",
-      detail: "Present data showing 3x higher capital recovery using two-way conversational agents.",
-    },
-  },
-  {
-    id: 14,
-    signal: "How much are Kenyan software agencies charging to implement an AI document search engine over company contracts and policies?",
-    summary: "Scoping agency implementation costs for an enterprise RAG contract search engine.",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Founder & CEO",
-    company: "Individual",
-    location: "Nairobi, Kenya",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Enterprise RAG search implementation cost",
-    score: 76,
-    profile: "Beatrice Wambui",
-    reasons: [
-      "Founder actively scoping private RAG search implementation",
-      "Pricing discovery indicates committed near-term project",
-      "Recent activity (Posted 7 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Budgeting",
-    problem: "Staff spending hours locating clauses in legacy legal PDFs",
-    urgency: "Medium",
-    entityType: "individual",
-    industry: "Corporate Services & Legal Tech",
-    keyTopics: ["RAG Search", "Contract AI", "Knowledge Base"],
-    competitors: ["Glean", "Custom LangChain Project", "SharePoint Search"],
-    followUpStrategy: "Share our phased enterprise RAG roadmap with transparent fixed milestones.",
-    postUrl: "https://www.reddit.com/r/Kenya/",
-    suggestedMessage:
-      "Hi Beatrice,\nSetting up private document RAG pipelines for contracts can be done securely without open-ended agency bills. We can outline a quick proof-of-concept timeline that indexes your repository within days.",
-    recommendedAction: {
-      title: "Send enterprise RAG proof-of-concept roadmap",
-      detail: "Outline fixed milestone pricing and private indexing of company contracts.",
-    },
-  },
-  {
-    id: 15,
-    signal: "b2b ai sales prospecting software verified east africa contact numbers",
-    summary: "Searching for B2B sales prospecting software with verified East African phone numbers.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Head of Sales",
-    company: "Chui Logistics & Warehousing",
-    location: "Mombasa, Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Verified East African phone & email data search",
-    score: 94,
-    profile: "Samuel Karanja",
-    reasons: [
-      "High purchase intent for localized B2B sales intelligence",
-      "Sales head frustrated with Western data provider inaccuracy",
-      "Direct fit with Factory 23 primary value proposition",
-      "Recent search activity (Detected 7 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Lusha, ZoomInfo, and Apollo having 80%+ bounce rates on Kenyan contacts",
-    urgency: "High",
-    entityType: "company",
-    industry: "Warehousing & Cold Chain",
-    keyTopics: ["Verified Contact Data", "B2B Data Accuracy", "Sales Prospecting"],
-    competitors: ["ZoomInfo", "Lusha", "Apollo.io"],
-    followUpStrategy: "Provide a verified batch of 30 logistics decision-makers in Mombasa and Nairobi with live phone verification.",
-    postUrl: "https://www.google.com/search?q=b2b+ai+sales+prospecting+software+kenya",
-    suggestedMessage:
-      "Hi Samuel,\nUS-centric data platforms have abysmal coverage in East Africa, resulting in wasted sales rep hours. Factory 23 maintains verified direct mobile and WhatsApp indexes for commercial leaders across Kenya.",
-    recommendedAction: {
-      title: "Provide sample verified lead batch",
-      detail: "Deliver 30 verified logistics decision-makers in Mombasa and Nairobi with direct mobile data.",
-    },
-  },
-  {
-    id: 16,
-    signal: "We receive 1,500+ applications per open engineering role. Looking for an AI resume screening platform that understands Kenyan university degrees and local tech bootcamps.",
-    summary: "Seeking an AI resume screening tool tuned to Kenyan university degrees and tech bootcamps.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Head of People & Culture",
-    company: "AfriTalent Solutions",
-    location: "Nairobi (Kilimani), Kenya\n51-200 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "AI applicant screening with local context",
-    score: 82,
-    profile: "Grace Mwangi",
-    reasons: [
-      "High volume applicant strain during hiring cycles",
-      "Specific localized requirement for Kenyan educational context",
-      "HR buyer seeking automated parsing tools",
-      "Recent activity (Posted 8 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Consideration",
-    problem: "HR drowning in manual CV reviews; Western ATS filters rejecting qualified local talent",
-    urgency: "Medium-High",
-    entityType: "company",
-    industry: "Human Resources & Recruitment",
-    keyTopics: ["AI Resume Screening", "ATS Automation", "Technical Hiring"],
-    competitors: ["Workable", "Lever", "Ashby"],
-    followUpStrategy: "Demonstrate localized semantic resume parser recognizing Kenyan tech institutions and practical GitHub experience.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Grace,\nStandard Western ATS filters miss exceptional local engineers from Moringa, ALX, and JKUAT because of rigid keyword templates. We build intelligent applicant ranking models tuned to local engineering pipelines.",
-    recommendedAction: {
-      title: "Demonstrate localized semantic resume parser",
-      detail: "Show how local tech bootcamp and university qualifications are ranked accurately.",
-    },
-  },
-  {
-    id: 17,
-    signal: "ai vision quality grading conveyor belt automated sorting kenya",
-    summary: "Searching for conveyor belt computer vision AI for automated export quality grading.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Managing Director",
-    company: "Victoria Fish Processors",
-    location: "Kisumu, Kenya\n101-250 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "Computer vision fish quality grading",
-    score: 85,
-    profile: "Juma Omondi",
-    reasons: [
-      "Industrial exporter seeking automated quality sorting",
-      "Direct commercial risk from export cargo quality rejections",
-      "Managing Director driving smart manufacturing investments",
-      "Recent search activity (Detected 8 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Research",
-    problem: "Manual grading errors causing EU export rejection penalties",
-    urgency: "High",
-    entityType: "company",
-    industry: "Agri-Food Processing & Export",
-    keyTopics: ["Computer Vision", "Industrial AI", "Quality Control"],
-    competitors: ["Marel", "Manual Inspectors"],
-    followUpStrategy: "Provide case studies on real-time edge vision inspection deployed in industrial food processing.",
-    postUrl: "https://www.google.com/search?q=ai+vision+quality+grading+conveyor+belt+kenya",
-    suggestedMessage:
-      "Hi Juma,\nAutomating export grade classification on high-speed conveyor lines eliminates costly shipment rejections at port. We deploy rugged edge AI vision cameras that grade product dimensions and freshness in real-time.",
-    recommendedAction: {
-      title: "Send industrial edge vision case study",
-      detail: "Demonstrate real-time fish size and freshness grading on high-speed conveyor lines.",
-    },
-  },
-  {
-    id: 18,
-    signal: "Trying to integrate local Kenyan payment gateways (Paybill, Till, Bank EFT) into our SaaS. Anyone solved automated webhook reconciliations without writing 5,000 lines of custom glue code?",
-    summary: "Seeking turnkey automated webhook reconciliation for M-Pesa Paybill, Till, and local banks.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Founder",
-    company: "Kipawa Tech",
-    location: "Eldoret, Kenya\n11-50 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Automating payment reconciliation webhooks",
-    score: 87,
-    profile: "Kipchumba Bett",
-    reasons: [
-      "Technical founder facing high engineering burden on payment ops",
-      "Seeking turnkey webhook reconciliation infrastructure",
-      "Near-term launch dependency",
-      "Recent activity (Posted 9 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Vendor Evaluation",
-    problem: "Silent webhook drops and manual ledger balancing on Daraja APIs",
-    urgency: "High",
-    entityType: "company",
-    industry: "SaaS & Cloud Software",
-    keyTopics: ["M-Pesa Webhooks", "Automated Reconciliation", "Fintech Infrastructure"],
-    competitors: ["Custom In-house Scripts", "Manual Spreadsheet Tally"],
-    followUpStrategy: "Share architecture diagram of our zero-drop transactional payment event bus.",
-    postUrl: "https://x.com/search?q=daraja+mpesa+reconciliation",
-    suggestedMessage:
-      "Hi Kipchumba,\nDaraja webhook drops during Safaricom maintenance windows cause major billing headaches. We provide resilient event-driven reconciliation connectors that auto-retry and balance your SaaS ledger automatically.",
-    recommendedAction: {
-      title: "Share zero-drop payment webhook architecture",
-      detail: "Provide resilient event-driven retry connectors for M-Pesa Daraja and local banks.",
-    },
-  },
-  {
-    id: 19,
-    signal: "Replacing our enterprise ERP dispatch module. Looking for a vendor that integrates AI dynamic route planning with live WhatsApp delivery notifications for pharmacies across Kenya.",
-    summary: "Replacing ERP dispatch with AI dynamic routing and live customer WhatsApp delivery alerts.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Chief Operating Officer",
-    company: "Nairobi Med Supplies",
-    location: "Nairobi (Industrial Area), Kenya\n51-200 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "AI pharma route dispatch & WhatsApp tracking",
-    score: 89,
-    profile: "Lucy Njeri",
-    reasons: [
-      "Mission-critical supply chain optimization for medicine distribution",
-      "COO looking to replace rigid legacy dispatch software",
-      "Direct requirement for AI routing and WhatsApp alerts",
-      "Recent activity (Posted 9 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Solution Evaluation",
-    problem: "Cold-chain pharmaceutical delivery delays and manual customer verification calls",
-    urgency: "High",
-    entityType: "company",
-    industry: "Pharmaceuticals & Healthcare Supply",
-    keyTopics: ["Pharma Dispatch", "Dynamic Routing", "WhatsApp Automation"],
-    competitors: ["SAP", "Microsoft Dynamics", "Manual Dispatchers"],
-    followUpStrategy: "Present live dispatch console showing multi-stop route optimization with real-time customer WhatsApp delivery alerts.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Lucy,\nDelivering medical supplies on tight cold-chain schedules requires intelligent multi-stop routing and transparent recipient alerts. We connect your ERP straight into automated route planning and instant WhatsApp status updates.",
-    recommendedAction: {
-      title: "Present live dispatch console demo",
-      detail: "Illustrate multi-stop route optimization connected with real-time customer WhatsApp delivery alerts.",
-    },
-  },
-  {
-    id: 20,
-    signal: "best ai contract lifecycle management and supplier compliance audit kenya",
-    summary: "Searching for AI contract lifecycle management and supplier SLA compliance auditing.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Head of Procurement",
-    company: "Western Sugar Mills",
-    location: "Kakamega, Kenya\n201-500 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "AI supplier contract lifecycle management",
-    score: 81,
-    profile: "Kennedy Wekesa",
-    reasons: [
-      "Inbound search for enterprise contract compliance automation",
-      "Large-scale agricultural processing plant with extensive vendor base",
-      "Procurement lead looking to automate audit trails",
-      "Recent search activity (Detected 10 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Unmonitored supplier contract expirations and missed SLA breach penalties",
-    urgency: "Medium",
-    entityType: "company",
-    industry: "Manufacturing & Agro-Processing",
-    keyTopics: ["Contract AI", "Supplier Compliance", "Procurement Automation"],
-    competitors: ["Icertis", "Coupa", "Manual Filing Cabinets"],
-    followUpStrategy: "Offer an automated contract audit scanning 50 legacy supplier agreements for hidden renewal dates.",
-    postUrl: "https://www.google.com/search?q=best+ai+contract+lifecycle+management+kenya",
-    suggestedMessage:
-      "Hi Kennedy,\nProcurement teams in heavy agro-processing frequently lose capital when supplier contracts auto-renew without renegotiation. Our AI contract intelligence platform flags renewals and audits supplier compliance automatically.",
-    recommendedAction: {
-      title: "Offer 50-contract compliance audit trial",
-      detail: "Scan legacy supplier contracts to identify auto-renewals and SLA breach penalties.",
-    },
-  },
-  {
-    id: 21,
-    signal: "What is the fastest way to add Swahili speech-to-text into our customer service app in Kenya? Whisper vs Google Cloud Speech pricing comparison?",
-    summary: "Comparing pricing and latency for Swahili speech-to-text integration in customer apps.",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Lead Developer",
-    company: "Individual",
-    location: "Nakuru, Kenya",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "Swahili speech-to-text benchmark & cost",
-    score: 75,
-    profile: "Daniel Kiprotich",
-    reasons: [
-      "Developer researching voice STT costs for customer support",
-      "Evaluating cloud API costs vs self-hosted Whisper",
-      "Recent activity (Posted 10 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Research",
-    problem: "High cloud API bills for voice transcription in African dialects",
-    urgency: "Low-Medium",
-    entityType: "individual",
-    industry: "Software & Mobile Apps",
-    keyTopics: ["Swahili STT", "Speech Recognition", "Cloud Costs"],
-    competitors: ["Google Cloud STT", "OpenAI Whisper", "Deepgram"],
-    followUpStrategy: "Send open-source self-hosted Whisper benchmark for East African dialects.",
-    postUrl: "https://www.reddit.com/r/Kenya/",
-    suggestedMessage:
-      "Hi Daniel,\nTranscribing Swahili at scale using generic US cloud APIs gets expensive very quickly. We can share benchmark latency and cost numbers comparing fine-tuned local models against proprietary cloud APIs.",
-    recommendedAction: {
-      title: "Send Swahili STT latency & cost comparison",
-      detail: "Compare open fine-tuned models against commercial cloud APIs for voice triage.",
-    },
-  },
-  {
-    id: 22,
-    signal: "Hiring 6 new B2B sales development reps in Nairobi. We need an AI sales coaching tool that reviews sales call recordings and scores objection handling on East African financial products.",
-    summary: "Seeking an AI sales coaching platform to analyze SDR calls and regional financial objection handling.",
-    source: "LinkedIn Post",
-    sourceIcon: "in",
-    persona: "Head of Marketing & Sales",
-    company: "Apex Financial Advisory",
-    location: "Nairobi (Upper Hill), Kenya\n20-50 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "AI sales call coaching for local financial products",
-    score: 91,
-    profile: "Phyllis Kerubo",
-    reasons: [
-      "Sales expansion creating urgent onboarding and training need",
-      "Sales leader actively looking for call intelligence software",
-      "Dedicated commercial budget allocated for rep enablement",
-      "Recent activity (Posted 11 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Purchase Planning",
-    problem: "Long ramp time for junior SDRs pitching complex commercial wealth products",
-    urgency: "High",
-    entityType: "company",
-    industry: "Wealth Management & Advisory",
-    keyTopics: ["AI Sales Coaching", "Conversation Intelligence", "SDR Enablement"],
-    competitors: ["Gong.io", "Chorus", "Manual Call Shadowing"],
-    followUpStrategy: "Share our localized objection-handling scorecard fine-tuned on corporate banking sales in East Africa.",
-    postUrl: "https://www.linkedin.com/feed/",
-    suggestedMessage:
-      "Hi Phyllis,\nOnboarding new SDRs in Nairobi without standardized call coaching leads to months of missed quotas. Our sales intelligence platform automatically analyzes call recordings, highlights objection patterns, and boosts rep productivity in weeks.",
-    recommendedAction: {
-      title: "Deliver localized objection-handling scorecard",
-      detail: "Share AI sales coaching templates tuned to East African commercial banking sales.",
-    },
-  },
-  {
-    id: 23,
-    signal: "ai workflow automation core banking migration kenya",
-    summary: "Searching for AI workflow automation and ledger data cleansing for core banking migration.",
-    source: "Google Search",
-    sourceIcon: "G",
-    persona: "Head of Digital Transformation",
-    company: "Metropolitan Sacco",
-    location: "Nairobi (CBD), Kenya\n201-500 employees",
-    intent: "Switching",
-    intentColor: "#f8725d",
-    description: "Core banking AI automation & data migration",
-    score: 95,
-    profile: "Anthony Macharia",
-    reasons: [
-      "Highest intent score (95%) tied to complex core banking upgrade",
-      "Executive transformation lead looking for automated verification",
-      "Critical compliance and balance reconciliation exposure",
-      "Recent search activity (Detected 11 hours ago)",
-    ],
-    signalType: "Switching",
-    buyingStage: "Partner Selection",
-    problem: "Data migration errors and manual reconciliation during core banking upgrade",
-    urgency: "High",
-    entityType: "company",
-    industry: "Banking & Financial Cooperatives",
-    keyTopics: ["Core Banking Migration", "AI Data Cleansing", "SACCO Transformation"],
-    competitors: ["Oracle Flexcube", "Temenos", "Local Systems Integrators"],
-    followUpStrategy: "Schedule executive consultation demonstrating automated data cleansing and balance verification.",
-    postUrl: "https://www.google.com/search?q=ai+workflow+automation+core+banking+kenya",
-    suggestedMessage:
-      "Hi Anthony,\nCore banking migrations carry tremendous risk of corrupted legacy records and member transaction discrepancies. Our automated reconciliation agents validate every ledger balance before and after migration cutover.",
-    recommendedAction: {
-      title: "Schedule core banking migration audit briefing",
-      detail: "Walk through automated balance verification and ledger integrity checks.",
-    },
-  },
-  {
-    id: 24,
-    signal: "Motor insurance claim fraud is eating our underwriting margins. Need an AI image damage assessment tool that works reliably on photos taken with budget Android phones.",
-    summary: "Seeking mobile computer vision AI for vehicle damage assessment and fraud detection.",
-    source: "X/Twitter Post",
-    sourceIcon: "X",
-    persona: "Chief Technology Officer",
-    company: "Zuri InsurTech",
-    location: "Nairobi (Westlands), Kenya\n20-50 employees",
-    intent: "Recommendation",
-    intentColor: "#6ec758",
-    description: "AI vehicle damage estimation & fraud detection",
-    score: 89,
-    profile: "Gladys Akinyi",
-    reasons: [
-      "Direct margin erosion from manual claims leakage",
-      "CTO actively seeking vision model tailored to mobile photos",
-      "High fit for automated damage classification build",
-      "Recent activity (Posted 12 hours ago)",
-    ],
-    signalType: "Recommendation",
-    buyingStage: "Vendor Selection",
-    problem: "Fraudulent repair estimates and delayed claim turnaround times",
-    urgency: "High",
-    entityType: "company",
-    industry: "Insurtech & Underwriting",
-    keyTopics: ["Insurtech AI", "Damage Assessment", "Fraud Detection"],
-    competitors: ["Tractable", "Manual Claims Adjusters"],
-    followUpStrategy: "Provide live sandbox test assessing typical vehicle scratch and bumper damage photos.",
-    postUrl: "https://x.com/search?q=ai+motor+insurance+claims+kenya",
-    suggestedMessage:
-      "Hi Gladys,\nDetecting claim fraud while speeding up legitimate settlements is crucial for underwriting profitability. Our computer vision models evaluate vehicle damage severity instantly from everyday smartphone photos.",
-    recommendedAction: {
-      title: "Provide mobile damage assessment sandbox",
-      detail: "Test vehicle scratch and dent classification directly on smartphone photographs.",
-    },
-  },
-  {
-    id: 25,
-    signal: "What is the average agency fee in Kenya for deploying automated AI outbound lead generation campaigns?",
-    summary: "Benchmarking Kenyan agency fees for automated AI outbound lead generation campaigns.",
-    source: "Reddit Post",
-    sourceIcon: "r",
-    persona: "Growth Lead",
-    company: "Individual",
-    location: "Eldoret, Kenya",
-    intent: "Price",
-    intentColor: "#67b7f4",
-    description: "AI outbound agency fee comparison",
-    score: 78,
-    profile: "Erick Ngetich",
-    reasons: [
-      "Active buyer seeking pricing clarity in Kenyan market",
-      "Evaluating outsourced agency vs self-serve outbound platform",
-      "Clear intent to launch outbound campaign this quarter",
-      "Recent activity (Posted 12 hours ago)",
-    ],
-    signalType: "Price",
-    buyingStage: "Budgeting",
-    problem: "Opaque retainers and unverified lead counts from local marketing agencies",
-    urgency: "Medium",
-    entityType: "individual",
-    industry: "B2B Professional Services",
-    keyTopics: ["Outbound Pricing", "Lead Generation ROI", "Agency Retainers"],
-    competitors: ["Traditional PR Agencies", "Freelance Marketers"],
-    followUpStrategy: "Share our transparent B2B lead generation cost per qualified meeting model.",
-    postUrl: "https://www.reddit.com/r/Kenya/",
-    suggestedMessage:
-      "Hi Erick,\nMany agencies in Kenya bill high monthly retainers without guaranteeing pipeline outcomes. We can share transparent benchmarks for cost-per-qualified B2B lead so you know exactly what to budget.",
-    recommendedAction: {
-      title: "Send transparent B2B lead generation pricing guide",
-      detail: "Share cost-per-qualified meeting benchmarks for Kenyan commercial outreach.",
-    },
-  },
-];
+const INTENT_SETTING_OPTIONS = [
+  { key: "recommendation", label: "Recommendations" },
+  { key: "switching", label: "Switching" },
+  { key: "pricing", label: "Pricing questions" },
+  { key: "hiring_expansion", label: "Hiring or expansion" },
+  { key: "investment_opportunity", label: "Investment opportunities" },
+  { key: "funding_event", label: "Funding events" },
+  { key: "market_signal", label: "Market signals" },
+  { key: "partnership_opportunity", label: "Partnership opportunities" },
+  { key: "competitive_move", label: "Competitive moves" },
+  { key: "regulatory_change", label: "Regulatory changes" },
+] as const;
 
 const sourceFilterOptions: SelectOption[] = [
   { value: "all", label: "All Sources" },
@@ -1244,6 +301,12 @@ const signalTypeFilterOptions: SelectOption[] = [
   { value: "Recommendation", label: "Recommendation" },
   { value: "Switching", label: "Switching" },
   { value: "Price", label: "Price" },
+  { value: "Investment Opportunity", label: "Investment Opportunity" },
+  { value: "Funding Event", label: "Funding Event" },
+  { value: "Market Signal", label: "Market Signal" },
+  { value: "Partnership Opportunity", label: "Partnership Opportunity" },
+  { value: "Competitive Move", label: "Competitive Move" },
+  { value: "Regulatory Change", label: "Regulatory Change" },
 ];
 
 const intentFilterOptions: SelectOption[] = [
@@ -1267,25 +330,47 @@ function MetricCard({
   value,
   percent,
   active = false,
-  unit = "Prospects",
+  unit = "Leads",
+  isScanning = false,
+  href,
+  onClick,
+  actionLabel,
 }: {
   title: string;
   value: string;
   percent: string;
   active?: boolean;
   unit?: string;
+  isScanning?: boolean;
+  href?: string;
+  onClick?: () => void;
+  actionLabel?: string;
 }) {
-  return (
+  const isInteractive = Boolean(href || onClick);
+
+  const cardContent = (
     <section
-      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] ${
+      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] transition-all ${
         active ? "bg-[#0b242e] text-white" : "bg-white text-[#0b242e]"
+      } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""} ${
+        isInteractive
+          ? "cursor-pointer hover:scale-[1.015] hover:shadow-md active:scale-[0.99]"
+          : ""
       }`}
     >
       <div className="flex items-start justify-between">
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
           {title}
         </p>
-        {/* <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} /> */}
+        {isInteractive && (
+          <span
+            className={`text-[10px] font-medium flex items-center gap-0.5 transition-colors ${
+              active ? "text-white/70 group-hover:text-white" : "text-[#09232d]/70 group-hover:text-[#09232d]"
+            }`}
+          >
+            {actionLabel ?? (href?.includes("crm") ? "View in CRM →" : "View →")}
+          </span>
+        )}
       </div>
 
       <div className="absolute left-5 top-[48px]">
@@ -1296,23 +381,44 @@ function MetricCard({
           </p>
         </div>
         <p className={`mt-[-4px] text-[8px] leading-[16px] ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
-          {percent}% increase this week
+          {isScanning ? "Scan in progress…" : `${percent}% increase this week`}
         </p>
       </div>
-
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
         <div
-          className={`sales-gauge-spin absolute size-[84px] rounded-full border-[7px] ${
+          className={`absolute size-[84px] rounded-full border-[7px] ${
             active ? "border-[#3E7210]" : "border-[#ff604c]"
-          } border-l-transparent rotate-[-24deg]`}
+          } border-l-transparent rotate-[-24deg] ${isScanning ? "sales-gauge-spin" : ""}`}
         />
         <div className={`absolute size-[49px] rounded-full ${active ? "bg-[#14343e]" : "bg-[#f9f9f9]"}`} />
         <p className={`relative text-[8px] font-semibold ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
-          {percent}%
+          {isScanning ? "…" : `${percent}%`}
         </p>
       </div>
     </section>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="group block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#09232d]">
+        {cardContent}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="group block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#09232d]"
+      >
+        {cardContent}
+      </button>
+    );
+  }
+
+  return cardContent;
 }
 
 function TrendChart() {
@@ -1371,11 +477,12 @@ function IntentModeChip({
   onClear,
   compact = false,
 }: {
-  intent: ActionIntent;
+  intent: ActionIntent | string;
   onClear?: () => void;
   compact?: boolean;
 }) {
-  const mode = INTENT_MODE_CONFIG[intent];
+  const mode = INTENT_MODE_CONFIG[intent as ActionIntent];
+  if (!mode) return null;
 
   return (
     <span
@@ -1438,60 +545,355 @@ function PromptButton({
   );
 }
 
-function ThinkingBubble({ stage }: { stage: string }) {
+function LeadInlineResults({
+  leads,
+  onLeadsChange,
+}: {
+  leads: ChatLead[];
+  onLeadsChange?: (leads: ChatLead[]) => void;
+}) {
+  const syncLead = useSyncLeadToCrm();
+  const syncBatch = useSyncLeadsBatchToCrm();
+  const { data: integrationStatus } = useFactory23IntegrationStatus();
+  const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
+  const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
+  const [pendingCrmLead, setPendingCrmLead] = useState<ChatLead | null>(null);
+  const canSyncToCrm = integrationStatus?.can_sync ?? true;
+  const crmBlockMessage =
+    integrationStatus?.block_message ??
+    "CRM sync is unavailable. Sign out and sign back in to link Factory23, or contact your admin.";
+  const unsavedIds = leads
+    .filter((lead) => !lead.crm_synced && !lead.crm_duplicate && lead.save_status !== "saved")
+    .map((lead) => lead.id);
+  const visibleLeads = leads.slice(0, displayCount);
+  const hasMore = displayCount < leads.length;
+  const remaining = Math.max(leads.length - displayCount, 0);
+
+  function markSynced(
+    ids: number[],
+    extras?: Partial<Pick<ChatLead, "crm_duplicate" | "crm_duplicate_reason" | "crm_fields_updated">>
+  ) {
+    onLeadsChange?.(
+      leads.map((lead) =>
+        ids.includes(lead.id)
+          ? {
+              ...lead,
+              crm_synced: true,
+              save_status: "saved" as const,
+              ...(extras ?? {}),
+            }
+          : lead
+      )
+    );
+  }
+
+  function handleConfirmSaveToCrm(pipelineId: string) {
+    if (!pendingCrmLead) return;
+    const lead = pendingCrmLead;
+    syncLead.mutate(
+      { leadId: lead.id, pipeline_id: pipelineId },
+      {
+        onSuccess: (result) => {
+          const updatedFields = Array.isArray(result.crm_fields_updated)
+            ? result.crm_fields_updated
+            : Array.isArray(result.fields_updated)
+              ? result.fields_updated
+              : [];
+          markSynced([lead.id], {
+            crm_duplicate: Boolean(result.crm_duplicate),
+            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
+            crm_fields_updated: updatedFields,
+          });
+          if (result.updated && updatedFields.length > 0) {
+            toast.success(`Updated existing CRM lead with new ${updatedFields.join(", ")}.`);
+          } else if (result.crm_duplicate || result.already_synced) {
+            toast.success(`"${lead.name}" is already in CRM.`);
+          } else {
+            toast.success(`Saved "${lead.name}" to CRM.`);
+          }
+          setPendingCrmLead(null);
+        },
+        onError: (error) => toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
+      }
+    );
+  }
+
   return (
-    <div className="max-w-[430px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
-      <div className="flex items-center gap-3">
-        <div className="relative grid size-8 place-items-center rounded-full bg-[#09232d] text-white">
-          <Sparkles size={14} className="animate-pulse" />
-          <span className="absolute inset-[-4px] rounded-full border border-[#16b37d]/40 animate-ping" />
-        </div>
-        <div className="min-w-0">
-          <p key={stage} className="animate-in fade-in slide-in-from-bottom-1 text-[11px] font-semibold duration-300">
-            {stage}
+    <div className="mt-3 max-w-[640px]">
+      {!canSyncToCrm && (
+        <p className="mb-2 rounded-[12px] bg-[#fef2f2] px-3 py-2 text-[8px] leading-[11px] text-[#991b1b]">
+          {crmBlockMessage}
+        </p>
+      )}
+      {unsavedIds.length > 0 && (
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[9px] font-medium text-[#616263]">
+            Showing {visibleLeads.length} of {leads.length} leads. Save the ones you want in CRM.
           </p>
-          <div className="mt-1.5 flex gap-1">
-            <span className="h-1.5 w-8 animate-pulse rounded-full bg-[#16b37d]" />
-            <span className="h-1.5 w-5 animate-pulse rounded-full bg-[#16b37d]/60 [animation-delay:150ms]" />
-            <span className="h-1.5 w-3 animate-pulse rounded-full bg-[#16b37d]/30 [animation-delay:300ms]" />
-          </div>
+          <button
+            type="button"
+            disabled={syncBatch.isPending || !canSyncToCrm}
+            title={!canSyncToCrm ? crmBlockMessage : undefined}
+            onClick={() => {
+              syncBatch.mutate(unsavedIds, {
+                onSuccess: (result) => {
+                  const syncedIds = result.synced.map((item) => item.lead_id);
+                  markSynced(syncedIds);
+                  toast.success(`Saved ${syncedIds.length} lead${syncedIds.length === 1 ? "" : "s"} to CRM.`);
+                  if (result.errors.length > 0) {
+                    toast.error(result.errors[0]);
+                  }
+                },
+                onError: (error) =>
+                  toast.error(getApiErrorMessage(error, "Could not save leads to CRM.")),
+              });
+            }}
+            className="shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
+          >
+            {syncBatch.isPending ? "Saving…" : "Save all"}
+          </button>
         </div>
+      )}
+      {unsavedIds.length === 0 && leads.length > LEADS_PER_PAGE && (
+        <p className="mb-2 text-[9px] font-medium text-[#616263]">
+          Showing {visibleLeads.length} of {leads.length} leads
+        </p>
+      )}
+      <div className="grid gap-2 sm:grid-cols-3">
+        {visibleLeads.map((lead) => {
+          const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+          const fieldsUpdated = lead.crm_fields_updated ?? [];
+          const { overall } = leadScoreBreakdown(lead);
+          const roleLine = formatLeadRoleLine(lead);
+          const contactLine = formatLeadContactLine(lead);
+          const profileUrl = primaryProfileUrl(lead);
+          const entityBadge = leadEntityBadge(lead);
+
+          return (
+            <div
+              key={lead.id ?? lead.name}
+              className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
+                    {entityBadge}
+                  </span>
+                  <span
+                    className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
+                    title="Overall priority score"
+                  >
+                    Overall {overall}%
+                  </span>
+                </div>
+              </div>
+              {lead.icp_relevance_reason && (
+                <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                  {lead.icp_relevance_reason}
+                </p>
+              )}
+              <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
+              {roleLine && (
+                <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
+              )}
+              {contactLine && (
+                <p className="mt-0.5 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
+              )}
+              {entityBadge === "Contact" && lead.location && (
+                <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
+              )}
+              {(lead.email || lead.phone || profileUrl || lead.website) && (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {lead.email && (
+                    <a
+                      href={`mailto:${lead.email}`}
+                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                      title={lead.email}
+                    >
+                      <Mail size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate">{lead.email}</span>
+                    </a>
+                  )}
+                  {lead.phone && (
+                    <a
+                      href={`tel:${lead.phone}`}
+                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                      title={lead.phone}
+                    >
+                      <Phone size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate">{lead.phone}</span>
+                    </a>
+                  )}
+                  {profileUrl && (
+                    <a
+                      href={profileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      {entityBadge === "Account" ? "View company" : "View profile"}
+                    </a>
+                  )}
+                  {entityBadge === "Account" && lead.website && (
+                    <a
+                      href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      Website
+                    </a>
+                  )}
+                  {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                    <span
+                      className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                      title={
+                        lead.contact_enrichment_provider
+                          ? `Contact via ${lead.contact_enrichment_provider}`
+                          : "Contact enrichment source"
+                      }
+                    >
+                      {lead.contact_enrichment_tier === "tier1"
+                        ? "Contact from web"
+                        : lead.contact_enrichment_tier === "tier2"
+                          ? "Contact enriched"
+                          : "Contact verified"}
+                    </span>
+                  )}
+                </div>
+              )}
+              {lead.contact_ready === false && (
+                <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
+              )}
+              {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                <p className="mt-1 text-[7px] font-medium text-[#616263]">
+                  Profile found · email/phone still missing
+                </p>
+              )}
+              <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+              {lead.low_confidence && (
+                <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
+              )}
+              <div className="mt-2">
+                {isSynced ? (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]"
+                    title={
+                      fieldsUpdated.length > 0
+                        ? `Updated in CRM: ${fieldsUpdated.join(", ")}`
+                        : lead.crm_duplicate_reason ?? "Already saved in CRM"
+                    }
+                  >
+                    <CircleCheck size={10} />
+                    {fieldsUpdated.length > 0
+                      ? `Updated in CRM (${fieldsUpdated.join(", ")})`
+                      : "In CRM"}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={syncLead.isPending || !canSyncToCrm}
+                    title={!canSyncToCrm ? crmBlockMessage : undefined}
+                    onClick={() => setPendingCrmLead(lead)}
+                    className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] hover:bg-[#09232d]/5 disabled:opacity-60"
+                  >
+                    Save to CRM
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setDisplayCount((prev) => prev + LEADS_PER_PAGE)}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-[#09232d]/15 bg-white px-3 py-2 text-[10px] font-semibold text-[#09232d] transition-colors hover:bg-[#f8f8f8]"
+        >
+          See {Math.min(LEADS_PER_PAGE, remaining)} more lead
+          {Math.min(LEADS_PER_PAGE, remaining) === 1 ? "" : "s"}
+          <ChevronDown size={14} className="opacity-70" />
+        </button>
+      )}
+      <AddToCrmPipelineModal
+        key={pendingCrmLead?.id ?? "smart-lead-crm-modal"}
+        isOpen={pendingCrmLead != null}
+        onClose={() => setPendingCrmLead(null)}
+        prospectName={pendingCrmLead?.name ?? null}
+        pipelines={pipelines}
+        isLoading={pipelinesLoading}
+        isConfirming={syncLead.isPending}
+        onConfirm={handleConfirmSaveToCrm}
+      />
+    </div>
+  );
+}
+
+function ChatOutreachReviewCard({
+  draft,
+  onReview,
+}: {
+  draft: OutreachDraft;
+  onReview: () => void;
+}) {
+  if (draft.sent) {
+    return (
+      <div className="mt-2 max-w-[420px] rounded-[14px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2.5">
+        <p className="text-[9px] font-semibold text-[#087652]">✓ Outreach sent</p>
+      </div>
+    );
+  }
+
+  const leadNames = draft.leads?.map((lead) => lead.name).filter(Boolean).slice(0, 2).join(", ");
+  const preview = draft.body.trim().slice(0, 120);
+
+  return (
+    <div className="mt-2 max-w-[420px] rounded-[14px] border border-[#dbe7ff] bg-[#f5f8ff] px-3.5 py-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[9px] font-bold leading-[12px] text-[#09232d]">
+            {draft.channel === "whatsapp" ? "WhatsApp draft ready" : "Email draft ready"}
+          </p>
+          {leadNames && (
+            <p className="mt-0.5 text-[8px] text-[#616263]">For {leadNames}</p>
+          )}
+          {preview && (
+            <p className="mt-1 line-clamp-2 text-[8px] leading-[11px] text-[#616263]">{preview}{draft.body.length > 120 ? "…" : ""}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onReview}
+          className="h-7 shrink-0 rounded-[8px] bg-[#09232d] px-3 text-[9px] font-semibold text-white transition hover:bg-[#0f3340]"
+        >
+          Review &amp; Send
+        </button>
       </div>
     </div>
   );
 }
 
-function LeadInlineResults({
-  leads,
-  onAddToCrm,
-}: {
-  leads: ChatLead[];
-  onAddToCrm: (lead: ChatLead) => void;
-}) {
-  return (
-    <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
-      {leads.map((lead) => (
-        <div key={lead.id ?? lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-            <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
-              {lead.score}
-            </span>
-          </div>
-          <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
-          <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
-          <button
-            type="button"
-            onClick={() => onAddToCrm(lead)}
-            className="mt-2 flex items-center gap-1 rounded-full bg-[#09232d]/5 px-2 py-1 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/10"
-          >
-            <UserPlus size={10} />
-            Add to CRM
-          </button>
-        </div>
-      ))}
-    </div>
-  );
+function buildChatOutreachPreview(
+  messageId: number,
+  draft: OutreachDraft
+): OutreachPreviewState {
+  const activityId = draft.activity_id ?? draft.activity_ids?.[0] ?? null;
+  const lead = draft.leads?.find((item) => Boolean(item.email)) ?? draft.leads?.[0];
+  const leadNames = draft.leads?.map((item) => item.name).filter(Boolean).slice(0, 2).join(", ");
+  const normalized = normalizeOutreachSubjectBody(draft.body, draft.subject);
+
+  return {
+    activityId,
+    channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+    subject: normalized.subject,
+    body: normalized.body,
+    toEmail: draft.to_email ?? lead?.email ?? "",
+    contextLabel: leadNames ? `For ${leadNames}` : undefined,
+    alignmentNote: draft.icp_alignment_note,
+    messageId,
+  };
 }
 
 function IcpConfirmationCard({
@@ -1578,44 +980,72 @@ function ChatWorkspace({
   expanded,
   onToggleExpanded,
   onOpenIcpBuilder,
-  crmContactNames,
-  onAddToCrm,
+  onOpenOutreachSettings,
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
   onOpenIcpBuilder: () => void;
-  crmContactNames: Set<string>;
-  onAddToCrm: (prospect: { id: number | string; name: string }) => void;
+  onOpenOutreachSettings?: () => void;
 }) {
+  const { data: activeProfile } = useActiveIcpProfile();
+  const activeIcpId = activeProfile?.id;
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
-  const [thinkingStage, setThinkingStage] = useState<string>(thinkingStagesByIntent.freeform[0]);
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
   const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
   const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
   const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
+  const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const thinkingIntervalRef = useRef<number | null>(null);
-  const timersRef = useRef<number[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Local React keys for messages — independent of the API's session-scoped message
-  // ids, which restart from 1 per session and would collide with the hardcoded
-  // welcome message (id: 1).
+  const timersRef = useRef<number[]>([]);
   const nextMessageIdRef = useRef(2);
+  const pendingUserMessageIdRef = useRef<number | null>(null);
   function nextMessageId() {
     return nextMessageIdRef.current++;
   }
+  const [backgroundRunIds, setBackgroundRunIds] = useState<Set<number>>(new Set());
   const icpMenuRef = useRef<HTMLDivElement>(null);
   const icpTriggerRef = useRef<HTMLButtonElement>(null);
 
   const { data: icpProfiles = [], isLoading: isIcpProfilesLoading } = useIcpProfiles();
+  const { data: chatHistory, isLoading: isHistoryLoading } = useChatHistory(activeIcpId);
+  const clearChatHistory = useClearChatHistory(activeIcpId);
+
   const activateIcpProfile = useActivateIcpProfile({
     onSuccess: (profile) => toast.success(`Switched active ICP to "${profile.name}"`),
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to switch ICP build.")),
+  });
+
+  useEffect(() => {
+    if (!activeIcpId || isHistoryLoading) return;
+
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate chat from query result */
+    if (!chatHistory || chatHistory.messages.length === 0) {
+      setMessages(initialMessages);
+      nextMessageIdRef.current = 2;
+
+      return;
+    }
+
+    setMessages(mapApiMessagesToUi(chatHistory.messages));
+    nextMessageIdRef.current = chatHistory.messages.length + 2;
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [activeIcpId, chatHistory, isHistoryLoading]);
+
+  const hasPendingDiscovery = useMemo(
+    () => chatHistory?.messages.some((message) => Boolean(message.meta?.pending)) ?? false,
+    [chatHistory]
+  );
+
+  usePendingChatDiscovery(activeIcpId, chatHistory?.messages, ({ intent }) => {
+    toast.success(
+      intent === "quick_research" ? "Research results are ready." : "Lead results are ready."
+    );
   });
 
   useLayoutEffect(() => {
@@ -1641,57 +1071,97 @@ function ChatWorkspace({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isIcpMenuOpen]);
 
-  const [isSending, setIsSending] = useState(false);
-  const isThinking = isSending || isSyntheticThinking;
+  const sendMessage = useSendChatMessage(activeIcpId, {
+    onSuccess: ({ assistant_message, pending }) => {
+      const pendingUserId = pendingUserMessageIdRef.current;
+      pendingUserMessageIdRef.current = null;
+      if (pendingUserId != null) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === pendingUserId ? { ...message, failed: false } : message
+          )
+        );
+      }
 
-  // Dummy, local-only reply — no network call. Swap for the real chat API once the backend
-  // is ready to answer generate_leads/quick_research/create_outreach synchronously.
-  async function sendDummyMessage(bodyToSend: string, intent: ChatIntent, targetCount?: number) {
-    setIsSending(true);
-    startThinkingCycle(intent);
-    await wait(1100 + Math.random() * 700);
+      if (!assistant_message) return;
 
-    const reply = buildDummyAssistantReply(intent, bodyToSend, targetCount);
-    const rawLeads = reply.leads;
-    const leads = rawLeads?.filter((lead) => !crmContactNames.has(lead.name.toLowerCase()));
-    const excludedCount = rawLeads ? rawLeads.length - (leads?.length ?? 0) : 0;
-    const excludedNote =
-      excludedCount > 0
-        ? `\n\n_${excludedCount} prospect${excludedCount === 1 ? "" : "s"} excluded — already in your CRM._`
-        : "";
+      setMessages((current) => {
+        const alreadyPresent = current.some(
+          (message) =>
+            message.role === "assistant" &&
+            message.body === assistant_message.body &&
+            (pending ? true : Boolean(message.leads?.length))
+        );
+        if (alreadyPresent) return current;
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: nextMessageId(),
-        role: "assistant",
-        body: reply.body + excludedNote,
-        leads: leads && leads.length > 0 ? leads : undefined,
-      },
-    ]);
-    stopThinkingCycle();
-    setIsSending(false);
-  }
+        const createdMessageId = nextMessageId();
+        const nextMessages = [
+          ...current,
+          {
+            id: createdMessageId,
+            role: "assistant" as const,
+            body: assistant_message.body,
+            intent: assistant_message.intent,
+            leads: assistant_message.leads ?? undefined,
+            meta: assistant_message.meta ?? undefined,
+          },
+        ];
 
-  function stopThinkingCycle() {
-    if (thinkingIntervalRef.current != null) {
-      window.clearInterval(thinkingIntervalRef.current);
-      thinkingIntervalRef.current = null;
+        if (
+          assistant_message.intent === "create_outreach" &&
+          assistant_message.meta?.outreach
+        ) {
+          const draft = assistant_message.meta.outreach as OutreachDraft;
+          if (!draft.sent) {
+            // Defer so we don't update another component during this setState.
+            queueMicrotask(() => {
+              setOutreachPreview(buildChatOutreachPreview(createdMessageId, draft));
+            });
+          }
+        }
+
+        return nextMessages;
+      });
+    },
+    onError: (error) => {
+      const pendingUserId = pendingUserMessageIdRef.current;
+      pendingUserMessageIdRef.current = null;
+      if (pendingUserId != null) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === pendingUserId ? { ...message, failed: true } : message
+          )
+        );
+      } else {
+        setMessages((current) => {
+          for (let i = current.length - 1; i >= 0; i -= 1) {
+            if (current[i].role === "user") {
+              return current.map((message, index) =>
+                index === i ? { ...message, failed: true } : message
+              );
+            }
+          }
+          return current;
+        });
+      }
+      toast.error(
+        isMissingActiveIcp(error)
+          ? "Select an active ICP profile first — open ICP Builder to create or activate one."
+          : getApiErrorMessage(error, "Sales Engine couldn't process that request.")
+      );
+    },
+  });
+
+  function handleDetachToBackground() {
+    const runId = sendMessage.detachToBackground();
+    if (typeof runId === "number") {
+      setBackgroundRunIds((current) => new Set(current).add(runId));
     }
-    timersRef.current.forEach((timer) => window.clearTimeout(timer));
-    timersRef.current = [];
+    toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
   }
 
-  function startThinkingCycle(intent: ChatIntent) {
-    const stages = thinkingStagesByIntent[intent];
-    let stageIndex = 0;
-    setThinkingStage(stages[0]);
-    stopThinkingCycle();
-    thinkingIntervalRef.current = window.setInterval(() => {
-      stageIndex = (stageIndex + 1) % stages.length;
-      setThinkingStage(stages[stageIndex]);
-    }, 1200);
-  }
+  const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode) || isSyntheticThinking;
+  const showWelcomeMessage = messages.length > 0 && messages[0]?.id === 1;
 
   function selectIntent(intent: ActionIntent) {
     setSelectedIntent((current) => (current === intent ? "freeform" : intent));
@@ -1715,9 +1185,7 @@ function ChatWorkspace({
       ]);
       setDraft("");
       setIsSyntheticThinking(true);
-      startThinkingCycle(intent);
       const timer = window.setTimeout(() => {
-        stopThinkingCycle();
         setIsSyntheticThinking(false);
         const remaining = Math.max(usage.limit - usage.used, 0);
         setMessages((current) => [
@@ -1738,7 +1206,13 @@ function ChatWorkspace({
       const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
       setMessages((current) => [
         ...current,
-        { id: nextMessageId(), role: "user", body: trimmed, intent, targetCount },
+        {
+          id: nextMessageId(),
+          role: "user",
+          body: trimmed,
+          intent,
+          ...(targetCount != null ? { targetCount } : {}),
+        },
         { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
       ]);
       setDraft("");
@@ -1746,12 +1220,28 @@ function ChatWorkspace({
       return;
     }
 
+    const userMessageId = nextMessageId();
+    pendingUserMessageIdRef.current = userMessageId;
     setMessages((current) => [
       ...current,
-      { id: nextMessageId(), role: "user", body: trimmed, intent },
+      { id: userMessageId, role: "user", body: trimmed, intent },
     ]);
     setDraft("");
-    void sendDummyMessage(trimmed, intent);
+    sendMessage.mutate({ body: trimmed, intent });
+  }
+
+  function handleRetryFailedPrompt(message: ChatMessage) {
+    if (!message.failed || isThinking) return;
+    const intent = message.intent ?? "freeform";
+    pendingUserMessageIdRef.current = message.id;
+    setMessages((current) =>
+      current.map((item) => (item.id === message.id ? { ...item, failed: false } : item))
+    );
+    const body =
+      intent === "generate_leads"
+        ? resolveGenerateLeadsPrompt(message.body).apiBody
+        : message.body;
+    sendMessage.mutate({ body, intent });
   }
 
   function confirmGenerateLeads() {
@@ -1762,14 +1252,29 @@ function ChatWorkspace({
       return;
     }
 
-    const { body, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    const largeRequestHint =
+      targetCount != null && targetCount >= 50
+        ? " Searching multiple sources — this may take 30–60 seconds."
+        : "";
+
+    let lastUserId: number | null = null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "user") {
+        lastUserId = messages[i].id;
+        break;
+      }
+    }
+    pendingUserMessageIdRef.current = lastUserId;
+
     setMessages((current) =>
       current.map((message) =>
         message.kind === "confirm-icp"
           ? {
               ...message,
               kind: undefined,
-              body: `Using **${activeIcp.name}** — generating up to ${targetCount} prospects…`,
+              body: `Using **${activeIcp.name}** · generating prospects…${largeRequestHint}`,
+              intent: "generate_leads" as const,
             }
           : message
       )
@@ -1784,7 +1289,7 @@ function ChatWorkspace({
       return next;
     });
 
-    void sendDummyMessage(body, "generate_leads", targetCount);
+    sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
   }
 
   function scrollTranscriptToBottom() {
@@ -1799,11 +1304,19 @@ function ChatWorkspace({
       scrollTranscriptToBottom();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, isThinking, thinkingStage]);
+  }, [messages, isThinking, sendMessage.processingState]);
 
-  useEffect(() => () => stopThinkingCycle(), []);
+  useEffect(
+    () => () => {
+      timersRef.current.forEach((timer) => window.clearTimeout(timer));
+      timersRef.current = [];
+    },
+    []
+  );
+
 
   return (
+    <>
     <section
       className={`relative flex flex-col overflow-hidden rounded-[35px] bg-white shadow-[0_8px_6px_rgba(0,0,0,0.15),0_4px_2px_rgba(0,0,0,0.3)] transition-[height] duration-300 ${
         expanded ? "h-[calc(100vh-112px)] min-h-[720px]" : "h-[600px]"
@@ -1888,6 +1401,25 @@ function ChatWorkspace({
             <div className="mt-1 border-t border-gray-100 pt-1">
               <button
                 type="button"
+                disabled={!activeIcpId || clearChatHistory.isPending}
+                onClick={() => {
+                  clearChatHistory.mutate(undefined, {
+                    onSuccess: () => {
+                      setMessages(initialMessages);
+                      nextMessageIdRef.current = 2;
+                      setIsIcpMenuOpen(false);
+                      toast.success("Chat history cleared for this ICP.");
+                    },
+                    onError: (error) =>
+                      toast.error(getApiErrorMessage(error, "Could not clear chat history.")),
+                  });
+                }}
+                className="w-full rounded-[10px] px-2.5 py-2 text-left text-[12px] font-medium text-[#616263] transition hover:bg-gray-100 disabled:opacity-60"
+              >
+                Clear chat history
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setIsIcpMenuOpen(false);
                   onOpenIcpBuilder();
@@ -1908,11 +1440,36 @@ function ChatWorkspace({
         }`}
       >
         <div className="space-y-4">
-          {messages.map((message, index) => (
+          {messages.map((message, index) => {
+            const pendingRunId =
+              typeof message.meta?.discovery_run_id === "number"
+                ? message.meta.discovery_run_id
+                : null;
+            const isPendingMessage = Boolean(message.meta?.pending);
+            const isBackgroundPending =
+              isPendingMessage &&
+              !isThinking &&
+              (pendingRunId == null ||
+                backgroundRunIds.has(pendingRunId) ||
+                sendMessage.waitMode === "background" ||
+                hasPendingDiscovery);
+
+            return (
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[78%]" : "max-w-full"}>
-              {message.role === "user" && message.intent && message.intent !== "freeform" && (
+              {message.role === "user" &&
+                message.intent &&
+                message.intent !== "freeform" &&
+                message.intent in INTENT_MODE_CONFIG && (
                 <div className="mb-1.5 flex justify-end">
-                  <IntentModeChip intent={message.intent} compact />
+                  <IntentModeChip intent={message.intent as ActionIntent} compact />
+                </div>
+              )}
+              {isBackgroundPending && (
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
+                    <Loader2 size={10} className="animate-spin" />
+                    Processing in background
+                  </span>
                 </div>
               )}
               {message.kind === "confirm-icp" ? (
@@ -1930,30 +1487,88 @@ function ChatWorkspace({
                 <div
                   className={
                     message.role === "user"
-                      ? "rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white"
-                      : index === 0
+                      ? `rounded-[18px] bg-[#09232d] px-4 py-3 text-[12px] leading-[16px] text-white ${
+                          message.failed ? "opacity-80 ring-1 ring-red-400/40" : ""
+                        }`
+                      : showWelcomeMessage && index === 0
                         ? "text-[12px] leading-[15px] text-[#09232d]"
                         : "rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[12px] leading-[16px] text-[#09232d]"
                   }
                 >
                   <ChatMessageBody
                     content={message.body}
-                    variant={message.role === "user" ? "user" : index === 0 ? "welcome" : "assistant"}
+                    variant={message.role === "user" ? "user" : showWelcomeMessage && index === 0 ? "welcome" : "assistant"}
                   />
                 </div>
               )}
-              {message.role === "user" && message.targetCount != null && (
-                <p className="mt-1 text-right text-[8px] font-medium text-[#09232d]/40">
-                  Target: {message.targetCount} prospects
+              {message.role === "user" && message.failed && (
+                <div className="mt-1.5 flex items-center justify-end gap-1.5">
+                  <span className="text-[9px] font-medium text-[#9d9d9d]">Couldn’t send</span>
+                  <button
+                    type="button"
+                    aria-label="Retry prompt"
+                    title="Retry"
+                    disabled={isThinking}
+                    onClick={() => handleRetryFailedPrompt(message)}
+                    className="grid size-6 place-items-center rounded-full text-[#616263] transition hover:bg-[#09232d]/8 hover:text-[#09232d] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <RotateCcw size={12} />
+                  </button>
+                </div>
+              )}
+              {message.role === "assistant" &&
+                message.intent === "quick_research" &&
+                !isPendingMessage && (
+                  <ResearchSourcesList sources={researchSourcesFromMeta(message.meta)} />
+                )}
+              {message.role === "assistant" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                !message.leads?.length &&
+                !isPendingMessage && (
+                <p className="mt-2 text-[9px] font-medium text-[#616263]">
+                  No leads matched this search yet · try a broader industry or role, or run Generate Prospects with your ICP selected.
                 </p>
               )}
-              {message.leads && (
+              {message.leads && message.leads.length > 0 && (
                 <LeadInlineResults
                   leads={message.leads}
-                  onAddToCrm={(lead) => onAddToCrm({ id: lead.id, name: lead.name })}
+                  onLeadsChange={(leads) => {
+                    setMessages((current) =>
+                      current.map((item) => (item.id === message.id ? { ...item, leads } : item))
+                    );
+                  }}
                 />
               )}
-              {index === 0 && (
+              {message.role === "assistant" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                Boolean(message.leads?.length) &&
+                !isPendingMessage &&
+                !isThinking && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSend("Generate more prospects for the same ICP", "generate_more_leads")
+                      }
+                      className="rounded-full border border-[#c8f0ff] bg-[#e4faff] px-3 py-1.5 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#d6f5ff]"
+                    >
+                      Generate more prospects
+                    </button>
+                  </div>
+                )}
+              {message.role === "assistant" &&
+                message.intent === "create_outreach" &&
+                message.meta?.outreach != null && (
+                  <ChatOutreachReviewCard
+                    draft={message.meta.outreach as OutreachDraft}
+                    onReview={() =>
+                      setOutreachPreview(
+                        buildChatOutreachPreview(message.id, message.meta?.outreach as OutreachDraft)
+                      )
+                    }
+                  />
+                )}
+              {showWelcomeMessage && index === 0 && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
                   <ThumbsUp size={14} />
                   <ThumbsDown size={14} />
@@ -1961,8 +1576,21 @@ function ChatWorkspace({
                 </div>
               )}
             </div>
-          ))}
-          {isThinking && <ThinkingBubble stage={thinkingStage} />}
+            );
+          })}
+          {isThinking && sendMessage.processingState && (
+            sendMessage.processingState.intent === "quick_research" ? (
+              <ResearchProcessingPanel
+                state={sendMessage.processingState}
+                onDetachToBackground={handleDetachToBackground}
+              />
+            ) : (
+              <ProcessingPanel
+                state={sendMessage.processingState}
+                onDetachToBackground={handleDetachToBackground}
+              />
+            )
+          )}
           <div aria-hidden className="h-2" />
         </div>
       </div>
@@ -2028,241 +1656,335 @@ function ChatWorkspace({
         </div>
       </div>
     </section>
+
+    <OutreachPreviewModal
+      open={outreachPreview != null}
+      onClose={() => setOutreachPreview(null)}
+      activityId={outreachPreview?.activityId ?? null}
+      channel={outreachPreview?.channel ?? "email"}
+      initialSubject={outreachPreview?.subject}
+      initialBody={outreachPreview?.body ?? ""}
+      initialToEmail={outreachPreview?.toEmail}
+      contextLabel={outreachPreview?.contextLabel}
+      alignmentNote={outreachPreview?.alignmentNote}
+      onConfigureSender={onOpenOutreachSettings}
+      onSent={() => {
+        const messageId = outreachPreview?.messageId;
+        if (messageId != null) {
+          setMessages((current) =>
+            current.map((item) =>
+              item.id === messageId
+                ? {
+                    ...item,
+                    meta: {
+                      ...item.meta,
+                      outreach: { ...(item.meta?.outreach as OutreachDraft), sent: true },
+                    },
+                  }
+                : item
+            )
+          );
+        }
+        setOutreachPreview(null);
+      }}
+    />
+    </>
+  );
+}
+
+const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  sent: { label: "Sent", className: "bg-white/70 text-[#09232d]" },
+  delivered: { label: "Delivered", className: "bg-[#16b37d]/20 text-[#087652]" },
+  opened: { label: "Opened", className: "bg-[#2563eb]/15 text-[#1d4ed8]" },
+  clicked: { label: "Clicked", className: "bg-[#7c3aed]/15 text-[#6d28d9]" },
+  bounced: { label: "Bounced", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  dropped: { label: "Dropped", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  spam: { label: "Marked spam", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
+  unsubscribed: { label: "Unsubscribed", className: "bg-[#f59e0b]/20 text-[#92400e]" },
+};
+
+function OutreachActionMenu({
+  onView,
+  onDelete,
+  isDeleting = false,
+}: {
+  onView: () => void;
+  onDelete: () => void;
+  isDeleting?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const updatePosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 150;
+    const menuHeight = 96;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < menuHeight ? rect.top - menuHeight : rect.bottom + 4;
+    const left = Math.max(12, rect.right - menuWidth);
+    setPosition({ top, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    function handleScroll() {
+      setIsOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("resize", handleScroll);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", handleScroll);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Outreach actions"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen((prev) => !prev);
+        }}
+        className={`grid size-6 shrink-0 place-items-center rounded-full text-[#09232d] transition hover:bg-black/10 cursor-pointer ${
+          isOpen ? "bg-black/10" : ""
+        }`}
+      >
+        <MoreVertical size={16} />
+      </button>
+
+      {isOpen &&
+        position &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            style={{ top: position.top, left: position.left }}
+            className="fixed z-50 w-[150px] rounded-[14px] border border-black/10 bg-white p-1.5 text-[#09232d] shadow-[0_12px_28px_rgba(9,35,45,0.18)]"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onView();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+            >
+              <Eye size={13} className="shrink-0 text-[#09232d]" />
+              <span>Open draft</span>
+            </button>
+            <div className="my-1 border-t border-gray-100" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={isDeleting}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                onDelete();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-red-600 transition hover:bg-red-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={13} className="shrink-0 text-red-500" />
+              <span>{isDeleting ? "Deleting…" : "Delete"}</span>
+            </button>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
 function OutreachCard({
   color,
-  icon,
-  iconColor,
+  iconSrc,
   name,
   channel,
   preview,
   time,
+  deliveryStatus,
+  bounceReason,
+  onView,
+  onDelete,
+  isDeleting = false,
 }: {
   color: string;
-  icon: string;
-  iconColor?: string;
+  iconSrc: string;
   name: string;
   channel: string;
   preview: string;
   time: string;
+  deliveryStatus?: string | null;
+  bounceReason?: string | null;
+  onView: () => void;
+  onDelete: () => void;
+  isDeleting?: boolean;
 }) {
+  const badge = deliveryStatus ? DELIVERY_STATUS_BADGES[deliveryStatus] : null;
+
   return (
     <article
-      className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      className={`${color} relative h-[108px] w-full shrink-0 overflow-hidden rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
       style={color.startsWith("#") ? { backgroundColor: color } : undefined}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
-            <MessageCircle
-              size={21}
-              className={icon}
-              style={iconColor ? { color: iconColor } : undefined}
-              fill="currentColor"
+            <Image
+              src={iconSrc}
+              alt=""
+              width={22}
+              height={22}
+              className="size-[22px] object-contain"
+              aria-hidden
             />
           </div>
-          <div className="min-w-0 text-[#09232d]">
-            <p className="text-[14px] font-bold leading-[18px]">{name}</p>
-            <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
+          <div className="min-w-0 flex-1 text-[#09232d]">
+            <p className="truncate text-[14px] font-bold leading-[18px]" title={name}>
+              {name}
+            </p>
+            <p className="mt-1 line-clamp-2 break-words text-[8px] font-light leading-[10px]">
               {channel}: {preview}
             </p>
           </div>
         </div>
-        <MoreVertical size={24} className="shrink-0 text-[#09232d]" />
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <OutreachActionMenu onView={onView} onDelete={onDelete} isDeleting={isDeleting} />
+          {badge ? (
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-wide ${badge.className}`}
+              title={bounceReason ?? undefined}
+            >
+              {badge.label}
+            </span>
+          ) : null}
+        </div>
       </div>
-      <p className="ml-[88px] mt-2 text-[5px] font-light leading-[9px] text-[#09232d]">{time}</p>
+      <p className="ml-[48px] mt-1.5 text-[7px] font-light leading-[9px] text-[#09232d]/80">{time}</p>
     </article>
   );
 }
-const OUTREACH_FALLBACK_COLORS = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
+
+const OUTREACH_CARD_PALETTE = [
+  { bg: "#E3A5E9", iconSrc: "/message-01-purple.png" },
+  { bg: "#7BB6B8", iconSrc: "/message-01-teal.png" },
+  { bg: "#DBDBDB", iconSrc: "/message-01-gray.png" },
 ] as const;
 
-function ViewAllOutreachIcon({ className = "size-4" }: { className?: string }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <path d="M4.66797 9.33341L6.5299 7.47148C6.79024 7.21115 7.21237 7.21115 7.4727 7.47148L8.5299 8.52868C8.79024 8.78901 9.21237 8.78901 9.4727 8.52868L11.3346 6.66675" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M13.9995 8.66667C14 8.4536 14 8.23153 14 8C14 5.17157 14 3.75736 13.1213 2.87868C12.2427 2 10.8284 2 8 2C5.17157 2 3.75736 2 2.87868 2.87868C2 3.75736 2 5.17157 2 8C2 10.8284 2 12.2427 2.87868 13.1213C3.75736 14 5.17157 14 8 14C8.23153 14 8.4536 14 8.66667 13.9995" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M12.6505 10.6811C12.6543 10.662 12.6817 10.662 12.6855 10.6811C12.8881 11.6722 13.6626 12.4466 14.6537 12.6492C14.6728 12.6531 14.6728 12.6804 14.6537 12.6843C13.6626 12.8869 12.8881 13.6614 12.6855 14.6524C12.6817 14.6716 12.6543 14.6716 12.6505 14.6524C12.4479 13.6614 11.6734 12.8869 10.6823 12.6843C10.6632 12.6804 10.6632 12.6531 10.6823 12.6492C11.6734 12.4466 12.4479 11.6722 12.6505 10.6811Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-
-function AllOutreachModal({
-  isOpen,
-  onClose,
-  items,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  items: Array<{
-    id: number;
-    name: string;
-    channel: string;
-    preview: string;
-    occurred_at: string;
-    accentBg?: string;
-    accentIcon?: string;
-  }>;
-}) {
-  const [query, setQuery] = useState("");
-
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        item.channel.toLowerCase().includes(q) ||
-        item.preview.toLowerCase().includes(q)
-    );
-  }, [items, query]);
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-          />
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 18 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 18 }}
-            transition={{ type: "spring", duration: 0.32 }}
-            className="relative z-10 flex max-h-[88vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#09232d] text-white shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/40">
-                  Smart Lead
-                </p>
-                <h3 className="mt-1 text-[18px] font-semibold">All Outreach Activities</h3>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="grid size-9 place-items-center rounded-full bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white cursor-pointer"
-                aria-label="Close modal"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="border-b border-white/10 px-6 py-3">
-              <label className="flex h-9 w-full items-center gap-2 rounded-full bg-white/5 px-3.5 text-white">
-                <Search size={14} className="text-white/40" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search activities by recipient, channel, or message…"
-                  className="min-w-0 flex-1 bg-transparent text-[12px] text-white outline-none placeholder:text-white/40"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    onClick={() => setQuery("")}
-                    className="text-white/40 hover:text-white cursor-pointer"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </label>
-            </div>
-
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
-              {filteredItems.length === 0 ? (
-                <div className="flex h-[200px] flex-col items-center justify-center text-center text-white/50 text-[13px]">
-                  No outreach activities found.
-                </div>
-              ) : (
-                filteredItems.map((item, index) => {
-                  const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-                  const useApiColors = item.accentBg?.startsWith("#");
-                  return (
-                    <OutreachCard
-                      key={item.id}
-                      color={useApiColors ? item.accentBg! : fallback.color}
-                      icon={useApiColors ? "" : fallback.icon}
-                      iconColor={useApiColors ? item.accentIcon : undefined}
-                      name={item.name}
-                      channel={item.channel}
-                      preview={item.preview}
-                      time={formatRelativeTime(item.occurred_at)}
-                    />
-                  );
-                })
-              )}
-            </div>
-
-            <div className="flex justify-end border-t border-white/10 px-6 py-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-10 rounded-[12px] bg-white/10 px-5 text-[12px] font-semibold text-white transition hover:bg-white/15 cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-function OutreachPanel() {
+function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { data: items = [] } = useSalesEngineOutreach();
-  const [isAllOutreachOpen, setIsAllOutreachOpen] = useState(false);
+  const deleteOutreach = useDeleteOutreachActivity();
+  const [preview, setPreview] = useState<OutreachPreviewState | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+
+  const handleView = async (item: OutreachActivity) => {
+    setOpeningId(item.id);
+    try {
+      const draft = await fetchOutreachActivity(item.id);
+      const normalized = normalizeOutreachSubjectBody(draft.body || item.preview, draft.subject);
+      setPreview({
+        activityId: draft.activity_id ?? item.id,
+        channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+        subject: normalized.subject,
+        body: normalized.body,
+        toEmail: draft.to_email ?? "",
+        contextLabel: item.name,
+      });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not open outreach draft."));
+    } finally {
+      setOpeningId(null);
+    }
+  };
+
+  const handleDelete = (item: OutreachActivity) => {
+    deleteOutreach.mutate(item.id, {
+      onSuccess: () => {
+        if (preview?.activityId === item.id) setPreview(null);
+        toast.success(`Removed outreach for ${item.name}.`);
+      },
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not delete outreach activity.")),
+    });
+  };
 
   return (
-    <>
-      <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[36px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
-        <header className="mb-6 flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-bold leading-tight">Recent Outreach Activities</h2>
-          <button
-            type="button"
-            onClick={() => setIsAllOutreachOpen(true)}
-            className="flex h-[34px] shrink-0 items-center gap-1.5 rounded-[12px] bg-white px-3 text-[12px] font-bold text-[#09232d] shadow-sm transition hover:bg-gray-100 cursor-pointer"
-          >
-            <ViewAllOutreachIcon className="size-4 text-[#09232d]" />
-            <span>View All</span>
-          </button>
-        </header>
+    <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
+      <header className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+          <h2 className="text-[13px] font-bold">Recent Outreach Activities</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-white/80 transition hover:bg-white/15 hover:text-white"
+          aria-label="Open email settings"
+          title="Email settings"
+        >
+          <Settings size={15} />
+        </button>
+      </header>
+      <p className="mb-6 text-center text-[10px] text-white/70">
+        <Link
+          href="/sales-engine/outreach"
+          className="font-bold italic underline underline-offset-2 text-white hover:text-white/80 transition-colors"
+        >
+          Click here
+        </Link>{" "}
+        to view all outreach
+      </p>
       {items.length > 0 ? (
-        <>
-          <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
-          <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
-            {items.map((item, index) => {
-              const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-              const useApiColors = item.accentBg?.startsWith("#");
-              return (
-                <OutreachCard
-                  key={item.id}
-                  color={useApiColors ? item.accentBg : fallback.color}
-                  icon={useApiColors ? "" : fallback.icon}
-                  iconColor={useApiColors ? item.accentIcon : undefined}
-                  name={item.name}
-                  channel={item.channel}
-                  preview={item.preview}
-                  time={formatRelativeTime(item.occurred_at)}
-                />
-              );
-            })}
-          </div>
-        </>
+        <div className="mx-auto flex h-[440px] w-full max-w-[285px] flex-col gap-4 overflow-y-auto overflow-x-hidden pr-1 max-xl:h-[360px] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 hover:[&::-webkit-scrollbar-thumb]:bg-white/40">
+          {items.map((item, index) => {
+            const cardTheme = OUTREACH_CARD_PALETTE[index % OUTREACH_CARD_PALETTE.length];
+            return (
+              <OutreachCard
+                key={item.id}
+                color={cardTheme.bg}
+                iconSrc={cardTheme.iconSrc}
+                name={item.name}
+                channel={item.channel}
+                preview={item.preview}
+                time={formatRelativeTime(item.occurred_at)}
+                deliveryStatus={item.delivery_status}
+                bounceReason={item.bounce_reason}
+                onView={() => void handleView(item)}
+                onDelete={() => handleDelete(item)}
+                isDeleting={deleteOutreach.isPending && deleteOutreach.variables === item.id}
+              />
+            );
+          })}
+        </div>
       ) : (
-        <div className="flex h-[460px] flex-col items-center justify-center max-xl:h-[380px]">
+        <div className="flex h-[420px] flex-col items-center justify-center max-xl:h-[340px]">
           <Image
             src="/message_empty.png"
             alt="No recent outreach activities"
@@ -2273,13 +1995,35 @@ function OutreachPanel() {
           />
         </div>
       )}
+
+      {openingId != null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9998] grid place-items-center bg-black/40 backdrop-blur-[2px]">
+            <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[#09232d] shadow-lg">
+              <Loader2 size={16} className="animate-spin" />
+              <span className="text-[12px] font-medium">Opening draft…</span>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      <OutreachPreviewModal
+        open={Boolean(preview)}
+        onClose={() => setPreview(null)}
+        activityId={preview?.activityId ?? null}
+        channel={preview?.channel ?? "email"}
+        initialSubject={preview?.subject}
+        initialBody={preview?.body ?? ""}
+        initialToEmail={preview?.toEmail}
+        contextLabel={preview?.contextLabel}
+        onSent={() => {
+          toast.success("Outreach sent.");
+          setPreview(null);
+        }}
+        onConfigureSender={onOpenSettings}
+      />
     </aside>
-    <AllOutreachModal
-      isOpen={isAllOutreachOpen}
-      onClose={() => setIsAllOutreachOpen(false)}
-      items={items}
-    />
-  </>
   );
 }
 
@@ -2399,7 +2143,7 @@ function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
 
   return (
     <span
-      className={`grid size-[22px] shrink-0 place-items-center rounded-[6px] text-[10px] font-bold text-white shadow-sm ${
+      className={`grid size-[22px] shrink-0 place-items-center rounded-full text-[10px] font-bold text-white ${
         isLinkedIn ? "bg-[#0a66c2]" : isReddit ? "bg-[#ff4500]" : "bg-black"
       }`}
     >
@@ -2432,13 +2176,17 @@ function SignalActionMenu({
   isActive = false,
   onRemove,
   onSelect,
+  onCreateOutreach,
   onAddToCrm,
+  onSetReminder,
 }: {
   signal: SocialSignal;
   isActive?: boolean;
   onRemove?: (id: number) => void;
   onSelect?: (signal: SocialSignal) => void;
-  onAddToCrm?: (prospect: { id: number | string; name: string }) => void;
+  onCreateOutreach?: (signal: SocialSignal) => void;
+  onAddToCrm?: (signal: SocialSignal) => void;
+  onSetReminder?: (signal: SocialSignal) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -2528,7 +2276,11 @@ function SignalActionMenu({
               onClick={(e) => {
                 e.stopPropagation();
                 setIsOpen(false);
-                toast.success(`Opening outreach composer for ${signal.company} (${signal.profile})…`);
+                if (onCreateOutreach) {
+                  onCreateOutreach(signal);
+                } else {
+                  toast.success(`Opening outreach composer for ${signal.company} (${signal.profile})…`);
+                }
               }}
               className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
             >
@@ -2538,15 +2290,21 @@ function SignalActionMenu({
             <button
               type="button"
               role="menuitem"
+              disabled={Boolean(signal.lead_id)}
               onClick={(e) => {
                 e.stopPropagation();
                 setIsOpen(false);
-                onAddToCrm?.({ id: signal.id, name: signal.profile || signal.company });
+                if (signal.lead_id) return;
+                if (onAddToCrm) {
+                  onAddToCrm(signal);
+                } else {
+                  toast.success(`Added ${signal.company} to CRM pipeline.`);
+                }
               }}
-              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
+              className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus size={13} className="shrink-0 text-[#09232d]" />
-              <span>Add to CRM</span>
+              <span>{signal.lead_id ? "Already in CRM" : "Add to CRM"}</span>
             </button>
             <button
               type="button"
@@ -2554,7 +2312,11 @@ function SignalActionMenu({
               onClick={(e) => {
                 e.stopPropagation();
                 setIsOpen(false);
-                toast.success(`Reminder set for ${signal.company}.`);
+                if (onSetReminder) {
+                  onSetReminder(signal);
+                } else {
+                  toast.success(`Reminder set for ${signal.company}.`);
+                }
               }}
               className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-[#09232d] transition hover:bg-gray-100 cursor-pointer"
             >
@@ -2568,8 +2330,11 @@ function SignalActionMenu({
               onClick={(e) => {
                 e.stopPropagation();
                 setIsOpen(false);
-                onRemove?.(signal.id);
-                toast.success(`Signal from ${signal.company} removed.`);
+                if (onRemove) {
+                  onRemove(signal.id);
+                } else {
+                  toast.success(`Signal from ${signal.company} removed.`);
+                }
               }}
               className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[11px] font-medium text-red-600 transition hover:bg-red-50 cursor-pointer"
             >
@@ -2586,17 +2351,30 @@ function SignalActionMenu({
 function SocialSignalRow({
   signal,
   isActive = false,
+  selected = false,
+  selectionMode = false,
+  onToggleSelect,
   onSelect,
   onRemoveSignal,
+  onCreateOutreach,
   onAddToCrm,
+  onSetReminder,
 }: {
   signal: SocialSignal;
   isActive?: boolean;
+  selected?: boolean;
+  selectionMode?: boolean;
+  onToggleSelect?: (signal: SocialSignal) => void;
   onSelect: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
-  onAddToCrm?: (prospect: { id: number | string; name: string }) => void;
+  onCreateOutreach?: (signal: SocialSignal) => void;
+  onAddToCrm?: (signal: SocialSignal) => void;
+  onSetReminder?: (signal: SocialSignal) => void;
 }) {
-  const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const isIndividual =
+    signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const fresh = isFreshSignal(signal.posted_at);
+  const inCrm = Boolean(signal.lead_id);
 
   return (
     <tr
@@ -2608,22 +2386,65 @@ function SocialSignalRow({
           onSelect(signal);
         }
       }}
-      className={`cursor-pointer outline-none transition-colors duration-150 ${
+      className={`group cursor-pointer outline-none transition-colors duration-150 ${
         isActive
           ? "bg-[#09232d] text-white"
           : "bg-[#f4f4f4] text-[#616263] hover:bg-[#eaeaea] hover:text-[#09232d]"
       }`}
     >
-      <td className="rounded-l-[20px] px-4 py-3">
+      {selectionMode && (
+        <td className="rounded-l-[20px] px-2 py-3">
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={inCrm}
+            aria-label={`Select ${signal.profile || signal.company}`}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.(signal);
+            }}
+            className="ml-2 size-3.5 cursor-pointer accent-[#09232d] disabled:cursor-not-allowed disabled:opacity-40"
+          />
+        </td>
+      )}
+      <td className={`px-4 py-3 ${selectionMode ? "" : "rounded-l-[20px]"}`}>
         <div className="flex min-w-[230px] gap-3">
           <SourceBadge sourceIcon={signal.sourceIcon} />
-          <p
-            className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
-              isActive ? "text-white" : "text-[#616263]"
-            }`}
-          >
-            {signal.signal}
-          </p>
+          <div className="min-w-0">
+            <div className="mb-1 flex flex-wrap items-center gap-1">
+              {fresh && (
+                <span
+                  className={`inline-flex rounded-full px-1.5 py-0.5 text-[7px] font-semibold uppercase tracking-wide ${
+                    isActive
+                      ? "bg-[#8dec66]/25 text-[#8dec66]"
+                      : "bg-[#e8f8df] text-[#2f6b1f]"
+                  }`}
+                >
+                  Fresh
+                </span>
+              )}
+              {inCrm && (
+                <span
+                  className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
+                    isActive
+                      ? "bg-[#8dec66]/25 text-[#8dec66]"
+                      : "bg-[#16b37d]/10 text-[#087652]"
+                  }`}
+                >
+                  <CircleCheck size={9} />
+                  In CRM
+                </span>
+              )}
+            </div>
+            <p
+              className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
+                isActive ? "text-white" : "text-[#616263]"
+              }`}
+            >
+              {signal.signal}
+            </p>
+          </div>
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
@@ -2633,7 +2454,7 @@ function SocialSignalRow({
             isActive ? "text-white/70" : "text-[#616263]/70"
           }`}
         >
-          2hr ago
+          {formatRelativeTime(signal.posted_at)}
         </p>
       </td>
       <td className="px-3 py-3 align-middle">
@@ -2670,7 +2491,7 @@ function SocialSignalRow({
         >
           {signal.intent}
         </span>
-        <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
+        {/* <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p> */}
       </td>
       <td className="px-3 py-3 align-middle">
         <ScoreGauge score={signal.score} dark={isActive} />
@@ -2683,7 +2504,11 @@ function SocialSignalRow({
             onClick={(e) => {
               e.stopPropagation();
               onSelect(signal);
-              toast.info(`Opening message composer for ${signal.profile || signal.company}…`);
+              if (onCreateOutreach) {
+                onCreateOutreach(signal);
+              } else {
+                toast.info(`Opening message composer for ${signal.profile || signal.company}…`);
+              }
             }}
             className={`grid size-6 place-items-center rounded-full transition cursor-pointer ${
               isActive ? "hover:bg-white/20" : "hover:bg-black/10"
@@ -2701,7 +2526,9 @@ function SocialSignalRow({
             isActive={isActive}
             onRemove={onRemoveSignal}
             onSelect={onSelect}
+            onCreateOutreach={onCreateOutreach}
             onAddToCrm={onAddToCrm}
+            onSetReminder={onSetReminder}
           />
         </div>
       </td>
@@ -2709,57 +2536,147 @@ function SocialSignalRow({
   );
 }
 
-const SIGNALS_PAGE_SIZE = 10;
-
 function SocialSignalsTable({
   signals,
   activeSignalId,
-  onSelectSignal,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+  onClearSelection,
+  onBulkAddToCrm,
+  isBulkSyncing,
+  onHoverSignal,
   onRemoveSignal,
+  onCreateOutreach,
   onAddToCrm,
+  onSetReminder,
+  page,
+  lastPage,
+  total,
+  perPage,
+  onPageChange,
+  isLoading,
+  isScanning,
+  emptyState,
+  onEmptyScanNow,
+  onEmptyOpenSettings,
+  enabledSources,
+  scanPanel,
 }: {
   signals: SocialSignal[];
-  activeSignalId?: number;
-  onSelectSignal: (signal: SocialSignal) => void;
+  activeSignalId?: number | null;
+  selectedIds: number[];
+  onToggleSelect: (signal: SocialSignal) => void;
+  onToggleSelectAll: () => void;
+  onClearSelection: () => void;
+  onBulkAddToCrm: () => void;
+  isBulkSyncing?: boolean;
+  onHoverSignal: (signal: SocialSignal) => void;
   onRemoveSignal?: (id: number) => void;
-  onAddToCrm?: (prospect: { id: number | string; name: string }) => void;
+  onCreateOutreach?: (signal: SocialSignal) => void;
+  onAddToCrm?: (signal: SocialSignal) => void;
+  onSetReminder?: (signal: SocialSignal) => void;
+  page: number;
+  lastPage: number;
+  total: number;
+  perPage: number;
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
+  isScanning?: boolean;
+  emptyState?: ReturnType<typeof getSocialListeningEmptyState>;
+  onEmptyScanNow?: () => void;
+  onEmptyOpenSettings?: () => void;
+  enabledSources?: string[];
+  scanPanel?: ReactNode;
 }) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [prevSignals, setPrevSignals] = useState(signals);
-  if (signals !== prevSignals) {
-    setPrevSignals(signals);
-    setCurrentPage(1);
-  }
-
-  const totalPages = Math.max(1, Math.ceil(signals.length / SIGNALS_PAGE_SIZE));
-  const safePage = Math.min(Math.max(1, currentPage), totalPages);
-  const startIndex = (safePage - 1) * SIGNALS_PAGE_SIZE;
-  const paginatedSignals = useMemo(() => {
-    return signals.slice(startIndex, startIndex + SIGNALS_PAGE_SIZE);
-  }, [signals, startIndex]);
-
-  const startDisplay = signals.length === 0 ? 0 : startIndex + 1;
-  const endDisplay = Math.min(startIndex + SIGNALS_PAGE_SIZE, signals.length);
-
+  const [selectionMode, setSelectionMode] = useState(false);
+  const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const rangeEnd = Math.min(page * perPage, total);
+  const safePage = Math.min(Math.max(1, page), Math.max(lastPage, 1));
   const pageNumbers = useMemo(() => {
-    if (totalPages <= 5) {
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    if (lastPage <= 5) {
+      return Array.from({ length: Math.max(lastPage, 1) }, (_, i) => i + 1);
     }
     if (safePage <= 3) {
-      return [1, 2, 3, "...", totalPages];
+      return [1, 2, 3, "...", lastPage];
     }
-    if (safePage >= totalPages - 2) {
-      return [1, "...", totalPages - 2, totalPages - 1, totalPages];
+    if (safePage >= lastPage - 2) {
+      return [1, "...", lastPage - 2, lastPage - 1, lastPage];
     }
-    return [1, "...", safePage, "...", totalPages];
-  }, [safePage, totalPages]);
+    return [1, "...", safePage, "...", lastPage];
+  }, [safePage, lastPage]);
+  const showSkeleton = (isLoading || isScanning) && signals.length === 0;
+  const skeletonRows = isScanning ? 5 : 4;
+  const selectableSignals = signals.filter((signal) => !signal.lead_id);
+  const allSelectableSelected =
+    selectableSignals.length > 0 &&
+    selectableSignals.every((signal) => selectedIds.includes(signal.id));
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    onClearSelection();
+  };
 
   return (
     <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1.5 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar:horizontal]:hidden [scrollbar-width:thin] [scrollbar-color:#e5e7eb_transparent]">
-        <table className="w-full min-w-0 border-separate border-spacing-y-2">
+      {isScanning && scanPanel}
+      <div className="mb-2 flex items-center justify-end gap-2 px-2 pt-1">
+        {selectionMode ? (
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-[14px] border border-[#09232d]/10 bg-[#f8f8f8] px-3 py-2">
+            <p className="text-[9px] font-medium text-[#616263]">
+              {selectedIds.length > 0
+                ? `${selectedIds.length} signal${selectedIds.length === 1 ? "" : "s"} selected`
+                : "Select signals to add to CRM"}
+            </p>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {selectedIds.length > 0 && (
+                <button
+                  type="button"
+                  disabled={isBulkSyncing}
+                  onClick={onBulkAddToCrm}
+                  className="rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
+                >
+                  {isBulkSyncing ? "Adding…" : `Add ${selectedIds.length} to CRM`}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={exitSelectionMode}
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-[#d1d1d1] bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#f3f3f3]"
+              >
+                <X size={10} />
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSelectionMode(true)}
+            disabled={signals.length === 0}
+            className="inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[9px] font-medium text-[#34373c] transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ListChecks size={13} />
+            Select
+          </button>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1.5 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-button]:hidden [scrollbar-width:thin] [scrollbar-color:#e5e7eb_transparent]">
+        <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
+              {selectionMode && (
+                <th className="bg-white px-2 py-1 text-left">
+                  <input
+                    type="checkbox"
+                    checked={allSelectableSelected}
+                    disabled={selectableSignals.length === 0}
+                    aria-label="Select all unsynced signals"
+                    onChange={onToggleSelectAll}
+                    className="ml-2 size-3.5 cursor-pointer accent-[#09232d] disabled:cursor-not-allowed disabled:opacity-40"
+                  />
+                </th>
+              )}
               <th className="bg-white px-4 py-1 text-left">Signal</th>
               <th className="bg-white px-3 py-1 text-left">Source</th>
               <th className="bg-white px-3 py-1 text-left">Persona</th>
@@ -2770,31 +2687,44 @@ function SocialSignalsTable({
             </tr>
           </thead>
           <tbody>
-            {paginatedSignals.map((signal) => (
+            {signals.map((signal) => (
               <SocialSignalRow
                 key={signal.id}
                 signal={signal}
                 isActive={signal.id === activeSignalId}
-                onSelect={onSelectSignal}
+                selected={selectedIds.includes(signal.id)}
+                selectionMode={selectionMode}
+                onToggleSelect={onToggleSelect}
+                onSelect={onHoverSignal}
                 onRemoveSignal={onRemoveSignal}
+                onCreateOutreach={onCreateOutreach}
                 onAddToCrm={onAddToCrm}
+                onSetReminder={onSetReminder}
               />
             ))}
+            {showSkeleton && (
+              <SocialSignalsTableSkeleton rows={skeletonRows} selectionMode={selectionMode} />
+            )}
           </tbody>
         </table>
-        {signals.length === 0 && (
-          <div className="flex h-[220px] items-center justify-center text-[12px] font-medium text-[#616263]">
-            No matching signals found.
-          </div>
+        {!isLoading && !isScanning && signals.length === 0 && emptyState && (
+          <SocialSignalsEmptyState
+            state={emptyState}
+            enabledSources={enabledSources}
+            onScanNow={onEmptyScanNow}
+            onOpenSettings={onEmptyOpenSettings}
+          />
         )}
       </div>
       <div className="shrink-0 flex items-center justify-between border-t border-[#f1f1f1] px-8 pb-3 pt-3 text-[9px] font-semibold text-[#333333] max-sm:px-3">
-        <span>Showing {startDisplay} - {endDisplay} of {signals.length} Signals</span>
+        <span>
+          Showing {rangeStart} - {rangeEnd} of {total} Signals
+        </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={safePage <= 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            onClick={() => onPageChange(safePage - 1)}
             className={`px-2 transition ${
               safePage <= 1
                 ? "text-[#c1c1c1] cursor-not-allowed"
@@ -2803,19 +2733,19 @@ function SocialSignalsTable({
           >
             Prev
           </button>
-          {pageNumbers.map((page, idx) =>
-            typeof page === "number" ? (
+          {pageNumbers.map((pageNumber, idx) =>
+            typeof pageNumber === "number" ? (
               <button
-                key={page}
+                key={pageNumber}
                 type="button"
-                onClick={() => setCurrentPage(page)}
+                onClick={() => onPageChange(pageNumber)}
                 className={`grid size-8 place-items-center rounded-[8px] border text-[10px] font-medium transition cursor-pointer ${
-                  safePage === page
+                  safePage === pageNumber
                     ? "border-[#3f83f8] bg-[#3f83f8] text-white shadow-sm"
                     : "border-[#f1f1f1] bg-white text-[#333333] hover:bg-gray-100"
                 }`}
               >
-                {page}
+                {pageNumber}
               </button>
             ) : (
               <span key={`ellipsis-${idx}`} className="px-1 text-[13px] text-gray-400">
@@ -2825,10 +2755,10 @@ function SocialSignalsTable({
           )}
           <button
             type="button"
-            disabled={safePage >= totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={safePage >= lastPage}
+            onClick={() => onPageChange(safePage + 1)}
             className={`px-2 transition ${
-              safePage >= totalPages
+              safePage >= lastPage
                 ? "text-[#c1c1c1] cursor-not-allowed"
                 : "text-[#333333] hover:text-[#09232d] cursor-pointer"
             }`}
@@ -2846,26 +2776,29 @@ function SocialListeningFilters({
   source,
   signalType,
   intent,
-  isScanning,
   onSearchChange,
   onSourceChange,
   onSignalTypeChange,
   onIntentChange,
   onOpenSettings,
-  onScan,
+  onRefresh,
+  isScanning,
+  isScanPending,
 }: {
   search: string;
   source: string;
   signalType: string;
   intent: string;
-  isScanning?: boolean;
   onSearchChange: (value: string) => void;
   onSourceChange: (value: string) => void;
   onSignalTypeChange: (value: string) => void;
   onIntentChange: (value: string) => void;
   onOpenSettings: () => void;
-  onScan?: () => void;
+  onRefresh: () => void;
+  isScanning?: boolean;
+  isScanPending?: boolean;
 }) {
+  const refreshBusy = isScanning || isScanPending;
   return (
     <div className="flex flex-nowrap items-center gap-2 xl:gap-2.5 overflow-x-auto py-1">
       <label className="flex h-9 w-[150px] xl:w-[170px] shrink-0 items-center gap-2 rounded-full bg-white px-3.5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.18)]">
@@ -2904,16 +2837,16 @@ function SocialListeningFilters({
       </button>
       <button
         type="button"
-        onClick={onScan}
-        disabled={isScanning}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer"
+        onClick={onRefresh}
+        disabled={refreshBusy}
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
       >
-        {isScanning ? (
+        {refreshBusy ? (
           <Loader2 size={13} className="animate-spin text-[#09232d]" />
         ) : (
           <RefreshCw size={13} className="text-[#09232d]" />
         )}
-        <span>{isScanning ? "Refreshing…" : "Refresh"}</span>
+        <span>{refreshBusy ? "Refreshing…" : "Refresh"}</span>
       </button>
       <button
         type="button"
@@ -2929,15 +2862,41 @@ function SocialListeningFilters({
 
 function SocialOpportunityDetail({
   signal,
-  onAddToCrm,
+  onCreateOutreach,
+  onSetReminder,
+  onSyncToCrm,
+  isCreatingOutreach,
+  isSettingReminder,
+  isSyncingToCrm,
+  outreachSent,
 }: {
   signal: SocialSignal;
-  onAddToCrm: (prospect: { id: number | string; name: string }) => void;
+  onCreateOutreach: () => void;
+  onSetReminder: () => void;
+  onSyncToCrm: () => void;
+  isCreatingOutreach?: boolean;
+  isSettingReminder?: boolean;
+  isSyncingToCrm?: boolean;
+  outreachSent?: boolean;
 }) {
-  const isIndividual = signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
+  const isIndividual =
+    signal.entityType === "individual" || signal.company.toLowerCase() === "individual";
   const [hasCopiedMessage, setHasCopiedMessage] = useState(false);
   const [expandedSignalId, setExpandedSignalId] = useState<number | null>(null);
   const showFullSignal = expandedSignalId === signal.id;
+  const recommendedAction = normalizeRecommendedAction(
+    signal.recommendedAction ?? {
+      title: "Reach out soon",
+      detail: "this prospect may be actively looking for solutions.",
+    }
+  );
+  const personalRecommendedAction = signal.personalRecommendedAction
+    ? normalizeRecommendedAction(signal.personalRecommendedAction)
+    : null;
+  const hasDistinctPersonalAction =
+    personalRecommendedAction &&
+    (personalRecommendedAction.title !== recommendedAction.title ||
+      personalRecommendedAction.detail !== recommendedAction.detail);
 
   const handleCopyMessage = async () => {
     try {
@@ -2951,18 +2910,17 @@ function SocialOpportunityDetail({
   };
 
   const postHref =
-    signal.postUrl ||
+    signal.post_url ||
     (signal.source === "LinkedIn Post"
       ? "https://www.linkedin.com"
       : signal.source === "X/Twitter Post"
-      ? "https://x.com"
-      : signal.source === "Google Search"
-      ? `https://www.google.com/search?q=${encodeURIComponent(signal.signal)}`
-      : "https://www.reddit.com");
+        ? "https://x.com"
+        : signal.source === "Google Search"
+          ? `https://www.google.com/search?q=${encodeURIComponent(signal.signal)}`
+          : "https://www.reddit.com");
 
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
-      {/* 1. Opportunity Header (FIXED) */}
       <div className="relative min-h-[175px] shrink-0 bg-[#0b242e] px-7 pb-5 pt-8 text-white">
         <div className="absolute right-7 top-8">
           <ScoreGauge score={signal.score} dark />
@@ -2979,10 +2937,7 @@ function SocialOpportunityDetail({
             href={postHref}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => {
-              e.stopPropagation();
-              toast.info(`Opening ${signal.source}…`);
-            }}
+            onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
           >
             <span className="underline underline-offset-2">
@@ -3001,17 +2956,36 @@ function SocialOpportunityDetail({
           )}
         </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
-          {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} • 2hrs ago
+          {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} •{" "}
+          {formatRelativeTime(signal.posted_at)}
+          {isFreshSignal(signal.posted_at) ? " • Fresh" : ""}
         </p>
       </div>
 
-      {/* 2. Middle Content (SCROLLABLE) */}
       <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
         <div className="grid grid-cols-2 border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
           <div className="flex items-center gap-2 border-r border-[#e9e9e9] pr-4">
-            <Image src="/avatars/male-avatar.png" alt="" width={25} height={25} className="size-[25px] rounded-full object-cover" />
+            <Image
+              src="/avatars/male-avatar.png"
+              alt=""
+              width={25}
+              height={25}
+              className="size-[25px] rounded-full object-cover"
+            />
             <div>
-              <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+              {signal.author_profile_url ? (
+                <a
+                  href={signal.author_profile_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] font-semibold leading-[12px] text-[#09232d] underline underline-offset-2 hover:text-[#087652]"
+                >
+                  {signal.profile}
+                </a>
+              ) : (
+                <p className="text-[10px] font-semibold leading-[12px]">{signal.profile}</p>
+              )}
               <p className="text-[10px] font-light leading-[12px]">{signal.persona}</p>
             </div>
           </div>
@@ -3032,7 +3006,12 @@ function SocialOpportunityDetail({
 
         <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
           <p className="mb-2 text-[10px] font-semibold leading-[12px]">Why this is an opportunity</p>
-          {signal.reasons.map((item) => (
+          {signal.whyThisMattersToYou && (
+            <p className="mb-2 text-[10px] font-medium leading-[13px] text-[#09232d]">
+              {signal.whyThisMattersToYou}
+            </p>
+          )}
+          {(signal.benefits && signal.benefits.length > 0 ? signal.benefits : signal.reasons).map((item) => (
             <div key={item} className="flex items-center gap-1.5 py-0.5 text-[10px] font-light leading-[12px]">
               <CircleCheck size={17} className="shrink-0 text-[#57c946]" />
               {item}
@@ -3097,15 +3076,30 @@ function SocialOpportunityDetail({
         )}
 
         <div className="space-y-[5px] px-2 py-2">
+          {hasDistinctPersonalAction && personalRecommendedAction && (
+            <div className="rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
+              <p className="text-[10px] font-bold leading-[12px] text-[#09232d]">Your Next Step</p>
+              {personalRecommendedAction.title && (
+                <p className="mt-1 text-[9px] font-semibold leading-[12px]">{personalRecommendedAction.title}</p>
+              )}
+              {personalRecommendedAction.detail && (
+                <p className="mt-0.5 text-[9px] leading-[12px]">{personalRecommendedAction.detail}</p>
+              )}
+            </div>
+          )}
           <div className="rounded-[10px] border border-[#e8e5e5] bg-[#f7f6f6] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
             <p className="text-[10px] font-bold leading-[12px]">Recommended Action</p>
-            <p className="mt-1 text-[9px] leading-[12px]">
-              <span className="font-semibold">
-                {signal.recommendedAction?.title || "Reach out within 24 hours"}
-              </span>
-              <br />
-              {signal.recommendedAction?.detail || "This prospect is actively evaluating solutions."}
-            </p>
+            {recommendedAction.title && (
+              <p className="mt-1 text-[9px] font-semibold leading-[12px]">{recommendedAction.title}</p>
+            )}
+            {recommendedAction.detail && (
+              <p className="mt-0.5 text-[9px] leading-[12px]">{recommendedAction.detail}</p>
+            )}
+            {!recommendedAction.title && !recommendedAction.detail && (
+              <p className="mt-1 text-[9px] leading-[12px]">
+                Reach out within 24 hours — this prospect may be actively looking for solutions.
+              </p>
+            )}
           </div>
           <div className="rounded-[10px] border border-[#e8e5e5] bg-white px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
             <div className="flex items-center justify-between gap-2">
@@ -3125,6 +3119,11 @@ function SocialOpportunityDetail({
             </div>
             <p className="mt-1 whitespace-pre-line text-[9px] leading-[12px]">{signal.suggestedMessage}</p>
           </div>
+          {outreachSent && (
+            <p className="rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3.5 py-2 text-[9px] font-semibold text-[#087652]">
+              ✓ Sent
+            </p>
+          )}
           {signal.followUpStrategy && (
             <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
               <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
@@ -3134,29 +3133,41 @@ function SocialOpportunityDetail({
         </div>
       </div>
 
-      {/* 3. Opportunity Footer (FIXED) */}
       <div className="mt-auto shrink-0 flex items-center gap-[17px] border-t border-[#e9e9e9] bg-[#f7f7f7] px-6 py-4">
         <button
           type="button"
-          onClick={() => toast.success(`Creating outreach message for ${signal.company}…`)}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition hover:bg-[#0f3340] cursor-pointer"
+          disabled={isCreatingOutreach}
+          onClick={onCreateOutreach}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition hover:bg-[#0f3340] cursor-pointer disabled:opacity-60"
         >
-          Create Outreach
+          {isCreatingOutreach ? "Creating…" : "Create Outreach"}
         </button>
         <button
           type="button"
-          onClick={() => toast.success(`Reminder set for ${signal.company}.`)}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer"
+          disabled={isSettingReminder}
+          onClick={onSetReminder}
+          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
         >
-          Set Reminder
+          {isSettingReminder ? "Saving…" : "Set Reminder"}
         </button>
-        <button
-          type="button"
-          onClick={() => onAddToCrm({ id: signal.id, name: signal.profile || signal.company })}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer"
-        >
-          Add to CRM
-        </button>
+        {signal.lead_id ? (
+          <div className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3 text-[10px] font-semibold text-[#087652]">
+            <CircleCheck size={14} />
+            <span>
+              In CRM
+              {signal.f23_lead_id ? ` · #${signal.f23_lead_id}` : ""}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={isSyncingToCrm}
+            onClick={onSyncToCrm}
+            className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
+          >
+            {isSyncingToCrm ? "Adding…" : "Add to CRM"}
+          </button>
+        )}
       </div>
     </aside>
   );
@@ -3169,12 +3180,69 @@ function ListeningSettingsModal({
   isOpen: boolean;
   onClose: () => void;
 }) {
-  const sources = ["LinkedIn public index", "X/Twitter mentions", "Reddit communities", "Meta business pages"];
-  const intents = ["Recommendations", "Switching", "Pricing questions", "Hiring or expansion"];
+  const { data: settings, isLoading } = useSocialListeningSettings(isOpen);
+  const updateSettings = useUpdateSocialListeningSettings();
+  const triggerRun = useTriggerSocialListeningRun();
 
-  const handleSave = () => {
-    toast.success("Listening settings saved for this mock workspace.");
-    onClose();
+  const [enabledSources, setEnabledSources] = useState<string[]>([]);
+  const [metaPageIdsText, setMetaPageIdsText] = useState("");
+  const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
+  const [minScore, setMinScore] = useState(70);
+  const [freshnessWindowDays, setFreshnessWindowDays] = useState<7 | 14 | 30>(14);
+  const [intentFilters, setIntentFilters] = useState<string[]>([]);
+  const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
+  const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
+
+  useEffect(() => {
+    if (!settings) return;
+    // Hydrate editable form fields from the latest settings query payload.
+    /* eslint-disable react-hooks/set-state-in-effect -- sync form draft from server settings */
+    setEnabledSources(settings.enabled_sources ?? []);
+    setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
+    setCadenceDays(settings.cadence_days ?? 14);
+    setMinScore(settings.min_score ?? 70);
+    setFreshnessWindowDays(settings.freshness_window_days ?? 14);
+    setIntentFilters(settings.intent_filters ?? []);
+    setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
+    setOutreachChannel(settings.outreach_channel_default ?? "email");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [settings]);
+
+  const handleSave = async () => {
+    try {
+      const metaPageIds = metaPageIdsText
+        .split(/[\n,]+/)
+        .map((item) => item.trim().replace(/^@/, ""))
+        .filter(Boolean);
+
+      await updateSettings.mutateAsync({
+        enabled_sources: enabledSources,
+        meta_page_ids: metaPageIds,
+        cadence_days: cadenceDays,
+        min_score: minScore,
+        freshness_window_days: freshnessWindowDays,
+        intent_filters: intentFilters,
+        crm_destination: crmDestination,
+        outreach_channel_default: outreachChannel,
+      });
+      await triggerRun.mutateAsync(true);
+      toast.success("Listening settings saved. A refresh run has been queued.");
+      onClose();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not save listening settings."));
+    }
+  };
+
+  const toggleSource = (key: string) => {
+    setEnabledSources((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
+  };
+
+  const toggleIntent = (key: string) => {
+    setIntentFilters((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
   };
 
   return (
@@ -3214,34 +3282,71 @@ function ListeningSettingsModal({
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10 text-[13px] text-white/60">
+                  <Loader2 size={18} className="mr-2 animate-spin" />
+                  Loading settings…
+                </div>
+              ) : (
+                <>
               <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[13px] font-semibold">Sources monitored</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {sources.map((sourceName) => (
+                  {SOURCE_SETTING_OPTIONS.map((sourceOption) => (
                     <label
-                      key={sourceName}
+                      key={sourceOption.key}
                       className="flex items-center gap-2 rounded-[12px] bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
                     >
-                      <input type="checkbox" defaultChecked className="accent-[#8dec66]" />
-                      {sourceName}
+                      <input
+                        type="checkbox"
+                        checked={enabledSources.includes(sourceOption.key)}
+                        onChange={() => toggleSource(sourceOption.key)}
+                        className="accent-[#8dec66]"
+                      />
+                      {sourceOption.label}
                     </label>
                   ))}
                 </div>
+                {enabledSources.includes("meta_graph_pages") && (
+                  <div className="mt-4">
+                    <label
+                      htmlFor="meta-page-ids"
+                      className="text-[12px] font-medium text-white/80"
+                    >
+                      Meta Pages to monitor
+                    </label>
+                    <p className="mt-1 text-[11px] leading-[15px] text-white/45">
+                      Page ID or @username, one per line. Direct Graph API monitoring of these pages.
+                    </p>
+                    <textarea
+                      id="meta-page-ids"
+                      value={metaPageIdsText}
+                      onChange={(event) => setMetaPageIdsText(event.target.value)}
+                      rows={4}
+                      placeholder={"AcmeCorp\n123456789\ncompetitor-page"}
+                      className="mt-2 w-full resize-y rounded-[12px] border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] text-white/85 outline-none placeholder:text-white/30 focus:border-[#8dec66]/40"
+                    />
+                  </div>
+                )}
               </section>
 
               <section className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-[13px] font-semibold">Refresh cadence</p>
                   <div className="mt-3 space-y-2 text-[12px] text-white/70">
-                    {["Every 14 days", "Every 30 days"].map((cadence, index) => (
-                      <label key={cadence} className="flex items-center gap-2">
+                    {[
+                      { label: "Every 14 days", value: 14 as const },
+                      { label: "Every 30 days", value: 30 as const },
+                    ].map((cadence) => (
+                      <label key={cadence.value} className="flex items-center gap-2">
                         <input
                           type="radio"
                           name="social-listening-cadence"
-                          defaultChecked={index === 0}
+                          checked={cadenceDays === cadence.value}
+                          onChange={() => setCadenceDays(cadence.value)}
                           className="accent-[#8dec66]"
                         />
-                        {cadence}
+                        {cadence.label}
                       </label>
                     ))}
                   </div>
@@ -3250,10 +3355,17 @@ function ListeningSettingsModal({
                 <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-[13px] font-semibold">Opportunity threshold</p>
                   <div className="mt-4">
-                    <input type="range" min="40" max="90" defaultValue="70" className="w-full accent-[#8dec66]" />
+                    <input
+                      type="range"
+                      min="40"
+                      max="90"
+                      value={minScore}
+                      onChange={(event) => setMinScore(Number(event.target.value))}
+                      className="w-full accent-[#8dec66]"
+                    />
                     <div className="mt-2 flex justify-between text-[11px] text-white/45">
                       <span>Broad</span>
-                      <span>70% score</span>
+                      <span>{minScore}% score</span>
                       <span>Strict</span>
                     </div>
                   </div>
@@ -3261,15 +3373,48 @@ function ListeningSettingsModal({
               </section>
 
               <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[13px] font-semibold">Freshness window</p>
+                <p className="mt-1 text-[11px] leading-[15px] text-white/45">
+                  Only keep opportunities dated within this window. Searches also prefer recent posts.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-white/70">
+                  {[
+                    { label: "Last 7 days", value: 7 as const },
+                    { label: "Last 14 days", value: 14 as const },
+                    { label: "Last 30 days", value: 30 as const },
+                  ].map((option) => (
+                    <label
+                      key={option.value}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2"
+                    >
+                      <input
+                        type="radio"
+                        name="social-listening-freshness"
+                        checked={freshnessWindowDays === option.value}
+                        onChange={() => setFreshnessWindowDays(option.value)}
+                        className="accent-[#8dec66]"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[13px] font-semibold">Intent signals</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {intents.map((intentName) => (
+                  {INTENT_SETTING_OPTIONS.map((intentOption) => (
                     <label
-                      key={intentName}
+                      key={intentOption.key}
                       className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
                     >
-                      <input type="checkbox" defaultChecked className="accent-[#8dec66]" />
-                      {intentName}
+                      <input
+                        type="checkbox"
+                        checked={intentFilters.includes(intentOption.key)}
+                        onChange={() => toggleIntent(intentOption.key)}
+                        className="accent-[#8dec66]"
+                      />
+                      {intentOption.label}
                     </label>
                   ))}
                 </div>
@@ -3280,20 +3425,36 @@ function ListeningSettingsModal({
                 <div className="mt-3 grid gap-3 text-[12px] text-white/70 sm:grid-cols-2">
                   <label>
                     CRM destination
-                    <select className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none">
-                      <option>Qualified leads pipeline</option>
-                      <option>Human review queue</option>
+                    <select
+                      value={crmDestination}
+                      onChange={(event) =>
+                        setCrmDestination(event.target.value as SocialListeningSettings["crm_destination"])
+                      }
+                      className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none"
+                    >
+                      <option value="qualified_pipeline">Qualified leads pipeline</option>
+                      <option value="human_review">Human review queue</option>
                     </select>
                   </label>
                   <label>
                     Outreach channel
-                    <select className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none">
-                      <option>Email first</option>
-                      <option>Human follow-up</option>
+                    <select
+                      value={outreachChannel}
+                      onChange={(event) =>
+                        setOutreachChannel(
+                          event.target.value as SocialListeningSettings["outreach_channel_default"]
+                        )
+                      }
+                      className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none"
+                    >
+                      <option value="email">Email first</option>
+                      <option value="human_follow_up">Human follow-up</option>
                     </select>
                   </label>
                 </div>
               </section>
+                </>
+              )}
             </div>
 
             <div className="flex gap-3 border-t border-white/10 px-6 py-4">
@@ -3306,102 +3467,11 @@ function ListeningSettingsModal({
               </button>
               <button
                 type="button"
+                disabled={updateSettings.isPending || triggerRun.isPending}
                 onClick={handleSave}
-                className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73]"
+                className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-60"
               >
-                Save Settings
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-function AddToCrmPipelineModal({
-  isOpen,
-  onClose,
-  prospectName,
-  pipelines,
-  onConfirm,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  prospectName: string | null;
-  pipelines: CrmPipelineOption[];
-  onConfirm: (pipelineId: string) => void;
-}) {
-  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(() => pipelines[0]?.id ?? null);
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 18 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 18 }}
-            transition={{ type: "spring", duration: 0.32 }}
-            className="relative z-10 w-full max-w-[400px] overflow-hidden rounded-[24px] bg-white shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-5">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#09232d]/40">
-                  Add to CRM
-                </p>
-                <h3 className="mt-1 text-[16px] font-semibold text-[#09232d]">
-                  {prospectName ? `Select a pipeline for ${prospectName}` : "Select a pipeline"}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="grid size-8 shrink-0 place-items-center rounded-full text-[#09232d]/50 transition hover:bg-black/5 hover:text-[#09232d] cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="space-y-1.5 px-6 py-4">
-              {pipelines.map((pipeline) => (
-                <button
-                  key={pipeline.id}
-                  type="button"
-                  onClick={() => setSelectedPipelineId(pipeline.id)}
-                  className={`flex w-full items-center justify-between rounded-[12px] border px-3.5 py-2.5 text-left text-[12px] font-medium transition cursor-pointer ${
-                    selectedPipelineId === pipeline.id
-                      ? "border-[#09232d] bg-[#09232d]/5 text-[#09232d]"
-                      : "border-[#e4e4e9] text-[#09232d]/70 hover:bg-gray-50"
-                  }`}
-                >
-                  {pipeline.name}
-                  {selectedPipelineId === pipeline.id && <Check size={14} className="text-[#09232d]" />}
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-black/5 px-6 py-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-9 rounded-[10px] px-4 text-[12px] font-semibold text-[#09232d]/60 transition hover:bg-gray-100 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!selectedPipelineId}
-                onClick={() => selectedPipelineId && onConfirm(selectedPipelineId)}
-                className="h-9 rounded-[10px] bg-[#09232d] px-4 text-[12px] font-semibold text-white transition disabled:opacity-50 cursor-pointer"
-              >
-                Add Prospect
+                {updateSettings.isPending ? "Saving…" : "Save Settings"}
               </button>
             </div>
           </motion.div>
@@ -3412,65 +3482,343 @@ function AddToCrmPipelineModal({
 }
 
 function SocialListeningTab({
-  onAddToCrm,
+  onOpenIcpBuilder,
+  onOpenOutreachSettings,
 }: {
-  onAddToCrm: (prospect: { id: number | string; name: string }) => void;
+  onOpenIcpBuilder: () => void;
+  onOpenOutreachSettings?: () => void;
 }) {
+  const { data: activeProfile } = useActiveIcpProfile();
+  const { data: listenSettings } = useSocialListeningSettings();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [source, setSource] = useState("all");
   const [signalType, setSignalType] = useState("all");
   const [intent, setIntent] = useState("all");
-  const [activeSignalId, setActiveSignalId] = useState(socialSignals[0].id);
+  const [page, setPage] = useState(1);
+  const [activeSignalId, setActiveSignalId] = useState<number | null>(null);
+  const [selectedSignalIds, setSelectedSignalIds] = useState<number[]>([]);
+  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [removedSignalIds, setRemovedSignalIds] = useState<number[]>([]);
+  const perPage = 10;
 
-  const handleRemoveSignal = (id: number) => {
-    setRemovedSignalIds((prev) => [...prev, id]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const handleSourceChange = (value: string) => {
+    setSource(value);
+    setPage(1);
+    setSelectedSignalIds([]);
   };
 
-  const handleScan = () => {
-    setIsScanning(true);
-    toast.loading("Refreshing web, social channels, and public registries…", { id: "social-scan" });
-    window.setTimeout(() => {
-      setIsScanning(false);
-      toast.success("Refresh complete. 4 new social opportunities identified.", { id: "social-scan" });
-    }, 1500);
+  const handleSignalTypeChange = (value: string) => {
+    setSignalType(value);
+    setPage(1);
+    setSelectedSignalIds([]);
   };
 
-  const filteredSignals = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return socialSignals.filter((signal) => {
-      if (removedSignalIds.includes(signal.id)) return false;
-      const matchesSearch =
-        query.length === 0 ||
-        [signal.signal, signal.source, signal.persona, signal.company, signal.intent, signal.description]
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
-      const matchesSource = source === "all" || signal.source === source;
-      const matchesSignalType = signalType === "all" || signal.signalType === signalType;
-      const matchesIntent = intent === "all" || signal.buyingStage === intent;
-      return matchesSearch && matchesSource && matchesSignalType && matchesIntent;
-    });
-  }, [intent, removedSignalIds, search, signalType, source]);
+  const handleIntentChange = (value: string) => {
+    setIntent(value);
+    setPage(1);
+    setSelectedSignalIds([]);
+  };
+
+  const { metrics, metricsLoading, latestRun, isScanning, bootstrap } =
+    useSocialListeningBootstrap();
+  const triggerRun = useTriggerSocialListeningRun();
+  const {
+    data: signalsResult,
+    isLoading: signalsLoading,
+    error: signalsError,
+  } = useSocialListeningSignals(
+    {
+      page,
+      per_page: perPage,
+      search: debouncedSearch,
+      source,
+      signal_type: signalType,
+      buying_stage: intent,
+    },
+    { refetchInterval: isScanning ? 5000 : false }
+  );
+
+  const createOutreach = useCreateSignalOutreach();
+  const setReminder = useSetSignalReminder();
+  const syncToCrm = useSyncSignalToCrm();
+  const dismissSignalMutation = useDismissSignal();
+  const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
+  const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
+  const [sentOutreachSignalIds, setSentOutreachSignalIds] = useState<Set<number>>(new Set());
+  const [pendingOutreachSignal, setPendingOutreachSignal] = useState<SocialSignal | null>(null);
+  const [pendingReminderSignal, setPendingReminderSignal] = useState<SocialSignal | null>(null);
+  const [pendingCrmSignal, setPendingCrmSignal] = useState<SocialSignal | null>(null);
+  const [reminderAtLabel, setReminderAtLabel] = useState("in 24 hours");
+
+  const signals = useMemo(() => signalsResult?.items ?? [], [signalsResult?.items]);
+  const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
+
+  const visibleSelectedIds = useMemo(
+    () =>
+      selectedSignalIds.filter((id) =>
+        signals.some((signal) => signal.id === id && !signal.lead_id)
+      ),
+    [selectedSignalIds, signals]
+  );
+
+  const effectiveActiveSignalId = useMemo(() => {
+    if (signals.length === 0) return null;
+    if (activeSignalId != null && signals.some((signal) => signal.id === activeSignalId)) {
+      return activeSignalId;
+    }
+    return signals[0].id;
+  }, [signals, activeSignalId]);
 
   const activeSignal =
-    filteredSignals.find((signal) => signal.id === activeSignalId) ?? filteredSignals[0] ?? socialSignals[0];
+    signals.find((signal) => signal.id === effectiveActiveSignalId) ?? signals[0];
+
+  const openReminderConfirm = (signal: SocialSignal) => {
+    const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    setReminderAtLabel(
+      when.toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    );
+    setPendingReminderSignal(signal);
+  };
+
+  const hasActiveFilters =
+    debouncedSearch.length > 0 ||
+    source !== "all" ||
+    signalType !== "all" ||
+    intent !== "all";
+
+  const emptyState = getSocialListeningEmptyState(
+    latestRun,
+    metrics?.last_run_at,
+    isScanning,
+    hasActiveFilters
+  );
+
+  const icpContext = useMemo(
+    () => ({
+      industries: activeProfile?.config.industries,
+      territories: activeProfile?.config.territories,
+      name: activeProfile?.name,
+    }),
+    [activeProfile]
+  );
+
+  const scanPanel = isScanning ? (
+    <SocialScanPanel
+      stages={latestRun?.stages}
+      signalsFound={Math.max(latestRun?.signals_created ?? 0, signals.length)}
+      enabledSources={listenSettings?.enabled_sources ?? []}
+      startedAt={latestRun?.started_at}
+      icpContext={icpContext}
+    />
+  ) : null;
+
+  const handleRefresh = () => {
+    triggerRun.mutate(true, {
+      onSuccess: () => toast.success("Social listening refresh queued."),
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not refresh social listening data.")),
+    });
+  };
+
+  const executeCreateOutreach = (signal: SocialSignal) => {
+    createOutreach.mutate(
+      { id: signal.id },
+      {
+        onSuccess: (result) => {
+          const contextName = signal.profile || signal.company || "Social prospect";
+          const normalized = normalizeOutreachSubjectBody(result.body, result.subject);
+          setOutreachPreview({
+            activityId: result.activity_id ?? null,
+            channel: result.channel === "whatsapp" ? "whatsapp" : "email",
+            subject: normalized.subject,
+            body: normalized.body,
+            toEmail: result.to_email ?? "",
+            contextLabel: `Re: ${contextName}`,
+            signalId: signal.id,
+          });
+          setPendingOutreachSignal(null);
+          toast.success("Outreach drafted and ready for review before sending.");
+        },
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not create outreach draft.")),
+      }
+    );
+  };
+
+  const executeSetReminder = (signal: SocialSignal) => {
+    const actionNote = normalizeRecommendedAction(signal.recommendedAction);
+    setReminder.mutate(
+      {
+        id: signal.id,
+        note: [actionNote.title, actionNote.detail].filter(Boolean).join(" — ") || undefined,
+      },
+      {
+        onSuccess: () => {
+          setPendingReminderSignal(null);
+          toast.success("Reminder set for 24 hours from now.");
+        },
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not set reminder.")),
+      }
+    );
+  };
+
+  const executeSyncToCrm = (signal: SocialSignal, pipelineId?: string) => {
+    if (signal.lead_id) {
+      toast.message(`"${signal.profile || signal.company}" is already in CRM.`);
+      setPendingCrmSignal(null);
+      return;
+    }
+    syncToCrm.mutate(
+      { id: signal.id, pipeline_id: pipelineId },
+      {
+        onSuccess: () => {
+          toast.success(`Added "${signal.profile || signal.company}" to CRM.`);
+          setSelectedSignalIds((current) => current.filter((id) => id !== signal.id));
+          setPendingCrmSignal(null);
+        },
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not sync signal to CRM.")),
+      }
+    );
+  };
+
+  const reminderNoteForPending = pendingReminderSignal
+    ? (() => {
+        const actionNote = normalizeRecommendedAction(pendingReminderSignal.recommendedAction);
+        return [actionNote.title, actionNote.detail].filter(Boolean).join(" — ");
+      })()
+    : "";
+
+  const handleToggleSelect = (signal: SocialSignal) => {
+    if (signal.lead_id) return;
+    setSelectedSignalIds((current) =>
+      current.includes(signal.id)
+        ? current.filter((id) => id !== signal.id)
+        : [...current, signal.id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    const selectable = signals.filter((signal) => !signal.lead_id).map((signal) => signal.id);
+    const allSelected =
+      selectable.length > 0 && selectable.every((id) => visibleSelectedIds.includes(id));
+    setSelectedSignalIds(allSelected ? [] : selectable);
+  };
+
+  const handleBulkAddToCrm = async () => {
+    const pending = signals.filter(
+      (signal) => visibleSelectedIds.includes(signal.id) && !signal.lead_id
+    );
+    if (pending.length === 0) return;
+
+    setIsBulkSyncing(true);
+    let successCount = 0;
+    let errorCount = 0;
+    try {
+      for (const signal of pending) {
+        try {
+          await syncToCrm.mutateAsync({ id: signal.id });
+          successCount += 1;
+        } catch {
+          errorCount += 1;
+        }
+      }
+      if (successCount > 0) {
+        toast.success(
+          `Added ${successCount} poster${successCount === 1 ? "" : "s"} to CRM.`
+        );
+      }
+      if (errorCount > 0) {
+        toast.error(`Could not sync ${errorCount} signal${errorCount === 1 ? "" : "s"}.`);
+      }
+      setSelectedSignalIds([]);
+    } finally {
+      setIsBulkSyncing(false);
+    }
+  };
+
+  const handleRemoveSignal = (id: number) => {
+    dismissSignalMutation.mutate(id, {
+      onSuccess: () => {
+        toast.success("Signal removed.");
+        if (activeSignalId === id) {
+          setActiveSignalId(null);
+        }
+      },
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, "Could not remove signal.")),
+    });
+  };
+
+  const statCards: SocialStatCard[] = [
+    {
+      title: "Signals Detected",
+      value: (metrics?.signals_detected ?? 0).toLocaleString(),
+      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      unit: "Signals",
+      active: true,
+    },
+    {
+      title: "High Opportunities",
+      value: (metrics?.high_opportunities ?? 0).toLocaleString(),
+      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      unit: "Opportunities",
+    },
+    {
+      title: "Added to CRM",
+      value: (metrics?.added_to_crm ?? 0).toLocaleString(),
+      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      unit: "Opportunities",
+    },
+  ];
+
+  if (!activeProfile) {
+    return (
+      <div className="flex min-h-[645px] flex-col items-center justify-center rounded-[30px] bg-white px-8 py-16 text-center shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+        <p className="max-w-md text-[14px] font-medium text-[#616263]">
+          Activate an ICP profile to start social listening against your target market.
+        </p>
+        <button
+          type="button"
+          onClick={onOpenIcpBuilder}
+          className="mt-5 h-11 rounded-[14px] bg-[#09232d] px-5 text-sm font-medium text-white transition-colors hover:bg-[#0c2e3b]"
+        >
+          Open ICP Builder
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="grid grid-cols-[minmax(0,1fr)_406px] items-stretch gap-[25px] max-xl:grid-cols-1 xl:h-[700px]">
         <div className="flex h-full min-h-0 flex-col gap-[17px]">
           <div className="shrink-0 grid grid-cols-3 items-start gap-[25px] max-lg:grid-cols-2 max-sm:grid-cols-1">
-            {socialStatCards.map((card) => (
+            {statCards.map((card) => (
               <MetricCard
                 key={card.title}
                 title={card.title}
-                value={card.value}
-                percent={card.percent}
+                value={metricsLoading && !isScanning ? "—" : card.value}
+                percent={metricsLoading && !isScanning ? "—" : card.percent}
                 active={card.active}
                 unit={card.unit}
+                isScanning={isScanning && card.active}
               />
             ))}
           </div>
@@ -3480,26 +3828,126 @@ function SocialListeningTab({
               source={source}
               signalType={signalType}
               intent={intent}
-              isScanning={isScanning}
               onSearchChange={setSearch}
-              onSourceChange={setSource}
-              onSignalTypeChange={setSignalType}
-              onIntentChange={setIntent}
-              onScan={handleScan}
+              onSourceChange={handleSourceChange}
+              onSignalTypeChange={handleSignalTypeChange}
+              onIntentChange={handleIntentChange}
               onOpenSettings={() => setIsSettingsOpen(true)}
+              onRefresh={handleRefresh}
+              isScanning={isScanning}
+              isScanPending={triggerRun.isPending || bootstrap.isPending}
             />
           </div>
-          <SocialSignalsTable
-            signals={filteredSignals}
-            activeSignalId={activeSignal.id}
-            onSelectSignal={(signal) => setActiveSignalId(signal.id)}
-            onRemoveSignal={handleRemoveSignal}
-            onAddToCrm={onAddToCrm}
-          />
+          {signalsError && isMissingActiveIcp(signalsError) ? (
+            <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
+              Select an active ICP profile first — open ICP Builder to create or activate one.
+            </div>
+          ) : (
+            <SocialSignalsTable
+              signals={signals}
+              activeSignalId={effectiveActiveSignalId}
+              selectedIds={visibleSelectedIds}
+              onToggleSelect={handleToggleSelect}
+              onToggleSelectAll={handleToggleSelectAll}
+              onClearSelection={() => setSelectedSignalIds([])}
+              onBulkAddToCrm={handleBulkAddToCrm}
+              isBulkSyncing={isBulkSyncing}
+              onHoverSignal={(signal) => setActiveSignalId(signal.id)}
+              onRemoveSignal={handleRemoveSignal}
+              onCreateOutreach={setPendingOutreachSignal}
+              onAddToCrm={setPendingCrmSignal}
+              onSetReminder={openReminderConfirm}
+              page={meta.current_page}
+              lastPage={Math.max(meta.last_page, 1)}
+              total={meta.total}
+              perPage={meta.per_page}
+              onPageChange={setPage}
+              isLoading={signalsLoading}
+              isScanning={isScanning}
+              emptyState={emptyState}
+              onEmptyScanNow={handleRefresh}
+              onEmptyOpenSettings={() => setIsSettingsOpen(true)}
+              enabledSources={listenSettings?.enabled_sources}
+              scanPanel={scanPanel}
+            />
+          )}
         </div>
-        <SocialOpportunityDetail signal={activeSignal} onAddToCrm={onAddToCrm} />
+        {activeSignal ? (
+          <SocialOpportunityDetail
+            signal={activeSignal}
+            isCreatingOutreach={createOutreach.isPending && pendingOutreachSignal?.id === activeSignal.id}
+            isSettingReminder={setReminder.isPending && pendingReminderSignal?.id === activeSignal.id}
+            isSyncingToCrm={syncToCrm.isPending && pendingCrmSignal?.id === activeSignal.id}
+            onCreateOutreach={() => setPendingOutreachSignal(activeSignal)}
+            onSetReminder={() => openReminderConfirm(activeSignal)}
+            onSyncToCrm={() => setPendingCrmSignal(activeSignal)}
+            outreachSent={sentOutreachSignalIds.has(activeSignal.id)}
+          />
+        ) : isScanning ? (
+          <SocialOpportunityDetailSkeleton />
+        ) : (
+          <SocialOpportunityEmptyState />
+        )}
       </div>
       <ListeningSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <CreateOutreachConfirmModal
+        key={pendingOutreachSignal ? `outreach-${pendingOutreachSignal.id}` : "outreach-modal"}
+        isOpen={pendingOutreachSignal != null}
+        onClose={() => setPendingOutreachSignal(null)}
+        prospectName={pendingOutreachSignal?.profile || pendingOutreachSignal?.company || "Prospect"}
+        company={pendingOutreachSignal?.company || "—"}
+        channel={
+          listenSettings?.outreach_channel_default === "human_follow_up"
+            ? "Human follow-up"
+            : "Email"
+        }
+        suggestedMessage={pendingOutreachSignal?.suggestedMessage || ""}
+        source={pendingOutreachSignal?.source || ""}
+        intent={pendingOutreachSignal?.intent || ""}
+        isConfirming={createOutreach.isPending}
+        onConfirm={() => pendingOutreachSignal && executeCreateOutreach(pendingOutreachSignal)}
+      />
+      <SetReminderConfirmModal
+        key={pendingReminderSignal ? `reminder-${pendingReminderSignal.id}` : "reminder-modal"}
+        isOpen={pendingReminderSignal != null}
+        onClose={() => setPendingReminderSignal(null)}
+        prospectName={pendingReminderSignal?.profile || pendingReminderSignal?.company || "Prospect"}
+        company={pendingReminderSignal?.company || "—"}
+        remindAtLabel={reminderAtLabel}
+        note={reminderNoteForPending}
+        isConfirming={setReminder.isPending}
+        onConfirm={() => pendingReminderSignal && executeSetReminder(pendingReminderSignal)}
+      />
+      <AddToCrmPipelineModal
+        key={pendingCrmSignal ? `crm-${pendingCrmSignal.id}` : "crm-modal"}
+        isOpen={pendingCrmSignal != null}
+        onClose={() => setPendingCrmSignal(null)}
+        prospectName={pendingCrmSignal?.profile || pendingCrmSignal?.company || null}
+        pipelines={pipelines}
+        isLoading={pipelinesLoading}
+        isConfirming={syncToCrm.isPending}
+        onConfirm={(pipelineId) =>
+          pendingCrmSignal && executeSyncToCrm(pendingCrmSignal, pipelineId)
+        }
+      />
+      <OutreachPreviewModal
+        open={outreachPreview != null}
+        onClose={() => setOutreachPreview(null)}
+        activityId={outreachPreview?.activityId ?? null}
+        channel={outreachPreview?.channel ?? "email"}
+        initialSubject={outreachPreview?.subject}
+        initialBody={outreachPreview?.body ?? ""}
+        initialToEmail={outreachPreview?.toEmail}
+        contextLabel={outreachPreview?.contextLabel}
+        alignmentNote={outreachPreview?.alignmentNote}
+        onConfigureSender={onOpenOutreachSettings}
+        onSent={() => {
+          if (outreachPreview?.signalId != null) {
+            setSentOutreachSignalIds((current) => new Set(current).add(outreachPreview.signalId!));
+          }
+          setOutreachPreview(null);
+        }}
+      />
     </>
   );
 }
@@ -3507,49 +3955,33 @@ function SocialListeningTab({
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
+  const [isOutreachSettingsOpen, setIsOutreachSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
+  const [icpSetupDismissed, setIcpSetupDismissed] = useState(false);
   const { data: activeProfile } = useActiveIcpProfile();
+  const {
+    data: icpProfiles = [],
+    isLoading: isIcpProfilesLoading,
+    isAuthLoading: isIcpAuthLoading,
+  } = useIcpProfiles();
   const { data: metrics } = useSalesEngineMetrics();
 
-  const [pipelines, setPipelines] = useState<CrmPipelineOption[]>(MOCK_CRM_PIPELINES);
-  const [crmContactNames, setCrmContactNames] = useState<Set<string>>(() => readCrmContacts());
-  const [pendingCrmProspect, setPendingCrmProspect] = useState<{ id: number | string; name: string } | null>(
-    null
-  );
-  const [isAddToCrmModalOpen, setIsAddToCrmModalOpen] = useState(false);
-
-  function markAddedToCrm(name: string) {
-    setCrmContactNames((current) => {
-      const next = new Set(current);
-      next.add(name.toLowerCase());
-      writeCrmContacts(next);
-      return next;
-    });
-  }
-
-  function handleAddToCrm(prospect: { id: number | string; name: string }) {
-    if (pipelines.length === 0) {
-      setPipelines([{ id: "default", name: "Default Pipeline" }]);
-      markAddedToCrm(prospect.name);
-      toast.success(`No pipeline found — created Default Pipeline and added ${prospect.name}.`);
-      return;
-    }
-    setPendingCrmProspect(prospect);
-    setIsAddToCrmModalOpen(true);
-  }
-
-  function handleConfirmAddToCrm(pipelineId: string) {
-    if (!pendingCrmProspect) return;
-    const pipeline = pipelines.find((p) => p.id === pipelineId);
-    markAddedToCrm(pendingCrmProspect.name);
-    toast.success(`${pendingCrmProspect.name} added to ${pipeline?.name ?? "pipeline"}.`);
-    setIsAddToCrmModalOpen(false);
-    setPendingCrmProspect(null);
-  }
-
-  const leadsDiscovered = metrics?.leads_discovered ?? 0;
-  const qualifiedLeads = metrics?.qualified_leads ?? 0;
+  const leadsInCrm = metrics?.leads_in_crm ?? 0;
+  const leadsPendingReview = metrics?.leads_pending_review ?? 0;
   const formatMetric = (value: number) => value.toLocaleString();
+
+  const showIcpSetupPrompt =
+    activeTab === "smart-lead" &&
+    !chatExpanded &&
+    !isIcpModalOpen &&
+    !icpSetupDismissed &&
+    !isIcpProfilesLoading &&
+    !isIcpAuthLoading &&
+    icpProfiles.length === 0;
+
+  const handleOpenIcpBuilder = () => {
+    setIsIcpModalOpen(true);
+  };
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
@@ -3565,18 +3997,36 @@ export function SalesEngineView() {
         )}
 
         {activeTab === "social-listening" && !chatExpanded ? (
-          <SocialListeningTab onAddToCrm={handleAddToCrm} />
+          <SocialListeningTab
+            onOpenIcpBuilder={handleOpenIcpBuilder}
+            onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
+          />
         ) : (
           <>
         {!chatExpanded && (
           <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Prospect Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
-            <MetricCard title="Qualified Prospect Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
+            <MetricCard
+              title="Lead Metrics"
+              value={formatMetric(leadsInCrm)}
+              percent="—"
+              active
+              unit="Leads"
+              href="/crm?source=sales_engine"
+              actionLabel="View in CRM &rarr;"
+            />
+            <MetricCard
+              title="Pending Review"
+              value={formatMetric(leadsPendingReview)}
+              percent="—"
+              unit="Drafts"
+              href={activeProfile?.id ? `/sales-engine/pending-review?icp_id=${activeProfile.id}` : "/sales-engine/pending-review"}
+              actionLabel="Review leads &rarr;"
+            />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">
                 <Link
-                  href="/crm"
+                  href="/crm?source=sales_engine"
                   className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
                 >
                   <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
@@ -3584,7 +4034,7 @@ export function SalesEngineView() {
                 </Link>
                 <button
                   type="button"
-                  onClick={() => setIsIcpModalOpen(true)}
+                  onClick={handleOpenIcpBuilder}
                   className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b] cursor-pointer"
                 >
                   <IcpBuilderIcon className="h-5 w-5 text-white" />
@@ -3614,24 +4064,26 @@ export function SalesEngineView() {
           <ChatWorkspace
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
-            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
-            crmContactNames={crmContactNames}
-            onAddToCrm={handleAddToCrm}
+            onOpenIcpBuilder={handleOpenIcpBuilder}
+            onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
           />
-          {!chatExpanded && <OutreachPanel />}
+          {!chatExpanded && (
+            <OutreachPanel onOpenSettings={() => setIsOutreachSettingsOpen(true)} />
+          )}
         </div>
           </>
         )}
       </div>
 
+      <IcpSetupPromptModal
+        isOpen={showIcpSetupPrompt}
+        onClose={() => setIcpSetupDismissed(true)}
+        onCreateIcp={handleOpenIcpBuilder}
+      />
       <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
-      <AddToCrmPipelineModal
-        key={pendingCrmProspect?.id ?? "add-to-crm-modal"}
-        isOpen={isAddToCrmModalOpen}
-        onClose={() => setIsAddToCrmModalOpen(false)}
-        prospectName={pendingCrmProspect?.name ?? null}
-        pipelines={pipelines}
-        onConfirm={handleConfirmAddToCrm}
+      <OutreachSettingsModal
+        open={isOutreachSettingsOpen}
+        onClose={() => setIsOutreachSettingsOpen(false)}
       />
     </div>
   );

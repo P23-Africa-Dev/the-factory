@@ -865,7 +865,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           Minimum ICP Match Threshold
                         </span>
                         <p className="text-[11px] text-gray-500">
-                          Prospects scoring below this will be filtered out
+                          Leads below this score are still shown when you ask directly — they&apos;ll show a lower ICP % on the card instead of being hidden.
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-white shadow-xs">
@@ -959,7 +959,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       onChange={(e) =>
                         setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
                       }
-                      placeholder="Provide specific guidelines, regional quirks, or exclusions for the AI model..."
+                      placeholder="Provide specific guidelines, regional quirks, or exclusions for the AI model. You can also state opportunity interests beyond sales leads — e.g. investments, partnerships, market or funding news you want surfaced..."
                       className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
                     />
                   </div>

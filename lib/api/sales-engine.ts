@@ -17,10 +17,12 @@ export const SALES_ENGINE_API_BASE_URL =
 
 export class SalesEngineApiError extends Error {
   status: number;
+  reason?: string | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, reason?: string | null) {
     super(message);
     this.status = status;
+    this.reason = reason ?? null;
   }
 }
 
@@ -113,7 +115,7 @@ async function seRequest<T>({
   orgId,
   timeoutMs,
 }: {
-  method: "GET" | "POST" | "PATCH" | "DELETE";
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   path: string;
   body?: unknown;
   token?: string;
@@ -174,7 +176,14 @@ async function seRequest<T>({
       typeof payload.message === "string"
         ? payload.message
         : `Sales Engine request failed (${response.status})`;
-    throw new SalesEngineApiError(message, response.status);
+    const reason =
+      payload &&
+      typeof payload === "object" &&
+      "reason" in payload &&
+      typeof payload.reason === "string"
+        ? payload.reason
+        : null;
+    throw new SalesEngineApiError(message, response.status, reason);
   }
 
   if (payload && typeof payload === "object" && "data" in payload) {
@@ -206,7 +215,10 @@ export async function ensureSalesEngineSession(): Promise<void> {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ assertion: assertionRes.data.assertion }),
+    body: JSON.stringify({
+      assertion: assertionRes.data.assertion,
+      f23_access_token: f23Token,
+    }),
   });
 
   const exchangePayload = (await exchangeResponse.json().catch(() => null)) as
@@ -227,6 +239,32 @@ export async function ensureSalesEngineSession(): Promise<void> {
 
   const exchange = exchangePayload as SeExchangeResponse;
   setSalesEngineSession(exchange.token, exchange.organization.id);
+  await ensureFactory23CrmLink({ skipSessionRetry: true });
+}
+
+/** Bridges the signed-in Factory23 session to Sales Engine CRM sync (no manual API tokens). */
+export async function ensureFactory23CrmLink(options?: {
+  skipSessionRetry?: boolean;
+}): Promise<Factory23IntegrationStatus> {
+  const f23Token = getAuthTokenFromDocument();
+  if (!f23Token) {
+    throw new SalesEngineApiError("Factory23 session is not available.", 401);
+  }
+
+  const request = () =>
+    seRequest<{
+      linked: boolean;
+      token_registered: boolean;
+      status: Factory23IntegrationStatus;
+    }>({
+      method: "POST",
+      path: "/integrations/factory23/ensure",
+      body: { f23_access_token: f23Token },
+    });
+
+  const result = options?.skipSessionRetry ? await request() : await withSessionRetry(request);
+
+  return result.status;
 }
 
 /** Runs `fn`; on a dead/expired SE token (401), re-runs the assertion → exchange handshake once and retries. */
@@ -300,7 +338,7 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
 
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
-export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
+export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "generate_more_leads" | "create_outreach";
 
 export type ChatLead = {
   id: number;
@@ -308,6 +346,34 @@ export type ChatLead = {
   source: string;
   score: number;
   summary: string;
+  entity_type?: "person" | "company" | null;
+  title?: string | null;
+  company?: string | null;
+  contact_person?: string | null;
+  location?: string | null;
+  website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  linkedin_url?: string | null;
+  profile_urls?: string[] | null;
+  contact_ready?: boolean;
+  contact_enrichment_tier?: string | null;
+  contact_enrichment_provider?: string | null;
+  next_action?: string | null;
+  source_url?: string | null;
+  save_status?: "draft" | "saved";
+  crm_synced?: boolean;
+  crm_duplicate?: boolean;
+  crm_duplicate_reason?: string | null;
+  crm_fields_updated?: string[] | null;
+  f23_lead_id?: string | number | null;
+  low_confidence?: boolean;
+  icp_recommended?: boolean;
+  icp_fit_score?: number;
+  intent_score?: number;
+  query_relevance_score?: number;
+  query_match?: boolean;
+  icp_relevance_reason?: string | null;
 };
 
 export type ChatMessageApi = {
@@ -322,21 +388,221 @@ export type ChatMessageApi = {
 
 export type SendChatMessageResult = {
   user_message: ChatMessageApi;
-  assistant_message: ChatMessageApi;
+  assistant_message?: ChatMessageApi | null;
   discovery_run_id?: number | null;
+  status?: "processing" | "completed";
+  pending?: boolean;
 };
 
-const DISCOVERY_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
-const CHAT_DISCOVERY_TIMEOUT_MS = 60_000;
+export type ChatSessionApi = {
+  id: number;
+  title?: string | null;
+  icp_profile_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
+};
 
-export function createChatSession(title?: string): Promise<{ id: number }> {
+export type DiscoveryRunProgress = {
+  step?: number;
+  total_steps?: number;
+  sources_checked?: number;
+  candidates_found?: number;
+};
+
+export type DiscoveryRunApi = {
+  id: number;
+  status: string;
+  query?: string | null;
+  intent?: string | null;
+  stages?: string[] | null;
+  result_summary?: unknown;
+  progress?: DiscoveryRunProgress | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type DiscoveryStageInfo = {
+  label: string;
+  stepIndex: number;
+  totalSteps: number;
+  stageKey: string;
+  progress?: DiscoveryRunProgress | null;
+};
+
+const ASYNC_CHAT_INTENTS: ChatIntent[] = ["quick_research", "generate_leads", "generate_more_leads"];
+const CHAT_OUTREACH_TIMEOUT_MS =
+  Number(process.env.NEXT_PUBLIC_CHAT_OUTREACH_TIMEOUT_MS) || 120_000;
+const CHAT_POLL_INTERVAL_MS = 2_000;
+const CHAT_POLL_MAX_MS = 600_000;
+/** Quick Research should feel fast — fail over to background well before lead-gen's 10m ceiling. */
+export const CHAT_QUICK_RESEARCH_POLL_MAX_MS = 90_000;
+
+const DISCOVERY_STAGE_LABELS: Record<string, string> = {
+  analyzing_brief: "Analyzing your brief…",
+  analyzing_icp: "Analyzing your ICP…",
+  searching_sources: "Scanning web & social signals…",
+  extracting: "Extracting buying intent…",
+  enriching: "Enriching signal data…",
+  synthesizing: "Synthesizing insights…",
+  compiling_results: "Compiling ranked results…",
+  completed: "Finalizing results…",
+};
+
+const STAGE_TO_STEP: Record<string, number> = {
+  queued: 0,
+  analyzing_brief: 0,
+  analyzing_icp: 0,
+  searching_sources: 1,
+  extracting: 2,
+  enriching: 2,
+  synthesizing: 2,
+  compiling_results: 3,
+  completed: 3,
+};
+
+const TOTAL_PIPELINE_STEPS = 4;
+
+function humanizeStageKey(stageKey: string, intent?: ChatIntent): string {
+  if (stageKey === "queued") {
+    if (intent === "quick_research") return "Reviewing your question…";
+    if (intent === "generate_leads" || intent === "generate_more_leads") return "Parsing your ICP brief…";
+    if (intent === "create_outreach") return "Reading target context…";
+    return "Starting your request…";
+  }
+
+  if (intent === "quick_research") {
+    if (stageKey === "searching_sources") return "Searching sources in parallel…";
+    if (stageKey === "synthesizing") return "Writing your brief…";
+    if (stageKey === "compiling_results") return "Packaging citations…";
+  }
+
+  return (
+    DISCOVERY_STAGE_LABELS[stageKey] ??
+    stageKey.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) + "…"
+  );
+}
+
+export function mapDiscoveryStage(
+  stages?: string[] | null,
+  intent?: ChatIntent,
+  progress?: DiscoveryRunProgress | null
+): DiscoveryStageInfo {
+  const stageKey = stages?.length ? stages[stages.length - 1] : "analyzing_brief";
+  const stepIndex =
+    typeof progress?.step === "number"
+      ? Math.min(Math.max(progress.step - 1, 0), TOTAL_PIPELINE_STEPS - 1)
+      : (STAGE_TO_STEP[stageKey] ?? 0);
+
+  return {
+    label: humanizeStageKey(stageKey, intent),
+    stepIndex,
+    totalSteps: progress?.total_steps ?? TOTAL_PIPELINE_STEPS,
+    stageKey,
+    progress: progress ?? null,
+  };
+}
+
+/** @deprecated Use mapDiscoveryStage for structured stage info. */
+export function formatDiscoveryStage(stages?: string[] | null, intent?: ChatIntent): string {
+  return mapDiscoveryStage(stages, intent).label;
+}
+
+export function createChatSession(icpProfileId?: string): Promise<ChatSessionApi> {
   return withSessionRetry(async () =>
-    seRequest<{ id: number }>({
+    seRequest<ChatSessionApi>({
       method: "POST",
       path: "/chat/sessions",
-      body: title ? { title } : {},
+      body: icpProfileId ? { icp_profile_id: Number(icpProfileId) } : {},
     })
   );
+}
+
+export function fetchCurrentChatSession(icpProfileId?: string): Promise<ChatSessionApi | null> {
+  return withSessionRetry(async () => {
+    const query = icpProfileId ? `?icp_profile_id=${encodeURIComponent(icpProfileId)}` : "";
+
+    return seRequest<ChatSessionApi | null>({
+      method: "GET",
+      path: `/chat/sessions/current${query}`,
+    });
+  });
+}
+
+export function clearChatMessages(sessionId: number): Promise<{ cleared: boolean }> {
+  return withSessionRetry(async () =>
+    seRequest<{ cleared: boolean }>({
+      method: "DELETE",
+      path: `/chat/sessions/${sessionId}/messages`,
+    })
+  );
+}
+
+export function fetchDiscoveryRun(id: number): Promise<DiscoveryRunApi> {
+  return withSessionRetry(async () =>
+    seRequest<DiscoveryRunApi>({ method: "GET", path: `/discovery/runs/${id}` })
+  );
+}
+
+export async function pollDiscoveryRunUntilComplete(
+  runId: number,
+  options?: {
+    onStage?: (info: DiscoveryStageInfo) => void;
+    intent?: ChatIntent;
+    maxMs?: number;
+    signal?: AbortSignal;
+  }
+): Promise<{ run: DiscoveryRunApi; timedOut: boolean; aborted?: boolean }> {
+  const maxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
+  const started = Date.now();
+
+  while (Date.now() - started < maxMs) {
+    if (options?.signal?.aborted) {
+      const run = await fetchDiscoveryRun(runId);
+      return { run, timedOut: true, aborted: true };
+    }
+
+    const run = await fetchDiscoveryRun(runId);
+    const intent = options?.intent ?? (run.intent as ChatIntent | undefined);
+    const stageInfo = mapDiscoveryStage(run.stages, intent, run.progress ?? null);
+    options?.onStage?.(stageInfo);
+
+    if (run.status === "completed") {
+      return { run, timedOut: false };
+    }
+
+    if (run.status === "failed") {
+      // Soft-complete / job-fail races can briefly mark failed then flip to completed
+      // with leads. Re-check once before surfacing an error to the user.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (options?.signal?.aborted) {
+        const latest = await fetchDiscoveryRun(runId);
+        return { run: latest, timedOut: true, aborted: true };
+      }
+      const rechecked = await fetchDiscoveryRun(runId);
+      if (rechecked.status === "completed") {
+        return { run: rechecked, timedOut: false };
+      }
+      if (rechecked.status !== "failed") {
+        continue;
+      }
+      // Not a validation/ICP 422 — use 502 so UI does not treat this as "select an ICP".
+      throw new SalesEngineApiError(rechecked.error ?? "Discovery run failed.", 502);
+    }
+
+    if (options?.signal?.aborted) {
+      return { run, timedOut: true, aborted: true };
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
+  }
+
+  const run = await fetchDiscoveryRun(runId);
+  return { run, timedOut: true };
+}
+
+function findLatestAssistantMessage(messages: ChatMessageApi[]): ChatMessageApi | undefined {
+  return [...messages].reverse().find((message) => message.role === "assistant");
 }
 
 export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
@@ -348,24 +614,91 @@ export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
   );
 }
 
-export function sendChatMessage(
+export async function sendChatMessage(
   sessionId: number,
-  payload: { body: string; intent: ChatIntent }
+  payload: { body: string; intent: ChatIntent },
+  options?: {
+    onStage?: (info: DiscoveryStageInfo) => void;
+    icpContext?: { industries?: string[]; territories?: string[]; name?: string };
+    signal?: AbortSignal;
+  }
 ): Promise<SendChatMessageResult> {
-  return withSessionRetry(async () =>
-    seRequest<SendChatMessageResult>({
+  return withSessionRetry(async () => {
+    const timeoutMs = payload.intent === "create_outreach" ? CHAT_OUTREACH_TIMEOUT_MS : undefined;
+
+    const initial = await seRequest<SendChatMessageResult>({
       method: "POST",
       path: `/chat/sessions/${sessionId}/messages`,
       body: payload,
-      timeoutMs: DISCOVERY_INTENTS.includes(payload.intent) ? CHAT_DISCOVERY_TIMEOUT_MS : undefined,
-    })
-  );
+      timeoutMs,
+    });
+
+    if (
+      ASYNC_CHAT_INTENTS.includes(payload.intent) &&
+      initial.status === "processing" &&
+      initial.discovery_run_id
+    ) {
+      let messages = await listChatMessages(sessionId);
+      const placeholder = findLatestAssistantMessage(messages);
+
+      const pollResult = await pollDiscoveryRunUntilComplete(initial.discovery_run_id, {
+        intent: payload.intent,
+        onStage: options?.onStage,
+        signal: options?.signal,
+        maxMs:
+          payload.intent === "quick_research" ? CHAT_QUICK_RESEARCH_POLL_MAX_MS : CHAT_POLL_MAX_MS,
+      });
+
+      messages = await listChatMessages(sessionId);
+      const assistantMessage =
+        findLatestAssistantMessage(messages.filter((message) => !message.meta?.pending)) ??
+        findLatestAssistantMessage(messages) ??
+        placeholder;
+
+      if (pollResult.aborted) {
+        return {
+          ...initial,
+          assistant_message: assistantMessage ?? null,
+          status: "processing",
+          pending: true,
+        };
+      }
+
+      if (pollResult.timedOut && pollResult.run.status !== "completed") {
+        return {
+          ...initial,
+          assistant_message: assistantMessage ?? null,
+          status: "processing",
+          pending: true,
+        };
+      }
+
+      if (!assistantMessage || assistantMessage.meta?.pending) {
+        throw new SalesEngineApiError("Assistant response was not found after processing.", 500);
+      }
+
+      return {
+        ...initial,
+        assistant_message: assistantMessage,
+        status: "completed",
+        pending: false,
+      };
+    }
+
+    if (!initial.assistant_message) {
+      throw new SalesEngineApiError("Assistant response was missing from the server.", 500);
+    }
+
+    return initial;
+  });
 }
 
 // ── Metrics ─────────────────────────────────────────────────────────────────
 
 export type SalesEngineMetrics = {
   leads_discovered: number;
+  leads_pending_review: number;
+  leads_in_crm: number;
   qualified_leads: number;
   companies_cached: number;
   outreach_drafts: number;
@@ -380,6 +713,17 @@ export function fetchMetrics(): Promise<SalesEngineMetrics> {
 
 // ── Outreach ────────────────────────────────────────────────────────────────
 
+export type OutreachDeliveryStatus =
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "dropped"
+  | "spam"
+  | "unsubscribed"
+  | null;
+
 export type OutreachActivity = {
   id: number;
   name: string;
@@ -388,12 +732,87 @@ export type OutreachActivity = {
   accentBg: string;
   accentIcon: string;
   occurred_at: string;
+  delivery_status?: OutreachDeliveryStatus;
+  last_event_at?: string | null;
+  bounce_reason?: string | null;
 };
 
 export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
   return withSessionRetry(async () =>
     seRequest<OutreachActivity[]>({ method: "GET", path: "/outreach/recent" })
   );
+}
+
+export function sendOutreachActivity(
+  activityId: number,
+  payload: { to_email: string; subject?: string; body: string }
+): Promise<{ message_id: string | null; sent: boolean; activity_id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<{ message_id: string | null; sent: boolean; activity_id: number }>({
+      method: "POST",
+      path: `/outreach/activities/${activityId}/send`,
+      body: payload,
+    })
+  );
+}
+
+export function fetchOutreachActivity(
+  id: number
+): Promise<OutreachDraft & { activity_id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDraft & { activity_id: number }>({
+      method: "GET",
+      path: `/outreach/activities/${id}`,
+    })
+  );
+}
+
+export function regenerateOutreachActivity(
+  id: number,
+  payload?: { instructions?: string; channel?: "email" | "whatsapp" }
+): Promise<OutreachDraft & { activity_id: number; regeneration_count?: number }> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDraft & { activity_id: number; regeneration_count?: number }>({
+      method: "POST",
+      path: `/outreach/activities/${id}/regenerate`,
+      body: payload ?? {},
+    })
+  );
+}
+
+export function deleteOutreachActivity(
+  id: number
+): Promise<{ deleted: boolean; id: number }> {
+  return withSessionRetry(async () =>
+    seRequest<{ deleted: boolean; id: number }>({
+      method: "DELETE",
+      path: `/outreach/activities/${id}`,
+    })
+  );
+}
+
+/**
+ * Move a leading "Subject: …" line out of the message body into the subject field.
+ * Keeps Review outreach (and copy/send) consistent when models embed the subject in body.
+ */
+export function normalizeOutreachSubjectBody(
+  body: string,
+  existingSubject?: string | null
+): { subject: string; body: string } {
+  const trimmedBody = body.trim();
+  const match = trimmedBody.match(/^\s*subject\s*:\s*(.+?)\s*(?:\r?\n)+([\s\S]*)$/i);
+  if (match) {
+    const peeledSubject = match[1].trim();
+    return {
+      subject: peeledSubject || (existingSubject ?? "").trim(),
+      body: match[2].trim(),
+    };
+  }
+
+  return {
+    subject: (existingSubject ?? "").trim(),
+    body: trimmedBody,
+  };
 }
 
 export function formatRelativeTime(iso: string | null | undefined): string {
@@ -414,3 +833,666 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString();
 }
+
+/** True when posted_at is within the last 48 hours (fresh opportunity window). */
+export function isFreshSignal(iso: string | null | undefined, withinHours = 48): boolean {
+  if (!iso) return false;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return false;
+  const ageMs = Date.now() - date.getTime();
+  return ageMs >= 0 && ageMs <= withinHours * 60 * 60 * 1000;
+}
+
+// ── Social Listening ────────────────────────────────────────────────────────
+
+export type RecommendedActionApi = { title: string; detail: string };
+
+export type SocialSignalApi = {
+  id: number;
+  signal: string;
+  summary?: string;
+  source: string;
+  sourceIcon: string;
+  persona: string;
+  company: string;
+  location: string;
+  intent: string;
+  intentColor: string;
+  description: string;
+  score: number;
+  profile: string;
+  author_profile_url?: string | null;
+  platform?: string | null;
+  reasons: string[];
+  signalType: string;
+  buyingStage: string;
+  problem: string;
+  urgency: string;
+  suggestedMessage: string;
+  /** Object shape from newer API responses; string tolerated for defensive/cached-response compatibility. */
+  recommendedAction?: RecommendedActionApi | string;
+  whyThisMattersToYou?: string;
+  benefits?: string[];
+  personalRecommendedAction?: RecommendedActionApi | string;
+  status?: string;
+  posted_at?: string | null;
+  post_url?: string | null;
+  lead_id?: number | null;
+  f23_lead_id?: number | null;
+  entityType?: "company" | "individual";
+  industry?: string;
+  keyTopics?: string[];
+  competitors?: string[];
+  followUpStrategy?: string;
+};
+
+/** Normalizes recommendedAction/personalRecommendedAction, which may arrive as an object or a legacy plain string. */
+export function normalizeRecommendedAction(
+  value: RecommendedActionApi | string | null | undefined
+): RecommendedActionApi {
+  if (!value) return { title: "", detail: "" };
+  if (typeof value === "string") return { title: value, detail: "" };
+  return { title: value.title ?? "", detail: value.detail ?? "" };
+}
+
+export type SocialListeningRunStatus = {
+  id: number;
+  status: string;
+  stages?: string[] | null;
+  signals_created?: number | null;
+  result_summary?: string | null;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type SocialListeningMetrics = {
+  signals_detected: number;
+  high_opportunities: number;
+  added_to_crm: number;
+  percent_change: number;
+  last_run_at?: string | null;
+  latest_run?: SocialListeningRunStatus | null;
+};
+
+export type SocialListeningSettings = {
+  enabled_sources: string[];
+  meta_page_ids: string[];
+  cadence_days: 14 | 30;
+  min_score: number;
+  freshness_window_days: 7 | 14 | 30;
+  intent_filters: string[];
+  crm_destination: "qualified_pipeline" | "human_review";
+  outreach_channel_default: "email" | "human_follow_up";
+  sender_mode: "platform" | "organization";
+  org_verified_from_email?: string | null;
+  org_verified_domain?: string | null;
+  verification_status: "pending" | "verified" | "failed";
+  last_run_at?: string | null;
+};
+
+export type OutreachSenderSettings = {
+  sender_mode: "platform" | "organization";
+  reply_to_email: string;
+  org_verified_from_email?: string | null;
+  org_verified_domain?: string | null;
+  /** Legacy; prefer org_connection_status for UI labels. */
+  verification_status: "pending" | "verified" | "failed";
+  org_connection_status: "not_connected" | "pending" | "failed" | "verified";
+  platform_from_email?: string | null;
+};
+
+export type OutreachDnsRecord = {
+  label: string;
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+};
+
+export type OutreachDomainAuthentication = {
+  domain: string;
+  from_email: string | null;
+  dns_records: OutreachDnsRecord[];
+  verification_status: "pending" | "verified" | "failed";
+  valid: boolean;
+  verified_at?: string | null;
+  last_checked_at?: string | null;
+} | null;
+
+export type OutreachDraft = {
+  channel: "email" | "whatsapp";
+  subject?: string | null;
+  body: string;
+  sent: boolean;
+  to_email?: string | null;
+  activity_id?: number | null;
+  target_lead_ids?: number[];
+  activity_ids?: number[];
+  icp_alignment_note?: string;
+  regeneration_count?: number;
+  name?: string | null;
+  social_signal_id?: number | null;
+  leads?: Array<{ id: number; name: string; email?: string | null; phone?: string | null; [key: string]: unknown }>;
+};
+
+export type PaginatedMeta = {
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+};
+
+export type PaginatedSocialSignals = {
+  items: SocialSignalApi[];
+  meta: PaginatedMeta;
+};
+
+type PaginatedResponse<T> = {
+  data: T[];
+  meta: PaginatedMeta;
+};
+
+async function seRequestPaginated<T>({
+  method,
+  path,
+  body,
+  token,
+  orgId,
+}: {
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  path: string;
+  body?: unknown;
+  token?: string;
+  orgId?: string | null;
+}): Promise<PaginatedResponse<T>> {
+  const authToken = token ?? getSalesEngineToken();
+  if (!authToken) {
+    throw new SalesEngineApiError("Sales Engine session is not ready.", 401);
+  }
+
+  const organizationId = orgId ?? getSalesEngineOrgId();
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    Authorization: `Bearer ${authToken}`,
+  };
+
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (organizationId) {
+    headers["X-Organization-Id"] = organizationId;
+  }
+
+  const response = await fetch(`${SALES_ENGINE_API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { message?: string; data?: T[]; meta?: PaginatedMeta }
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : `Sales Engine request failed (${response.status})`;
+    const reason =
+      payload &&
+      typeof payload === "object" &&
+      "reason" in payload &&
+      typeof payload.reason === "string"
+        ? payload.reason
+        : null;
+    throw new SalesEngineApiError(message, response.status, reason);
+  }
+
+  return {
+    data: (payload?.data ?? []) as T[],
+    meta: payload?.meta ?? { current_page: 1, last_page: 1, per_page: 10, total: 0 },
+  };
+}
+
+export function fetchSocialSignals(params?: {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  source?: string;
+  signal_type?: string;
+  buying_stage?: string;
+}): Promise<PaginatedSocialSignals> {
+  return withSessionRetry(async () => {
+    const query = new URLSearchParams();
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.per_page) query.set("per_page", String(params.per_page));
+    if (params?.search) query.set("search", params.search);
+    if (params?.source && params.source !== "all") query.set("source", params.source);
+    if (params?.signal_type && params.signal_type !== "all") query.set("signal_type", params.signal_type);
+    if (params?.buying_stage && params.buying_stage !== "all") query.set("buying_stage", params.buying_stage);
+
+    const qs = query.toString();
+    const result = await seRequestPaginated<SocialSignalApi>({
+      method: "GET",
+      path: `/social-listening/signals${qs ? `?${qs}` : ""}`,
+    });
+    return { items: result.data, meta: result.meta };
+  });
+}
+
+export function fetchSocialSignal(id: number): Promise<SocialSignalApi> {
+  return withSessionRetry(async () =>
+    seRequest<SocialSignalApi>({ method: "GET", path: `/social-listening/signals/${id}` })
+  );
+}
+
+export function fetchSocialListeningMetrics(): Promise<SocialListeningMetrics> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningMetrics>({ method: "GET", path: "/social-listening/metrics" })
+  );
+}
+
+export function fetchSocialListeningSettings(): Promise<SocialListeningSettings> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningSettings>({ method: "GET", path: "/social-listening/settings" })
+  );
+}
+
+export function updateSocialListeningSettings(
+  payload: Partial<SocialListeningSettings>
+): Promise<SocialListeningSettings> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningSettings>({
+      method: "PUT",
+      path: "/social-listening/settings",
+      body: payload,
+    })
+  );
+}
+
+export function triggerSocialListeningRun(force = false): Promise<{ id: number; status: string }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number; status: string }>({
+      method: "POST",
+      path: "/social-listening/runs",
+      body: force ? { force: true } : {},
+    })
+  );
+}
+
+export function bootstrapSocialListeningRun(force = false): Promise<{
+  id: number;
+  status: string;
+  bootstrapped: boolean;
+  latest_run?: SocialListeningRunStatus | null;
+}> {
+  return withSessionRetry(async () =>
+    seRequest<{
+      id: number;
+      status: string;
+      bootstrapped: boolean;
+      latest_run?: SocialListeningRunStatus | null;
+    }>({
+      method: "POST",
+      path: "/social-listening/runs/bootstrap",
+      body: force ? { force: true } : {},
+    })
+  );
+}
+
+export function fetchSocialListeningRun(id: number): Promise<SocialListeningRunStatus> {
+  return withSessionRetry(async () =>
+    seRequest<SocialListeningRunStatus>({ method: "GET", path: `/social-listening/runs/${id}` })
+  );
+}
+
+export function createSignalOutreach(
+  id: number,
+  opts?: { send?: boolean; to_email?: string }
+): Promise<{
+  subject?: string | null;
+  body: string;
+  to_email?: string | null;
+  activity_id?: number;
+  sent?: boolean;
+  channel?: "email" | "whatsapp";
+}> {
+  return withSessionRetry(async () =>
+    seRequest<{
+      subject?: string | null;
+      body: string;
+      to_email?: string | null;
+      activity_id?: number;
+      sent?: boolean;
+      channel?: "email" | "whatsapp";
+    }>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/outreach`,
+      body: opts ?? {},
+    })
+  );
+}
+
+export function setSignalReminder(
+  id: number,
+  payload?: { remind_at?: string; note?: string }
+): Promise<{ id: number; remind_at: string }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number; remind_at: string }>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/reminder`,
+      body: payload ?? {},
+    })
+  );
+}
+
+export function syncSignalToCrm(
+  id: number,
+  opts?: { pipeline_id?: number | string }
+): Promise<{
+  lead_id: number;
+  f23_lead_id?: number | null;
+  crm?: unknown;
+  signal: SocialSignalApi;
+}> {
+  const body =
+    opts?.pipeline_id != null && opts.pipeline_id !== ""
+      ? { pipeline_id: opts.pipeline_id }
+      : undefined;
+  return withSessionRetry(async () =>
+    seRequest<{
+      lead_id: number;
+      f23_lead_id?: number | null;
+      crm?: unknown;
+      signal: SocialSignalApi;
+    }>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/sync-to-crm`,
+      body,
+    })
+  );
+}
+
+export function dismissSignal(id: number): Promise<SocialSignalApi> {
+  return withSessionRetry(async () =>
+    seRequest<SocialSignalApi>({
+      method: "POST",
+      path: `/social-listening/signals/${id}/dismiss`,
+    })
+  );
+}
+
+export function fetchOutreachSenderSettings(): Promise<OutreachSenderSettings> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachSenderSettings>({ method: "GET", path: "/outreach/sender-settings" })
+  );
+}
+
+export function updateOutreachSenderSettings(
+  payload: Partial<OutreachSenderSettings>
+): Promise<OutreachSenderSettings> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachSenderSettings>({
+      method: "PUT",
+      path: "/outreach/sender-settings",
+      body: payload,
+    })
+  );
+}
+
+export function fetchOutreachDomain(): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({ method: "GET", path: "/outreach/domain" })
+  );
+}
+
+export function authenticateOutreachDomain(payload: {
+  domain: string;
+  from_email: string;
+}): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({
+      method: "POST",
+      path: "/outreach/domain",
+      body: payload,
+    })
+  );
+}
+
+export function verifyOutreachDomain(): Promise<OutreachDomainAuthentication> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachDomainAuthentication>({ method: "POST", path: "/outreach/domain/verify" })
+  );
+}
+
+export function deleteOutreachDomain(): Promise<void> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: "/outreach/domain" });
+  });
+}
+
+export type Factory23IntegrationStatus = {
+  configured: boolean;
+  global_enabled: boolean;
+  organization_enabled: boolean;
+  f23_company_id?: string | number | null;
+  linked: boolean;
+  token_linked?: boolean;
+  can_sync: boolean;
+  block_reason?: string | null;
+  block_message?: string | null;
+};
+
+export function fetchFactory23IntegrationStatus(): Promise<Factory23IntegrationStatus> {
+  return withSessionRetry(async () =>
+    seRequest<Factory23IntegrationStatus>({
+      method: "GET",
+      path: "/integrations/factory23/status",
+    })
+  );
+}
+
+export async function fetchFactory23IntegrationStatusWithAutoEnsure(): Promise<Factory23IntegrationStatus> {
+  let status = await fetchFactory23IntegrationStatus();
+  if (!status.can_sync && status.block_reason === "not_configured") {
+    try {
+      status = await ensureFactory23CrmLink();
+    } catch {
+      return status;
+    }
+  }
+
+  return status;
+}
+
+export function pushLeadToCrm(
+  leadId: number,
+  opts?: { pipeline_id?: number | string }
+): Promise<{
+  lead_id: number;
+  save_status?: string;
+  synced?: boolean;
+  f23_lead_id?: string | number | null;
+  already_synced?: boolean;
+  updated?: boolean;
+  fields_updated?: string[];
+  crm_duplicate?: boolean;
+  crm_duplicate_reason?: string | null;
+  crm_fields_updated?: string[];
+}> {
+  const body =
+    opts?.pipeline_id != null && opts.pipeline_id !== ""
+      ? { pipeline_id: opts.pipeline_id }
+      : undefined;
+  return withSessionRetry(async () => {
+    try {
+      return await seRequest<{
+        lead_id: number;
+        save_status?: string;
+        synced?: boolean;
+        f23_lead_id?: string | number | null;
+        already_synced?: boolean;
+        updated?: boolean;
+        fields_updated?: string[];
+        crm_duplicate?: boolean;
+        crm_duplicate_reason?: string | null;
+        crm_fields_updated?: string[];
+      }>({
+        method: "POST",
+        path: `/leads/${leadId}/sync-to-crm`,
+        body,
+      });
+    } catch (error) {
+      if (
+        error instanceof SalesEngineApiError &&
+        (error.reason === "not_configured" || error.reason === "token_invalid")
+      ) {
+        await ensureFactory23CrmLink();
+        return await seRequest<{
+          lead_id: number;
+          save_status?: string;
+          synced?: boolean;
+          f23_lead_id?: string | number | null;
+          already_synced?: boolean;
+          updated?: boolean;
+          fields_updated?: string[];
+          crm_duplicate?: boolean;
+          crm_duplicate_reason?: string | null;
+          crm_fields_updated?: string[];
+        }>({
+          method: "POST",
+          path: `/leads/${leadId}/sync-to-crm`,
+          body,
+        });
+      }
+      throw error;
+    }
+  });
+}
+
+export function syncLeadsBatch(leadIds: number[]): Promise<{
+  synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+  errors: string[];
+}> {
+  return withSessionRetry(async () => {
+    try {
+      return await seRequest<{
+        synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+        errors: string[];
+      }>({
+        method: "POST",
+        path: "/leads/sync-to-crm",
+        body: { lead_ids: leadIds },
+      });
+    } catch (error) {
+      if (
+        error instanceof SalesEngineApiError &&
+        (error.reason === "not_configured" || error.reason === "token_invalid")
+      ) {
+        await ensureFactory23CrmLink();
+        return await seRequest<{
+          synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
+          errors: string[];
+        }>({
+          method: "POST",
+          path: "/leads/sync-to-crm",
+          body: { lead_ids: leadIds },
+        });
+      }
+      throw error;
+    }
+  });
+}
+
+function isPendingReviewLead(lead: ChatLead | null | undefined): lead is ChatLead {
+  return Boolean(
+    lead &&
+      lead.id != null &&
+      !lead.crm_synced &&
+      lead.save_status !== "saved" &&
+      !lead.crm_duplicate
+  );
+}
+
+async function collectPendingLeadsFromChatSessions(
+  icpProfileIds: Array<string | undefined>
+): Promise<ChatLead[]> {
+  const targetSessionIds: number[] = [];
+
+  for (const icpId of icpProfileIds) {
+    try {
+      const session = await fetchCurrentChatSession(icpId);
+      if (session?.id && !targetSessionIds.includes(session.id)) {
+        targetSessionIds.push(session.id);
+      }
+    } catch {
+      // Ignore single session lookup failure
+    }
+  }
+
+  const leadMap = new Map<number, ChatLead>();
+  for (const sessionId of targetSessionIds) {
+    try {
+      const messages = await listChatMessages(sessionId);
+      for (const msg of messages) {
+        if (!Array.isArray(msg.leads)) continue;
+        for (const lead of msg.leads) {
+          if (isPendingReviewLead(lead)) {
+            leadMap.set(lead.id, lead);
+          }
+        }
+      }
+    } catch {
+      // Ignore single session failure
+    }
+  }
+
+  return Array.from(leadMap.values());
+}
+
+export async function fetchPendingReviewLeads(
+  icpProfileId?: string
+): Promise<ChatLead[]> {
+  return withSessionRetry(async () => {
+    const scopedIcpId =
+      icpProfileId && icpProfileId !== "all" ? icpProfileId : undefined;
+
+    // ICP-scoped views must use that ICP's chat session. The /leads list endpoint
+    // often ignores icp_profile_id and returning it early made the filter look broken.
+    if (scopedIcpId) {
+      return collectPendingLeadsFromChatSessions([scopedIcpId]);
+    }
+
+    // "All ICPs": try the direct list endpoint first, then aggregate every session.
+    try {
+      const res = await seRequest<ChatLead[] | { data: ChatLead[] }>({
+        method: "GET",
+        path: "/leads?save_status=draft",
+      });
+      const list = Array.isArray(res) ? res : res?.data ?? [];
+      if (Array.isArray(list) && list.length > 0) {
+        const pending = list.filter(isPendingReviewLead);
+        if (pending.length > 0) return pending;
+      }
+    } catch {
+      // Direct endpoint not available — fall through to chat aggregation
+    }
+
+    const profileIds: Array<string | undefined> = [undefined];
+    try {
+      const profiles = await fetchIcpProfiles();
+      for (const profile of profiles) {
+        if (profile?.id) profileIds.push(String(profile.id));
+      }
+    } catch {
+      // Ignore profile error; still try the default session
+    }
+
+    return collectPendingLeadsFromChatSessions(profileIds);
+  });
+}
+

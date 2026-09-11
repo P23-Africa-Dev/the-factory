@@ -170,6 +170,171 @@ class LeadService
         return $this->findForUser($user, $lead, $companyId);
     }
 
+    /**
+     * Find an existing CRM lead that matches email (preferred) or name+company.
+     *
+     * @return array{exists: bool, lead: ?Lead, match_reason: ?string}
+     */
+    public function checkDuplicate(User $user, array $filters): array
+    {
+        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $email = strtolower(trim((string) ($filters['email'] ?? '')));
+        $name = trim((string) ($filters['name'] ?? ''));
+        $companyName = trim((string) ($filters['company_name'] ?? ''));
+
+        if ($email !== '') {
+            $byEmail = $this->baseQuery($companyId)
+                ->whereRaw('LOWER(email) = ?', [$email])
+                ->first();
+
+            if ($byEmail) {
+                return [
+                    'exists' => true,
+                    'lead' => $byEmail,
+                    'match_reason' => 'email',
+                ];
+            }
+        }
+
+        if ($name !== '') {
+            $query = $this->baseQuery($companyId)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+
+            if ($companyName !== '') {
+                $query->where(function (Builder $builder) use ($companyName): void {
+                    $builder->whereRaw('LOWER(company_name) = ?', [mb_strtolower($companyName)])
+                        ->orWhereNull('company_name')
+                        ->orWhere('company_name', '');
+                });
+            }
+
+            $byName = $query->first();
+            if ($byName) {
+                return [
+                    'exists' => true,
+                    'lead' => $byName,
+                    'match_reason' => $companyName !== '' ? 'name_company' : 'name',
+                ];
+            }
+        }
+
+        return [
+            'exists' => false,
+            'lead' => null,
+            'match_reason' => null,
+        ];
+    }
+
+    /**
+     * Merge richer Sales Engine fields into an existing CRM lead without wiping filled values.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{lead: Lead, updated: bool, fields_changed: list<string>}
+     */
+    public function merge(User $user, Lead $lead, array $data, string $strategy = 'better_quality'): array
+    {
+        $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+        $this->assertLeadInCompany($lead, $companyId);
+        $this->ensureCanCreateLeads((string) $context['role']);
+
+        $mergeable = [
+            'email',
+            'phone',
+            'location',
+            'company_name',
+            'company_email',
+            'website',
+            'position',
+            'profile_urls',
+            'next_action',
+        ];
+
+        $changed = [];
+        $updates = [];
+
+        foreach ($mergeable as $field) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            $incoming = $data[$field];
+            if ($incoming === null || $incoming === '' || $incoming === []) {
+                continue;
+            }
+
+            if ($field === 'website' && is_string($incoming)) {
+                $incoming = LeadFieldNormalizer::normalizeWebsite($incoming);
+                if ($incoming === null) {
+                    continue;
+                }
+            }
+
+            if ($field === 'profile_urls') {
+                $incoming = LeadFieldNormalizer::normalizeProfileUrls($incoming);
+                if ($incoming === []) {
+                    continue;
+                }
+            }
+
+            $existing = $lead->{$field};
+
+            $shouldUpdate = match ($strategy) {
+                'always_update' => true,
+                'only_new_fields' => $existing === null || $existing === '' || $existing === [],
+                default => $this->isBetterFieldValue($existing, $incoming, $field),
+            };
+
+            if (! $shouldUpdate) {
+                continue;
+            }
+
+            $updates[$field] = $incoming;
+            $changed[] = $field;
+        }
+
+        if ($updates !== []) {
+            $lead->update($updates);
+        }
+
+        return [
+            'lead' => $this->findForUser($user, $lead->fresh(), $companyId),
+            'updated' => $changed !== [],
+            'fields_changed' => $changed,
+        ];
+    }
+
+    private function isBetterFieldValue(mixed $existing, mixed $incoming, string $field): bool
+    {
+        if ($existing === null || $existing === '' || $existing === []) {
+            return true;
+        }
+
+        if ($field === 'email' && is_string($incoming) && filter_var($incoming, FILTER_VALIDATE_EMAIL)) {
+            return ! is_string($existing) || ! filter_var($existing, FILTER_VALIDATE_EMAIL);
+        }
+
+        if ($field === 'website' && is_string($incoming)) {
+            return ! is_string($existing) || LeadFieldNormalizer::normalizeWebsite((string) $existing) === null;
+        }
+
+        if ($field === 'profile_urls' && is_array($incoming)) {
+            $existingUrls = is_array($existing) ? $existing : [];
+
+            return count(array_diff($incoming, $existingUrls)) > 0;
+        }
+
+        if (is_string($incoming) && is_string($existing)) {
+            return mb_strlen(trim($incoming)) > mb_strlen(trim($existing));
+        }
+
+        return false;
+    }
+
     public function findForUser(User $user, Lead $lead, ?int $companyId = null): Lead
     {
         $context = $this->companyContextService->resolve($user, $companyId);
