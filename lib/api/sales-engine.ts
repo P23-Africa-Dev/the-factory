@@ -346,8 +346,10 @@ export type ChatLead = {
   source: string;
   score: number;
   summary: string;
+  entity_type?: "person" | "company" | null;
   title?: string | null;
   company?: string | null;
+  contact_person?: string | null;
   location?: string | null;
   website?: string | null;
   email?: string | null;

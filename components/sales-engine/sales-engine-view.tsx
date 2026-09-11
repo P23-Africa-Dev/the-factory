@@ -70,6 +70,12 @@ import { getApiErrorMessage } from "@/lib/api/errors";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
 import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
+  formatLeadContactLine,
+  formatLeadRoleLine,
+  leadEntityBadge,
+  primaryProfileUrl,
+} from "@/lib/enriched-lead-card";
+import {
   fetchOutreachActivity,
   formatRelativeTime,
   isFreshSignal,
@@ -220,7 +226,7 @@ import { useSalesEngineCrmPipelines } from "@/hooks/use-sales-engine-pipelines";
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
   quick_research: "Research market trends, competitors, or industry signals…",
-  generate_leads: "Who are the top business prospects in your target market?",
+  generate_leads: "Find people or companies that match your ICP…",
   generate_more_leads: "Find more prospects like the ones above…",
   create_outreach: "Draft a follow-up email or WhatsApp message for…",
 };
@@ -658,6 +664,10 @@ function LeadInlineResults({
           const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
           const fieldsUpdated = lead.crm_fields_updated ?? [];
           const { overall } = leadScoreBreakdown(lead);
+          const roleLine = formatLeadRoleLine(lead);
+          const contactLine = formatLeadContactLine(lead);
+          const profileUrl = primaryProfileUrl(lead);
+          const entityBadge = leadEntityBadge(lead);
 
           return (
             <div
@@ -666,12 +676,17 @@ function LeadInlineResults({
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-                <span
-                  className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
-                  title="Overall priority score"
-                >
-                  Overall {overall}%
-                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
+                    {entityBadge}
+                  </span>
+                  <span
+                    className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
+                    title="Overall priority score"
+                  >
+                    Overall {overall}%
+                  </span>
+                </div>
               </div>
               {lead.icp_relevance_reason && (
                 <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
@@ -679,15 +694,16 @@ function LeadInlineResults({
                 </p>
               )}
               <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
-              {(lead.title || lead.company) && (
-                <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">
-                  {[lead.title, lead.company].filter(Boolean).join(" at ")}
-                </p>
+              {roleLine && (
+                <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
               )}
-              {lead.location && (
+              {contactLine && (
+                <p className="mt-0.5 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
+              )}
+              {entityBadge === "Contact" && lead.location && (
                 <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
               )}
-              {(lead.email || lead.phone || lead.linkedin_url || (lead.profile_urls && lead.profile_urls.length > 0)) && (
+              {(lead.email || lead.phone || profileUrl || lead.website) && (
                 <div className="mt-1 flex flex-col gap-0.5">
                   {lead.email && (
                     <a
@@ -709,14 +725,24 @@ function LeadInlineResults({
                       <span className="truncate">{lead.phone}</span>
                     </a>
                   )}
-                  {(lead.linkedin_url || (lead.profile_urls && lead.profile_urls[0])) && (
+                  {profileUrl && (
                     <a
-                      href={lead.linkedin_url || lead.profile_urls![0]}
+                      href={profileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
                     >
-                      View profile
+                      {entityBadge === "Account" ? "View company" : "View profile"}
+                    </a>
+                  )}
+                  {entityBadge === "Account" && lead.website && (
+                    <a
+                      href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                    >
+                      Website
                     </a>
                   )}
                   {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (

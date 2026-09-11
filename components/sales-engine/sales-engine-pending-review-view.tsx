@@ -40,6 +40,11 @@ import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration
 import { AddToCrmPipelineModal } from "./crm-action-modals";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
+import {
+  formatLeadContactLine,
+  formatLeadRoleLine,
+  leadEntityBadge,
+} from "@/lib/enriched-lead-card";
 import type { ChatLead } from "@/lib/api/sales-engine";
 
 type FitFilter = "all" | "high" | "medium" | "contact_ready";
@@ -200,7 +205,9 @@ export function SalesEnginePendingReviewView() {
   const handleCopyLead = (lead: ChatLead) => {
     const info = [
       lead.name,
-      [lead.title, lead.company].filter(Boolean).join(" at "),
+      leadEntityBadge(lead),
+      formatLeadRoleLine(lead),
+      formatLeadContactLine(lead),
       lead.email ? `Email: ${lead.email}` : null,
       lead.phone ? `Phone: ${lead.phone}` : null,
       lead.linkedin_url ? `LinkedIn: ${lead.linkedin_url}` : null,
@@ -562,11 +569,14 @@ export function SalesEnginePendingReviewView() {
                           {lead.name}
                         </span>
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                          {leadEntityBadge(lead)}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
                           {overall}% Fit
                         </span>
                       </div>
                       <p className="truncate text-xs text-slate-500">
-                        {[lead.title, lead.company].filter(Boolean).join(" at ")}
+                        {formatLeadRoleLine(lead) || formatLeadContactLine(lead) || "—"}
                       </p>
                     </div>
                   </div>
