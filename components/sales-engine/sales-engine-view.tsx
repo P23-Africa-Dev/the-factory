@@ -209,34 +209,7 @@ type SocialStatCard = {
   active?: boolean;
 };
 
-function useSalesEngineCrmPipelines() {
-  const user = useAuthStore((s) => s.user);
-  const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
-  const apiBasePath: ApiRoleBasePath = role === "agent" ? "/agent" : "/admin";
-  const { data: pipelines = [], isLoading } = useCrmPipelines(companyId ?? undefined, apiBasePath);
-  const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
-
-  const options = useMemo<CrmPipelineOption[]>(
-    () => pipelines.map((pipeline) => ({ id: String(pipeline.id), name: pipeline.name })),
-    [pipelines]
-  );
-
-  const preferredId = resolveCrmPipelineId(
-    pipelines,
-    preferences?.preferred_pipeline_id,
-    preferences?.company_default_pipeline_id
-  );
-
-  const orderedOptions = useMemo(() => {
-    if (preferredId == null) return options;
-    const preferredKey = String(preferredId);
-    const preferred = options.find((option) => option.id === preferredKey);
-    if (!preferred) return options;
-    return [preferred, ...options.filter((option) => option.id !== preferredKey)];
-  }, [options, preferredId]);
-
-  return { pipelines: orderedOptions, isLoading };
-}
+import { useSalesEngineCrmPipelines } from "@/hooks/use-sales-engine-pipelines";
 
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
@@ -342,6 +315,7 @@ function MetricCard({
   isScanning = false,
   href,
   onClick,
+  actionLabel,
 }: {
   title: string;
   value: string;
@@ -351,6 +325,7 @@ function MetricCard({
   isScanning?: boolean;
   href?: string;
   onClick?: () => void;
+  actionLabel?: string;
 }) {
   const isInteractive = Boolean(href || onClick);
 
@@ -374,7 +349,7 @@ function MetricCard({
               active ? "text-white/70 group-hover:text-white" : "text-[#09232d]/70 group-hover:text-[#09232d]"
             }`}
           >
-            View in CRM &rarr;
+            {actionLabel ?? (href?.includes("crm") ? "View in CRM →" : "View →")}
           </span>
         )}
       </div>
@@ -3947,12 +3922,15 @@ export function SalesEngineView() {
               active
               unit="Leads"
               href="/crm?source=sales_engine"
+              actionLabel="View in CRM &rarr;"
             />
             <MetricCard
               title="Pending Review"
               value={formatMetric(leadsPendingReview)}
               percent="—"
               unit="Drafts"
+              href={activeProfile?.id ? `/sales-engine/pending-review?icp_id=${activeProfile.id}` : "/sales-engine/pending-review"}
+              actionLabel="Review leads &rarr;"
             />
             <TrendChart />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">

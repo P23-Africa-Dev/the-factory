@@ -1380,3 +1380,81 @@ export function syncLeadsBatch(leadIds: number[]): Promise<{
     }
   });
 }
+
+export async function fetchPendingReviewLeads(
+  icpProfileId?: string
+): Promise<ChatLead[]> {
+  return withSessionRetry(async () => {
+    // 1. First attempt: call direct endpoint if implemented on SE backend
+    try {
+      const query =
+        icpProfileId && icpProfileId !== "all"
+          ? `?icp_profile_id=${encodeURIComponent(icpProfileId)}&save_status=draft`
+          : "?save_status=draft";
+      const res = await seRequest<ChatLead[] | { data: ChatLead[] }>({
+        method: "GET",
+        path: `/leads${query}`,
+      });
+      const list = Array.isArray(res) ? res : res?.data ?? [];
+      if (Array.isArray(list) && list.length > 0) {
+        return list.filter(
+          (lead) => !lead.crm_synced && lead.save_status !== "saved" && !lead.crm_duplicate
+        );
+      }
+    } catch {
+      // Direct endpoint not available, fallback to gathering from chat sessions
+    }
+
+    // 2. Fallback: gather leads from ICP chat sessions
+    const targetSessionIds: number[] = [];
+    if (icpProfileId && icpProfileId !== "all") {
+      const session = await fetchCurrentChatSession(icpProfileId);
+      if (session?.id) targetSessionIds.push(session.id);
+    } else {
+      // Gather across current session and all ICP profiles
+      const defaultSession = await fetchCurrentChatSession();
+      if (defaultSession?.id) targetSessionIds.push(defaultSession.id);
+
+      try {
+        const profiles = await fetchIcpProfiles();
+        for (const p of profiles) {
+          if (p?.id) {
+            const s = await fetchCurrentChatSession(String(p.id));
+            if (s?.id && !targetSessionIds.includes(s.id)) {
+              targetSessionIds.push(s.id);
+            }
+          }
+        }
+      } catch {
+        // Ignore profile error
+      }
+    }
+
+    const leadMap = new Map<number, ChatLead>();
+    for (const sessionId of targetSessionIds) {
+      try {
+        const messages = await listChatMessages(sessionId);
+        for (const msg of messages) {
+          if (Array.isArray(msg.leads)) {
+            for (const lead of msg.leads) {
+              if (
+                lead &&
+                lead.id != null &&
+                !lead.crm_synced &&
+                lead.save_status !== "saved" &&
+                !lead.crm_duplicate
+              ) {
+                leadMap.set(lead.id, lead);
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore single session failure
+      }
+    }
+
+    return Array.from(leadMap.values());
+  });
+}
+
