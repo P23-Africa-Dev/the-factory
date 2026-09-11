@@ -569,15 +569,15 @@ export async function pollDiscoveryRunUntilComplete(
         const latest = await fetchDiscoveryRun(runId);
         return { run: latest, timedOut: true, aborted: true };
       }
-      run = await fetchDiscoveryRun(runId);
-      if (run.status === "completed") {
-        return { run, timedOut: false };
+      const rechecked = await fetchDiscoveryRun(runId);
+      if (rechecked.status === "completed") {
+        return { run: rechecked, timedOut: false };
       }
-      if (run.status !== "failed") {
+      if (rechecked.status !== "failed") {
         continue;
       }
       // Not a validation/ICP 422 — use 502 so UI does not treat this as "select an ICP".
-      throw new SalesEngineApiError(run.error ?? "Discovery run failed.", 502);
+      throw new SalesEngineApiError(rechecked.error ?? "Discovery run failed.", 502);
     }
 
     if (options?.signal?.aborted) {
