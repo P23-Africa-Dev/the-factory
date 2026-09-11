@@ -50,6 +50,7 @@ import {
   SlidersHorizontal,
   Tag,
   Trash2,
+  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -804,7 +805,29 @@ export default function CRMPage() {
     "uploaded_by_agents",
     "uploaded by agents",
   ].includes(sourceParam);
-  const leadListUrl = `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`;
+
+  const salesEngineScope = [
+    "sales_engine",
+    "sales engine",
+    "sales-engine",
+    "smart_lead",
+    "smart lead",
+    "smart-lead",
+    "smart_leads",
+    "smart leads",
+  ].includes(sourceParam);
+
+  const effectiveSourceFilter = agentUploadScope
+    ? AGENT_UPLOAD_SOURCE_FILTER
+    : salesEngineScope
+      ? "sales_engine"
+      : sourceParam || undefined;
+
+  const leadListUrl = salesEngineScope
+    ? `${basePath}/leads?source=sales_engine`
+    : agentUploadScope
+      ? `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`
+      : `${basePath}/leads`;
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -866,7 +889,7 @@ export default function CRMPage() {
       company_id: companyId ?? undefined,
       search: debouncedSearch || undefined,
       pipeline_id: selectedPipelineId ?? undefined,
-      source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+      source: effectiveSourceFilter,
       per_page: 20,
     },
     apiBasePath,
@@ -878,15 +901,40 @@ export default function CRMPage() {
       search: debouncedSearch || undefined,
       pipeline_id: selectedPipelineId ?? undefined,
       status: selectedLabel === "all" ? undefined : selectedLabel,
-      source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+      source: effectiveSourceFilter,
     },
     apiBasePath
   );
 
-  const visibleStagePages = useMemo(
-    () => stageQuery.stages.filter((stage) => stage.id !== "__uncategorized__" || stage.total > 0),
-    [stageQuery.stages],
-  );
+  const isSalesEngineLead = (lead: LeadApiItem): boolean => {
+    const s = (lead.source ?? "").toLowerCase().trim();
+    const loc = (lead.location ?? "").toLowerCase().trim();
+    const comp = (lead.company_name ?? "").toLowerCase().trim();
+    return (
+      s.includes("sales") ||
+      s.includes("smart_lead") ||
+      s.includes("smart lead") ||
+      loc.includes("sales engine") ||
+      comp.includes("sales engine")
+    );
+  };
+
+  const visibleStagePages = useMemo(() => {
+    const rawStages = stageQuery.stages.filter(
+      (stage) => stage.id !== "__uncategorized__" || stage.total > 0
+    );
+    if (!salesEngineScope) return rawStages;
+
+    return rawStages.map((stage) => {
+      const matchingLeads = stage.leads.filter(isSalesEngineLead);
+      return {
+        ...stage,
+        leads: matchingLeads,
+        total: matchingLeads.length,
+      };
+    });
+  }, [stageQuery.stages, salesEngineScope]);
+
   const loadedLeads = useMemo(
     () => visibleStagePages.flatMap((stage) => stage.leads),
     [visibleStagePages],
@@ -905,13 +953,13 @@ export default function CRMPage() {
         visibleStagePages.map((stage) => [
           stage.id,
           {
-            total: stage.total,
-            hasMore: stage.hasMore,
+            total: salesEngineScope ? stage.leads.length : stage.total,
+            hasMore: salesEngineScope ? false : stage.hasMore,
             isFetchingMore: stage.isFetchingMore,
           },
         ]),
       ),
-    [visibleStagePages],
+    [visibleStagePages, salesEngineScope],
   );
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
@@ -1010,7 +1058,7 @@ export default function CRMPage() {
                 search: debouncedSearch || undefined,
                 pipeline_id: selectedPipelineId ?? undefined,
                 status: selectedLabel === "all" ? undefined : selectedLabel,
-                source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+                source: effectiveSourceFilter,
               }}
               onViewImportedPipeline={(pipelineId) => {
                 setSelectedPipelineId(pipelineId);
@@ -1028,6 +1076,24 @@ export default function CRMPage() {
             </button>
           </div>
         </div>
+
+        {salesEngineScope && (
+          <div className="flex items-center justify-between rounded-2xl border border-[#09232d]/15 bg-[#09232d]/[0.03] px-4 py-2.5 text-xs text-[#09232d] shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-semibold text-slate-900">Filtered by: Sales Engine</span>
+              <span className="text-slate-500 hidden sm:inline">• Displaying leads discovered and saved from Sales Engine</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(basePath)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-xs hover:bg-slate-100 transition cursor-pointer"
+            >
+              <span>Clear Filter</span>
+              <X size={12} />
+            </button>
+          </div>
+        )}
 
         {showFilter && (
           <CrmFilterBar

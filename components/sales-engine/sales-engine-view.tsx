@@ -341,6 +341,8 @@ function MetricCard({
   active = false,
   unit = "Leads",
   isScanning = false,
+  href,
+  onClick,
 }: {
   title: string;
   value: string;
@@ -348,18 +350,34 @@ function MetricCard({
   active?: boolean;
   unit?: string;
   isScanning?: boolean;
+  href?: string;
+  onClick?: () => void;
 }) {
-  return (
+  const isInteractive = Boolean(href || onClick);
+
+  const cardContent = (
     <section
-      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] ${
+      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] transition-all ${
         active ? "bg-[#0b242e] text-white" : "bg-white text-[#0b242e]"
-      } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""}`}
+      } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""} ${
+        isInteractive
+          ? "cursor-pointer hover:scale-[1.015] hover:shadow-md active:scale-[0.99]"
+          : ""
+      }`}
     >
       <div className="flex items-start justify-between">
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
           {title}
         </p>
-        {/* <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} /> */}
+        {isInteractive && (
+          <span
+            className={`text-[10px] font-medium flex items-center gap-0.5 transition-colors ${
+              active ? "text-white/70 group-hover:text-white" : "text-[#09232d]/70 group-hover:text-[#09232d]"
+            }`}
+          >
+            View in CRM &rarr;
+          </span>
+        )}
       </div>
 
       <div className="absolute left-5 top-[48px]">
@@ -373,7 +391,6 @@ function MetricCard({
           {isScanning ? "Scan in progress…" : `${percent}% increase this week`}
         </p>
       </div>
-
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
         <div
           className={`absolute size-[84px] rounded-full border-[7px] ${
@@ -387,6 +404,28 @@ function MetricCard({
       </div>
     </section>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="group block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#09232d]">
+        {cardContent}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="group block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#09232d]"
+      >
+        {cardContent}
+      </button>
+    );
+  }
+
+  return cardContent;
 }
 
 function TrendChart() {
@@ -3886,6 +3925,7 @@ export function SalesEngineView() {
               percent="—"
               active
               unit="Leads"
+              href="/crm?source=sales_engine"
             />
             <MetricCard
               title="Pending Review"
