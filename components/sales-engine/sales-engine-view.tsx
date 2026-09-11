@@ -1767,11 +1767,11 @@ function OutreachCard({
 
   return (
     <article
-      className={`${color} h-[108px] w-full shrink-0 rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      className={`${color} relative h-[108px] w-full shrink-0 overflow-hidden rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
       style={color.startsWith("#") ? { backgroundColor: color } : undefined}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
             <MessageCircle
               size={21}
@@ -1780,9 +1780,11 @@ function OutreachCard({
               fill="currentColor"
             />
           </div>
-          <div className="min-w-0 text-[#09232d]">
-            <p className="text-[14px] font-bold leading-[18px]">{name}</p>
-            <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
+          <div className="min-w-0 flex-1 text-[#09232d]">
+            <p className="truncate text-[14px] font-bold leading-[18px]" title={name}>
+              {name}
+            </p>
+            <p className="mt-1 line-clamp-2 break-words text-[8px] font-light leading-[10px]">
               {channel}: {preview}
             </p>
           </div>
@@ -1799,16 +1801,15 @@ function OutreachCard({
           ) : null}
         </div>
       </div>
-      <p className="ml-[88px] mt-2 text-[5px] font-light leading-[9px] text-[#09232d]">{time}</p>
+      <p className="ml-[48px] mt-1.5 text-[7px] font-light leading-[9px] text-[#09232d]/80">{time}</p>
     </article>
   );
 }
 
-const OUTREACH_FALLBACK_COLORS = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
+const OUTREACH_CARD_PALETTE = [
+  { bg: "#E3A5E9", iconColor: "#75247f" },
+  { bg: "#7BB6B8", iconColor: "#336d70" },
+  { bg: "#DBDBDB", iconColor: "#7a7a7a" },
 ] as const;
 
 function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
@@ -1876,14 +1877,13 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
       {items.length > 0 ? (
         <div className="mx-auto flex h-[440px] w-full max-w-[285px] flex-col gap-4 overflow-y-auto overflow-x-hidden pr-1 max-xl:h-[360px] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 hover:[&::-webkit-scrollbar-thumb]:bg-white/40">
           {items.map((item, index) => {
-            const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-            const useApiColors = item.accentBg?.startsWith("#");
+            const cardTheme = OUTREACH_CARD_PALETTE[index % OUTREACH_CARD_PALETTE.length];
             return (
               <OutreachCard
                 key={item.id}
-                color={useApiColors ? item.accentBg : fallback.color}
-                icon={useApiColors ? "" : fallback.icon}
-                iconColor={useApiColors ? item.accentIcon : undefined}
+                color={cardTheme.bg}
+                icon=""
+                iconColor={cardTheme.iconColor}
                 name={item.name}
                 channel={item.channel}
                 preview={item.preview}
