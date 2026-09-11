@@ -1813,17 +1813,9 @@ const OUTREACH_FALLBACK_COLORS = [
 
 function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { data: items = [] } = useSalesEngineOutreach();
-  const { data: senderSettings } = useOutreachSenderSettings(true);
   const deleteOutreach = useDeleteOutreachActivity();
   const [preview, setPreview] = useState<OutreachPreviewState | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
-
-  const senderHint =
-    senderSettings?.sender_mode === "organization" &&
-    senderSettings.org_connection_status === "verified" &&
-    senderSettings.org_verified_domain
-      ? senderSettings.org_verified_domain
-      : "The Factory";
 
   const handleView = async (item: OutreachActivity) => {
     setOpeningId(item.id);
@@ -1872,15 +1864,14 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           <Settings size={15} />
         </button>
       </header>
-      <p className="mb-6 text-center text-[9px] text-white/50">
-        Sending as {senderHint}
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="ml-1.5 underline underline-offset-2 hover:text-white/80"
+      <p className="mb-6 text-center text-[10px] text-white/70">
+        <Link
+          href="/sales-engine/outreach"
+          className="font-bold italic underline underline-offset-2 text-white hover:text-white/80 transition-colors"
         >
-          Configure
-        </button>
+          Click here
+        </Link>{" "}
+        to view all outreach
       </p>
       {items.length > 0 ? (
         <div className="mx-auto flex h-[440px] w-full max-w-[285px] flex-col gap-4 overflow-y-auto overflow-x-hidden pr-1 max-xl:h-[360px] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 hover:[&::-webkit-scrollbar-thumb]:bg-white/40">
