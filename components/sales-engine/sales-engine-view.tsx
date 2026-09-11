@@ -28,6 +28,10 @@ import {
   SocialSignalsTableSkeleton,
 } from "./social-scan-skeletons";
 import { ChatMessageBody } from "./chat-message-body";
+import {
+  ResearchSourcesList,
+  researchSourcesFromMeta,
+} from "./research-sources-list";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
 import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
@@ -1485,6 +1489,11 @@ function ChatWorkspace({
                   </button>
                 </div>
               )}
+              {message.role === "assistant" &&
+                message.intent === "quick_research" &&
+                !isPendingMessage && (
+                  <ResearchSourcesList sources={researchSourcesFromMeta(message.meta)} />
+                )}
               {message.role === "assistant" &&
                 (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
                 !message.leads?.length &&

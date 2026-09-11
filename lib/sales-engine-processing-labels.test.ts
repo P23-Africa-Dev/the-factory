@@ -75,7 +75,7 @@ describe("mapDiscoveryStage", () => {
     const info = mapDiscoveryStage(["analyzing_brief", "searching_sources"], "quick_research");
 
     expect(info.stepIndex).toBe(1);
-    expect(info.label).toContain("Scanning");
+    expect(info.label).toContain("Searching sources in parallel");
   });
 
   it("uses progress step when provided", () => {

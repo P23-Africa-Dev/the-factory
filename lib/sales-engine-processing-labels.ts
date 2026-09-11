@@ -69,9 +69,8 @@ function icpScanLine(context?: SalesEngineIcpContext): string | null {
 const INTENT_PREFIXES: Record<Exclude<ChatIntent, "freeform">, string[]> = {
   quick_research: [
     "Reviewing your question…",
-    "Scanning public sources…",
-    "Cross-referencing market signals…",
-    "Synthesizing insights…",
+    "Searching sources in parallel…",
+    "Writing your brief…",
   ],
   generate_leads: [
     "Parsing your ICP brief…",

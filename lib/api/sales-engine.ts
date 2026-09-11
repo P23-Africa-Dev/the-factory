@@ -433,6 +433,8 @@ const CHAT_OUTREACH_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_CHAT_OUTREACH_TIMEOUT_MS) || 120_000;
 const CHAT_POLL_INTERVAL_MS = 2_000;
 const CHAT_POLL_MAX_MS = 600_000;
+/** Quick Research should feel fast — fail over to background well before lead-gen's 10m ceiling. */
+export const CHAT_QUICK_RESEARCH_POLL_MAX_MS = 90_000;
 
 const DISCOVERY_STAGE_LABELS: Record<string, string> = {
   analyzing_brief: "Analyzing your brief…",
@@ -465,6 +467,12 @@ function humanizeStageKey(stageKey: string, intent?: ChatIntent): string {
     if (intent === "generate_leads" || intent === "generate_more_leads") return "Parsing your ICP brief…";
     if (intent === "create_outreach") return "Reading target context…";
     return "Starting your request…";
+  }
+
+  if (intent === "quick_research") {
+    if (stageKey === "searching_sources") return "Searching sources in parallel…";
+    if (stageKey === "synthesizing") return "Writing your brief…";
+    if (stageKey === "compiling_results") return "Packaging citations…";
   }
 
   return (
@@ -635,6 +643,8 @@ export async function sendChatMessage(
         intent: payload.intent,
         onStage: options?.onStage,
         signal: options?.signal,
+        maxMs:
+          payload.intent === "quick_research" ? CHAT_QUICK_RESEARCH_POLL_MAX_MS : CHAT_POLL_MAX_MS,
       });
 
       messages = await listChatMessages(sessionId);
