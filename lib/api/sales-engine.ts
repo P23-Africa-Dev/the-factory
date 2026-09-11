@@ -562,7 +562,22 @@ export async function pollDiscoveryRunUntilComplete(
     }
 
     if (run.status === "failed") {
-      throw new SalesEngineApiError(run.error ?? "Discovery run failed.", 422);
+      // Soft-complete / job-fail races can briefly mark failed then flip to completed
+      // with leads. Re-check once before surfacing an error to the user.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (options?.signal?.aborted) {
+        const latest = await fetchDiscoveryRun(runId);
+        return { run: latest, timedOut: true, aborted: true };
+      }
+      run = await fetchDiscoveryRun(runId);
+      if (run.status === "completed") {
+        return { run, timedOut: false };
+      }
+      if (run.status !== "failed") {
+        continue;
+      }
+      // Not a validation/ICP 422 — use 502 so UI does not treat this as "select an ICP".
+      throw new SalesEngineApiError(run.error ?? "Discovery run failed.", 502);
     }
 
     if (options?.signal?.aborted) {

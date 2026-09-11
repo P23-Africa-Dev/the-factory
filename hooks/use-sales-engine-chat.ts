@@ -46,9 +46,24 @@ function isUnauthorized(error: unknown) {
   return error instanceof SalesEngineApiError && error.status === 401;
 }
 
-/** True when the backend rejected the message because no ICP profile is active. */
+/**
+ * True when the backend rejected the request because no ICP profile is active.
+ * Must NOT treat every 422 as missing ICP — discovery poll failures historically
+ * used status 422 (timeouts, worker crashes, etc.) and were mis-toasted as ICP errors.
+ */
 export function isMissingActiveIcp(error: unknown): boolean {
-  return error instanceof SalesEngineApiError && error.status === 422;
+  if (!(error instanceof SalesEngineApiError) || error.status !== 422) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("active icp") ||
+    message.includes("activate an icp") ||
+    message.includes("icp profile is required") ||
+    message.includes("icp profile first") ||
+    message.includes("icp profile before")
+  );
 }
 
 export type ChatWaitMode = "foreground" | "background";
@@ -296,6 +311,19 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
       pendingRunIdRef.current = null;
       abortControllerRef.current = new AbortController();
       startLabelRotation(intent, body);
+
+      const needsIcp =
+        intent === "generate_leads" ||
+        intent === "generate_more_leads" ||
+        intent === "quick_research" ||
+        intent === "create_outreach";
+      if (needsIcp && !icpProfileId) {
+        throw new SalesEngineApiError(
+          "An active ICP profile is required for this intent.",
+          422
+        );
+      }
+
       const sessionId = await ensureSession(icpProfileId);
 
       const result = await sendChatMessage(
@@ -346,6 +374,8 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
       setProcessingState(null);
       setWaitMode("foreground");
       pendingRunIdRef.current = null;
+      // Soft-complete may still attach leads after the client saw a transient failure.
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_CHAT_KEYS.history(icpProfileId) });
       if (isUnauthorized(error)) resetAuth();
       options?.onError?.(error);
     },
