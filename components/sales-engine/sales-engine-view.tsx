@@ -56,7 +56,6 @@ import {
   useSocialListeningSettings,
   useUpdateSocialListeningSettings,
 } from "@/hooks/use-sales-engine-social-settings";
-import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -341,6 +340,8 @@ function MetricCard({
   active = false,
   unit = "Leads",
   isScanning = false,
+  href,
+  onClick,
 }: {
   title: string;
   value: string;
@@ -348,18 +349,34 @@ function MetricCard({
   active?: boolean;
   unit?: string;
   isScanning?: boolean;
+  href?: string;
+  onClick?: () => void;
 }) {
-  return (
+  const isInteractive = Boolean(href || onClick);
+
+  const cardContent = (
     <section
-      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] ${
+      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] transition-all ${
         active ? "bg-[#0b242e] text-white" : "bg-white text-[#0b242e]"
-      } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""}`}
+      } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""} ${
+        isInteractive
+          ? "cursor-pointer hover:scale-[1.015] hover:shadow-md active:scale-[0.99]"
+          : ""
+      }`}
     >
       <div className="flex items-start justify-between">
         <p className={`text-[14px] font-light leading-[19px] ${active ? "text-white" : "text-[#293e46]"}`}>
           {title}
         </p>
-        {/* <MoreVertical size={15} className={active ? "text-white/45" : "text-[#09232d]/40"} /> */}
+        {isInteractive && (
+          <span
+            className={`text-[10px] font-medium flex items-center gap-0.5 transition-colors ${
+              active ? "text-white/70 group-hover:text-white" : "text-[#09232d]/70 group-hover:text-[#09232d]"
+            }`}
+          >
+            View in CRM &rarr;
+          </span>
+        )}
       </div>
 
       <div className="absolute left-5 top-[48px]">
@@ -373,7 +390,6 @@ function MetricCard({
           {isScanning ? "Scan in progress…" : `${percent}% increase this week`}
         </p>
       </div>
-
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
         <div
           className={`absolute size-[84px] rounded-full border-[7px] ${
@@ -387,6 +403,28 @@ function MetricCard({
       </div>
     </section>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="group block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#09232d]">
+        {cardContent}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="group block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#09232d]"
+      >
+        {cardContent}
+      </button>
+    );
+  }
+
+  return cardContent;
 }
 
 function TrendChart() {
@@ -971,6 +1009,7 @@ function ChatWorkspace({
   useEffect(() => {
     if (!activeIcpId || isHistoryLoading) return;
 
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate chat from query result */
     if (!chatHistory || chatHistory.messages.length === 0) {
       setMessages(initialMessages);
       nextMessageIdRef.current = 2;
@@ -980,6 +1019,7 @@ function ChatWorkspace({
 
     setMessages(mapApiMessagesToUi(chatHistory.messages));
     nextMessageIdRef.current = chatHistory.messages.length + 2;
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [activeIcpId, chatHistory, isHistoryLoading]);
 
   const hasPendingDiscovery = useMemo(
@@ -1767,11 +1807,11 @@ function OutreachCard({
 
   return (
     <article
-      className={`${color} h-[108px] w-full shrink-0 rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
+      className={`${color} relative h-[108px] w-full shrink-0 overflow-hidden rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
       style={color.startsWith("#") ? { backgroundColor: color } : undefined}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
             <MessageCircle
               size={21}
@@ -1780,9 +1820,11 @@ function OutreachCard({
               fill="currentColor"
             />
           </div>
-          <div className="min-w-0 text-[#09232d]">
-            <p className="text-[14px] font-bold leading-[18px]">{name}</p>
-            <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
+          <div className="min-w-0 flex-1 text-[#09232d]">
+            <p className="truncate text-[14px] font-bold leading-[18px]" title={name}>
+              {name}
+            </p>
+            <p className="mt-1 line-clamp-2 break-words text-[8px] font-light leading-[10px]">
               {channel}: {preview}
             </p>
           </div>
@@ -1799,31 +1841,22 @@ function OutreachCard({
           ) : null}
         </div>
       </div>
-      <p className="ml-[88px] mt-2 text-[5px] font-light leading-[9px] text-[#09232d]">{time}</p>
+      <p className="ml-[48px] mt-1.5 text-[7px] font-light leading-[9px] text-[#09232d]/80">{time}</p>
     </article>
   );
 }
 
-const OUTREACH_FALLBACK_COLORS = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
+const OUTREACH_CARD_PALETTE = [
+  { bg: "#E3A5E9", iconColor: "#75247f" },
+  { bg: "#7BB6B8", iconColor: "#336d70" },
+  { bg: "#DBDBDB", iconColor: "#7a7a7a" },
 ] as const;
 
 function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { data: items = [] } = useSalesEngineOutreach();
-  const { data: senderSettings } = useOutreachSenderSettings(true);
   const deleteOutreach = useDeleteOutreachActivity();
   const [preview, setPreview] = useState<OutreachPreviewState | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
-
-  const senderHint =
-    senderSettings?.sender_mode === "organization" &&
-    senderSettings.org_connection_status === "verified" &&
-    senderSettings.org_verified_domain
-      ? senderSettings.org_verified_domain
-      : "The Factory";
 
   const handleView = async (item: OutreachActivity) => {
     setOpeningId(item.id);
@@ -1872,27 +1905,25 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           <Settings size={15} />
         </button>
       </header>
-      <p className="mb-6 text-center text-[9px] text-white/50">
-        Sending as {senderHint}
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="ml-1.5 underline underline-offset-2 hover:text-white/80"
+      <p className="mb-6 text-center text-[10px] text-white/70">
+        <Link
+          href="/sales-engine/outreach"
+          className="font-bold italic underline underline-offset-2 text-white hover:text-white/80 transition-colors"
         >
-          Configure
-        </button>
+          Click here
+        </Link>{" "}
+        to view all outreach
       </p>
       {items.length > 0 ? (
         <div className="mx-auto flex h-[440px] w-full max-w-[285px] flex-col gap-4 overflow-y-auto overflow-x-hidden pr-1 max-xl:h-[360px] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.28)_transparent] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-button]:hidden [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/25 hover:[&::-webkit-scrollbar-thumb]:bg-white/40">
           {items.map((item, index) => {
-            const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-            const useApiColors = item.accentBg?.startsWith("#");
+            const cardTheme = OUTREACH_CARD_PALETTE[index % OUTREACH_CARD_PALETTE.length];
             return (
               <OutreachCard
                 key={item.id}
-                color={useApiColors ? item.accentBg : fallback.color}
-                icon={useApiColors ? "" : fallback.icon}
-                iconColor={useApiColors ? item.accentIcon : undefined}
+                color={cardTheme.bg}
+                icon=""
+                iconColor={cardTheme.iconColor}
                 name={item.name}
                 channel={item.channel}
                 preview={item.preview}
@@ -3118,6 +3149,8 @@ function ListeningSettingsModal({
 
   useEffect(() => {
     if (!settings) return;
+    // Hydrate editable form fields from the latest settings query payload.
+    /* eslint-disable react-hooks/set-state-in-effect -- sync form draft from server settings */
     setEnabledSources(settings.enabled_sources ?? []);
     setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
@@ -3126,6 +3159,7 @@ function ListeningSettingsModal({
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [settings]);
 
   const handleSave = async () => {
@@ -3430,10 +3464,23 @@ function SocialListeningTab({
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  useEffect(() => {
+  const handleSourceChange = (value: string) => {
+    setSource(value);
     setPage(1);
     setSelectedSignalIds([]);
-  }, [source, signalType, intent]);
+  };
+
+  const handleSignalTypeChange = (value: string) => {
+    setSignalType(value);
+    setPage(1);
+    setSelectedSignalIds([]);
+  };
+
+  const handleIntentChange = (value: string) => {
+    setIntent(value);
+    setPage(1);
+    setSelectedSignalIds([]);
+  };
 
   const { metrics, metricsLoading, latestRun, isScanning, bootstrap } =
     useSocialListeningBootstrap();
@@ -3454,13 +3501,6 @@ function SocialListeningTab({
     { refetchInterval: isScanning ? 5000 : false }
   );
 
-  useEffect(() => {
-    const items = signalsResult?.items ?? [];
-    setSelectedSignalIds((current) =>
-      current.filter((id) => items.some((signal) => signal.id === id && !signal.lead_id))
-    );
-  }, [signalsResult?.items]);
-
   const createOutreach = useCreateSignalOutreach();
   const setReminder = useSetSignalReminder();
   const syncToCrm = useSyncSignalToCrm();
@@ -3471,21 +3511,43 @@ function SocialListeningTab({
   const [pendingOutreachSignal, setPendingOutreachSignal] = useState<SocialSignal | null>(null);
   const [pendingReminderSignal, setPendingReminderSignal] = useState<SocialSignal | null>(null);
   const [pendingCrmSignal, setPendingCrmSignal] = useState<SocialSignal | null>(null);
+  const [reminderAtLabel, setReminderAtLabel] = useState("in 24 hours");
 
-  const signals = signalsResult?.items ?? [];
+  const signals = useMemo(() => signalsResult?.items ?? [], [signalsResult?.items]);
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
 
-  useEffect(() => {
-    if (signals.length === 0) {
-      setActiveSignalId(null);
-      return;
+  const visibleSelectedIds = useMemo(
+    () =>
+      selectedSignalIds.filter((id) =>
+        signals.some((signal) => signal.id === id && !signal.lead_id)
+      ),
+    [selectedSignalIds, signals]
+  );
+
+  const effectiveActiveSignalId = useMemo(() => {
+    if (signals.length === 0) return null;
+    if (activeSignalId != null && signals.some((signal) => signal.id === activeSignalId)) {
+      return activeSignalId;
     }
-    if (!activeSignalId || !signals.some((signal) => signal.id === activeSignalId)) {
-      setActiveSignalId(signals[0].id);
-    }
+    return signals[0].id;
   }, [signals, activeSignalId]);
 
-  const activeSignal = signals.find((signal) => signal.id === activeSignalId) ?? signals[0];
+  const activeSignal =
+    signals.find((signal) => signal.id === effectiveActiveSignalId) ?? signals[0];
+
+  const openReminderConfirm = (signal: SocialSignal) => {
+    const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    setReminderAtLabel(
+      when.toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    );
+    setPendingReminderSignal(signal);
+  };
 
   const hasActiveFilters =
     debouncedSearch.length > 0 ||
@@ -3597,17 +3659,6 @@ function SocialListeningTab({
       })()
     : "";
 
-  const reminderAtLabel = useMemo(() => {
-    const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    return when.toLocaleString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }, [pendingReminderSignal?.id]);
-
   const handleToggleSelect = (signal: SocialSignal) => {
     if (signal.lead_id) return;
     setSelectedSignalIds((current) =>
@@ -3620,13 +3671,13 @@ function SocialListeningTab({
   const handleToggleSelectAll = () => {
     const selectable = signals.filter((signal) => !signal.lead_id).map((signal) => signal.id);
     const allSelected =
-      selectable.length > 0 && selectable.every((id) => selectedSignalIds.includes(id));
+      selectable.length > 0 && selectable.every((id) => visibleSelectedIds.includes(id));
     setSelectedSignalIds(allSelected ? [] : selectable);
   };
 
   const handleBulkAddToCrm = async () => {
     const pending = signals.filter(
-      (signal) => selectedSignalIds.includes(signal.id) && !signal.lead_id
+      (signal) => visibleSelectedIds.includes(signal.id) && !signal.lead_id
     );
     if (pending.length === 0) return;
 
@@ -3732,9 +3783,9 @@ function SocialListeningTab({
               signalType={signalType}
               intent={intent}
               onSearchChange={setSearch}
-              onSourceChange={setSource}
-              onSignalTypeChange={setSignalType}
-              onIntentChange={setIntent}
+              onSourceChange={handleSourceChange}
+              onSignalTypeChange={handleSignalTypeChange}
+              onIntentChange={handleIntentChange}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onRefresh={handleRefresh}
               isScanning={isScanning}
@@ -3748,8 +3799,8 @@ function SocialListeningTab({
           ) : (
             <SocialSignalsTable
               signals={signals}
-              activeSignalId={activeSignalId}
-              selectedIds={selectedSignalIds}
+              activeSignalId={effectiveActiveSignalId}
+              selectedIds={visibleSelectedIds}
               onToggleSelect={handleToggleSelect}
               onToggleSelectAll={handleToggleSelectAll}
               onClearSelection={() => setSelectedSignalIds([])}
@@ -3759,7 +3810,7 @@ function SocialListeningTab({
               onRemoveSignal={handleRemoveSignal}
               onCreateOutreach={setPendingOutreachSignal}
               onAddToCrm={setPendingCrmSignal}
-              onSetReminder={setPendingReminderSignal}
+              onSetReminder={openReminderConfirm}
               page={meta.current_page}
               lastPage={Math.max(meta.last_page, 1)}
               total={meta.total}
@@ -3782,7 +3833,7 @@ function SocialListeningTab({
             isSettingReminder={setReminder.isPending && pendingReminderSignal?.id === activeSignal.id}
             isSyncingToCrm={syncToCrm.isPending && pendingCrmSignal?.id === activeSignal.id}
             onCreateOutreach={() => setPendingOutreachSignal(activeSignal)}
-            onSetReminder={() => setPendingReminderSignal(activeSignal)}
+            onSetReminder={() => openReminderConfirm(activeSignal)}
             onSyncToCrm={() => setPendingCrmSignal(activeSignal)}
             outreachSent={sentOutreachSignalIds.has(activeSignal.id)}
           />
@@ -3895,6 +3946,7 @@ export function SalesEngineView() {
               percent="—"
               active
               unit="Leads"
+              href="/crm?source=sales_engine"
             />
             <MetricCard
               title="Pending Review"

@@ -120,6 +120,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
 
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate sender form when modal opens */
     setSenderMode(senderSettings?.sender_mode ?? "platform");
     setShowOrgSetup(
       (senderSettings?.sender_mode === "organization" && !orgVerified) ||
@@ -128,6 +129,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
     );
     if (domainAuth?.domain) setDomain(domainAuth.domain);
     if (domainAuth?.from_email) setFromEmail(domainAuth.from_email);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, senderSettings, domainAuth, orgVerified, connectionStatus]);
 
   const activeFrom = useMemo(() => {

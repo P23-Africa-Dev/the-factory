@@ -614,7 +614,7 @@ export async function sendChatMessage(
       initial.discovery_run_id
     ) {
       let messages = await listChatMessages(sessionId);
-      let placeholder = findLatestAssistantMessage(messages);
+      const placeholder = findLatestAssistantMessage(messages);
 
       const pollResult = await pollDiscoveryRunUntilComplete(initial.discovery_run_id, {
         intent: payload.intent,
