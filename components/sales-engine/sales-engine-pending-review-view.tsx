@@ -299,16 +299,6 @@ export function SalesEnginePendingReviewView() {
               <span>/</span>
               <span className="font-semibold text-[#09232d]">Pending Review</span>
             </div>
-
-            <div className="flex items-center gap-2.5">
-              <Link
-                href="/crm?source=sales_engine"
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-[#09232d] shadow-sm transition-all hover:border-slate-400 hover:bg-slate-50 active:scale-[0.98]"
-              >
-                <Users className="h-4 w-4 text-slate-500" />
-                <span>View CRM Pipeline</span>
-              </Link>
-            </div>
           </div>
 
           {/* Header Row */}
@@ -519,6 +509,12 @@ export function SalesEnginePendingReviewView() {
                 className="rounded-xl bg-[#09232d] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#0c2e3b]"
               >
                 Return to Sales Engine
+              </Link>
+              <Link
+                href="/crm?source=sales_engine"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-[#09232d] shadow-sm transition-all hover:bg-slate-50"
+              >
+                View CRM Pipeline
               </Link>
             </div>
           </div>
