@@ -2420,7 +2420,7 @@ function SocialSignalRow({
         >
           {signal.intent}
         </span>
-        <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p>
+        {/* <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p> */}
       </td>
       <td className="px-3 py-3 align-middle">
         <ScoreGauge score={signal.score} dark={isActive} />
