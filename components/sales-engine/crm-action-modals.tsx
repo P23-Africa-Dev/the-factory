@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
@@ -14,7 +14,6 @@ import {
   Radio,
   Search,
   Sparkles,
-  User,
   UserPlus,
   X,
 } from "lucide-react";
@@ -45,23 +44,20 @@ export function AddToCrmPipelineModal({
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    if (!isOpen) {
-      setSearchQuery("");
-      return;
-    }
-    setSelectedPipelineId(pipelines[0]?.id ?? null);
-  }, [isOpen, pipelines]);
-
   const filteredPipelines = useMemo(() => {
     if (!searchQuery.trim()) return pipelines;
     const q = searchQuery.toLowerCase();
     return pipelines.filter((p) => p.name.toLowerCase().includes(q));
   }, [pipelines, searchQuery]);
 
+  const effectiveSelectedId =
+    selectedPipelineId && pipelines.some((pipeline) => pipeline.id === selectedPipelineId)
+      ? selectedPipelineId
+      : (pipelines[0]?.id ?? null);
+
   const selectedPipeline = useMemo(
-    () => pipelines.find((p) => p.id === selectedPipelineId),
-    [pipelines, selectedPipelineId]
+    () => pipelines.find((p) => p.id === effectiveSelectedId),
+    [pipelines, effectiveSelectedId]
   );
 
   return (
@@ -152,11 +148,11 @@ export function AddToCrmPipelineModal({
                 </div>
               ) : filteredPipelines.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500">
-                  No pipelines match "{searchQuery}"
+                  No pipelines match &ldquo;{searchQuery}&rdquo;
                 </div>
               ) : (
                 filteredPipelines.map((pipeline) => {
-                  const isSelected = selectedPipelineId === pipeline.id;
+                  const isSelected = effectiveSelectedId === pipeline.id;
                   return (
                     <button
                       key={pipeline.id}
@@ -239,8 +235,8 @@ export function AddToCrmPipelineModal({
                 </button>
                 <button
                   type="button"
-                  disabled={!selectedPipelineId || isConfirming || pipelines.length === 0}
-                  onClick={() => selectedPipelineId && onConfirm(selectedPipelineId)}
+                  disabled={!effectiveSelectedId || isConfirming || pipelines.length === 0}
+                  onClick={() => effectiveSelectedId && onConfirm(effectiveSelectedId)}
                   className="inline-flex h-9.5 items-center gap-2 rounded-xl bg-[#09232d] px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#153e4e] active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                 >
                   {isConfirming ? (
@@ -507,7 +503,7 @@ export function CreateOutreachConfirmModal({
             </div>
           </div>
           <p className="whitespace-pre-line text-xs font-normal leading-relaxed text-slate-700 bg-slate-50/70 rounded-xl p-3 border border-slate-100 italic">
-            "{suggestedMessage}"
+            &ldquo;{suggestedMessage}&rdquo;
           </p>
         </div>
       )}

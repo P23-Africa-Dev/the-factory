@@ -52,8 +52,14 @@ export function SocialScanPanel({
   const [labelIndex, setLabelIndex] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
   const [now, setNow] = useState(() => Date.now());
-  const lastStageChangeRef = useRef(Date.now());
+  const lastStageChangeRef = useRef(0);
   const prevStageKeyRef = useRef(stageInfo.stageKey);
+
+  useEffect(() => {
+    if (lastStageChangeRef.current === 0) {
+      lastStageChangeRef.current = Date.now();
+    }
+  }, []);
 
   useEffect(() => {
     if (prevStageKeyRef.current !== stageInfo.stageKey) {
@@ -91,7 +97,7 @@ export function SocialScanPanel({
     return () => window.clearInterval(timer);
   }, [labelSequence]);
 
-  const startedAtMs = startedAt ? new Date(startedAt).getTime() : Date.now();
+  const startedAtMs = startedAt ? new Date(startedAt).getTime() : now;
   const elapsedMs = now - startedAtMs;
   const showElapsed = elapsedMs >= 15_000;
   const showLongRunHint = elapsedMs >= 30_000;

@@ -56,7 +56,6 @@ import {
   useSocialListeningSettings,
   useUpdateSocialListeningSettings,
 } from "@/hooks/use-sales-engine-social-settings";
-import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -1010,6 +1009,7 @@ function ChatWorkspace({
   useEffect(() => {
     if (!activeIcpId || isHistoryLoading) return;
 
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate chat from query result */
     if (!chatHistory || chatHistory.messages.length === 0) {
       setMessages(initialMessages);
       nextMessageIdRef.current = 2;
@@ -1019,6 +1019,7 @@ function ChatWorkspace({
 
     setMessages(mapApiMessagesToUi(chatHistory.messages));
     nextMessageIdRef.current = chatHistory.messages.length + 2;
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [activeIcpId, chatHistory, isHistoryLoading]);
 
   const hasPendingDiscovery = useMemo(
@@ -3148,6 +3149,8 @@ function ListeningSettingsModal({
 
   useEffect(() => {
     if (!settings) return;
+    // Hydrate editable form fields from the latest settings query payload.
+    /* eslint-disable react-hooks/set-state-in-effect -- sync form draft from server settings */
     setEnabledSources(settings.enabled_sources ?? []);
     setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
@@ -3156,6 +3159,7 @@ function ListeningSettingsModal({
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [settings]);
 
   const handleSave = async () => {
@@ -3460,10 +3464,23 @@ function SocialListeningTab({
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  useEffect(() => {
+  const handleSourceChange = (value: string) => {
+    setSource(value);
     setPage(1);
     setSelectedSignalIds([]);
-  }, [source, signalType, intent]);
+  };
+
+  const handleSignalTypeChange = (value: string) => {
+    setSignalType(value);
+    setPage(1);
+    setSelectedSignalIds([]);
+  };
+
+  const handleIntentChange = (value: string) => {
+    setIntent(value);
+    setPage(1);
+    setSelectedSignalIds([]);
+  };
 
   const { metrics, metricsLoading, latestRun, isScanning, bootstrap } =
     useSocialListeningBootstrap();
@@ -3484,13 +3501,6 @@ function SocialListeningTab({
     { refetchInterval: isScanning ? 5000 : false }
   );
 
-  useEffect(() => {
-    const items = signalsResult?.items ?? [];
-    setSelectedSignalIds((current) =>
-      current.filter((id) => items.some((signal) => signal.id === id && !signal.lead_id))
-    );
-  }, [signalsResult?.items]);
-
   const createOutreach = useCreateSignalOutreach();
   const setReminder = useSetSignalReminder();
   const syncToCrm = useSyncSignalToCrm();
@@ -3501,21 +3511,43 @@ function SocialListeningTab({
   const [pendingOutreachSignal, setPendingOutreachSignal] = useState<SocialSignal | null>(null);
   const [pendingReminderSignal, setPendingReminderSignal] = useState<SocialSignal | null>(null);
   const [pendingCrmSignal, setPendingCrmSignal] = useState<SocialSignal | null>(null);
+  const [reminderAtLabel, setReminderAtLabel] = useState("in 24 hours");
 
-  const signals = signalsResult?.items ?? [];
+  const signals = useMemo(() => signalsResult?.items ?? [], [signalsResult?.items]);
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
 
-  useEffect(() => {
-    if (signals.length === 0) {
-      setActiveSignalId(null);
-      return;
+  const visibleSelectedIds = useMemo(
+    () =>
+      selectedSignalIds.filter((id) =>
+        signals.some((signal) => signal.id === id && !signal.lead_id)
+      ),
+    [selectedSignalIds, signals]
+  );
+
+  const effectiveActiveSignalId = useMemo(() => {
+    if (signals.length === 0) return null;
+    if (activeSignalId != null && signals.some((signal) => signal.id === activeSignalId)) {
+      return activeSignalId;
     }
-    if (!activeSignalId || !signals.some((signal) => signal.id === activeSignalId)) {
-      setActiveSignalId(signals[0].id);
-    }
+    return signals[0].id;
   }, [signals, activeSignalId]);
 
-  const activeSignal = signals.find((signal) => signal.id === activeSignalId) ?? signals[0];
+  const activeSignal =
+    signals.find((signal) => signal.id === effectiveActiveSignalId) ?? signals[0];
+
+  const openReminderConfirm = (signal: SocialSignal) => {
+    const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    setReminderAtLabel(
+      when.toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    );
+    setPendingReminderSignal(signal);
+  };
 
   const hasActiveFilters =
     debouncedSearch.length > 0 ||
@@ -3627,17 +3659,6 @@ function SocialListeningTab({
       })()
     : "";
 
-  const reminderAtLabel = useMemo(() => {
-    const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    return when.toLocaleString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }, [pendingReminderSignal?.id]);
-
   const handleToggleSelect = (signal: SocialSignal) => {
     if (signal.lead_id) return;
     setSelectedSignalIds((current) =>
@@ -3650,13 +3671,13 @@ function SocialListeningTab({
   const handleToggleSelectAll = () => {
     const selectable = signals.filter((signal) => !signal.lead_id).map((signal) => signal.id);
     const allSelected =
-      selectable.length > 0 && selectable.every((id) => selectedSignalIds.includes(id));
+      selectable.length > 0 && selectable.every((id) => visibleSelectedIds.includes(id));
     setSelectedSignalIds(allSelected ? [] : selectable);
   };
 
   const handleBulkAddToCrm = async () => {
     const pending = signals.filter(
-      (signal) => selectedSignalIds.includes(signal.id) && !signal.lead_id
+      (signal) => visibleSelectedIds.includes(signal.id) && !signal.lead_id
     );
     if (pending.length === 0) return;
 
@@ -3762,9 +3783,9 @@ function SocialListeningTab({
               signalType={signalType}
               intent={intent}
               onSearchChange={setSearch}
-              onSourceChange={setSource}
-              onSignalTypeChange={setSignalType}
-              onIntentChange={setIntent}
+              onSourceChange={handleSourceChange}
+              onSignalTypeChange={handleSignalTypeChange}
+              onIntentChange={handleIntentChange}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onRefresh={handleRefresh}
               isScanning={isScanning}
@@ -3778,8 +3799,8 @@ function SocialListeningTab({
           ) : (
             <SocialSignalsTable
               signals={signals}
-              activeSignalId={activeSignalId}
-              selectedIds={selectedSignalIds}
+              activeSignalId={effectiveActiveSignalId}
+              selectedIds={visibleSelectedIds}
               onToggleSelect={handleToggleSelect}
               onToggleSelectAll={handleToggleSelectAll}
               onClearSelection={() => setSelectedSignalIds([])}
@@ -3789,7 +3810,7 @@ function SocialListeningTab({
               onRemoveSignal={handleRemoveSignal}
               onCreateOutreach={setPendingOutreachSignal}
               onAddToCrm={setPendingCrmSignal}
-              onSetReminder={setPendingReminderSignal}
+              onSetReminder={openReminderConfirm}
               page={meta.current_page}
               lastPage={Math.max(meta.last_page, 1)}
               total={meta.total}
@@ -3812,7 +3833,7 @@ function SocialListeningTab({
             isSettingReminder={setReminder.isPending && pendingReminderSignal?.id === activeSignal.id}
             isSyncingToCrm={syncToCrm.isPending && pendingCrmSignal?.id === activeSignal.id}
             onCreateOutreach={() => setPendingOutreachSignal(activeSignal)}
-            onSetReminder={() => setPendingReminderSignal(activeSignal)}
+            onSetReminder={() => openReminderConfirm(activeSignal)}
             onSyncToCrm={() => setPendingCrmSignal(activeSignal)}
             outreachSent={sentOutreachSignalIds.has(activeSignal.id)}
           />

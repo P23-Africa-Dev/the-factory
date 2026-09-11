@@ -174,7 +174,7 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
   const labelIndexRef = useRef(0);
   const labelIntervalRef = useRef<number | null>(null);
   const lateIntervalRef = useRef<number | null>(null);
-  const lastLabelChangeRef = useRef(Date.now());
+  const lastLabelChangeRef = useRef(0);
   const lateIndexRef = useRef(0);
   const currentIntentRef = useRef<ChatIntent>("freeform");
   const abortControllerRef = useRef<AbortController | null>(null);

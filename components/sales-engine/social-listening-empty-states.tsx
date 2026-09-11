@@ -27,16 +27,16 @@ function GhostSignalRows() {
   );
 }
 
-function variantIcon(variant: SocialListeningEmptyState["variant"]) {
+function EmptyStateIcon({ variant }: { variant: SocialListeningEmptyState["variant"] }) {
   switch (variant) {
     case "filters_no_match":
-      return Search;
+      return <Search size={16} />;
     case "scan_failed":
-      return Sparkles;
+      return <Sparkles size={16} />;
     case "awaiting_first_scan":
-      return Radio;
+      return <Radio size={16} />;
     default:
-      return Radio;
+      return <Radio size={16} />;
   }
 }
 
@@ -52,7 +52,6 @@ export function SocialSignalsEmptyState({
   onOpenSettings?: () => void;
 }) {
   const [tipIndex, setTipIndex] = useState(0);
-  const Icon = variantIcon(state.variant);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -65,7 +64,7 @@ export function SocialSignalsEmptyState({
     <div className="flex min-h-[220px] flex-col items-center justify-center px-6 py-6 text-center">
       <div className="flex max-w-[520px] flex-col items-center">
         <div className="relative grid size-10 place-items-center rounded-full bg-[#09232d] text-white shadow-sm">
-          <Icon size={16} />
+          <EmptyStateIcon variant={state.variant} />
           <span className="absolute inset-[-3px] rounded-full border border-[#16b37d]/30" />
         </div>
 

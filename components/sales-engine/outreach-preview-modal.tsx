@@ -7,7 +7,6 @@ import {
   Check,
   Copy,
   Eye,
-  Info,
   Loader2,
   Mail,
   Pencil,
@@ -15,7 +14,6 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
-  User,
   Wand2,
   X,
   Zap,
@@ -89,6 +87,7 @@ export function OutreachPreviewModal({
   useEffect(() => {
     if (!open) return;
     const normalized = normalizeOutreachSubjectBody(initialBody, initialSubject);
+    /* eslint-disable react-hooks/set-state-in-effect -- reset draft fields when modal opens */
     setToEmail(initialToEmail);
     setSubject(normalized.subject);
     setBody(normalized.body);
@@ -97,6 +96,7 @@ export function OutreachPreviewModal({
     setActiveTab("edit");
     setAlignmentDismissed(false);
     setCopied(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, activityId, initialSubject, initialBody, initialToEmail]);
 
   const emailValid = useMemo(() => isValidEmail(toEmail), [toEmail]);
