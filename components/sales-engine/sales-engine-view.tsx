@@ -466,11 +466,12 @@ function IntentModeChip({
   onClear,
   compact = false,
 }: {
-  intent: ActionIntent;
+  intent: ActionIntent | string;
   onClear?: () => void;
   compact?: boolean;
 }) {
-  const mode = INTENT_MODE_CONFIG[intent];
+  const mode = INTENT_MODE_CONFIG[intent as ActionIntent];
+  if (!mode) return null;
 
   return (
     <span
@@ -1424,7 +1425,10 @@ function ChatWorkspace({
 
             return (
             <div key={message.id} className={message.role === "user" ? "ml-auto max-w-[78%]" : "max-w-full"}>
-              {message.role === "user" && message.intent && message.intent !== "freeform" && (
+              {message.role === "user" &&
+                message.intent &&
+                message.intent !== "freeform" &&
+                message.intent in INTENT_MODE_CONFIG && (
                 <div className="mb-1.5 flex justify-end">
                   <IntentModeChip intent={message.intent as ActionIntent} compact />
                 </div>
@@ -1778,8 +1782,7 @@ function OutreachActionMenu({
 
 function OutreachCard({
   color,
-  icon,
-  iconColor,
+  iconSrc,
   name,
   channel,
   preview,
@@ -1791,8 +1794,7 @@ function OutreachCard({
   isDeleting = false,
 }: {
   color: string;
-  icon: string;
-  iconColor?: string;
+  iconSrc: string;
   name: string;
   channel: string;
   preview: string;
@@ -1813,11 +1815,13 @@ function OutreachCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-2">
           <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
-            <MessageCircle
-              size={21}
-              className={icon}
-              style={iconColor ? { color: iconColor } : undefined}
-              fill="currentColor"
+            <Image
+              src={iconSrc}
+              alt=""
+              width={22}
+              height={22}
+              className="size-[22px] object-contain"
+              aria-hidden
             />
           </div>
           <div className="min-w-0 flex-1 text-[#09232d]">
@@ -1847,9 +1851,9 @@ function OutreachCard({
 }
 
 const OUTREACH_CARD_PALETTE = [
-  { bg: "#E3A5E9", iconColor: "#75247f" },
-  { bg: "#7BB6B8", iconColor: "#336d70" },
-  { bg: "#DBDBDB", iconColor: "#7a7a7a" },
+  { bg: "#E3A5E9", iconSrc: "/message-01-purple.png" },
+  { bg: "#7BB6B8", iconSrc: "/message-01-teal.png" },
+  { bg: "#DBDBDB", iconSrc: "/message-01-gray.png" },
 ] as const;
 
 function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
@@ -1922,8 +1926,7 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
               <OutreachCard
                 key={item.id}
                 color={cardTheme.bg}
-                icon=""
-                iconColor={cardTheme.iconColor}
+                iconSrc={cardTheme.iconSrc}
                 name={item.name}
                 channel={item.channel}
                 preview={item.preview}
