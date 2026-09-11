@@ -9,6 +9,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ProcessingPanel } from "./processing-panel";
 import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
+import { IcpSetupPromptModal } from "./icp-setup-prompt-modal";
 import { OutreachPreviewModal } from "./outreach-preview-modal";
 import { OutreachSettingsModal } from "./outreach-settings-modal";
 import {
@@ -3886,12 +3887,31 @@ export function SalesEngineView() {
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
   const [isOutreachSettingsOpen, setIsOutreachSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
+  const [icpSetupDismissed, setIcpSetupDismissed] = useState(false);
   const { data: activeProfile } = useActiveIcpProfile();
+  const {
+    data: icpProfiles = [],
+    isLoading: isIcpProfilesLoading,
+    isAuthLoading: isIcpAuthLoading,
+  } = useIcpProfiles();
   const { data: metrics } = useSalesEngineMetrics();
 
   const leadsInCrm = metrics?.leads_in_crm ?? 0;
   const leadsPendingReview = metrics?.leads_pending_review ?? 0;
   const formatMetric = (value: number) => value.toLocaleString();
+
+  const showIcpSetupPrompt =
+    activeTab === "smart-lead" &&
+    !chatExpanded &&
+    !isIcpModalOpen &&
+    !icpSetupDismissed &&
+    !isIcpProfilesLoading &&
+    !isIcpAuthLoading &&
+    icpProfiles.length === 0;
+
+  const handleOpenIcpBuilder = () => {
+    setIsIcpModalOpen(true);
+  };
 
   return (
     <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
@@ -3908,7 +3928,7 @@ export function SalesEngineView() {
 
         {activeTab === "social-listening" && !chatExpanded ? (
           <SocialListeningTab
-            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
+            onOpenIcpBuilder={handleOpenIcpBuilder}
             onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
           />
         ) : (
@@ -3944,7 +3964,7 @@ export function SalesEngineView() {
                 </Link>
                 <button
                   type="button"
-                  onClick={() => setIsIcpModalOpen(true)}
+                  onClick={handleOpenIcpBuilder}
                   className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b] cursor-pointer"
                 >
                   <IcpBuilderIcon className="h-5 w-5 text-white" />
@@ -3974,7 +3994,7 @@ export function SalesEngineView() {
           <ChatWorkspace
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
-            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
+            onOpenIcpBuilder={handleOpenIcpBuilder}
             onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
           />
           {!chatExpanded && (
@@ -3985,6 +4005,11 @@ export function SalesEngineView() {
         )}
       </div>
 
+      <IcpSetupPromptModal
+        isOpen={showIcpSetupPrompt}
+        onClose={() => setIcpSetupDismissed(true)}
+        onCreateIcp={handleOpenIcpBuilder}
+      />
       <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
       <OutreachSettingsModal
         open={isOutreachSettingsOpen}
