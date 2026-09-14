@@ -1374,11 +1374,20 @@ export function pushLeadToCrm(
   });
 }
 
-export function syncLeadsBatch(leadIds: number[]): Promise<{
+export function syncLeadsBatch(
+  leadIds: number[],
+  options?: { pipeline_id?: number | string }
+): Promise<{
   synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
   errors: string[];
 }> {
   return withSessionRetry(async () => {
+    const body: { lead_ids: number[]; pipeline_id?: number | string } = { lead_ids: leadIds };
+    if (options?.pipeline_id != null && String(options.pipeline_id).trim() !== "") {
+      const parsed = Number(options.pipeline_id);
+      body.pipeline_id = Number.isFinite(parsed) ? parsed : options.pipeline_id;
+    }
+
     try {
       return await seRequest<{
         synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
@@ -1386,7 +1395,7 @@ export function syncLeadsBatch(leadIds: number[]): Promise<{
       }>({
         method: "POST",
         path: "/leads/sync-to-crm",
-        body: { lead_ids: leadIds },
+        body,
       });
     } catch (error) {
       if (
@@ -1400,7 +1409,7 @@ export function syncLeadsBatch(leadIds: number[]): Promise<{
         }>({
           method: "POST",
           path: "/leads/sync-to-crm",
-          body: { lead_ids: leadIds },
+          body,
         });
       }
       throw error;

@@ -560,7 +560,11 @@ function LeadInlineResults({
   const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
-  const [pendingCrmLead, setPendingCrmLead] = useState<ChatLead | null>(null);
+  const [crmModalState, setCrmModalState] = useState<
+    | { mode: "single"; lead: ChatLead }
+    | { mode: "batch"; leadIds: number[] }
+    | null
+  >(null);
   const canSyncToCrm = integrationStatus?.can_sync ?? true;
   const crmBlockMessage =
     integrationStatus?.block_message ??
@@ -590,35 +594,57 @@ function LeadInlineResults({
     );
   }
 
-  function handleConfirmSaveToCrm(pipelineId: string) {
-    if (!pendingCrmLead) return;
-    const lead = pendingCrmLead;
-    syncLead.mutate(
-      { leadId: lead.id, pipeline_id: pipelineId },
-      {
-        onSuccess: (result) => {
-          const updatedFields = Array.isArray(result.crm_fields_updated)
-            ? result.crm_fields_updated
-            : Array.isArray(result.fields_updated)
-              ? result.fields_updated
-              : [];
-          markSynced([lead.id], {
-            crm_duplicate: Boolean(result.crm_duplicate),
-            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
-            crm_fields_updated: updatedFields,
-          });
-          if (result.updated && updatedFields.length > 0) {
-            toast.success(`Updated existing CRM lead with new ${updatedFields.join(", ")}.`);
-          } else if (result.crm_duplicate || result.already_synced) {
-            toast.success(`"${lead.name}" is already in CRM.`);
-          } else {
-            toast.success(`Saved "${lead.name}" to CRM.`);
-          }
-          setPendingCrmLead(null);
-        },
-        onError: (error) => toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
-      }
-    );
+  function handleConfirmCrmSave(pipelineId: string) {
+    if (!crmModalState) return;
+
+    if (crmModalState.mode === "single") {
+      const lead = crmModalState.lead;
+      syncLead.mutate(
+        { leadId: lead.id, pipeline_id: pipelineId },
+        {
+          onSuccess: (result) => {
+            const updatedFields = Array.isArray(result.crm_fields_updated)
+              ? result.crm_fields_updated
+              : Array.isArray(result.fields_updated)
+                ? result.fields_updated
+                : [];
+            markSynced([lead.id], {
+              crm_duplicate: Boolean(result.crm_duplicate),
+              crm_duplicate_reason: result.crm_duplicate_reason ?? null,
+              crm_fields_updated: updatedFields,
+            });
+            if (result.updated && updatedFields.length > 0) {
+              toast.success(`Updated existing CRM lead with new ${updatedFields.join(", ")}.`);
+            } else if (result.crm_duplicate || result.already_synced) {
+              toast.success(`"${lead.name}" is already in CRM.`);
+            } else {
+              toast.success(`Saved "${lead.name}" to CRM.`);
+            }
+            setCrmModalState(null);
+          },
+          onError: (error) => toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
+        }
+      );
+    } else if (crmModalState.mode === "batch") {
+      const ids = crmModalState.leadIds;
+      syncBatch.mutate(
+        { leadIds: ids, pipeline_id: pipelineId },
+        {
+          onSuccess: (result) => {
+            const syncedIds = result.synced.map((item) => item.lead_id);
+            markSynced(syncedIds);
+            toast.success(`Saved ${syncedIds.length} lead${syncedIds.length === 1 ? "" : "s"} to CRM.`);
+            if (result.errors.length > 0) {
+              toast.error(result.errors[0]);
+            }
+            setCrmModalState(null);
+          },
+          onError: (error) => {
+            toast.error(getApiErrorMessage(error, "Could not save leads to CRM."));
+          },
+        }
+      );
+    }
   }
 
   function renderCrmAction(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
@@ -642,9 +668,9 @@ function LeadInlineResults({
     return (
       <button
         type="button"
-        disabled={syncLead.isPending || !canSyncToCrm}
+        disabled={syncLead.isPending || syncBatch.isPending || !canSyncToCrm}
         title={!canSyncToCrm ? crmBlockMessage : undefined}
-        onClick={() => setPendingCrmLead(lead)}
+        onClick={() => setCrmModalState({ mode: "single", lead })}
         className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5 disabled:opacity-60"
       >
         Save to CRM
@@ -669,22 +695,9 @@ function LeadInlineResults({
           {unsavedIds.length > 0 && (
             <button
               type="button"
-              disabled={syncBatch.isPending || !canSyncToCrm}
+              disabled={syncBatch.isPending || syncLead.isPending || !canSyncToCrm}
               title={!canSyncToCrm ? crmBlockMessage : undefined}
-              onClick={() => {
-                syncBatch.mutate(unsavedIds, {
-                  onSuccess: (result) => {
-                    const syncedIds = result.synced.map((item) => item.lead_id);
-                    markSynced(syncedIds);
-                    toast.success(`Saved ${syncedIds.length} lead${syncedIds.length === 1 ? "" : "s"} to CRM.`);
-                    if (result.errors.length > 0) {
-                      toast.error(result.errors[0]);
-                    }
-                  },
-                  onError: (error) =>
-                    toast.error(getApiErrorMessage(error, "Could not save leads to CRM.")),
-                });
-              }}
+              onClick={() => setCrmModalState({ mode: "batch", leadIds: unsavedIds })}
               className="shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white transition-colors hover:bg-[#09232d]/90 disabled:opacity-60"
             >
               {syncBatch.isPending ? "Saving…" : "Save all"}
@@ -989,14 +1002,26 @@ function LeadInlineResults({
         </button>
       )}
       <AddToCrmPipelineModal
-        key={pendingCrmLead?.id ?? "smart-lead-crm-modal"}
-        isOpen={pendingCrmLead != null}
-        onClose={() => setPendingCrmLead(null)}
-        prospectName={pendingCrmLead?.name ?? null}
+        key={
+          crmModalState?.mode === "single"
+            ? `crm-lead-${crmModalState.lead.id}`
+            : crmModalState?.mode === "batch"
+              ? `crm-batch-${crmModalState.leadIds.join("-")}`
+              : "smart-lead-crm-modal"
+        }
+        isOpen={crmModalState != null}
+        onClose={() => setCrmModalState(null)}
+        prospectName={
+          crmModalState?.mode === "single"
+            ? crmModalState.lead.name
+            : crmModalState?.mode === "batch"
+              ? `${crmModalState.leadIds.length} leads`
+              : null
+        }
         pipelines={pipelines}
         isLoading={pipelinesLoading}
-        isConfirming={syncLead.isPending}
-        onConfirm={handleConfirmSaveToCrm}
+        isConfirming={syncLead.isPending || syncBatch.isPending}
+        onConfirm={handleConfirmCrmSave}
       />
     </div>
   );
