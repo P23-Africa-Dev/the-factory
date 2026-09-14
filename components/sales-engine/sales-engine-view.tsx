@@ -688,12 +688,6 @@ function LeadInlineResults({
                   </span>
                 </div>
               </div>
-              {lead.icp_relevance_reason && (
-                <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
-                  {lead.icp_relevance_reason}
-                </p>
-              )}
-              <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
               {roleLine && (
                 <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
               )}
@@ -771,7 +765,17 @@ function LeadInlineResults({
                   Profile found · email/phone still missing
                 </p>
               )}
-              <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+              {lead.summary && (
+                <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+              )}
+              {lead.icp_relevance_reason && (
+                <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                  {lead.icp_relevance_reason}
+                </p>
+              )}
+              {lead.source && (
+                <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
+              )}
               {lead.low_confidence && (
                 <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
               )}
