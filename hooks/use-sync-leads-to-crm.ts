@@ -26,7 +26,11 @@ export function useSyncLeadsBatchToCrm() {
   const resetAuth = useResetSalesEngineAuth();
 
   return useMutation({
-    mutationFn: (leadIds: number[]) => syncLeadsBatch(leadIds),
+    mutationFn: (vars: number[] | { leadIds: number[]; pipeline_id?: number | string }) => {
+      const leadIds = Array.isArray(vars) ? vars : vars.leadIds;
+      const pipeline_id = Array.isArray(vars) ? undefined : vars.pipeline_id;
+      return syncLeadsBatch(leadIds, pipeline_id != null ? { pipeline_id } : undefined);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_METRICS_KEYS.all });
     },
