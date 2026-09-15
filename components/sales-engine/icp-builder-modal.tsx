@@ -44,6 +44,13 @@ export type IcpConfig = {
   autoSyncCrm: boolean;
   enrichContactDetails: boolean;
   customPrompt: string;
+  /**
+   * Opt-in Stage 2 signal-type packs (backend_implementation_plan.md Phase 3).
+   * Empty = today's default behavior, zero extra scan cost. Selecting a pack
+   * adds dedicated, source-verified searches for that vertical's discrete
+   * event types (e.g. "New Market Entry") on top of the normal scan.
+   */
+  signalTypePacks?: string[];
 };
 
 export type IcpProfile = {
@@ -68,6 +75,7 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: true,
   enrichContactDetails: true,
   customPrompt: "",
+  signalTypePacks: [],
 };
 
 const AVAILABLE_INDUSTRIES = [
@@ -116,6 +124,29 @@ const AVAILABLE_DECISION_MAKERS = [
   "Managing Director / CEO",
   "Operations Director",
   "Head of Growth",
+];
+
+/**
+ * Discrete signal-type packs a Social Listening scan can opt into (see
+ * SignalTypeRegistry / SignalTypeDefinition::PACK_* on the backend). Keys
+ * must match the backend's `pack` values exactly.
+ */
+const AVAILABLE_SIGNAL_TYPE_PACKS: Array<{ value: string; label: string; description: string }> = [
+  {
+    value: "default",
+    label: "Core Buyer Signals",
+    description: "New market entry, distribution/partnership announcements, leadership hires, export/trade activity.",
+  },
+  {
+    value: "software_dev_vertical",
+    label: "Software / Dev Buying Signals",
+    description: "Engineering disruption, outages, complaints, unfilled dev roles, digital transformation announcements.",
+  },
+  {
+    value: "lagos_corporate_transport",
+    label: "Lagos Corporate Transport",
+    description: "New embassy/consulate presence, expat relocation, Lagos-based leadership hires, foreign market entry into Lagos.",
+  },
 ];
 
 interface IcpBuilderModalProps {
@@ -939,6 +970,48 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           }))
                         }
                       />
+                    </div>
+                  </div>
+
+                  {/* Stage 2 signal-type packs — opt-in, adds dedicated event-type scans */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
+                        <Layers size={15} className="text-gray-400" />
+                        Signal Types to Watch For (Social Listening)
+                      </label>
+                      <span className="text-[11px] text-gray-400">
+                        {(formConfig.signalTypePacks ?? []).length} selected
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                      Optional. Each pack adds dedicated, source-verified searches for specific events (e.g. &ldquo;New
+                      Market Entry&rdquo;) on top of your normal scan. Leave unselected for no change in scan cost.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {AVAILABLE_SIGNAL_TYPE_PACKS.map((pack) => {
+                        const isSelected = (formConfig.signalTypePacks ?? []).includes(pack.value);
+                        return (
+                          <button
+                            key={pack.value}
+                            type="button"
+                            title={pack.description}
+                            onClick={() => toggleArrayItem("signalTypePacks", pack.value)}
+                            className={`group flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-[#09232D] text-white shadow-xs"
+                                : "bg-[#f3f4f6] text-gray-600 hover:bg-gray-200/80 hover:text-gray-900"
+                            }`}
+                          >
+                            {isSelected ? (
+                              <Check size={12} className="stroke-[3]" />
+                            ) : (
+                              <Plus size={12} className="text-gray-400 group-hover:text-gray-600" />
+                            )}
+                            {pack.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 

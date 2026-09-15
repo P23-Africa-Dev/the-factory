@@ -50,6 +50,7 @@ const DEFAULT_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: false,
   enrichContactDetails: true,
   customPrompt: "",
+  signalTypePacks: [],
 };
 
 // The API returns `lastUpdated` as an ISO timestamp; the UI wants a friendly relative string.
@@ -847,6 +848,19 @@ export function isFreshSignal(iso: string | null | undefined, withinHours = 48):
 
 export type RecommendedActionApi = { title: string; detail: string };
 
+/** Stage 1 (ICP Filter) audit trail — see docs/backend_implementation_plan.md. Null/absent on signals created before this shipped. */
+export type SocialSignalIcpFilter = {
+  passed: boolean;
+  reasons: Record<string, boolean>;
+};
+
+export type SocialSignalEnrichmentStatus = "not_attempted" | "attempted_found" | "attempted_not_found";
+
+export type SocialSignalEnrichment = {
+  status: SocialSignalEnrichmentStatus;
+  attemptedAt?: string | null;
+};
+
 export type SocialSignalApi = {
   id: number;
   signal: string;
@@ -884,6 +898,12 @@ export type SocialSignalApi = {
   keyTopics?: string[];
   competitors?: string[];
   followUpStrategy?: string;
+  /** Stage 1/2/3 fields from the signal-detection rebuild — absent/null on legacy signals. */
+  icpFilter?: SocialSignalIcpFilter | null;
+  discreteSignalType?: string | null;
+  territory?: string | null;
+  namedPeople?: string[];
+  enrichment?: SocialSignalEnrichment | null;
 };
 
 /** Normalizes recommendedAction/personalRecommendedAction, which may arrive as an object or a legacy plain string. */
@@ -895,16 +915,41 @@ export function normalizeRecommendedAction(
   return { title: value.title ?? "", detail: value.detail ?? "" };
 }
 
+/**
+ * Structured since the Stage 1/2 pipeline rebuild (backend_implementation_plan.md
+ * Phase 6). Runs created before that ship a plain human-readable string in this
+ * field instead — always check the shape before reading nested fields.
+ */
+export type SocialListeningRunResultSummary = {
+  totalChecked: number;
+  qualified: number;
+  rejected: {
+    icpMismatch: number;
+    missingSourceUrl: number;
+    missingSourceDate: number;
+    stale: number;
+    total: number;
+  };
+};
+
 export type SocialListeningRunStatus = {
   id: number;
   status: string;
   stages?: string[] | null;
   signals_created?: number | null;
-  result_summary?: string | null;
+  /** Structured object on runs from the rebuilt pipeline; a plain string on legacy runs; null/absent otherwise. */
+  result_summary?: SocialListeningRunResultSummary | string | null;
   error?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
 };
+
+/** Type guard: true only for the new structured shape, never the legacy string. */
+export function isStructuredRunSummary(
+  value: SocialListeningRunStatus["result_summary"]
+): value is SocialListeningRunResultSummary {
+  return typeof value === "object" && value !== null && "rejected" in value;
+}
 
 export type SocialListeningMetrics = {
   signals_detected: number;

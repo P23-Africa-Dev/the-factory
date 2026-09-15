@@ -20,6 +20,7 @@ import {
   type CrmPipelineOption,
 } from "./crm-action-modals";
 import { SocialScanPanel } from "./social-scan-panel";
+import { ScanRunSummaryPanel } from "./scan-run-summary-panel";
 import {
   SocialOpportunityEmptyState,
   SocialSignalsEmptyState,
@@ -162,6 +163,15 @@ const LEADS_PER_PAGE = 20;
 const EXPLICIT_COUNT_PATTERN = /\b(\d{1,3})\b/;
 const USAGE_QUESTION_PATTERN =
   /how many (search|token|credit)(es)?|(search|token|credit)(es)?\s+(left|remaining)|remaining\s+(search|token)/i;
+
+/** "new_market_entry" -> "New Market Entry". Discrete signal types are stored as snake_case keys. */
+function formatSignalTypeKey(key: string): string {
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 function readSearchUsage(): SearchUsage {
   if (typeof window === "undefined") return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
@@ -2287,6 +2297,20 @@ function CompanyBuildingIcon({ className = "size-5" }: { className?: string }) {
   );
 }
 
+/**
+ * Smart Lead search stays flexible on purpose — a typed question can surface
+ * strong matches outside the saved ICP, explained via icp_relevance_reason.
+ * Social Listening scans are always ICP-driven with no live query behind
+ * them, so they apply the ICP filter strictly: nothing outside your filter
+ * criteria appears there. See backend_implementation_plan.md Phase 2.1.
+ */
+const TAB_TRUST_MODE_COPY: Record<SalesEngineTab, string> = {
+  "smart-lead":
+    "Follows your question first — results may include strong matches outside your saved ICP, with an explanation for each.",
+  "social-listening":
+    "Strictly follows your saved ICP filters — nothing outside your filter criteria will appear here.",
+};
+
 function SalesEngineTabs({
   activeTab,
   onChange,
@@ -2295,7 +2319,7 @@ function SalesEngineTabs({
   onChange: (tab: SalesEngineTab) => void;
 }) {
   return (
-    <div className="flex">
+    <div className="flex flex-col gap-1.5">
       <div className="inline-flex h-[42px] items-center gap-1 rounded-[21px] bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
         {salesEngineTabs.map((tab) => (
           <button
@@ -2312,6 +2336,7 @@ function SalesEngineTabs({
           </button>
         ))}
       </div>
+      <p className="pl-1 text-[9px] leading-[12px] text-[#9d9d9d]">{TAB_TRUST_MODE_COPY[activeTab]}</p>
     </div>
   );
 }
@@ -2681,12 +2706,22 @@ function SocialSignalRow({
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
-        <span
-          className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
-          style={{ backgroundColor: signal.intentColor }}
-        >
-          {signal.intent}
-        </span>
+        <div className="flex flex-col items-start gap-1">
+          <span
+            className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
+            style={{ backgroundColor: signal.intentColor }}
+          >
+            {signal.intent}
+          </span>
+          {signal.discreteSignalType && (
+            <span
+              className="inline-flex w-fit rounded-full border border-[#09232d]/15 px-2 py-0.5 text-[7px] font-semibold text-[#09232d]/70"
+              title="A specific, source-verified event detected for this signal"
+            >
+              {formatSignalTypeKey(signal.discreteSignalType)}
+            </span>
+          )}
+        </div>
         {/* <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p> */}
       </td>
       <td className="px-3 py-3 align-middle">
@@ -2758,6 +2793,7 @@ function SocialSignalsTable({
   onEmptyOpenSettings,
   enabledSources,
   scanPanel,
+  lastRunSummary,
 }: {
   signals: SocialSignal[];
   activeSignalId?: number | null;
@@ -2784,6 +2820,7 @@ function SocialSignalsTable({
   onEmptyOpenSettings?: () => void;
   enabledSources?: string[];
   scanPanel?: ReactNode;
+  lastRunSummary?: ReactNode;
 }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
@@ -2816,6 +2853,7 @@ function SocialSignalsTable({
   return (
     <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
       {isScanning && scanPanel}
+      {!isScanning && lastRunSummary}
       <div className="mb-2 flex items-center justify-end gap-2 px-2 pt-1">
         {selectionMode ? (
           <div className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-[14px] border border-[#09232d]/10 bg-[#f8f8f8] px-3 py-2">
@@ -3218,19 +3256,57 @@ function SocialOpportunityDetail({
         <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
           <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-            {[
-              ["Signal Type", signal.signalType],
-              ["Buying Stage", signal.buyingStage],
-              ["Problem", signal.problem],
-              ["Urgency", signal.urgency],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <p className="text-[10px] font-light leading-[12px]">{label}</p>
-                <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
-              </div>
-            ))}
+            {(
+              [
+                ["Signal Type", signal.signalType],
+                signal.discreteSignalType ? ["Detected Event", formatSignalTypeKey(signal.discreteSignalType)] : null,
+                ["Buying Stage", signal.buyingStage],
+                ["Problem", signal.problem],
+                ["Urgency", signal.urgency],
+                signal.territory ? ["Territory", signal.territory] : null,
+              ] as Array<[string, string] | null>
+            )
+              .filter((row): row is [string, string] => row !== null)
+              .map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[10px] font-light leading-[12px]">{label}</p>
+                  <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+                </div>
+              ))}
           </div>
         </div>
+
+        {signal.namedPeople && signal.namedPeople.length > 0 && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-2 text-[10px] font-semibold leading-[12px]">Named in this signal</p>
+            <div className="flex flex-wrap gap-1.5">
+              {signal.namedPeople.map((person) => (
+                <span
+                  key={person}
+                  className="inline-flex items-center gap-1 rounded-[6px] border border-[#e2e2e2] bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232d]"
+                >
+                  {person}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {signal.enrichment && signal.enrichment.status !== "not_attempted" && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">Contact Enrichment</p>
+            {signal.enrichment.status === "attempted_found" ? (
+              <p className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[#087652]">
+                <CircleCheck size={14} className="shrink-0 text-[#57c946]" />
+                Contact found
+              </p>
+            ) : (
+              <p className="text-[10px] font-medium text-[#616263]">
+                We checked our contact database and couldn&apos;t verify a person at this company yet.
+              </p>
+            )}
+          </div>
+        )}
 
         {(signal.industry || (signal.keyTopics && signal.keyTopics.length > 0)) && (
           <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
@@ -4065,6 +4141,7 @@ function SocialListeningTab({
               onEmptyOpenSettings={() => setIsSettingsOpen(true)}
               enabledSources={listenSettings?.enabled_sources}
               scanPanel={scanPanel}
+              lastRunSummary={<ScanRunSummaryPanel run={latestRun} />}
             />
           )}
         </div>
