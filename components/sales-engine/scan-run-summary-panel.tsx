@@ -8,9 +8,8 @@ export type ScanRunSummaryPanelProps = {
 /**
  * Shows a plain-language breakdown of the most recent completed scan: how many
  * potential signals were checked, how many were rejected and why (no source,
- * too old, didn't match the ICP filter), and how many qualified. Turns the
- * pipeline from "trust us" into "here's the evidence" — see
- * docs/frontend_implementation_plan.md Phase 6.
+ * too old, type mismatch, didn't match the ICP filter), how many qualified,
+ * and how many contacts were found vs not found.
  *
  * Renders nothing for a legacy run (plain-string result_summary) or a run
  * that isn't completed yet — this is a post-scan summary, not a progress view.
@@ -20,7 +19,7 @@ export function ScanRunSummaryPanel({ run }: ScanRunSummaryPanelProps) {
     return null;
   }
 
-  const { totalChecked, qualified, rejected } = run.result_summary;
+  const { totalChecked, qualified, rejected, enrichment } = run.result_summary;
   if (totalChecked === 0) {
     return null;
   }
@@ -30,6 +29,18 @@ export function ScanRunSummaryPanel({ run }: ScanRunSummaryPanelProps) {
     rejected.missingSourceUrl > 0 ? `${rejected.missingSourceUrl} had no source link` : null,
     rejected.missingSourceDate > 0 ? `${rejected.missingSourceDate} had no publish date` : null,
     rejected.stale > 0 ? `${rejected.stale} were too old` : null,
+    (rejected.typeMismatch ?? 0) > 0
+      ? `${rejected.typeMismatch} weren't a real match for the event type`
+      : null,
+  ].filter((part): part is string => part !== null);
+
+  const found = enrichment?.found ?? 0;
+  const notFound = enrichment?.notFound ?? 0;
+  const pending = enrichment?.pending ?? 0;
+  const enrichmentParts = [
+    found > 0 ? `${found} contact${found === 1 ? "" : "s"} found` : null,
+    notFound > 0 ? `${notFound} not found` : null,
+    pending > 0 ? `${pending} still looking up` : null,
   ].filter((part): part is string => part !== null);
 
   return (
@@ -46,6 +57,11 @@ export function ScanRunSummaryPanel({ run }: ScanRunSummaryPanelProps) {
           {rejectionParts.length > 0 && (
             <p className="mt-1 text-[9px] leading-[12px] text-[#616263]">
               {rejected.total} rejected: {rejectionParts.join(", ")}.
+            </p>
+          )}
+          {enrichmentParts.length > 0 && (
+            <p className="mt-1 text-[9px] leading-[12px] text-[#616263]">
+              Contacts: {enrichmentParts.join(", ")}.
             </p>
           )}
         </div>

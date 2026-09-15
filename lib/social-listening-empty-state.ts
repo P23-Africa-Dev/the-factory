@@ -16,11 +16,25 @@ export type SocialListeningEmptyState = {
   showActions: boolean;
 };
 
+export type SocialListeningEmptyStateOptions = {
+  signalTypeLabel?: string | null;
+  freshnessWindowDays?: number | null;
+};
+
+export function recencyWindowPhrase(days?: number | null): string {
+  if (!days || days <= 0) return "the selected window";
+  if (days >= 180) return "the last 6 months";
+  if (days >= 90) return "the last 3 months";
+  if (days === 1) return "the last day";
+  return `the last ${days} days`;
+}
+
 export function getSocialListeningEmptyState(
   latestRun: SocialListeningRunStatus | null | undefined,
   lastRunAt: string | null | undefined,
   isScanning: boolean,
-  hasActiveFilters = false
+  hasActiveFilters = false,
+  options?: SocialListeningEmptyStateOptions
 ): SocialListeningEmptyState | null {
   if (isScanning) {
     return null;
@@ -39,6 +53,17 @@ export function getSocialListeningEmptyState(
   }
 
   if (hasActiveFilters) {
+    const typeLabel = options?.signalTypeLabel?.trim();
+    if (typeLabel && typeLabel.toLowerCase() !== "all signal type") {
+      return {
+        variant: "filters_no_match",
+        title: `No ${typeLabel} signals in ${recencyWindowPhrase(options?.freshnessWindowDays)}`,
+        description: "Try another event type, broaden source, or widen the freshness window.",
+        tip: SOCIAL_LISTENING_TIPS[2],
+        showActions: false,
+      };
+    }
+
     return {
       variant: "filters_no_match",
       title: "No signals match these filters",
@@ -82,13 +107,15 @@ export function getSocialListeningEmptyMessage(
   latestRun: SocialListeningRunStatus | null | undefined,
   lastRunAt: string | null | undefined,
   isScanning: boolean,
-  hasActiveFilters = false
+  hasActiveFilters = false,
+  options?: SocialListeningEmptyStateOptions
 ): string {
   const state = getSocialListeningEmptyState(
     latestRun,
     lastRunAt,
     isScanning,
-    hasActiveFilters
+    hasActiveFilters,
+    options
   );
 
   if (!state) {
