@@ -72,6 +72,32 @@ describe("ScanRunSummaryPanel", () => {
     expect(html).toBe("");
   });
 
+  it("includes type-mismatch rejections and contact enrichment counts", () => {
+    const html = renderToStaticMarkup(
+      <ScanRunSummaryPanel
+        run={makeRun({
+          result_summary: {
+            totalChecked: 12,
+            qualified: 3,
+            rejected: {
+              icpMismatch: 2,
+              missingSourceUrl: 0,
+              missingSourceDate: 0,
+              stale: 1,
+              typeMismatch: 4,
+              total: 7,
+            },
+            enrichment: { found: 2, notFound: 1, pending: 0 },
+          },
+        })}
+      />
+    );
+
+    expect(html).toContain("4 weren&#x27;t a real match for the event type");
+    expect(html).toContain("2 contacts found");
+    expect(html).toContain("1 not found");
+  });
+
   it("says none qualified when every checked hit was rejected", () => {
     const html = renderToStaticMarkup(
       <ScanRunSummaryPanel

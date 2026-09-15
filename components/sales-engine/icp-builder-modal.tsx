@@ -45,10 +45,9 @@ export type IcpConfig = {
   enrichContactDetails: boolean;
   customPrompt: string;
   /**
-   * Opt-in Stage 2 signal-type packs (backend_implementation_plan.md Phase 3).
-   * Empty = today's default behavior, zero extra scan cost. Selecting a pack
-   * adds dedicated, source-verified searches for that vertical's discrete
-   * event types (e.g. "New Market Entry") on top of the normal scan.
+   * Stage 2 signal-type packs. Core Buyer Signals (`default`) is on unless
+   * the user clears every pack — save then sends `none` so the backend does
+   * not silently re-enable the default pack.
    */
   signalTypePacks?: string[];
 };
@@ -75,7 +74,7 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: true,
   enrichContactDetails: true,
   customPrompt: "",
-  signalTypePacks: [],
+  signalTypePacks: ["default"],
 };
 
 const AVAILABLE_INDUSTRIES = [
@@ -241,7 +240,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   const toggleArrayItem = (key: keyof IcpConfig, item: string) => {
     setFormConfig((prev) => {
-      const currentList = prev[key] as string[];
+      const currentList = Array.isArray(prev[key]) ? ([...(prev[key] as string[])]) : [];
       const exists = currentList.includes(item);
       return {
         ...prev,
@@ -291,7 +290,12 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
     const profileTitle = formConfig.profileName.trim() || "Untitled ICP Build";
-    const config = { ...formConfig, profileName: profileTitle };
+    const selectedPacks = (formConfig.signalTypePacks ?? []).filter((pack) => pack !== "none");
+    const config = {
+      ...formConfig,
+      profileName: profileTitle,
+      signalTypePacks: selectedPacks.length > 0 ? selectedPacks : ["none"],
+    };
 
     if (editingProfileId) {
       updateProfile.mutate({
@@ -637,6 +641,14 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
                   {/* Target Industries */}
                   <div className="space-y-2.5">
+                    <div className="rounded-2xl border border-gray-100 bg-[#FBFBFB] px-3.5 py-2.5">
+                      <p className="text-[12px] font-semibold text-[#09232D]">
+                        Filter criteria — a company must match these to qualify
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-snug text-gray-500">
+                        Industry, size, revenue, and territory gate which companies appear. They are never used as search keywords.
+                      </p>
+                    </div>
                     <div className="flex items-center justify-between">
                       <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
                         <Building2 size={15} className="text-gray-400" />
@@ -882,6 +894,69 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       </button>
                     </div>
                   </div>
+
+                  {/* Events to watch for */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
+                        <Layers size={15} className="text-gray-400" />
+                        Events to watch for
+                      </label>
+                      <span className="text-[11px] text-gray-400">
+                        {(formConfig.signalTypePacks ?? []).length} selected
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-snug">
+                      Social Listening searches each selected event type with a source URL and date. Core Buyer Signals is on by default. Clear every pack to turn discrete detection off.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {AVAILABLE_SIGNAL_TYPE_PACKS.map((pack) => {
+                        const isSelected = (formConfig.signalTypePacks ?? []).includes(pack.value);
+                        return (
+                          <button
+                            key={pack.value}
+                            type="button"
+                            title={pack.description}
+                            onClick={() => toggleArrayItem("signalTypePacks", pack.value)}
+                            className={`group flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-[#09232D] text-white shadow-xs"
+                                : "bg-[#f3f4f6] text-gray-600 hover:bg-gray-200/80 hover:text-gray-900"
+                            }`}
+                          >
+                            {isSelected ? (
+                              <Check size={12} className="stroke-[3]" />
+                            ) : (
+                              <Plus size={12} className="text-gray-400 group-hover:text-gray-600" />
+                            )}
+                            {pack.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Opportunity interest */}
+                  <div className="space-y-1.5">
+                    <label className="flex items-center justify-between text-[12px] font-semibold text-gray-700">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-amber-500" />
+                        What kind of opportunity are you looking for?
+                      </span>
+                      <span className="text-[10px] font-normal text-gray-400">
+                        Interest, not a filter
+                      </span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={formConfig.customPrompt}
+                      onChange={(e) =>
+                        setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
+                      }
+                      placeholder="Describe the events or opportunities you want surfaced — e.g. market entries, partnerships, leadership hires, or funding news…"
+                      className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -971,70 +1046,6 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                         }
                       />
                     </div>
-                  </div>
-
-                  {/* Stage 2 signal-type packs — opt-in, adds dedicated event-type scans */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
-                        <Layers size={15} className="text-gray-400" />
-                        Signal Types to Watch For (Social Listening)
-                      </label>
-                      <span className="text-[11px] text-gray-400">
-                        {(formConfig.signalTypePacks ?? []).length} selected
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-500 leading-snug">
-                      Optional. Each pack adds dedicated, source-verified searches for specific events (e.g. &ldquo;New
-                      Market Entry&rdquo;) on top of your normal scan. Leave unselected for no change in scan cost.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {AVAILABLE_SIGNAL_TYPE_PACKS.map((pack) => {
-                        const isSelected = (formConfig.signalTypePacks ?? []).includes(pack.value);
-                        return (
-                          <button
-                            key={pack.value}
-                            type="button"
-                            title={pack.description}
-                            onClick={() => toggleArrayItem("signalTypePacks", pack.value)}
-                            className={`group flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-all cursor-pointer ${
-                              isSelected
-                                ? "bg-[#09232D] text-white shadow-xs"
-                                : "bg-[#f3f4f6] text-gray-600 hover:bg-gray-200/80 hover:text-gray-900"
-                            }`}
-                          >
-                            {isSelected ? (
-                              <Check size={12} className="stroke-[3]" />
-                            ) : (
-                              <Plus size={12} className="text-gray-400 group-hover:text-gray-600" />
-                            )}
-                            {pack.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* AI Discovery Nuance & Custom Prompt */}
-                  <div className="space-y-1.5">
-                    <label className="flex items-center justify-between text-[12px] font-semibold text-gray-700">
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-amber-500" />
-                        AI Agent Custom Discovery Prompt
-                      </span>
-                      <span className="text-[10px] font-normal text-gray-400">
-                        Natural language context
-                      </span>
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={formConfig.customPrompt}
-                      onChange={(e) =>
-                        setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
-                      }
-                      placeholder="Provide specific guidelines, regional quirks, or exclusions for the AI model. You can also state opportunity interests beyond sales leads — e.g. investments, partnerships, market or funding news you want surfaced..."
-                      className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
-                    />
                   </div>
                 </div>
               )}

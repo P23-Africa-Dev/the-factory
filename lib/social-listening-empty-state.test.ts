@@ -36,6 +36,16 @@ describe("social-listening-empty-state", () => {
     expect(state?.showActions).toBe(false);
   });
 
+  it("names the discrete type and recency window when that filter is empty", () => {
+    const state = getSocialListeningEmptyState(null, "2026-01-01T00:00:00Z", false, true, {
+      signalTypeLabel: "New Market Entry",
+      freshnessWindowDays: 180,
+    });
+
+    expect(state?.variant).toBe("filters_no_match");
+    expect(state?.title).toBe("No New Market Entry signals in the last 6 months");
+  });
+
   it("returns awaiting_first_scan when no last run exists", () => {
     const state = getSocialListeningEmptyState(null, null, false);
 

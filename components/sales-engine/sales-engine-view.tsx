@@ -53,6 +53,7 @@ import {
   useCreateSignalOutreach,
   useDismissSignal,
   useSetSignalReminder,
+  useSignalTypes,
   useSocialListeningBootstrap,
   useSocialListeningSignals,
   useSyncSignalToCrm,
@@ -84,10 +85,12 @@ import {
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
+  type FreshnessWindowDays,
   type OutreachActivity,
   type OutreachDraft,
   type SocialListeningSettings,
   type SocialSignalApi,
+  type SocialSignalIcpFilter,
 } from "@/lib/api/sales-engine";
 import {
   Check,
@@ -116,6 +119,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  AlertTriangle,
   User,
   UserPlus,
   UsersRound,
@@ -171,6 +175,31 @@ function formatSignalTypeKey(key: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function formatPostedDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function primarySignalTypeLabel(signal: SocialSignalApi): string {
+  if (signal.discreteSignalType) return formatSignalTypeKey(signal.discreteSignalType);
+  return signal.intent || signal.signalType || "Signal";
+}
+
+function matchedIcpFieldLabels(filter?: SocialSignalIcpFilter | null): string[] {
+  if (!filter?.reasons) return [];
+  const labels: Record<string, string> = {
+    industry: "industry",
+    territory: "territory",
+    companySize: "company size",
+    revenue: "revenue",
+  };
+  return Object.entries(filter.reasons)
+    .filter(([, passed]) => passed)
+    .map(([field]) => labels[field] ?? field);
 }
 
 function readSearchUsage(): SearchUsage {
@@ -306,9 +335,10 @@ const sourceFilterOptions: SelectOption[] = [
   { value: "X/Twitter Post", label: "X/Twitter Post" },
   { value: "Reddit Post", label: "Reddit Post" },
   { value: "Google Search", label: "Google Search" },
+  { value: "Meta Page Post", label: "Meta Page Post" },
 ];
 
-const signalTypeFilterOptions: SelectOption[] = [
+const legacySignalTypeFilterOptions: SelectOption[] = [
   { value: "all", label: "All Signal Type" },
   { value: "Recommendation", label: "Recommendation" },
   { value: "Switching", label: "Switching" },
@@ -658,6 +688,17 @@ function LeadInlineResults({
   }
 
   function renderCrmAction(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
+    if (lead.crm_duplicate) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-[#fef3c7] px-2 py-0.5 text-[8px] font-semibold text-[#92400e]"
+          title={lead.crm_duplicate_reason ?? "This company already exists in CRM"}
+        >
+          <AlertTriangle size={10} />
+          Duplicate in CRM
+        </span>
+      );
+    }
     if (isSynced) {
       return (
         <span
@@ -665,7 +706,7 @@ function LeadInlineResults({
           title={
             fieldsUpdated.length > 0
               ? `Updated in CRM: ${fieldsUpdated.join(", ")}`
-              : lead.crm_duplicate_reason ?? "Already saved in CRM"
+              : "Already saved in CRM"
           }
         >
           <CircleCheck size={10} />
@@ -782,6 +823,11 @@ function LeadInlineResults({
                       <span className="text-[7px] font-medium text-[#b45309]">Lower confidence</span>
                     )}
                   </div>
+                  {lead.icp_relevance_reason && (
+                    <p className="mt-0.5 text-[8px] leading-[11px] text-[#616263]">
+                      {lead.icp_relevance_reason}
+                    </p>
+                  )}
 
                   {(roleLine || contactLine || lead.email || lead.phone || profileUrl || lead.website) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[8px]">
@@ -2336,7 +2382,7 @@ function SalesEngineTabs({
           </button>
         ))}
       </div>
-      <p className="pl-1 text-[9px] leading-[12px] text-[#9d9d9d]">{TAB_TRUST_MODE_COPY[activeTab]}</p>
+      <p className="max-w-[560px] pl-1 text-[12px] leading-[16px] text-[#616263]">{TAB_TRUST_MODE_COPY[activeTab]}</p>
     </div>
   );
 }
@@ -2345,6 +2391,10 @@ function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
   const isLinkedIn = sourceIcon === "in";
   const isReddit = sourceIcon === "r";
   const isGoogle = sourceIcon === "G" || sourceIcon.toLowerCase() === "google";
+  const isMeta =
+    sourceIcon === "f" ||
+    sourceIcon.toLowerCase() === "meta" ||
+    sourceIcon.toLowerCase() === "facebook";
 
   if (isGoogle) {
     return (
@@ -2358,6 +2408,17 @@ function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
           <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
           <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
         </svg>
+      </span>
+    );
+  }
+
+  if (isMeta) {
+    return (
+      <span
+        aria-label="Meta"
+        className="grid size-[22px] shrink-0 place-items-center rounded-full bg-[#1877F2] text-[10px] font-bold text-white"
+      >
+        f
       </span>
     );
   }
@@ -2675,7 +2736,7 @@ function SocialSignalRow({
             isActive ? "text-white/70" : "text-[#616263]/70"
           }`}
         >
-          {formatRelativeTime(signal.posted_at)}
+          {formatPostedDate(signal.posted_at) || formatRelativeTime(signal.posted_at) || "Date unknown"}
         </p>
       </td>
       <td className="px-3 py-3 align-middle">
@@ -2711,18 +2772,9 @@ function SocialSignalRow({
             className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
             style={{ backgroundColor: signal.intentColor }}
           >
-            {signal.intent}
+            {primarySignalTypeLabel(signal)}
           </span>
-          {signal.discreteSignalType && (
-            <span
-              className="inline-flex w-fit rounded-full border border-[#09232d]/15 px-2 py-0.5 text-[7px] font-semibold text-[#09232d]/70"
-              title="A specific, source-verified event detected for this signal"
-            >
-              {formatSignalTypeKey(signal.discreteSignalType)}
-            </span>
-          )}
         </div>
-        {/* <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p> */}
       </td>
       <td className="px-3 py-3 align-middle">
         <ScoreGauge score={signal.score} dark={isActive} />
@@ -3010,6 +3062,7 @@ function SocialListeningFilters({
   source,
   signalType,
   intent,
+  signalTypeOptions,
   onSearchChange,
   onSourceChange,
   onSignalTypeChange,
@@ -3023,6 +3076,7 @@ function SocialListeningFilters({
   source: string;
   signalType: string;
   intent: string;
+  signalTypeOptions: SelectOption[];
   onSearchChange: (value: string) => void;
   onSourceChange: (value: string) => void;
   onSignalTypeChange: (value: string) => void;
@@ -3053,7 +3107,7 @@ function SocialListeningFilters({
       <SearchableSelect
         value={signalType}
         onChange={onSignalTypeChange}
-        options={signalTypeFilterOptions}
+        options={signalTypeOptions}
         className="h-8 min-w-[110px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
@@ -3143,15 +3197,10 @@ function SocialOpportunityDetail({
     }
   };
 
-  const postHref =
-    signal.post_url ||
-    (signal.source === "LinkedIn Post"
-      ? "https://www.linkedin.com"
-      : signal.source === "X/Twitter Post"
-        ? "https://x.com"
-        : signal.source === "Google Search"
-          ? `https://www.google.com/search?q=${encodeURIComponent(signal.signal)}`
-          : "https://www.reddit.com");
+  const postHref = signal.post_url || null;
+  const postedDateLabel =
+    formatPostedDate(signal.posted_at) || formatRelativeTime(signal.posted_at) || "Date unknown";
+  const icpMatched = matchedIcpFieldLabels(signal.icpFilter);
 
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
@@ -3167,18 +3216,20 @@ function SocialOpportunityDetail({
           {showFullSignal ? signal.signal : (signal.summary || signal.description)}
         </p>
         <div className="mt-2 flex items-center gap-3">
-          <a
-            href={postHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
-          >
-            <span className="underline underline-offset-2">
-              {signal.source === "Google Search" ? "See Search Result" : "See Post"}
-            </span>
-            <span className="not-italic no-underline">→</span>
-          </a>
+          {postHref ? (
+            <a
+              href={postHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
+            >
+              <span className="underline underline-offset-2">See source</span>
+              <span className="not-italic no-underline">→</span>
+            </a>
+          ) : (
+            <span className="text-[10px] italic text-white/50">Source URL missing</span>
+          )}
           {signal.summary && signal.summary !== signal.signal && (
             <button
               type="button"
@@ -3190,8 +3241,7 @@ function SocialOpportunityDetail({
           )}
         </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
-          {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} •{" "}
-          {formatRelativeTime(signal.posted_at)}
+          {signal.source} • {postedDateLabel}
           {isFreshSignal(signal.posted_at) ? " • Fresh" : ""}
         </p>
       </div>
@@ -3258,8 +3308,7 @@ function SocialOpportunityDetail({
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
             {(
               [
-                ["Signal Type", signal.signalType],
-                signal.discreteSignalType ? ["Detected Event", formatSignalTypeKey(signal.discreteSignalType)] : null,
+                ["Signal Type", primarySignalTypeLabel(signal)],
                 ["Buying Stage", signal.buyingStage],
                 ["Problem", signal.problem],
                 ["Urgency", signal.urgency],
@@ -3275,6 +3324,15 @@ function SocialOpportunityDetail({
               ))}
           </div>
         </div>
+
+        {icpMatched.length > 0 && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">ICP filter</p>
+            <p className="text-[10px] leading-[13px]">
+              Matched: {icpMatched.join(", ")}
+            </p>
+          </div>
+        )}
 
         {signal.namedPeople && signal.namedPeople.length > 0 && (
           <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
@@ -3292,10 +3350,15 @@ function SocialOpportunityDetail({
           </div>
         )}
 
-        {signal.enrichment && signal.enrichment.status !== "not_attempted" && (
+        {signal.enrichment && (
           <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
             <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">Contact Enrichment</p>
-            {signal.enrichment.status === "attempted_found" ? (
+            {signal.enrichment.status === "not_attempted" ? (
+              <p className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[#616263]">
+                <Loader2 size={12} className="animate-spin" />
+                Looking up contacts…
+              </p>
+            ) : signal.enrichment.status === "attempted_found" ? (
               <p className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[#087652]">
                 <CircleCheck size={14} className="shrink-0 text-[#57c946]" />
                 Contact found
@@ -3304,6 +3367,41 @@ function SocialOpportunityDetail({
               <p className="text-[10px] font-medium text-[#616263]">
                 We checked our contact database and couldn&apos;t verify a person at this company yet.
               </p>
+            )}
+            {signal.enrichment.contacts && signal.enrichment.contacts.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {signal.enrichment.contacts.map((contact, index) => {
+                  const found = contact.foundEmail || contact.foundPhone;
+                  return (
+                    <div
+                      key={`${contact.personName ?? "contact"}-${index}`}
+                      className="flex items-start justify-between gap-2 rounded-[8px] border border-[#eee] bg-[#fafafa] px-2 py-1.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-semibold text-[#09232d]">
+                          {contact.personName || "Role-based search"}
+                        </p>
+                        <p className="text-[8px] text-[#616263]">
+                          {found
+                            ? [contact.foundEmail ? "email" : null, contact.foundPhone ? "phone" : null]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : "not found"}
+                          {contact.provider ? ` · ${contact.provider}` : ""}
+                          {contact.tier ? ` · ${contact.tier}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
+                          found ? "bg-[#16b37d]/10 text-[#087652]" : "bg-[#f3f3f3] text-[#616263]"
+                        }`}
+                      >
+                        {found ? "Found" : "Not found"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -3460,7 +3558,7 @@ function ListeningSettingsModal({
   const [metaPageIdsText, setMetaPageIdsText] = useState("");
   const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
   const [minScore, setMinScore] = useState(70);
-  const [freshnessWindowDays, setFreshnessWindowDays] = useState<7 | 14 | 30>(14);
+  const [freshnessWindowDays, setFreshnessWindowDays] = useState<FreshnessWindowDays>(180);
   const [intentFilters, setIntentFilters] = useState<string[]>([]);
   const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
   const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
@@ -3473,7 +3571,7 @@ function ListeningSettingsModal({
     setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
     setMinScore(settings.min_score ?? 70);
-    setFreshnessWindowDays(settings.freshness_window_days ?? 14);
+    setFreshnessWindowDays((settings.freshness_window_days ?? 180) as FreshnessWindowDays);
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
@@ -3654,6 +3752,8 @@ function ListeningSettingsModal({
                     { label: "Last 7 days", value: 7 as const },
                     { label: "Last 14 days", value: 14 as const },
                     { label: "Last 30 days", value: 30 as const },
+                    { label: "Last 3 months", value: 90 as const },
+                    { label: "Last 6 months", value: 180 as const },
                   ].map((option) => (
                     <label
                       key={option.value}
@@ -3762,6 +3862,7 @@ function SocialListeningTab({
 }) {
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: listenSettings } = useSocialListeningSettings();
+  const { data: discreteSignalTypes = [] } = useSignalTypes();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [source, setSource] = useState("all");
@@ -3772,6 +3873,7 @@ function SocialListeningTab({
   const [selectedSignalIds, setSelectedSignalIds] = useState<number[]>([]);
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [pollEnrichment, setPollEnrichment] = useState(false);
   const perPage = 10;
 
   useEffect(() => {
@@ -3816,7 +3918,7 @@ function SocialListeningTab({
       signal_type: signalType,
       buying_stage: intent,
     },
-    { refetchInterval: isScanning ? 5000 : false }
+    { refetchInterval: isScanning || pollEnrichment ? 5000 : false }
   );
 
   const createOutreach = useCreateSignalOutreach();
@@ -3833,6 +3935,25 @@ function SocialListeningTab({
 
   const signals = useMemo(() => signalsResult?.items ?? [], [signalsResult?.items]);
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
+
+  useEffect(() => {
+    const pending = signals.some(
+      (signal) => (signal.enrichment?.status ?? "not_attempted") === "not_attempted"
+    );
+    const finishedAt = latestRun?.finished_at ? new Date(latestRun.finished_at).getTime() : 0;
+    const runJustFinished =
+      latestRun?.status === "completed" && finishedAt > 0 && Date.now() - finishedAt < 120_000;
+    setPollEnrichment(pending && (isScanning || runJustFinished));
+  }, [signals, isScanning, latestRun]);
+
+  const signalTypeOptions = useMemo<SelectOption[]>(() => {
+    const discrete = discreteSignalTypes.map((type) => ({
+      value: type.key,
+      label: type.label,
+    }));
+    if (discrete.length === 0) return legacySignalTypeFilterOptions;
+    return [{ value: "all", label: "All Signal Type" }, ...discrete];
+  }, [discreteSignalTypes]);
 
   const visibleSelectedIds = useMemo(
     () =>
@@ -3877,7 +3998,14 @@ function SocialListeningTab({
     latestRun,
     metrics?.last_run_at,
     isScanning,
-    hasActiveFilters
+    hasActiveFilters,
+    {
+      signalTypeLabel:
+        signalType !== "all"
+          ? signalTypeOptions.find((option) => option.value === signalType)?.label ?? signalType
+          : null,
+      freshnessWindowDays: listenSettings?.freshness_window_days ?? 180,
+    }
   );
 
   const icpContext = useMemo(
@@ -4100,6 +4228,7 @@ function SocialListeningTab({
               source={source}
               signalType={signalType}
               intent={intent}
+              signalTypeOptions={signalTypeOptions}
               onSearchChange={setSearch}
               onSourceChange={handleSourceChange}
               onSignalTypeChange={handleSignalTypeChange}

@@ -50,7 +50,7 @@ const DEFAULT_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: false,
   enrichContactDetails: true,
   customPrompt: "",
-  signalTypePacks: [],
+  signalTypePacks: ["default"],
 };
 
 // The API returns `lastUpdated` as an ISO timestamp; the UI wants a friendly relative string.
@@ -73,6 +73,14 @@ function formatLastUpdated(iso: string | null | undefined): string {
 }
 
 // Backfills any config fields the API omitted so the form never breaks on a partial profile.
+function normalizeSignalTypePacks(packs: unknown): string[] {
+  if (!Array.isArray(packs)) return ["default"];
+  const values = packs.filter((pack): pack is string => typeof pack === "string" && pack.trim() !== "");
+  if (values.includes("none")) return [];
+  if (values.length === 0) return ["default"];
+  return values;
+}
+
 export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
   const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
   return {
@@ -85,6 +93,7 @@ export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
     config: {
       ...config,
       profileName: config.profileName || raw.name,
+      signalTypePacks: normalizeSignalTypePacks(raw.config?.signalTypePacks),
     },
   };
 }
@@ -856,9 +865,18 @@ export type SocialSignalIcpFilter = {
 
 export type SocialSignalEnrichmentStatus = "not_attempted" | "attempted_found" | "attempted_not_found";
 
+export type EnrichmentContact = {
+  personName: string | null;
+  foundEmail: boolean;
+  foundPhone: boolean;
+  provider: string | null;
+  tier: string | null;
+};
+
 export type SocialSignalEnrichment = {
   status: SocialSignalEnrichmentStatus;
   attemptedAt?: string | null;
+  contacts?: EnrichmentContact[];
 };
 
 export type SocialSignalApi = {
@@ -928,7 +946,13 @@ export type SocialListeningRunResultSummary = {
     missingSourceUrl: number;
     missingSourceDate: number;
     stale: number;
+    typeMismatch?: number;
     total: number;
+  };
+  enrichment?: {
+    pending?: number;
+    found?: number;
+    notFound?: number;
   };
 };
 
@@ -960,12 +984,14 @@ export type SocialListeningMetrics = {
   latest_run?: SocialListeningRunStatus | null;
 };
 
+export type FreshnessWindowDays = 7 | 14 | 30 | 90 | 180;
+
 export type SocialListeningSettings = {
   enabled_sources: string[];
   meta_page_ids: string[];
   cadence_days: 14 | 30;
   min_score: number;
-  freshness_window_days: 7 | 14 | 30;
+  freshness_window_days: FreshnessWindowDays;
   intent_filters: string[];
   crm_destination: "qualified_pipeline" | "human_review";
   outreach_channel_default: "email" | "human_follow_up";
@@ -1133,6 +1159,28 @@ export function fetchSocialSignal(id: number): Promise<SocialSignalApi> {
   return withSessionRetry(async () =>
     seRequest<SocialSignalApi>({ method: "GET", path: `/social-listening/signals/${id}` })
   );
+}
+
+export type SignalTypeDefinitionApi = {
+  key: string;
+  label: string;
+  pack: string;
+  triggerDescription?: string;
+  feedsEnrichment?: boolean;
+  recencyWindowDays?: number;
+};
+
+export function listSignalTypes(icpProfileId?: string): Promise<SignalTypeDefinitionApi[]> {
+  return withSessionRetry(async () => {
+    const query = new URLSearchParams();
+    if (icpProfileId) query.set("icpProfileId", icpProfileId);
+    const qs = query.toString();
+    const data = await seRequest<SignalTypeDefinitionApi[]>({
+      method: "GET",
+      path: `/signal-types${qs ? `?${qs}` : ""}`,
+    });
+    return data ?? [];
+  });
 }
 
 export function fetchSocialListeningMetrics(): Promise<SocialListeningMetrics> {
