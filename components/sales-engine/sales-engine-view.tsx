@@ -43,10 +43,12 @@ import {
   isForegroundChatWaiting,
   isMissingActiveIcp,
   mapApiMessagesToUi,
+  SALES_ENGINE_CHAT_KEYS,
   useChatHistory,
   useClearChatHistory,
   useSendChatMessage,
 } from "@/hooks/use-sales-engine-chat";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach, useDeleteOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import {
@@ -78,6 +80,7 @@ import {
   primaryProfileUrl,
 } from "@/lib/enriched-lead-card";
 import {
+  cancelDiscoveryRun,
   fetchOutreachActivity,
   formatRelativeTime,
   isFreshSignal,
@@ -1239,6 +1242,7 @@ function ChatWorkspace({
   onOpenIcpBuilder: () => void;
   onOpenOutreachSettings?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const { data: activeProfile } = useActiveIcpProfile();
   const activeIcpId = activeProfile?.id;
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -1410,6 +1414,16 @@ function ChatWorkspace({
       setBackgroundRunIds((current) => new Set(current).add(runId));
     }
     toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
+  }
+
+  async function handleStopSearching() {
+    await sendMessage.stopSearching();
+    toast.message("Lead search stopped.");
+  }
+
+  function handleContinueWaiting() {
+    sendMessage.continueWaiting();
+    toast.message("Still searching — hang tight. You can stop anytime.");
   }
 
   const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode) || isSyntheticThinking;
@@ -1717,11 +1731,32 @@ function ChatWorkspace({
                 </div>
               )}
               {isBackgroundPending && (
-                <div className="mb-1.5 flex items-center gap-1.5">
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
                     <Loader2 size={10} className="animate-spin" />
-                    Processing in background
+                    {message.meta?.awaiting_user_choice
+                      ? "Still searching — timeout is a last resort"
+                      : "Processing in background"}
                   </span>
+                  {typeof pendingRunId === "number" && Boolean(message.meta?.awaiting_user_choice) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await cancelDiscoveryRun(pendingRunId);
+                          toast.message("Lead search stopped.");
+                          queryClient.invalidateQueries({
+                            queryKey: SALES_ENGINE_CHAT_KEYS.history(activeIcpId),
+                          });
+                        } catch {
+                          toast.error("Couldn’t stop the search. Try again.");
+                        }
+                      }}
+                      className="rounded-[10px] border border-[#09232d]/15 bg-white px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/5"
+                    >
+                      Stop searching
+                    </button>
+                  )}
                 </div>
               )}
               {message.kind === "confirm-icp" ? (
@@ -1840,6 +1875,8 @@ function ChatWorkspace({
               <ProcessingPanel
                 state={sendMessage.processingState}
                 onDetachToBackground={handleDetachToBackground}
+                onStopSearching={handleStopSearching}
+                onContinueWaiting={handleContinueWaiting}
               />
             )
           )}

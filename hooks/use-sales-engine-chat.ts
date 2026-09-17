@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  cancelDiscoveryRun,
   clearChatMessages,
   createChatSession,
   fetchCurrentChatSession,
@@ -194,6 +195,7 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
   const currentIntentRef = useRef<ChatIntent>("freeform");
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingRunIdRef = useRef<number | null>(null);
+  const extraWaitMsRef = useRef(0);
 
   const icpContext: SalesEngineIcpContext | undefined = activeProfile
     ? {
@@ -305,10 +307,39 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
     return pendingRunIdRef.current;
   }, [clearProcessingTimers, icpProfileId, queryClient]);
 
+  const continueWaiting = useCallback(() => {
+    // Extend the foreground poll ceiling by 5 minutes each click; timeout stays last.
+    extraWaitMsRef.current += 300_000;
+    applyProcessingUpdate({
+      label: "Still searching — hang tight. You can stop anytime.",
+    });
+  }, [applyProcessingUpdate]);
+
+  const stopSearching = useCallback(async () => {
+    const runId = pendingRunIdRef.current;
+    abortControllerRef.current?.abort();
+    clearProcessingTimers();
+    setProcessingState(null);
+    setWaitMode("foreground");
+    pendingRunIdRef.current = null;
+    extraWaitMsRef.current = 0;
+
+    if (typeof runId === "number") {
+      try {
+        await cancelDiscoveryRun(runId);
+      } catch {
+        // Best-effort cancel — UI still unlocks.
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: SALES_ENGINE_CHAT_KEYS.history(icpProfileId) });
+  }, [clearProcessingTimers, icpProfileId, queryClient]);
+
   const mutation = useMutation({
     mutationFn: async ({ body, intent }: SendMessageVariables) => {
       setWaitMode("foreground");
       pendingRunIdRef.current = null;
+      extraWaitMsRef.current = 0;
       abortControllerRef.current = new AbortController();
       startLabelRotation(intent, body);
 
@@ -331,8 +362,12 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
         { body, intent },
         {
           onStage: handleBackendStage,
+          onDiscoveryRun: (runId) => {
+            pendingRunIdRef.current = runId;
+          },
           icpContext,
           signal: abortControllerRef.current.signal,
+          extraWaitMsRef,
         }
       );
 
@@ -383,7 +418,7 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
 
   useEffect(() => () => clearProcessingTimers(), [clearProcessingTimers]);
 
-  return { ...mutation, processingState, waitMode, detachToBackground };
+  return { ...mutation, processingState, waitMode, detachToBackground, stopSearching, continueWaiting };
 }
 
 export function useClearChatHistory(icpProfileId?: string) {

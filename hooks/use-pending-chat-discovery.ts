@@ -63,7 +63,7 @@ export function usePendingChatDiscovery(
 
       try {
         const run = await fetchDiscoveryRun(current.runId);
-        if (run.status !== "completed" && run.status !== "failed") {
+        if (run.status !== "completed" && run.status !== "failed" && run.status !== "cancelled") {
           return;
         }
 
@@ -73,7 +73,21 @@ export function usePendingChatDiscovery(
           (message) => message.role === "assistant" && !message.meta?.pending
         );
 
-        if (!hasFinalAssistant && run.status !== "failed") {
+        // Soft-failed runs keep pending=true so the user can continue waiting or stop.
+        if (
+          !hasFinalAssistant &&
+          run.status === "failed" &&
+          latestMessages.some(
+            (message) =>
+              message.role === "assistant" &&
+              message.meta?.pending &&
+              message.meta?.awaiting_user_choice
+          )
+        ) {
+          return;
+        }
+
+        if (!hasFinalAssistant && run.status !== "failed" && run.status !== "cancelled") {
           return;
         }
 

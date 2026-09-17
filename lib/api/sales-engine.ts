@@ -554,19 +554,30 @@ export function fetchDiscoveryRun(id: number): Promise<DiscoveryRunApi> {
   );
 }
 
+export function cancelDiscoveryRun(id: number): Promise<{ id: number; status: string; cancelled: boolean }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number; status: string; cancelled: boolean }>({
+      method: "POST",
+      path: `/discovery/runs/${id}/cancel`,
+    })
+  );
+}
+
 export async function pollDiscoveryRunUntilComplete(
   runId: number,
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
     intent?: ChatIntent;
     maxMs?: number;
+    /** Mutable extension — Continue waiting can bump this without restarting the poll. */
+    extraWaitMsRef?: { current: number };
     signal?: AbortSignal;
   }
 ): Promise<{ run: DiscoveryRunApi; timedOut: boolean; aborted?: boolean }> {
-  const maxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
+  const baseMaxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
   const started = Date.now();
 
-  while (Date.now() - started < maxMs) {
+  while (Date.now() - started < baseMaxMs + (options?.extraWaitMsRef?.current ?? 0)) {
     if (options?.signal?.aborted) {
       const run = await fetchDiscoveryRun(runId);
       return { run, timedOut: true, aborted: true };
@@ -581,6 +592,10 @@ export async function pollDiscoveryRunUntilComplete(
       return { run, timedOut: false };
     }
 
+    if (run.status === "cancelled") {
+      return { run, timedOut: false, aborted: true };
+    }
+
     if (run.status === "failed") {
       // Soft-complete / job-fail races can briefly mark failed then flip to completed
       // with leads. Re-check once before surfacing an error to the user.
@@ -593,9 +608,29 @@ export async function pollDiscoveryRunUntilComplete(
       if (rechecked.status === "completed") {
         return { run: rechecked, timedOut: false };
       }
+      if (rechecked.status === "cancelled") {
+        return { run: rechecked, timedOut: false, aborted: true };
+      }
       if (rechecked.status !== "failed") {
         continue;
       }
+
+      // Soft failure: keep polling so the UI can offer continue/stop. Timeout is last
+      // (maxMs). The live worker may still complete and overwrite the soft-fail.
+      const softWait =
+        Boolean((rechecked as DiscoveryRunApi & { error?: string | null }).error) &&
+        /taking longer|interrupted|attempted too many times|timed out/i.test(
+          String(rechecked.error ?? "")
+        );
+      if (softWait) {
+        options?.onStage?.({
+          ...mapDiscoveryStage(rechecked.stages, intent, rechecked.progress ?? null),
+          label: "Still searching — you can keep waiting or stop anytime.",
+        });
+        await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
+        continue;
+      }
+
       // Not a validation/ICP 422 — use 502 so UI does not treat this as "select an ICP".
       throw new SalesEngineApiError(rechecked.error ?? "Discovery run failed.", 502);
     }
@@ -629,8 +664,10 @@ export async function sendChatMessage(
   payload: { body: string; intent: ChatIntent },
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
+    onDiscoveryRun?: (runId: number) => void;
     icpContext?: { industries?: string[]; territories?: string[]; name?: string };
     signal?: AbortSignal;
+    extraWaitMsRef?: { current: number };
   }
 ): Promise<SendChatMessageResult> {
   return withSessionRetry(async () => {
@@ -648,6 +685,8 @@ export async function sendChatMessage(
       initial.status === "processing" &&
       initial.discovery_run_id
     ) {
+      options?.onDiscoveryRun?.(initial.discovery_run_id);
+
       let messages = await listChatMessages(sessionId);
       const placeholder = findLatestAssistantMessage(messages);
 
@@ -655,6 +694,7 @@ export async function sendChatMessage(
         intent: payload.intent,
         onStage: options?.onStage,
         signal: options?.signal,
+        extraWaitMsRef: options?.extraWaitMsRef,
         maxMs:
           payload.intent === "quick_research" ? CHAT_QUICK_RESEARCH_POLL_MAX_MS : CHAT_POLL_MAX_MS,
       });
