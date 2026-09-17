@@ -31,7 +31,40 @@ export function formatLeadContactLine(lead: ChatLead): string | null {
 }
 
 export function primaryProfileUrl(lead: ChatLead): string | null {
-  return lead.linkedin_url || lead.profile_urls?.[0] || null;
+  const candidates = [
+    lead.linkedin_url,
+    lead.profile_urls?.[0],
+    lead.source_url,
+    lead.website,
+  ];
+
+  for (const raw of candidates) {
+    const normalized = normalizeExternalUrl(raw);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+/** Prefer LinkedIn/profile; fall back to discovery source or company website. */
+export function normalizeExternalUrl(raw: string | null | undefined): string | null {
+  const value = (raw ?? "").trim();
+  if (value === "") {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  // Hostnames / bare domains from Serper website fields.
+  if (/^[a-z0-9.-]+\.[a-z]{2,}([/:].*)?$/i.test(value)) {
+    return `https://${value.replace(/^\/+/, "")}`;
+  }
+
+  return null;
 }
 
 export function leadEntityBadge(lead: ChatLead): "Account" | "Contact" {

@@ -102,6 +102,7 @@ import {
   Clock,
   Copy,
   Expand,
+  ExternalLink,
   Eye,
   Globe2,
   Lightbulb,
@@ -126,8 +127,6 @@ import {
   User,
   UserPlus,
   UsersRound,
-  LayoutGrid,
-  List,
   ListChecks,
   X,
 } from "lucide-react";
@@ -601,7 +600,6 @@ function LeadInlineResults({
   const syncBatch = useSyncLeadsBatchToCrm();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
   const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
   const [crmModalState, setCrmModalState] = useState<
     | { mode: "single"; lead: ChatLead }
@@ -690,9 +688,12 @@ function LeadInlineResults({
     }
   }
 
-  function renderCrmAction(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
+  function renderLeadActions(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
+    const profileUrl = primaryProfileUrl(lead);
+
+    let crmControl: ReactNode;
     if (lead.crm_duplicate) {
-      return (
+      crmControl = (
         <span
           className="inline-flex items-center gap-1 rounded-full bg-[#fef3c7] px-2 py-0.5 text-[8px] font-semibold text-[#92400e]"
           title={lead.crm_duplicate_reason ?? "This company already exists in CRM"}
@@ -701,9 +702,8 @@ function LeadInlineResults({
           Duplicate in CRM
         </span>
       );
-    }
-    if (isSynced) {
-      return (
+    } else if (isSynced) {
+      crmControl = (
         <span
           className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]"
           title={
@@ -718,17 +718,36 @@ function LeadInlineResults({
             : "In CRM"}
         </span>
       );
+    } else {
+      crmControl = (
+        <button
+          type="button"
+          disabled={syncLead.isPending || syncBatch.isPending || !canSyncToCrm}
+          title={!canSyncToCrm ? crmBlockMessage : undefined}
+          onClick={() => setCrmModalState({ mode: "single", lead })}
+          className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5 disabled:opacity-60"
+        >
+          Save to CRM
+        </button>
+      );
     }
+
     return (
-      <button
-        type="button"
-        disabled={syncLead.isPending || syncBatch.isPending || !canSyncToCrm}
-        title={!canSyncToCrm ? crmBlockMessage : undefined}
-        onClick={() => setCrmModalState({ mode: "single", lead })}
-        className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5 disabled:opacity-60"
-      >
-        Save to CRM
-      </button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {profileUrl ? (
+          <a
+            href={profileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open lead profile"
+            className="inline-flex items-center gap-1 rounded-full border border-[#09232d]/15 bg-white px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5"
+          >
+            <ExternalLink size={10} className="shrink-0 opacity-80" />
+            View Profile
+          </a>
+        ) : null}
+        {crmControl}
+      </div>
     );
   }
 
@@ -757,48 +776,16 @@ function LeadInlineResults({
               {syncBatch.isPending ? "Saving…" : "Save all"}
             </button>
           )}
-          <div className="flex items-center rounded-lg border border-[#09232d]/10 bg-white p-0.5 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              title="List view"
-              aria-label="List view"
-              aria-pressed={viewMode === "list"}
-              className={`rounded-md p-1 transition-colors ${
-                viewMode === "list"
-                  ? "bg-[#09232d] text-white"
-                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
-              }`}
-            >
-              <List size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              title="Grid view"
-              aria-label="Grid view"
-              aria-pressed={viewMode === "grid"}
-              className={`rounded-md p-1 transition-colors ${
-                viewMode === "grid"
-                  ? "bg-[#09232d] text-white"
-                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
-              }`}
-            >
-              <LayoutGrid size={13} />
-            </button>
-          </div>
         </div>
       </div>
 
-      {viewMode === "list" ? (
-        <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5">
           {visibleLeads.map((lead) => {
             const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
             const fieldsUpdated = lead.crm_fields_updated ?? [];
             const { overall } = leadScoreBreakdown(lead);
             const roleLine = formatLeadRoleLine(lead);
             const contactLine = formatLeadContactLine(lead);
-            const profileUrl = primaryProfileUrl(lead);
             const entityBadge = leadEntityBadge(lead);
 
             return (
@@ -832,7 +819,7 @@ function LeadInlineResults({
                     </p>
                   )}
 
-                  {(roleLine || contactLine || lead.email || lead.phone || profileUrl || lead.website) && (
+                  {(roleLine || contactLine || lead.email || lead.phone || lead.website) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[8px]">
                       {roleLine && (
                         <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
@@ -865,16 +852,6 @@ function LeadInlineResults({
                         >
                           <Phone size={8} className="shrink-0 opacity-80" />
                           <span>{lead.phone}</span>
-                        </a>
-                      )}
-                      {profileUrl && (
-                        <a
-                          href={profileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-[#087652] underline"
-                        >
-                          {entityBadge === "Account" ? "Company" : "Profile"}
                         </a>
                       )}
                       {entityBadge === "Account" && lead.website && (
@@ -914,141 +891,12 @@ function LeadInlineResults({
                 </div>
 
                 <div className="shrink-0">
-                  {renderCrmAction(lead, isSynced, fieldsUpdated)}
+                  {renderLeadActions(lead, isSynced, fieldsUpdated)}
                 </div>
               </div>
             );
           })}
         </div>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-3">
-          {visibleLeads.map((lead) => {
-            const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
-            const fieldsUpdated = lead.crm_fields_updated ?? [];
-            const { overall } = leadScoreBreakdown(lead);
-            const roleLine = formatLeadRoleLine(lead);
-            const contactLine = formatLeadContactLine(lead);
-            const profileUrl = primaryProfileUrl(lead);
-            const entityBadge = leadEntityBadge(lead);
-
-            return (
-              <div
-                key={lead.id ?? lead.name}
-                className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
-                      {entityBadge}
-                    </span>
-                    <span
-                      className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
-                      title="Overall priority score"
-                    >
-                      Overall {overall}%
-                    </span>
-                  </div>
-                </div>
-                {roleLine && (
-                  <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
-                )}
-                {contactLine && (
-                  <p className="mt-0.5 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
-                )}
-                {entityBadge === "Contact" && lead.location && (
-                  <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
-                )}
-                {(lead.email || lead.phone || profileUrl || lead.website) && (
-                  <div className="mt-1 flex flex-col gap-0.5">
-                    {lead.email && (
-                      <a
-                        href={`mailto:${lead.email}`}
-                        className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
-                        title={lead.email}
-                      >
-                        <Mail size={9} className="shrink-0 opacity-80" />
-                        <span className="truncate">{lead.email}</span>
-                      </a>
-                    )}
-                    {lead.phone && (
-                      <a
-                        href={`tel:${lead.phone}`}
-                        className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
-                        title={lead.phone}
-                      >
-                        <Phone size={9} className="shrink-0 opacity-80" />
-                        <span className="truncate">{lead.phone}</span>
-                      </a>
-                    )}
-                    {profileUrl && (
-                      <a
-                        href={profileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                      >
-                        {entityBadge === "Account" ? "View company" : "View profile"}
-                      </a>
-                    )}
-                    {entityBadge === "Account" && lead.website && (
-                      <a
-                        href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                      >
-                        Website
-                      </a>
-                    )}
-                    {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
-                      <span
-                        className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
-                        title={
-                          lead.contact_enrichment_provider
-                            ? `Contact via ${lead.contact_enrichment_provider}`
-                            : "Contact enrichment source"
-                        }
-                      >
-                        {lead.contact_enrichment_tier === "tier1"
-                          ? "Contact from web"
-                          : lead.contact_enrichment_tier === "tier2"
-                            ? "Contact enriched"
-                            : "Contact verified"}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {lead.contact_ready === false && (
-                  <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
-                )}
-                {lead.contact_ready !== false && !lead.email && !lead.phone && (
-                  <p className="mt-1 text-[7px] font-medium text-[#616263]">
-                    Profile found · email/phone still missing
-                  </p>
-                )}
-                {lead.summary && (
-                  <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
-                )}
-                {lead.icp_relevance_reason && (
-                  <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
-                    {lead.icp_relevance_reason}
-                  </p>
-                )}
-                {lead.source && (
-                  <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
-                )}
-                {lead.low_confidence && (
-                  <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
-                )}
-                <div className="mt-2">
-                  {renderCrmAction(lead, isSynced, fieldsUpdated)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
       {hasMore && (
         <button
           type="button"
