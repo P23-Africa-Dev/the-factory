@@ -171,8 +171,8 @@ export function ProcessingPanel({
           {showLongRunHint && (
             <p className="mt-2 text-[8px] leading-[11px] text-[#616263]">
               {state.intent === "generate_leads" || state.intent === "generate_more_leads"
-                ? "Still working — multi-source lead searches often take 1–3 minutes. We will not time out while results may still arrive."
-                : "Still working — large scans can take 1–2 minutes."}
+                ? "Still working... multi-source lead searches often take 1–3 minutes. We will not time out while results may still arrive."
+                : "Still working... large scans can take 1–2 minutes."}
             </p>
           )}
 
