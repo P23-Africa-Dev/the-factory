@@ -1423,7 +1423,7 @@ function ChatWorkspace({
 
   function handleContinueWaiting() {
     sendMessage.continueWaiting();
-    toast.message("Still searching — hang tight. You can stop anytime.");
+    toast.message("Still searching... hang tight. You can stop anytime.");
   }
 
   const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode) || isSyntheticThinking;

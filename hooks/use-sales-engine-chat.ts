@@ -311,7 +311,7 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
     // Extend the foreground poll ceiling by 5 minutes each click; timeout stays last.
     extraWaitMsRef.current += 300_000;
     applyProcessingUpdate({
-      label: "Still searching — hang tight. You can stop anytime.",
+      label: "Still searching... hang tight. You can stop anytime.",
     });
   }, [applyProcessingUpdate]);
 
