@@ -20,6 +20,7 @@ import {
   type CrmPipelineOption,
 } from "./crm-action-modals";
 import { SocialScanPanel } from "./social-scan-panel";
+import { ScanRunSummaryPanel } from "./scan-run-summary-panel";
 import {
   SocialOpportunityEmptyState,
   SocialSignalsEmptyState,
@@ -42,16 +43,19 @@ import {
   isForegroundChatWaiting,
   isMissingActiveIcp,
   mapApiMessagesToUi,
+  SALES_ENGINE_CHAT_KEYS,
   useChatHistory,
   useClearChatHistory,
   useSendChatMessage,
 } from "@/hooks/use-sales-engine-chat";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach, useDeleteOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import {
   useCreateSignalOutreach,
   useDismissSignal,
   useSetSignalReminder,
+  useSignalTypes,
   useSocialListeningBootstrap,
   useSocialListeningSignals,
   useSyncSignalToCrm,
@@ -76,6 +80,7 @@ import {
   primaryProfileUrl,
 } from "@/lib/enriched-lead-card";
 import {
+  cancelDiscoveryRun,
   fetchOutreachActivity,
   formatRelativeTime,
   isFreshSignal,
@@ -83,10 +88,12 @@ import {
   normalizeRecommendedAction,
   type ChatIntent,
   type ChatLead,
+  type FreshnessWindowDays,
   type OutreachActivity,
   type OutreachDraft,
   type SocialListeningSettings,
   type SocialSignalApi,
+  type SocialSignalIcpFilter,
 } from "@/lib/api/sales-engine";
 import {
   Check,
@@ -95,9 +102,12 @@ import {
   Clock,
   Copy,
   Expand,
+  ExternalLink,
   Eye,
   Globe2,
+  LayoutGrid,
   Lightbulb,
+  List,
   Loader2,
   Mail,
   MessageCircle,
@@ -115,6 +125,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  AlertTriangle,
   User,
   UserPlus,
   UsersRound,
@@ -160,6 +171,40 @@ const LEADS_PER_PAGE = 20;
 const EXPLICIT_COUNT_PATTERN = /\b(\d{1,3})\b/;
 const USAGE_QUESTION_PATTERN =
   /how many (search|token|credit)(es)?|(search|token|credit)(es)?\s+(left|remaining)|remaining\s+(search|token)/i;
+
+/** "new_market_entry" -> "New Market Entry". Discrete signal types are stored as snake_case keys. */
+function formatSignalTypeKey(key: string): string {
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function formatPostedDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function primarySignalTypeLabel(signal: SocialSignalApi): string {
+  if (signal.discreteSignalType) return formatSignalTypeKey(signal.discreteSignalType);
+  return signal.intent || signal.signalType || "Signal";
+}
+
+function matchedIcpFieldLabels(filter?: SocialSignalIcpFilter | null): string[] {
+  if (!filter?.reasons) return [];
+  const labels: Record<string, string> = {
+    industry: "industry",
+    territory: "territory",
+    companySize: "company size",
+    revenue: "revenue",
+  };
+  return Object.entries(filter.reasons)
+    .filter(([, passed]) => passed)
+    .map(([field]) => labels[field] ?? field);
+}
 
 function readSearchUsage(): SearchUsage {
   if (typeof window === "undefined") return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
@@ -294,9 +339,10 @@ const sourceFilterOptions: SelectOption[] = [
   { value: "X/Twitter Post", label: "X/Twitter Post" },
   { value: "Reddit Post", label: "Reddit Post" },
   { value: "Google Search", label: "Google Search" },
+  { value: "Meta Page Post", label: "Meta Page Post" },
 ];
 
-const signalTypeFilterOptions: SelectOption[] = [
+const legacySignalTypeFilterOptions: SelectOption[] = [
   { value: "all", label: "All Signal Type" },
   { value: "Recommendation", label: "Recommendation" },
   { value: "Switching", label: "Switching" },
@@ -556,8 +602,13 @@ function LeadInlineResults({
   const syncBatch = useSyncLeadsBatchToCrm();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
   const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
-  const [pendingCrmLead, setPendingCrmLead] = useState<ChatLead | null>(null);
+  const [crmModalState, setCrmModalState] = useState<
+    | { mode: "single"; lead: ChatLead }
+    | { mode: "batch"; leadIds: number[] }
+    | null
+  >(null);
   const canSyncToCrm = integrationStatus?.can_sync ?? true;
   const crmBlockMessage =
     integrationStatus?.block_message ??
@@ -587,225 +638,423 @@ function LeadInlineResults({
     );
   }
 
-  function handleConfirmSaveToCrm(pipelineId: string) {
-    if (!pendingCrmLead) return;
-    const lead = pendingCrmLead;
-    syncLead.mutate(
-      { leadId: lead.id, pipeline_id: pipelineId },
-      {
-        onSuccess: (result) => {
-          const updatedFields = Array.isArray(result.crm_fields_updated)
-            ? result.crm_fields_updated
-            : Array.isArray(result.fields_updated)
-              ? result.fields_updated
-              : [];
-          markSynced([lead.id], {
-            crm_duplicate: Boolean(result.crm_duplicate),
-            crm_duplicate_reason: result.crm_duplicate_reason ?? null,
-            crm_fields_updated: updatedFields,
-          });
-          if (result.updated && updatedFields.length > 0) {
-            toast.success(`Updated existing CRM lead with new ${updatedFields.join(", ")}.`);
-          } else if (result.crm_duplicate || result.already_synced) {
-            toast.success(`"${lead.name}" is already in CRM.`);
-          } else {
-            toast.success(`Saved "${lead.name}" to CRM.`);
+  function handleConfirmCrmSave(pipelineId: string) {
+    if (!crmModalState) return;
+
+    if (crmModalState.mode === "single") {
+      const lead = crmModalState.lead;
+      syncLead.mutate(
+        { leadId: lead.id, pipeline_id: pipelineId },
+        {
+          onSuccess: (result) => {
+            const updatedFields = Array.isArray(result.crm_fields_updated)
+              ? result.crm_fields_updated
+              : Array.isArray(result.fields_updated)
+                ? result.fields_updated
+                : [];
+            markSynced([lead.id], {
+              crm_duplicate: Boolean(result.crm_duplicate),
+              crm_duplicate_reason: result.crm_duplicate_reason ?? null,
+              crm_fields_updated: updatedFields,
+            });
+            if (result.updated && updatedFields.length > 0) {
+              toast.success(`Updated existing CRM lead with new ${updatedFields.join(", ")}.`);
+            } else if (result.crm_duplicate || result.already_synced) {
+              toast.success(`"${lead.name}" is already in CRM.`);
+            } else {
+              toast.success(`Saved "${lead.name}" to CRM.`);
+            }
+            setCrmModalState(null);
+          },
+          onError: (error) => toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
+        }
+      );
+    } else if (crmModalState.mode === "batch") {
+      const ids = crmModalState.leadIds;
+      syncBatch.mutate(
+        { leadIds: ids, pipeline_id: pipelineId },
+        {
+          onSuccess: (result) => {
+            const syncedIds = result.synced.map((item) => item.lead_id);
+            markSynced(syncedIds);
+            toast.success(`Saved ${syncedIds.length} lead${syncedIds.length === 1 ? "" : "s"} to CRM.`);
+            if (result.errors.length > 0) {
+              toast.error(result.errors[0]);
+            }
+            setCrmModalState(null);
+          },
+          onError: (error) => {
+            toast.error(getApiErrorMessage(error, "Could not save leads to CRM."));
+          },
+        }
+      );
+    }
+  }
+
+  function renderLeadActions(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
+    const profileUrl = primaryProfileUrl(lead);
+
+    let crmControl: ReactNode;
+    if (lead.crm_duplicate) {
+      crmControl = (
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-[#fef3c7] px-2 py-0.5 text-[8px] font-semibold text-[#92400e]"
+          title={lead.crm_duplicate_reason ?? "This company already exists in CRM"}
+        >
+          <AlertTriangle size={10} />
+          Duplicate in CRM
+        </span>
+      );
+    } else if (isSynced) {
+      crmControl = (
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]"
+          title={
+            fieldsUpdated.length > 0
+              ? `Updated in CRM: ${fieldsUpdated.join(", ")}`
+              : "Already saved in CRM"
           }
-          setPendingCrmLead(null);
-        },
-        onError: (error) => toast.error(getApiErrorMessage(error, "Could not save lead to CRM.")),
-      }
+        >
+          <CircleCheck size={10} />
+          {fieldsUpdated.length > 0
+            ? `Updated in CRM (${fieldsUpdated.join(", ")})`
+            : "In CRM"}
+        </span>
+      );
+    } else {
+      crmControl = (
+        <button
+          type="button"
+          disabled={syncLead.isPending || syncBatch.isPending || !canSyncToCrm}
+          title={!canSyncToCrm ? crmBlockMessage : undefined}
+          onClick={() => setCrmModalState({ mode: "single", lead })}
+          className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5 disabled:opacity-60"
+        >
+          Save to CRM
+        </button>
+      );
+    }
+
+    return (
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        {profileUrl ? (
+          <a
+            href={profileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open lead profile"
+            className="inline-flex items-center gap-1 rounded-full border border-[#09232d]/15 bg-white px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5"
+          >
+            <ExternalLink size={10} className="shrink-0 opacity-80" />
+            View Profile
+          </a>
+        ) : null}
+        {crmControl}
+      </div>
     );
   }
 
   return (
-    <div className="mt-3 max-w-[640px]">
+    <div className="mt-3 w-full">
       {!canSyncToCrm && (
         <p className="mb-2 rounded-[12px] bg-[#fef2f2] px-3 py-2 text-[8px] leading-[11px] text-[#991b1b]">
           {crmBlockMessage}
         </p>
       )}
-      {unsavedIds.length > 0 && (
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-[9px] font-medium text-[#616263]">
-            Showing {visibleLeads.length} of {leads.length} leads. Save the ones you want in CRM.
-          </p>
-          <button
-            type="button"
-            disabled={syncBatch.isPending || !canSyncToCrm}
-            title={!canSyncToCrm ? crmBlockMessage : undefined}
-            onClick={() => {
-              syncBatch.mutate(unsavedIds, {
-                onSuccess: (result) => {
-                  const syncedIds = result.synced.map((item) => item.lead_id);
-                  markSynced(syncedIds);
-                  toast.success(`Saved ${syncedIds.length} lead${syncedIds.length === 1 ? "" : "s"} to CRM.`);
-                  if (result.errors.length > 0) {
-                    toast.error(result.errors[0]);
-                  }
-                },
-                onError: (error) =>
-                  toast.error(getApiErrorMessage(error, "Could not save leads to CRM.")),
-              });
-            }}
-            className="shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
-          >
-            {syncBatch.isPending ? "Saving…" : "Save all"}
-          </button>
-        </div>
-      )}
-      {unsavedIds.length === 0 && leads.length > LEADS_PER_PAGE && (
-        <p className="mb-2 text-[9px] font-medium text-[#616263]">
-          Showing {visibleLeads.length} of {leads.length} leads
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-[9px] font-medium text-[#616263]">
+          {unsavedIds.length > 0
+            ? `Showing ${visibleLeads.length} of ${leads.length} leads. Save the ones you want in CRM.`
+            : `Showing ${visibleLeads.length} of ${leads.length} leads`}
         </p>
-      )}
-      <div className="grid gap-2 sm:grid-cols-3">
-        {visibleLeads.map((lead) => {
-          const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
-          const fieldsUpdated = lead.crm_fields_updated ?? [];
-          const { overall } = leadScoreBreakdown(lead);
-          const roleLine = formatLeadRoleLine(lead);
-          const contactLine = formatLeadContactLine(lead);
-          const profileUrl = primaryProfileUrl(lead);
-          const entityBadge = leadEntityBadge(lead);
-
-          return (
-            <div
-              key={lead.id ?? lead.name}
-              className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm"
+        <div className="flex shrink-0 items-center gap-1.5">
+          {unsavedIds.length > 0 && (
+            <button
+              type="button"
+              disabled={syncBatch.isPending || syncLead.isPending || !canSyncToCrm}
+              title={!canSyncToCrm ? crmBlockMessage : undefined}
+              onClick={() => setCrmModalState({ mode: "batch", leadIds: unsavedIds })}
+              className="shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white transition-colors hover:bg-[#09232d]/90 disabled:opacity-60"
             >
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-                <div className="flex shrink-0 items-center gap-1">
-                  <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
-                    {entityBadge}
-                  </span>
-                  <span
-                    className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]"
-                    title="Overall priority score"
-                  >
-                    Overall {overall}%
-                  </span>
-                </div>
-              </div>
-              {lead.icp_relevance_reason && (
-                <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
-                  {lead.icp_relevance_reason}
-                </p>
-              )}
-              <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
-              {roleLine && (
-                <p className="mt-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
-              )}
-              {contactLine && (
-                <p className="mt-0.5 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
-              )}
-              {entityBadge === "Contact" && lead.location && (
-                <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
-              )}
-              {(lead.email || lead.phone || profileUrl || lead.website) && (
-                <div className="mt-1 flex flex-col gap-0.5">
-                  {lead.email && (
-                    <a
-                      href={`mailto:${lead.email}`}
-                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
-                      title={lead.email}
-                    >
-                      <Mail size={9} className="shrink-0 opacity-80" />
-                      <span className="truncate">{lead.email}</span>
-                    </a>
-                  )}
-                  {lead.phone && (
-                    <a
-                      href={`tel:${lead.phone}`}
-                      className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
-                      title={lead.phone}
-                    >
-                      <Phone size={9} className="shrink-0 opacity-80" />
-                      <span className="truncate">{lead.phone}</span>
-                    </a>
-                  )}
-                  {profileUrl && (
-                    <a
-                      href={profileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                    >
-                      {entityBadge === "Account" ? "View company" : "View profile"}
-                    </a>
-                  )}
-                  {entityBadge === "Account" && lead.website && (
-                    <a
-                      href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                    >
-                      Website
-                    </a>
-                  )}
-                  {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+              {syncBatch.isPending ? "Saving…" : "Save all"}
+            </button>
+          )}
+          <div className="flex items-center rounded-lg border border-[#09232d]/10 bg-white p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
+              className={`rounded-md p-1 transition-colors ${
+                viewMode === "list"
+                  ? "bg-[#09232d] text-white"
+                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
+              }`}
+            >
+              <List size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              aria-label="Grid view"
+              aria-pressed={viewMode === "grid"}
+              className={`rounded-md p-1 transition-colors ${
+                viewMode === "grid"
+                  ? "bg-[#09232d] text-white"
+                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
+              }`}
+            >
+              <LayoutGrid size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {viewMode === "list" ? (
+        <div className="flex flex-col gap-1.5">
+          {visibleLeads.map((lead) => {
+            const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+            const fieldsUpdated = lead.crm_fields_updated ?? [];
+            const { overall } = leadScoreBreakdown(lead);
+            const roleLine = formatLeadRoleLine(lead);
+            const contactLine = formatLeadContactLine(lead);
+            const entityBadge = leadEntityBadge(lead);
+
+            return (
+              <div
+                key={lead.id ?? lead.name}
+                className="flex items-center justify-between gap-3 rounded-[12px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm transition hover:border-[#09232d]/20"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
+                    <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
+                      {entityBadge}
+                    </span>
                     <span
-                      className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                      className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
                       title={
-                        lead.contact_enrichment_provider
-                          ? `Contact via ${lead.contact_enrichment_provider}`
-                          : "Contact enrichment source"
+                        lead.icp_relevance_reason
+                          ? `Score: ${overall}% · ${lead.icp_relevance_reason}`
+                          : "Overall priority score"
                       }
                     >
-                      {lead.contact_enrichment_tier === "tier1"
-                        ? "Contact from web"
-                        : lead.contact_enrichment_tier === "tier2"
-                          ? "Contact enriched"
-                          : "Contact verified"}
+                      Overall {overall}%
                     </span>
+                    {lead.low_confidence && (
+                      <span className="text-[7px] font-medium text-[#b45309]">Lower confidence</span>
+                    )}
+                  </div>
+                  {lead.icp_relevance_reason && (
+                    <p className="mt-0.5 text-[8px] leading-[11px] text-[#616263]">
+                      {lead.icp_relevance_reason}
+                    </p>
+                  )}
+
+                  {(roleLine || contactLine || lead.email || lead.phone || lead.website) && (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[8px]">
+                      {roleLine && (
+                        <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
+                          {roleLine}
+                        </span>
+                      )}
+                      {!roleLine && contactLine && (
+                        <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
+                          {contactLine}
+                        </span>
+                      )}
+                      {entityBadge === "Contact" && lead.location && (
+                        <span className="text-[#09232d]/50">· {lead.location}</span>
+                      )}
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="inline-flex items-center gap-0.5 font-medium text-[#087652] underline"
+                          title={lead.email}
+                        >
+                          <Mail size={8} className="shrink-0 opacity-80" />
+                          <span className="truncate max-w-[150px]">{lead.email}</span>
+                        </a>
+                      )}
+                      {lead.phone && (
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="inline-flex items-center gap-0.5 font-medium text-[#087652] underline"
+                          title={lead.phone}
+                        >
+                          <Phone size={8} className="shrink-0 opacity-80" />
+                          <span>{lead.phone}</span>
+                        </a>
+                      )}
+                      {entityBadge === "Account" && lead.website && (
+                        <a
+                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-[#087652] underline"
+                        >
+                          Website
+                        </a>
+                      )}
+                      {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                        <span
+                          className="inline-flex w-fit rounded-full bg-[#eef6f2] px-1 py-0.2 text-[6.5px] font-semibold text-[#087652]"
+                          title={
+                            lead.contact_enrichment_provider
+                              ? `Contact via ${lead.contact_enrichment_provider}`
+                              : "Contact enrichment source"
+                          }
+                        >
+                          {lead.contact_enrichment_tier === "tier1"
+                            ? "Web"
+                            : lead.contact_enrichment_tier === "tier2"
+                              ? "Enriched"
+                              : "Verified"}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {lead.summary && (
+                    <p className="mt-0.5 line-clamp-1 text-[8px] leading-[11px] text-[#09232d]/65">
+                      {lead.summary}
+                    </p>
                   )}
                 </div>
-              )}
-              {lead.contact_ready === false && (
-                <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
-              )}
-              {lead.contact_ready !== false && !lead.email && !lead.phone && (
-                <p className="mt-1 text-[7px] font-medium text-[#616263]">
-                  Profile found · email/phone still missing
-                </p>
-              )}
-              <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
-              {lead.low_confidence && (
-                <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
-              )}
-              <div className="mt-2">
-                {isSynced ? (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full bg-[#16b37d]/10 px-2 py-0.5 text-[8px] font-semibold text-[#087652]"
-                    title={
-                      fieldsUpdated.length > 0
-                        ? `Updated in CRM: ${fieldsUpdated.join(", ")}`
-                        : lead.crm_duplicate_reason ?? "Already saved in CRM"
-                    }
-                  >
-                    <CircleCheck size={10} />
-                    {fieldsUpdated.length > 0
-                      ? `Updated in CRM (${fieldsUpdated.join(", ")})`
-                      : "In CRM"}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={syncLead.isPending || !canSyncToCrm}
-                    title={!canSyncToCrm ? crmBlockMessage : undefined}
-                    onClick={() => setPendingCrmLead(lead)}
-                    className="rounded-full border border-[#09232d]/15 px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] hover:bg-[#09232d]/5 disabled:opacity-60"
-                  >
-                    Save to CRM
-                  </button>
-                )}
+
+                <div className="shrink-0">
+                  {renderLeadActions(lead, isSynced, fieldsUpdated)}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {visibleLeads.map((lead) => {
+            const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+            const fieldsUpdated = lead.crm_fields_updated ?? [];
+            const { overall } = leadScoreBreakdown(lead);
+            const roleLine = formatLeadRoleLine(lead);
+            const contactLine = formatLeadContactLine(lead);
+            const entityBadge = leadEntityBadge(lead);
+
+            return (
+              <div
+                key={lead.id ?? lead.name}
+                className="flex flex-col justify-between rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2.5 shadow-sm transition hover:border-[#09232d]/20"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
+                        {entityBadge}
+                      </span>
+                      <span
+                        className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
+                        title={
+                          lead.icp_relevance_reason
+                            ? `Score: ${overall}% · ${lead.icp_relevance_reason}`
+                            : "Overall priority score"
+                        }
+                      >
+                        Overall {overall}%
+                      </span>
+                    </div>
+                  </div>
+                  {roleLine && (
+                    <p className="mt-1 line-clamp-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
+                  )}
+                  {contactLine && (
+                    <p className="mt-0.5 line-clamp-1 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
+                  )}
+                  {entityBadge === "Contact" && lead.location && (
+                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
+                  )}
+                  {(lead.email || lead.phone || lead.website) && (
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                          title={lead.email}
+                        >
+                          <Mail size={9} className="shrink-0 opacity-80" />
+                          <span className="truncate">{lead.email}</span>
+                        </a>
+                      )}
+                      {lead.phone && (
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                          title={lead.phone}
+                        >
+                          <Phone size={9} className="shrink-0 opacity-80" />
+                          <span className="truncate">{lead.phone}</span>
+                        </a>
+                      )}
+                      {entityBadge === "Account" && lead.website && (
+                        <a
+                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                        >
+                          Website
+                        </a>
+                      )}
+                      {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                        <span
+                          className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                          title={
+                            lead.contact_enrichment_provider
+                              ? `Contact via ${lead.contact_enrichment_provider}`
+                              : "Contact enrichment source"
+                          }
+                        >
+                          {lead.contact_enrichment_tier === "tier1"
+                            ? "Contact from web"
+                            : lead.contact_enrichment_tier === "tier2"
+                              ? "Contact enriched"
+                              : "Contact verified"}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {lead.contact_ready === false && (
+                    <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
+                  )}
+                  {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                    <p className="mt-1 text-[7px] font-medium text-[#616263]">
+                      Profile found · email/phone still missing
+                    </p>
+                  )}
+                  {lead.summary && (
+                    <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+                  )}
+                  {lead.icp_relevance_reason && (
+                    <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                      {lead.icp_relevance_reason}
+                    </p>
+                  )}
+                  {lead.source && (
+                    <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
+                  )}
+                  {lead.low_confidence && (
+                    <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
+                  )}
+                </div>
+                <div className="mt-2.5 border-t border-[#09232d]/5 pt-2">
+                  {renderLeadActions(lead, isSynced, fieldsUpdated)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {hasMore && (
         <button
           type="button"
@@ -818,14 +1067,26 @@ function LeadInlineResults({
         </button>
       )}
       <AddToCrmPipelineModal
-        key={pendingCrmLead?.id ?? "smart-lead-crm-modal"}
-        isOpen={pendingCrmLead != null}
-        onClose={() => setPendingCrmLead(null)}
-        prospectName={pendingCrmLead?.name ?? null}
+        key={
+          crmModalState?.mode === "single"
+            ? `crm-lead-${crmModalState.lead.id}`
+            : crmModalState?.mode === "batch"
+              ? `crm-batch-${crmModalState.leadIds.join("-")}`
+              : "smart-lead-crm-modal"
+        }
+        isOpen={crmModalState != null}
+        onClose={() => setCrmModalState(null)}
+        prospectName={
+          crmModalState?.mode === "single"
+            ? crmModalState.lead.name
+            : crmModalState?.mode === "batch"
+              ? `${crmModalState.leadIds.length} leads`
+              : null
+        }
         pipelines={pipelines}
         isLoading={pipelinesLoading}
-        isConfirming={syncLead.isPending}
-        onConfirm={handleConfirmSaveToCrm}
+        isConfirming={syncLead.isPending || syncBatch.isPending}
+        onConfirm={handleConfirmCrmSave}
       />
     </div>
   );
@@ -987,6 +1248,7 @@ function ChatWorkspace({
   onOpenIcpBuilder: () => void;
   onOpenOutreachSettings?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const { data: activeProfile } = useActiveIcpProfile();
   const activeIcpId = activeProfile?.id;
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
@@ -1158,6 +1420,16 @@ function ChatWorkspace({
       setBackgroundRunIds((current) => new Set(current).add(runId));
     }
     toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
+  }
+
+  async function handleStopSearching() {
+    await sendMessage.stopSearching();
+    toast.message("Lead search stopped.");
+  }
+
+  function handleContinueWaiting() {
+    sendMessage.continueWaiting();
+    toast.message("Still searching... hang tight. You can stop anytime.");
   }
 
   const isThinking = isForegroundChatWaiting(sendMessage.isPending, sendMessage.waitMode) || isSyntheticThinking;
@@ -1465,11 +1737,32 @@ function ChatWorkspace({
                 </div>
               )}
               {isBackgroundPending && (
-                <div className="mb-1.5 flex items-center gap-1.5">
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
                     <Loader2 size={10} className="animate-spin" />
-                    Processing in background
+                    {message.meta?.awaiting_user_choice
+                      ? "Still searching — timeout is a last resort"
+                      : "Processing in background"}
                   </span>
+                  {typeof pendingRunId === "number" && Boolean(message.meta?.awaiting_user_choice) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await cancelDiscoveryRun(pendingRunId);
+                          toast.message("Lead search stopped.");
+                          queryClient.invalidateQueries({
+                            queryKey: SALES_ENGINE_CHAT_KEYS.history(activeIcpId),
+                          });
+                        } catch {
+                          toast.error("Couldn’t stop the search. Try again.");
+                        }
+                      }}
+                      className="rounded-[10px] border border-[#09232d]/15 bg-white px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/5"
+                    >
+                      Stop searching
+                    </button>
+                  )}
                 </div>
               )}
               {message.kind === "confirm-icp" ? (
@@ -1588,6 +1881,8 @@ function ChatWorkspace({
               <ProcessingPanel
                 state={sendMessage.processingState}
                 onDetachToBackground={handleDetachToBackground}
+                onStopSearching={handleStopSearching}
+                onContinueWaiting={handleContinueWaiting}
               />
             )
           )}
@@ -2091,6 +2386,20 @@ function CompanyBuildingIcon({ className = "size-5" }: { className?: string }) {
   );
 }
 
+/**
+ * Smart Lead search stays flexible on purpose — a typed question can surface
+ * strong matches outside the saved ICP, explained via icp_relevance_reason.
+ * Social Listening scans are always ICP-driven with no live query behind
+ * them, so they apply the ICP filter strictly: nothing outside your filter
+ * criteria appears there. See backend_implementation_plan.md Phase 2.1.
+ */
+const TAB_TRUST_MODE_COPY: Record<SalesEngineTab, string> = {
+  "smart-lead":
+    "Follows your question first — results may include strong matches outside your saved ICP, with an explanation for each.",
+  "social-listening":
+    "Strictly follows your saved ICP filters — nothing outside your filter criteria will appear here.",
+};
+
 function SalesEngineTabs({
   activeTab,
   onChange,
@@ -2099,8 +2408,8 @@ function SalesEngineTabs({
   onChange: (tab: SalesEngineTab) => void;
 }) {
   return (
-    <div className="flex">
-      <div className="inline-flex h-[42px] items-center gap-1 rounded-[21px] bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+    <div className="flex flex-col items-start gap-1.5">
+      <div className="inline-flex h-[42px] w-fit items-center gap-1 rounded-[21px] bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
         {salesEngineTabs.map((tab) => (
           <button
             key={tab.id}
@@ -2116,6 +2425,7 @@ function SalesEngineTabs({
           </button>
         ))}
       </div>
+      <p className="max-w-[560px] pl-1 text-[12px] leading-[16px] text-[#616263]">{TAB_TRUST_MODE_COPY[activeTab]}</p>
     </div>
   );
 }
@@ -2124,6 +2434,10 @@ function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
   const isLinkedIn = sourceIcon === "in";
   const isReddit = sourceIcon === "r";
   const isGoogle = sourceIcon === "G" || sourceIcon.toLowerCase() === "google";
+  const isMeta =
+    sourceIcon === "f" ||
+    sourceIcon.toLowerCase() === "meta" ||
+    sourceIcon.toLowerCase() === "facebook";
 
   if (isGoogle) {
     return (
@@ -2137,6 +2451,17 @@ function SourceBadge({ sourceIcon }: { sourceIcon: string }) {
           <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z" />
           <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" />
         </svg>
+      </span>
+    );
+  }
+
+  if (isMeta) {
+    return (
+      <span
+        aria-label="Meta"
+        className="grid size-[22px] shrink-0 place-items-center rounded-full bg-[#1877F2] text-[10px] font-bold text-white"
+      >
+        f
       </span>
     );
   }
@@ -2454,7 +2779,7 @@ function SocialSignalRow({
             isActive ? "text-white/70" : "text-[#616263]/70"
           }`}
         >
-          {formatRelativeTime(signal.posted_at)}
+          {formatPostedDate(signal.posted_at) || formatRelativeTime(signal.posted_at) || "Date unknown"}
         </p>
       </td>
       <td className="px-3 py-3 align-middle">
@@ -2485,13 +2810,14 @@ function SocialSignalRow({
         </div>
       </td>
       <td className="px-3 py-3 align-middle">
-        <span
-          className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
-          style={{ backgroundColor: signal.intentColor }}
-        >
-          {signal.intent}
-        </span>
-        {/* <p className="mt-1 w-[92px] text-[8px] leading-[10px] opacity-80">{signal.description}</p> */}
+        <div className="flex flex-col items-start gap-1">
+          <span
+            className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
+            style={{ backgroundColor: signal.intentColor }}
+          >
+            {primarySignalTypeLabel(signal)}
+          </span>
+        </div>
       </td>
       <td className="px-3 py-3 align-middle">
         <ScoreGauge score={signal.score} dark={isActive} />
@@ -2562,6 +2888,7 @@ function SocialSignalsTable({
   onEmptyOpenSettings,
   enabledSources,
   scanPanel,
+  lastRunSummary,
 }: {
   signals: SocialSignal[];
   activeSignalId?: number | null;
@@ -2588,6 +2915,7 @@ function SocialSignalsTable({
   onEmptyOpenSettings?: () => void;
   enabledSources?: string[];
   scanPanel?: ReactNode;
+  lastRunSummary?: ReactNode;
 }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
@@ -2620,6 +2948,7 @@ function SocialSignalsTable({
   return (
     <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
       {isScanning && scanPanel}
+      {!isScanning && lastRunSummary}
       <div className="mb-2 flex items-center justify-end gap-2 px-2 pt-1">
         {selectionMode ? (
           <div className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-[14px] border border-[#09232d]/10 bg-[#f8f8f8] px-3 py-2">
@@ -2776,6 +3105,7 @@ function SocialListeningFilters({
   source,
   signalType,
   intent,
+  signalTypeOptions,
   onSearchChange,
   onSourceChange,
   onSignalTypeChange,
@@ -2789,6 +3119,7 @@ function SocialListeningFilters({
   source: string;
   signalType: string;
   intent: string;
+  signalTypeOptions: SelectOption[];
   onSearchChange: (value: string) => void;
   onSourceChange: (value: string) => void;
   onSignalTypeChange: (value: string) => void;
@@ -2819,7 +3150,7 @@ function SocialListeningFilters({
       <SearchableSelect
         value={signalType}
         onChange={onSignalTypeChange}
-        options={signalTypeFilterOptions}
+        options={signalTypeOptions}
         className="h-8 min-w-[110px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
@@ -2909,15 +3240,10 @@ function SocialOpportunityDetail({
     }
   };
 
-  const postHref =
-    signal.post_url ||
-    (signal.source === "LinkedIn Post"
-      ? "https://www.linkedin.com"
-      : signal.source === "X/Twitter Post"
-        ? "https://x.com"
-        : signal.source === "Google Search"
-          ? `https://www.google.com/search?q=${encodeURIComponent(signal.signal)}`
-          : "https://www.reddit.com");
+  const postHref = signal.post_url || null;
+  const postedDateLabel =
+    formatPostedDate(signal.posted_at) || formatRelativeTime(signal.posted_at) || "Date unknown";
+  const icpMatched = matchedIcpFieldLabels(signal.icpFilter);
 
   return (
     <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
@@ -2933,18 +3259,20 @@ function SocialOpportunityDetail({
           {showFullSignal ? signal.signal : (signal.summary || signal.description)}
         </p>
         <div className="mt-2 flex items-center gap-3">
-          <a
-            href={postHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
-          >
-            <span className="underline underline-offset-2">
-              {signal.source === "Google Search" ? "See Search Result" : "See Post"}
-            </span>
-            <span className="not-italic no-underline">→</span>
-          </a>
+          {postHref ? (
+            <a
+              href={postHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[10px] italic text-white/90 transition-opacity hover:opacity-100 hover:text-white cursor-pointer"
+            >
+              <span className="underline underline-offset-2">See source</span>
+              <span className="not-italic no-underline">→</span>
+            </a>
+          ) : (
+            <span className="text-[10px] italic text-white/50">Source URL missing</span>
+          )}
           {signal.summary && signal.summary !== signal.signal && (
             <button
               type="button"
@@ -2956,8 +3284,7 @@ function SocialOpportunityDetail({
           )}
         </div>
         <p className="mt-2 text-[9px] font-light text-[#d0d0d0]">
-          {signal.source} • {signal.source === "Google Search" ? "Intent Search Query" : "Public"} •{" "}
-          {formatRelativeTime(signal.posted_at)}
+          {signal.source} • {postedDateLabel}
           {isFreshSignal(signal.posted_at) ? " • Fresh" : ""}
         </p>
       </div>
@@ -3022,19 +3349,105 @@ function SocialOpportunityDetail({
         <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
           <p className="mb-3 text-[10px] font-semibold leading-[12px]">Intent & Context</p>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-            {[
-              ["Signal Type", signal.signalType],
-              ["Buying Stage", signal.buyingStage],
-              ["Problem", signal.problem],
-              ["Urgency", signal.urgency],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <p className="text-[10px] font-light leading-[12px]">{label}</p>
-                <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
-              </div>
-            ))}
+            {(
+              [
+                ["Signal Type", primarySignalTypeLabel(signal)],
+                ["Buying Stage", signal.buyingStage],
+                ["Problem", signal.problem],
+                ["Urgency", signal.urgency],
+                signal.territory ? ["Territory", signal.territory] : null,
+              ] as Array<[string, string] | null>
+            )
+              .filter((row): row is [string, string] => row !== null)
+              .map(([label, value]) => (
+                <div key={label}>
+                  <p className="text-[10px] font-light leading-[12px]">{label}</p>
+                  <p className="text-[10px] font-semibold leading-[12px]">{value}</p>
+                </div>
+              ))}
           </div>
         </div>
+
+        {icpMatched.length > 0 && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">ICP filter</p>
+            <p className="text-[10px] leading-[13px]">
+              Matched: {icpMatched.join(", ")}
+            </p>
+          </div>
+        )}
+
+        {signal.namedPeople && signal.namedPeople.length > 0 && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-2 text-[10px] font-semibold leading-[12px]">Named in this signal</p>
+            <div className="flex flex-wrap gap-1.5">
+              {signal.namedPeople.map((person) => (
+                <span
+                  key={person}
+                  className="inline-flex items-center gap-1 rounded-[6px] border border-[#e2e2e2] bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232d]"
+                >
+                  {person}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {signal.enrichment && (
+          <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
+            <p className="mb-1.5 text-[10px] font-semibold leading-[12px]">Contact Enrichment</p>
+            {signal.enrichment.status === "not_attempted" ? (
+              <p className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[#616263]">
+                <Loader2 size={12} className="animate-spin" />
+                Looking up contacts…
+              </p>
+            ) : signal.enrichment.status === "attempted_found" ? (
+              <p className="inline-flex items-center gap-1.5 text-[10px] font-medium text-[#087652]">
+                <CircleCheck size={14} className="shrink-0 text-[#57c946]" />
+                Contact found
+              </p>
+            ) : (
+              <p className="text-[10px] font-medium text-[#616263]">
+                We checked our contact database and couldn&apos;t verify a person at this company yet.
+              </p>
+            )}
+            {signal.enrichment.contacts && signal.enrichment.contacts.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {signal.enrichment.contacts.map((contact, index) => {
+                  const found = contact.foundEmail || contact.foundPhone;
+                  return (
+                    <div
+                      key={`${contact.personName ?? "contact"}-${index}`}
+                      className="flex items-start justify-between gap-2 rounded-[8px] border border-[#eee] bg-[#fafafa] px-2 py-1.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-semibold text-[#09232d]">
+                          {contact.personName || "Role-based search"}
+                        </p>
+                        <p className="text-[8px] text-[#616263]">
+                          {found
+                            ? [contact.foundEmail ? "email" : null, contact.foundPhone ? "phone" : null]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : "not found"}
+                          {contact.provider ? ` · ${contact.provider}` : ""}
+                          {contact.tier ? ` · ${contact.tier}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-semibold ${
+                          found ? "bg-[#16b37d]/10 text-[#087652]" : "bg-[#f3f3f3] text-[#616263]"
+                        }`}
+                      >
+                        {found ? "Found" : "Not found"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {(signal.industry || (signal.keyTopics && signal.keyTopics.length > 0)) && (
           <div className="border-b border-[#e9e9e9] px-5 py-3 text-[#616263]">
@@ -3188,7 +3601,7 @@ function ListeningSettingsModal({
   const [metaPageIdsText, setMetaPageIdsText] = useState("");
   const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
   const [minScore, setMinScore] = useState(70);
-  const [freshnessWindowDays, setFreshnessWindowDays] = useState<7 | 14 | 30>(14);
+  const [freshnessWindowDays, setFreshnessWindowDays] = useState<FreshnessWindowDays>(180);
   const [intentFilters, setIntentFilters] = useState<string[]>([]);
   const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
   const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
@@ -3201,7 +3614,7 @@ function ListeningSettingsModal({
     setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
     setMinScore(settings.min_score ?? 70);
-    setFreshnessWindowDays(settings.freshness_window_days ?? 14);
+    setFreshnessWindowDays((settings.freshness_window_days ?? 180) as FreshnessWindowDays);
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
@@ -3382,6 +3795,8 @@ function ListeningSettingsModal({
                     { label: "Last 7 days", value: 7 as const },
                     { label: "Last 14 days", value: 14 as const },
                     { label: "Last 30 days", value: 30 as const },
+                    { label: "Last 3 months", value: 90 as const },
+                    { label: "Last 6 months", value: 180 as const },
                   ].map((option) => (
                     <label
                       key={option.value}
@@ -3490,6 +3905,7 @@ function SocialListeningTab({
 }) {
   const { data: activeProfile } = useActiveIcpProfile();
   const { data: listenSettings } = useSocialListeningSettings();
+  const { data: discreteSignalTypes = [] } = useSignalTypes();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [source, setSource] = useState("all");
@@ -3500,6 +3916,7 @@ function SocialListeningTab({
   const [selectedSignalIds, setSelectedSignalIds] = useState<number[]>([]);
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [pollEnrichment, setPollEnrichment] = useState(false);
   const perPage = 10;
 
   useEffect(() => {
@@ -3544,7 +3961,7 @@ function SocialListeningTab({
       signal_type: signalType,
       buying_stage: intent,
     },
-    { refetchInterval: isScanning ? 5000 : false }
+    { refetchInterval: isScanning || pollEnrichment ? 5000 : false }
   );
 
   const createOutreach = useCreateSignalOutreach();
@@ -3561,6 +3978,25 @@ function SocialListeningTab({
 
   const signals = useMemo(() => signalsResult?.items ?? [], [signalsResult?.items]);
   const meta = signalsResult?.meta ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0 };
+
+  useEffect(() => {
+    const pending = signals.some(
+      (signal) => (signal.enrichment?.status ?? "not_attempted") === "not_attempted"
+    );
+    const finishedAt = latestRun?.finished_at ? new Date(latestRun.finished_at).getTime() : 0;
+    const runJustFinished =
+      latestRun?.status === "completed" && finishedAt > 0 && Date.now() - finishedAt < 120_000;
+    setPollEnrichment(pending && (isScanning || runJustFinished));
+  }, [signals, isScanning, latestRun]);
+
+  const signalTypeOptions = useMemo<SelectOption[]>(() => {
+    const discrete = discreteSignalTypes.map((type) => ({
+      value: type.key,
+      label: type.label,
+    }));
+    if (discrete.length === 0) return legacySignalTypeFilterOptions;
+    return [{ value: "all", label: "All Signal Type" }, ...discrete];
+  }, [discreteSignalTypes]);
 
   const visibleSelectedIds = useMemo(
     () =>
@@ -3605,7 +4041,14 @@ function SocialListeningTab({
     latestRun,
     metrics?.last_run_at,
     isScanning,
-    hasActiveFilters
+    hasActiveFilters,
+    {
+      signalTypeLabel:
+        signalType !== "all"
+          ? signalTypeOptions.find((option) => option.value === signalType)?.label ?? signalType
+          : null,
+      freshnessWindowDays: listenSettings?.freshness_window_days ?? 180,
+    }
   );
 
   const icpContext = useMemo(
@@ -3828,6 +4271,7 @@ function SocialListeningTab({
               source={source}
               signalType={signalType}
               intent={intent}
+              signalTypeOptions={signalTypeOptions}
               onSearchChange={setSearch}
               onSourceChange={handleSourceChange}
               onSignalTypeChange={handleSignalTypeChange}
@@ -3869,6 +4313,7 @@ function SocialListeningTab({
               onEmptyOpenSettings={() => setIsSettingsOpen(true)}
               enabledSources={listenSettings?.enabled_sources}
               scanPanel={scanPanel}
+              lastRunSummary={<ScanRunSummaryPanel run={latestRun} />}
             />
           )}
         </div>

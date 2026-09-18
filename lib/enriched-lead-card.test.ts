@@ -51,6 +51,33 @@ describe("enriched lead card fields", () => {
     expect(primaryProfileUrl(lead)).toBe("https://linkedin.com/company/acme-distributors");
   });
 
+  it("falls back to source_url then website for View Profile", () => {
+    const fromSource: ChatLead = {
+      id: 4,
+      name: "SME Loans and Advances",
+      source: "serper",
+      score: 76,
+      summary: "Working capital lender.",
+      entity_type: "company",
+      source_url: "https://smeloans.example.com/about",
+      website: "smeloans.example.com",
+    };
+
+    expect(primaryProfileUrl(fromSource)).toBe("https://smeloans.example.com/about");
+
+    const fromWebsite: ChatLead = {
+      id: 5,
+      name: "Greenbox Capital",
+      source: "serper",
+      score: 74,
+      summary: "Consumer finance.",
+      entity_type: "company",
+      website: "greenbox.ng",
+    };
+
+    expect(primaryProfileUrl(fromWebsite)).toBe("https://greenbox.ng");
+  });
+
   it("returns null role line when title and company missing", () => {
     const lead: ChatLead = {
       id: 2,

@@ -50,6 +50,7 @@ const DEFAULT_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: false,
   enrichContactDetails: true,
   customPrompt: "",
+  signalTypePacks: ["default"],
 };
 
 // The API returns `lastUpdated` as an ISO timestamp; the UI wants a friendly relative string.
@@ -72,6 +73,14 @@ function formatLastUpdated(iso: string | null | undefined): string {
 }
 
 // Backfills any config fields the API omitted so the form never breaks on a partial profile.
+function normalizeSignalTypePacks(packs: unknown): string[] {
+  if (!Array.isArray(packs)) return ["default"];
+  const values = packs.filter((pack): pack is string => typeof pack === "string" && pack.trim() !== "");
+  if (values.includes("none")) return [];
+  if (values.length === 0) return ["default"];
+  return values;
+}
+
 export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
   const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
   return {
@@ -84,6 +93,7 @@ export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
     config: {
       ...config,
       profileName: config.profileName || raw.name,
+      signalTypePacks: normalizeSignalTypePacks(raw.config?.signalTypePacks),
     },
   };
 }
@@ -544,19 +554,30 @@ export function fetchDiscoveryRun(id: number): Promise<DiscoveryRunApi> {
   );
 }
 
+export function cancelDiscoveryRun(id: number): Promise<{ id: number; status: string; cancelled: boolean }> {
+  return withSessionRetry(async () =>
+    seRequest<{ id: number; status: string; cancelled: boolean }>({
+      method: "POST",
+      path: `/discovery/runs/${id}/cancel`,
+    })
+  );
+}
+
 export async function pollDiscoveryRunUntilComplete(
   runId: number,
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
     intent?: ChatIntent;
     maxMs?: number;
+    /** Mutable extension — Continue waiting can bump this without restarting the poll. */
+    extraWaitMsRef?: { current: number };
     signal?: AbortSignal;
   }
 ): Promise<{ run: DiscoveryRunApi; timedOut: boolean; aborted?: boolean }> {
-  const maxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
+  const baseMaxMs = options?.maxMs ?? CHAT_POLL_MAX_MS;
   const started = Date.now();
 
-  while (Date.now() - started < maxMs) {
+  while (Date.now() - started < baseMaxMs + (options?.extraWaitMsRef?.current ?? 0)) {
     if (options?.signal?.aborted) {
       const run = await fetchDiscoveryRun(runId);
       return { run, timedOut: true, aborted: true };
@@ -571,6 +592,10 @@ export async function pollDiscoveryRunUntilComplete(
       return { run, timedOut: false };
     }
 
+    if (run.status === "cancelled") {
+      return { run, timedOut: false, aborted: true };
+    }
+
     if (run.status === "failed") {
       // Soft-complete / job-fail races can briefly mark failed then flip to completed
       // with leads. Re-check once before surfacing an error to the user.
@@ -583,9 +608,29 @@ export async function pollDiscoveryRunUntilComplete(
       if (rechecked.status === "completed") {
         return { run: rechecked, timedOut: false };
       }
+      if (rechecked.status === "cancelled") {
+        return { run: rechecked, timedOut: false, aborted: true };
+      }
       if (rechecked.status !== "failed") {
         continue;
       }
+
+      // Soft failure: keep polling so the UI can offer continue/stop. Timeout is last
+      // (maxMs). The live worker may still complete and overwrite the soft-fail.
+      const softWait =
+        Boolean((rechecked as DiscoveryRunApi & { error?: string | null }).error) &&
+        /taking longer|interrupted|attempted too many times|timed out/i.test(
+          String(rechecked.error ?? "")
+        );
+      if (softWait) {
+        options?.onStage?.({
+          ...mapDiscoveryStage(rechecked.stages, intent, rechecked.progress ?? null),
+          label: "Still searching — you can keep waiting or stop anytime.",
+        });
+        await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
+        continue;
+      }
+
       // Not a validation/ICP 422 — use 502 so UI does not treat this as "select an ICP".
       throw new SalesEngineApiError(rechecked.error ?? "Discovery run failed.", 502);
     }
@@ -619,8 +664,10 @@ export async function sendChatMessage(
   payload: { body: string; intent: ChatIntent },
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
+    onDiscoveryRun?: (runId: number) => void;
     icpContext?: { industries?: string[]; territories?: string[]; name?: string };
     signal?: AbortSignal;
+    extraWaitMsRef?: { current: number };
   }
 ): Promise<SendChatMessageResult> {
   return withSessionRetry(async () => {
@@ -638,6 +685,8 @@ export async function sendChatMessage(
       initial.status === "processing" &&
       initial.discovery_run_id
     ) {
+      options?.onDiscoveryRun?.(initial.discovery_run_id);
+
       let messages = await listChatMessages(sessionId);
       const placeholder = findLatestAssistantMessage(messages);
 
@@ -645,6 +694,7 @@ export async function sendChatMessage(
         intent: payload.intent,
         onStage: options?.onStage,
         signal: options?.signal,
+        extraWaitMsRef: options?.extraWaitMsRef,
         maxMs:
           payload.intent === "quick_research" ? CHAT_QUICK_RESEARCH_POLL_MAX_MS : CHAT_POLL_MAX_MS,
       });
@@ -847,6 +897,28 @@ export function isFreshSignal(iso: string | null | undefined, withinHours = 48):
 
 export type RecommendedActionApi = { title: string; detail: string };
 
+/** Stage 1 (ICP Filter) audit trail — see docs/backend_implementation_plan.md. Null/absent on signals created before this shipped. */
+export type SocialSignalIcpFilter = {
+  passed: boolean;
+  reasons: Record<string, boolean>;
+};
+
+export type SocialSignalEnrichmentStatus = "not_attempted" | "attempted_found" | "attempted_not_found";
+
+export type EnrichmentContact = {
+  personName: string | null;
+  foundEmail: boolean;
+  foundPhone: boolean;
+  provider: string | null;
+  tier: string | null;
+};
+
+export type SocialSignalEnrichment = {
+  status: SocialSignalEnrichmentStatus;
+  attemptedAt?: string | null;
+  contacts?: EnrichmentContact[];
+};
+
 export type SocialSignalApi = {
   id: number;
   signal: string;
@@ -884,6 +956,12 @@ export type SocialSignalApi = {
   keyTopics?: string[];
   competitors?: string[];
   followUpStrategy?: string;
+  /** Stage 1/2/3 fields from the signal-detection rebuild — absent/null on legacy signals. */
+  icpFilter?: SocialSignalIcpFilter | null;
+  discreteSignalType?: string | null;
+  territory?: string | null;
+  namedPeople?: string[];
+  enrichment?: SocialSignalEnrichment | null;
 };
 
 /** Normalizes recommendedAction/personalRecommendedAction, which may arrive as an object or a legacy plain string. */
@@ -895,16 +973,47 @@ export function normalizeRecommendedAction(
   return { title: value.title ?? "", detail: value.detail ?? "" };
 }
 
+/**
+ * Structured since the Stage 1/2 pipeline rebuild (backend_implementation_plan.md
+ * Phase 6). Runs created before that ship a plain human-readable string in this
+ * field instead — always check the shape before reading nested fields.
+ */
+export type SocialListeningRunResultSummary = {
+  totalChecked: number;
+  qualified: number;
+  rejected: {
+    icpMismatch: number;
+    missingSourceUrl: number;
+    missingSourceDate: number;
+    stale: number;
+    typeMismatch?: number;
+    total: number;
+  };
+  enrichment?: {
+    pending?: number;
+    found?: number;
+    notFound?: number;
+  };
+};
+
 export type SocialListeningRunStatus = {
   id: number;
   status: string;
   stages?: string[] | null;
   signals_created?: number | null;
-  result_summary?: string | null;
+  /** Structured object on runs from the rebuilt pipeline; a plain string on legacy runs; null/absent otherwise. */
+  result_summary?: SocialListeningRunResultSummary | string | null;
   error?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
 };
+
+/** Type guard: true only for the new structured shape, never the legacy string. */
+export function isStructuredRunSummary(
+  value: SocialListeningRunStatus["result_summary"]
+): value is SocialListeningRunResultSummary {
+  return typeof value === "object" && value !== null && "rejected" in value;
+}
 
 export type SocialListeningMetrics = {
   signals_detected: number;
@@ -915,12 +1024,14 @@ export type SocialListeningMetrics = {
   latest_run?: SocialListeningRunStatus | null;
 };
 
+export type FreshnessWindowDays = 7 | 14 | 30 | 90 | 180;
+
 export type SocialListeningSettings = {
   enabled_sources: string[];
   meta_page_ids: string[];
   cadence_days: 14 | 30;
   min_score: number;
-  freshness_window_days: 7 | 14 | 30;
+  freshness_window_days: FreshnessWindowDays;
   intent_filters: string[];
   crm_destination: "qualified_pipeline" | "human_review";
   outreach_channel_default: "email" | "human_follow_up";
@@ -1088,6 +1199,28 @@ export function fetchSocialSignal(id: number): Promise<SocialSignalApi> {
   return withSessionRetry(async () =>
     seRequest<SocialSignalApi>({ method: "GET", path: `/social-listening/signals/${id}` })
   );
+}
+
+export type SignalTypeDefinitionApi = {
+  key: string;
+  label: string;
+  pack: string;
+  triggerDescription?: string;
+  feedsEnrichment?: boolean;
+  recencyWindowDays?: number;
+};
+
+export function listSignalTypes(icpProfileId?: string): Promise<SignalTypeDefinitionApi[]> {
+  return withSessionRetry(async () => {
+    const query = new URLSearchParams();
+    if (icpProfileId) query.set("icpProfileId", icpProfileId);
+    const qs = query.toString();
+    const data = await seRequest<SignalTypeDefinitionApi[]>({
+      method: "GET",
+      path: `/signal-types${qs ? `?${qs}` : ""}`,
+    });
+    return data ?? [];
+  });
 }
 
 export function fetchSocialListeningMetrics(): Promise<SocialListeningMetrics> {
@@ -1374,11 +1507,20 @@ export function pushLeadToCrm(
   });
 }
 
-export function syncLeadsBatch(leadIds: number[]): Promise<{
+export function syncLeadsBatch(
+  leadIds: number[],
+  options?: { pipeline_id?: number | string }
+): Promise<{
   synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
   errors: string[];
 }> {
   return withSessionRetry(async () => {
+    const body: { lead_ids: number[]; pipeline_id?: number | string } = { lead_ids: leadIds };
+    if (options?.pipeline_id != null && String(options.pipeline_id).trim() !== "") {
+      const parsed = Number(options.pipeline_id);
+      body.pipeline_id = Number.isFinite(parsed) ? parsed : options.pipeline_id;
+    }
+
     try {
       return await seRequest<{
         synced: Array<{ lead_id: number; save_status?: string; synced?: boolean; f23_lead_id?: string | number | null }>;
@@ -1386,7 +1528,7 @@ export function syncLeadsBatch(leadIds: number[]): Promise<{
       }>({
         method: "POST",
         path: "/leads/sync-to-crm",
-        body: { lead_ids: leadIds },
+        body,
       });
     } catch (error) {
       if (
@@ -1400,7 +1542,7 @@ export function syncLeadsBatch(leadIds: number[]): Promise<{
         }>({
           method: "POST",
           path: "/leads/sync-to-crm",
-          body: { lead_ids: leadIds },
+          body,
         });
       }
       throw error;

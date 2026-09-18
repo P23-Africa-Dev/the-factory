@@ -8,6 +8,7 @@ import {
   dismissSignal,
   fetchSocialListeningRun,
   fetchSocialSignals,
+  listSignalTypes,
   SalesEngineApiError,
   setSignalReminder,
   syncSignalToCrm,
@@ -28,6 +29,8 @@ export const SALES_ENGINE_SOCIAL_KEYS = {
   signals: (icpId: string | undefined, filters: SocialSignalsFilters) =>
     ["sales-engine", "social-listening", "signals", icpId, filters] as const,
   run: (runId: number | undefined) => ["sales-engine", "social-listening", "run", runId] as const,
+  signalTypes: (icpId: string | undefined) =>
+    ["sales-engine", "social-listening", "signal-types", icpId] as const,
 };
 
 export type SocialSignalsFilters = {
@@ -75,6 +78,26 @@ export function useSocialListeningSignals(
     enabled: Boolean(token) && !isAuthLoading && Boolean(activeIcp?.id),
     staleTime: 1000 * 30,
     refetchInterval: options?.refetchInterval,
+  });
+}
+
+export function useSignalTypes() {
+  const { data: token, isLoading: isAuthLoading } = useSalesEngineAuth();
+  const { data: activeIcp } = useActiveIcpProfile();
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useQuery({
+    queryKey: SALES_ENGINE_SOCIAL_KEYS.signalTypes(activeIcp?.id),
+    queryFn: async () => {
+      try {
+        return await listSignalTypes(activeIcp?.id);
+      } catch (error) {
+        if (isUnauthorized(error)) resetAuth();
+        throw error;
+      }
+    },
+    enabled: Boolean(token) && !isAuthLoading && Boolean(activeIcp?.id),
+    staleTime: 1000 * 60 * 5,
   });
 }
 

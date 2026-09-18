@@ -23,12 +23,17 @@ function formatElapsed(ms: number): string {
 export function ProcessingPanel({
   state,
   onDetachToBackground,
+  onStopSearching,
+  onContinueWaiting,
 }: {
   state: ProcessingState;
   onDetachToBackground?: () => void;
+  onStopSearching?: () => void;
+  onContinueWaiting?: () => void;
 }) {
   const [tipIndex, setTipIndex] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  const [userChoseContinue, setUserChoseContinue] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -45,26 +50,49 @@ export function ProcessingPanel({
   const elapsedMs = now - state.startedAt;
   const showElapsed = elapsedMs >= 15_000;
   const showLongRunHint = elapsedMs >= 30_000;
+  const showChoicePrompt = elapsedMs >= 45_000 || userChoseContinue;
   const showStepper = ASYNC_INTENTS.includes(state.intent);
   const stepLabels = PROCESSING_PIPELINE_STEPS;
-  const showBackgroundChoice = showStepper && Boolean(onDetachToBackground);
+  const showLeadGenControls = showStepper && (Boolean(onDetachToBackground) || Boolean(onStopSearching));
 
   return (
     <div className="max-w-[520px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
-      {showBackgroundChoice && (
+      {showLeadGenControls && (
         <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-[#09232d]/8 pb-3">
-          <span className="text-[8px] font-medium text-[#616263]">This may take a minute.</span>
+          <span className="text-[8px] font-medium text-[#616263]">
+            {showChoicePrompt
+              ? "Still searching — timeout is a last resort."
+              : "This may take a minute."}
+          </span>
           <div className="flex flex-wrap gap-2">
-            <span className="flex h-7 items-center rounded-[10px] border border-[#09232d]/15 bg-white px-2.5 text-[8px] font-semibold text-[#09232d]">
-              Stay on page
-            </span>
             <button
               type="button"
-              onClick={onDetachToBackground}
-              className="flex h-7 items-center rounded-[10px] border border-[#09232d]/15 bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/5"
+              onClick={() => {
+                setUserChoseContinue(true);
+                onContinueWaiting?.();
+              }}
+              className="flex h-7 items-center rounded-[10px] border border-[#16b37d]/40 bg-[#16b37d]/10 px-2.5 text-[8px] font-semibold text-[#087652] transition hover:bg-[#16b37d]/15"
             >
-              Process in background
+              Continue waiting
             </button>
+            {onStopSearching && (
+              <button
+                type="button"
+                onClick={onStopSearching}
+                className="flex h-7 items-center rounded-[10px] border border-[#09232d]/15 bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/5"
+              >
+                Stop searching
+              </button>
+            )}
+            {onDetachToBackground && (
+              <button
+                type="button"
+                onClick={onDetachToBackground}
+                className="flex h-7 items-center rounded-[10px] border border-[#09232d]/15 bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/5"
+              >
+                Process in background
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -142,9 +170,9 @@ export function ProcessingPanel({
 
           {showLongRunHint && (
             <p className="mt-2 text-[8px] leading-[11px] text-[#616263]">
-              {state.intent === "generate_leads"
-                ? "Still working — high-volume lead searches scan multiple sources and can take 30–60 seconds."
-                : "Still working — large scans can take 1–2 minutes."}
+              {state.intent === "generate_leads" || state.intent === "generate_more_leads"
+                ? "Still working... multi-source lead searches often take 1–3 minutes. We will not time out while results may still arrive."
+                : "Still working... large scans can take 1–2 minutes."}
             </p>
           )}
 
