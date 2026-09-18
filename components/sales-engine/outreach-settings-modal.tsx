@@ -172,7 +172,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
       {
         onSuccess: () => {
           setShowOrgSetup(true);
-          toast.success("DNS records generated — add them at your DNS host.");
+          toast.success("DNS records generated. Add them at your DNS host.");
         },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not start domain authentication.")),
@@ -194,7 +194,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
           }
           return;
         }
-        toast("DNS not detected yet — this can take up to 48 hours.");
+        toast("DNS not detected yet. This can take up to 48 hours.");
       },
       onError: (error) => toast.error(getApiErrorMessage(error, "Could not verify domain.")),
     });
@@ -210,7 +210,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
         try {
           await updateSender.mutateAsync({ sender_mode: "platform" });
         } catch {
-          // ignore — domain already cleared
+          // ignore. Domain already cleared
         }
         toast.success("Domain removed. You can connect a different one.");
       },
@@ -293,7 +293,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                             Send using The Factory
                           </span>
                           <span className="mt-0.5 block text-[10px] text-[#616263]">
-                            (Recommended) uses the platform sending domain. Reply-To stays your email.
+                            (Recommended) Uses the platform sending domain. Reply-To stays your email.
                           </span>
                         </span>
                       </label>
@@ -336,13 +336,13 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
 
                       {orgVerified && domainAuth ? (
                         <p className="mt-3 inline-flex items-center gap-1.5 rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3 py-2 text-[11px] font-semibold text-[#087652]">
-                          <Check size={13} /> Verified — sending as {domainAuth.from_email}
+                          <Check size={13} /> Verified. Sending as {domainAuth.from_email}
                         </p>
                       ) : !domainAuth ? (
                         <div className="mt-3 space-y-2">
                           <p className="text-[11px] leading-[15px] text-[#616263]">
                             Enter your domain and a from-address on it. We&apos;ll generate DNS records
-                            to prove ownership. Email still sends through our platform — only the From
+                            to prove ownership. Email still sends through our platform. Only the From
                             domain changes.
                           </p>
                           <input
@@ -382,7 +382,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                           ))}
                           {domainAuth.verification_status === "failed" && (
                             <p className="text-[10px] text-[#b91c1c]">
-                              DNS records weren&apos;t detected yet — double-check them at your DNS
+                              DNS records weren&apos;t detected yet. Double-check them at your DNS
                               host and try again.
                             </p>
                           )}
@@ -392,7 +392,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                             onClick={handleVerify}
                             className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
                           >
-                            {verify.isPending ? "Checking…" : "I've added these records — Verify"}
+                            {verify.isPending ? "Checking…" : "I've added these records. Verify!"}
                           </button>
                         </div>
                       )}
