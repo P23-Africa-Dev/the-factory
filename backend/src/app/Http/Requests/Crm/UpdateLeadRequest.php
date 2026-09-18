@@ -21,6 +21,10 @@ class UpdateLeadRequest extends FormRequest
     {
         $budget = $this->normalizeBudgetInput();
 
+        if (! $this->filled('phone') && $this->filled('mobile')) {
+            $this->merge(['phone' => $this->input('mobile')]);
+        }
+
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             ...$budget,

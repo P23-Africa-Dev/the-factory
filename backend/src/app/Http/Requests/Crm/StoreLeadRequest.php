@@ -21,6 +21,11 @@ class StoreLeadRequest extends FormRequest
     {
         $budget = $this->normalizeBudgetInput();
 
+        // Accept common aliases so integrations don't fail on naming drift.
+        if (! $this->filled('phone') && $this->filled('mobile')) {
+            $this->merge(['phone' => $this->input('mobile')]);
+        }
+
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             'status' => $this->input('status', 'newly_lead'),
