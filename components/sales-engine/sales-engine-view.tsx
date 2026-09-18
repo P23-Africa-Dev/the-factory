@@ -2395,9 +2395,9 @@ function CompanyBuildingIcon({ className = "size-5" }: { className?: string }) {
  */
 const TAB_TRUST_MODE_COPY: Record<SalesEngineTab, string> = {
   "smart-lead":
-    "Follows your question first — results may include strong matches outside your saved ICP, with an explanation for each.",
+    "Follows your question first. Results may include strong matches outside your saved ICP, with an explanation for each.",
   "social-listening":
-    "Strictly follows your saved ICP filters — nothing outside your filter criteria will appear here.",
+    "Strictly follows your saved ICP filters. Nothing outside your filter criteria will appear here.",
 };
 
 function SalesEngineTabs({
