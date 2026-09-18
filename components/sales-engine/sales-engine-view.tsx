@@ -105,7 +105,9 @@ import {
   ExternalLink,
   Eye,
   Globe2,
+  LayoutGrid,
   Lightbulb,
+  List,
   Loader2,
   Mail,
   MessageCircle,
@@ -600,6 +602,7 @@ function LeadInlineResults({
   const syncBatch = useSyncLeadsBatchToCrm();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
   const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
   const [crmModalState, setCrmModalState] = useState<
     | { mode: "single"; lead: ChatLead }
@@ -733,7 +736,7 @@ function LeadInlineResults({
     }
 
     return (
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         {profileUrl ? (
           <a
             href={profileUrl}
@@ -776,10 +779,41 @@ function LeadInlineResults({
               {syncBatch.isPending ? "Saving…" : "Save all"}
             </button>
           )}
+          <div className="flex items-center rounded-lg border border-[#09232d]/10 bg-white p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
+              className={`rounded-md p-1 transition-colors ${
+                viewMode === "list"
+                  ? "bg-[#09232d] text-white"
+                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
+              }`}
+            >
+              <List size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              aria-label="Grid view"
+              aria-pressed={viewMode === "grid"}
+              className={`rounded-md p-1 transition-colors ${
+                viewMode === "grid"
+                  ? "bg-[#09232d] text-white"
+                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
+              }`}
+            >
+              <LayoutGrid size={13} />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      {viewMode === "list" ? (
+        <div className="flex flex-col gap-1.5">
           {visibleLeads.map((lead) => {
             const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
             const fieldsUpdated = lead.crm_fields_updated ?? [];
@@ -897,6 +931,130 @@ function LeadInlineResults({
             );
           })}
         </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {visibleLeads.map((lead) => {
+            const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+            const fieldsUpdated = lead.crm_fields_updated ?? [];
+            const { overall } = leadScoreBreakdown(lead);
+            const roleLine = formatLeadRoleLine(lead);
+            const contactLine = formatLeadContactLine(lead);
+            const entityBadge = leadEntityBadge(lead);
+
+            return (
+              <div
+                key={lead.id ?? lead.name}
+                className="flex flex-col justify-between rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2.5 shadow-sm transition hover:border-[#09232d]/20"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
+                        {entityBadge}
+                      </span>
+                      <span
+                        className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
+                        title={
+                          lead.icp_relevance_reason
+                            ? `Score: ${overall}% · ${lead.icp_relevance_reason}`
+                            : "Overall priority score"
+                        }
+                      >
+                        Overall {overall}%
+                      </span>
+                    </div>
+                  </div>
+                  {roleLine && (
+                    <p className="mt-1 line-clamp-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
+                  )}
+                  {contactLine && (
+                    <p className="mt-0.5 line-clamp-1 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
+                  )}
+                  {entityBadge === "Contact" && lead.location && (
+                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
+                  )}
+                  {(lead.email || lead.phone || lead.website) && (
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                          title={lead.email}
+                        >
+                          <Mail size={9} className="shrink-0 opacity-80" />
+                          <span className="truncate">{lead.email}</span>
+                        </a>
+                      )}
+                      {lead.phone && (
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                          title={lead.phone}
+                        >
+                          <Phone size={9} className="shrink-0 opacity-80" />
+                          <span className="truncate">{lead.phone}</span>
+                        </a>
+                      )}
+                      {entityBadge === "Account" && lead.website && (
+                        <a
+                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
+                        >
+                          Website
+                        </a>
+                      )}
+                      {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                        <span
+                          className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                          title={
+                            lead.contact_enrichment_provider
+                              ? `Contact via ${lead.contact_enrichment_provider}`
+                              : "Contact enrichment source"
+                          }
+                        >
+                          {lead.contact_enrichment_tier === "tier1"
+                            ? "Contact from web"
+                            : lead.contact_enrichment_tier === "tier2"
+                              ? "Contact enriched"
+                              : "Contact verified"}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {lead.contact_ready === false && (
+                    <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
+                  )}
+                  {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                    <p className="mt-1 text-[7px] font-medium text-[#616263]">
+                      Profile found · email/phone still missing
+                    </p>
+                  )}
+                  {lead.summary && (
+                    <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+                  )}
+                  {lead.icp_relevance_reason && (
+                    <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                      {lead.icp_relevance_reason}
+                    </p>
+                  )}
+                  {lead.source && (
+                    <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
+                  )}
+                  {lead.low_confidence && (
+                    <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
+                  )}
+                </div>
+                <div className="mt-2.5 border-t border-[#09232d]/5 pt-2">
+                  {renderLeadActions(lead, isSynced, fieldsUpdated)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {hasMore && (
         <button
           type="button"
