@@ -985,6 +985,9 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                         revenueRanges: formConfig.revenueRanges,
                       })}
                     </p>
+                    <p className="mt-2 text-[10px] leading-snug text-gray-500">
+                      Tip: name products, buyers, and exclusions in “What we search for” — that text drives discovery when you ask for leads.
+                    </p>
                   </div>
                 </div>
               )}
