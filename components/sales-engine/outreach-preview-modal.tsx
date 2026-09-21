@@ -41,7 +41,7 @@ const AI_QUICK_PROMPTS = [
   { label: "Make it punchier", prompt: "Make the message shorter, more punchy, and direct." },
   { label: "Warmer tone", prompt: "Use a warmer, more conversational and consultative tone." },
   { label: "Focus on ROI", prompt: "Emphasize concrete ROI, efficiency gains, and business value." },
-  { label: "Clear Call-to-Action", prompt: "Add a low-friction, compelling call to action at the end." },
+  { label: "Clear call to action", prompt: "Add a low friction, compelling call to action at the end." },
 ];
 
 const AI_GENERATING_LABELS = [

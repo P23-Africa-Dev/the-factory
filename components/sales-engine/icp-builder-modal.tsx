@@ -647,7 +647,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                   <div className="space-y-2.5">
                     <div className="rounded-2xl border border-gray-100 bg-[#FBFBFB] px-3.5 py-2.5">
                       <p className="text-[12px] font-semibold text-[#09232D]">
-                        Filter criteria — a company must match these to qualify
+                        Filter criteria: a company must match these to qualify
                       </p>
                       <p className="mt-0.5 text-[11px] leading-snug text-gray-500">
                         Industry, size, revenue, and territory gate which companies appear. They are never used as search keywords.
@@ -957,7 +957,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       onChange={(e) =>
                         setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
                       }
-                      placeholder="Describe products, buyers, events, or exclusions in concrete terms — e.g. SaaS billing platforms hiring sales leaders; exclude agencies and consultancies…"
+                      placeholder="Describe products, buyers, events, or exclusions in concrete terms. Example: SaaS billing platforms hiring sales leaders; exclude agencies and consultancies…"
                       className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
                     />
                   </div>
@@ -1000,7 +1000,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           Minimum ICP Match Threshold
                         </span>
                         <p className="text-[11px] text-gray-500">
-                          Leads below this score are still shown when you ask directly — they&apos;ll show a lower ICP % on the card instead of being hidden.
+                          Leads below this score are still shown when you ask directly. They&apos;ll show a lower ICP % on the card instead of being hidden.
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-white shadow-xs">

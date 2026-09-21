@@ -625,7 +625,7 @@ export async function pollDiscoveryRunUntilComplete(
       if (softWait) {
         options?.onStage?.({
           ...mapDiscoveryStage(rechecked.stages, intent, rechecked.progress ?? null),
-          label: "Still searching — you can keep waiting or stop anytime.",
+          label: "Still searching. You can keep waiting or stop anytime.",
         });
         await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
         continue;

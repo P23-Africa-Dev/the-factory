@@ -841,7 +841,7 @@ function LeadInlineResults({
                       className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
                       title={
                         lead.icp_relevance_reason
-                          ? `Score: ${overall}% · ${lead.icp_relevance_reason}`
+                          ? `Score: ${overall}%. ${lead.icp_relevance_reason}`
                           : "Overall priority score"
                       }
                     >
@@ -961,7 +961,7 @@ function LeadInlineResults({
                         className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
                         title={
                           lead.icp_relevance_reason
-                            ? `Score: ${overall}% · ${lead.icp_relevance_reason}`
+                            ? `Score: ${overall}%. ${lead.icp_relevance_reason}`
                             : "Overall priority score"
                         }
                       >
@@ -1033,7 +1033,7 @@ function LeadInlineResults({
                   )}
                   {lead.contact_ready !== false && !lead.email && !lead.phone && (
                     <p className="mt-1 text-[7px] font-medium text-[#616263]">
-                      Profile found · email/phone still missing
+                      Profile found. Email or phone still missing
                     </p>
                   )}
                   {lead.summary && (
@@ -1214,7 +1214,7 @@ function IcpConfirmationCard({
             one below.
           </>
         ) : (
-          "No ICP build is active yet — select one below to continue."
+          "No ICP build is active yet. Select one below to continue."
         )}
       </p>
 
@@ -1251,7 +1251,7 @@ function IcpConfirmationCard({
       {isLoading ? (
         <p className="mt-2 text-[10px] text-[#09232d]/50">Loading ICP builds…</p>
       ) : icpProfiles.length === 0 ? (
-        <p className="mt-2 text-[10px] text-[#09232d]/50">No ICP builds yet — create one to continue.</p>
+        <p className="mt-2 text-[10px] text-[#09232d]/50">No ICP builds yet. Create one to continue.</p>
       ) : (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {icpProfiles.map((profile) => (
@@ -1464,7 +1464,7 @@ function ChatWorkspace({
       }
       toast.error(
         isMissingActiveIcp(error)
-          ? "Select an active ICP profile first — open ICP Builder to create or activate one."
+          ? "Select an active ICP profile first. Open ICP Builder to create or activate one."
           : getApiErrorMessage(error, "Sales Engine couldn't process that request.")
       );
     },
@@ -1475,7 +1475,7 @@ function ChatWorkspace({
     if (typeof runId === "number") {
       setBackgroundRunIds((current) => new Set(current).add(runId));
     }
-    toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
+    toast.info("Processing in background. You can keep chatting, and we'll notify you when results are ready.");
   }
 
   async function handleStopSearching() {
@@ -1521,7 +1521,7 @@ function ChatWorkspace({
           {
             id: nextMessageId(),
             role: "assistant",
-            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle — ${remaining} remaining.`,
+            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle. ${remaining} remaining.`,
           },
         ]);
       }, 900);
@@ -1583,7 +1583,7 @@ function ChatWorkspace({
     const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
     const largeRequestHint =
       targetCount != null && targetCount >= 50
-        ? " Searching multiple sources — this may take 30–60 seconds."
+        ? " Searching multiple sources. This may take 30 to 60 seconds."
         : "";
 
     let lastUserId: number | null = null;
@@ -1601,7 +1601,7 @@ function ChatWorkspace({
           ? {
               ...message,
               kind: undefined,
-              body: `Using **${activeIcp.name}** · generating prospects…${largeRequestHint}`,
+              body: `Using **${activeIcp.name}**. Generating prospects…${largeRequestHint}`,
               intent: "generate_leads" as const,
             }
           : message
@@ -1797,7 +1797,7 @@ function ChatWorkspace({
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
                     <Loader2 size={10} className="animate-spin" />
                     {message.meta?.awaiting_user_choice
-                      ? "Still searching — timeout is a last resort"
+                      ? "Still searching. Timeout is a last resort"
                       : "Processing in background"}
                   </span>
                   {typeof pendingRunId === "number" && Boolean(message.meta?.awaiting_user_choice) && (
@@ -1875,7 +1875,7 @@ function ChatWorkspace({
                 !message.leads?.length &&
                 !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads matched this search yet · try a broader industry or role, or run Generate Prospects with your ICP selected.
+                  No leads matched this search yet. Try a broader industry or role, or run Generate Prospects with your ICP selected.
                 </p>
               )}
               {message.leads && message.leads.length > 0 && (
@@ -3103,7 +3103,7 @@ function SocialSignalsTable({
       </div>
       <div className="shrink-0 flex items-center justify-between border-t border-[#f1f1f1] px-8 pb-3 pt-3 text-[9px] font-semibold text-[#333333] max-sm:px-3">
         <span>
-          Showing {rangeStart} - {rangeEnd} of {total} Signals
+          Showing {rangeStart} to {rangeEnd} of {total} Signals
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -3484,10 +3484,10 @@ function SocialOpportunityDetail({
                           {found
                             ? [contact.foundEmail ? "email" : null, contact.foundPhone ? "phone" : null]
                                 .filter(Boolean)
-                                .join(" · ")
+                                .join(", ")
                             : "not found"}
-                          {contact.provider ? ` · ${contact.provider}` : ""}
-                          {contact.tier ? ` · ${contact.tier}` : ""}
+                          {contact.provider ? `, ${contact.provider}` : ""}
+                          {contact.tier ? `, ${contact.tier}` : ""}
                         </p>
                       </div>
                       <span
@@ -3566,7 +3566,7 @@ function SocialOpportunityDetail({
             )}
             {!recommendedAction.title && !recommendedAction.detail && (
               <p className="mt-1 text-[9px] leading-[12px]">
-                Reach out within 24 hours — this prospect may be actively looking for solutions.
+                Reach out within 24 hours. This prospect may be actively looking for solutions.
               </p>
             )}
           </div>
@@ -3624,7 +3624,7 @@ function SocialOpportunityDetail({
             <CircleCheck size={14} />
             <span>
               In CRM
-              {signal.f23_lead_id ? ` · #${signal.f23_lead_id}` : ""}
+              {signal.f23_lead_id ? ` (#${signal.f23_lead_id})` : ""}
             </span>
           </div>
         ) : (
@@ -4164,7 +4164,7 @@ function SocialListeningTab({
     setReminder.mutate(
       {
         id: signal.id,
-        note: [actionNote.title, actionNote.detail].filter(Boolean).join(" — ") || undefined,
+        note: [actionNote.title, actionNote.detail].filter(Boolean).join(". ") || undefined,
       },
       {
         onSuccess: () => {
@@ -4200,7 +4200,7 @@ function SocialListeningTab({
   const reminderNoteForPending = pendingReminderSignal
     ? (() => {
         const actionNote = normalizeRecommendedAction(pendingReminderSignal.recommendedAction);
-        return [actionNote.title, actionNote.detail].filter(Boolean).join(" — ");
+        return [actionNote.title, actionNote.detail].filter(Boolean).join(". ");
       })()
     : "";
 
@@ -4340,7 +4340,7 @@ function SocialListeningTab({
           </div>
           {signalsError && isMissingActiveIcp(signalsError) ? (
             <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
-              Select an active ICP profile first — open ICP Builder to create or activate one.
+              Select an active ICP profile first. Open ICP Builder to create or activate one.
             </div>
           ) : (
             <SocialSignalsTable

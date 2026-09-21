@@ -111,6 +111,6 @@ describe("ScanRunSummaryPanel", () => {
       />
     );
 
-    expect(html).toContain("none qualified");
+    expect(html).toContain("None qualified");
   });
 });
