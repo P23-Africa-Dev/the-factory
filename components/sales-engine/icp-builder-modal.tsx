@@ -31,6 +31,10 @@ import {
   useIcpProfiles,
   useUpdateIcpProfile,
 } from "@/hooks/use-sales-engine-icp";
+import {
+  composeIcpQualifySummary,
+  composeIcpSearchBrief,
+} from "@/lib/sales-engine/icp-search-brief";
 
 export type IcpConfig = {
   profileName: string;
@@ -936,7 +940,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     </div>
                   </div>
 
-                  {/* Opportunity interest */}
+                  {/* What we search for */}
                   <div className="space-y-1.5">
                     <label className="flex items-center justify-between text-[12px] font-semibold text-gray-700">
                       <span className="flex items-center gap-1.5">
@@ -944,7 +948,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                         What kind of opportunity are you looking for?
                       </span>
                       <span className="text-[10px] font-normal text-gray-400">
-                        Interest, not a filter
+                        What we search for
                       </span>
                     </label>
                     <textarea
@@ -953,9 +957,34 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       onChange={(e) =>
                         setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
                       }
-                      placeholder="Describe the events or opportunities you want surfaced — e.g. market entries, partnerships, leadership hires, or funding news…"
+                      placeholder="Describe products, buyers, events, or exclusions in concrete terms — e.g. SaaS billing platforms hiring sales leaders; exclude agencies and consultancies…"
                       className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
                     />
+                  </div>
+
+                  {/* Live search brief preview */}
+                  <div className="rounded-2xl border border-[#09232D]/10 bg-[#09232D]/[0.03] px-3.5 py-3">
+                    <p className="text-[11px] font-semibold text-[#09232D]">
+                      When you ask for leads, we will search:
+                    </p>
+                    <p className="mt-1 text-[12px] leading-snug text-[#09232D]/85">
+                      {composeIcpSearchBrief({
+                        customPrompt: formConfig.customPrompt,
+                        description: formConfig.description,
+                        industries: formConfig.industries,
+                      })}
+                    </p>
+                    <p className="mt-2.5 text-[11px] font-semibold text-[#09232D]">
+                      Then qualify with:
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-gray-600">
+                      {composeIcpQualifySummary({
+                        industries: formConfig.industries,
+                        territories: formConfig.territories,
+                        companySizes: formConfig.companySizes,
+                        revenueRanges: formConfig.revenueRanges,
+                      })}
+                    </p>
                   </div>
                 </div>
               )}

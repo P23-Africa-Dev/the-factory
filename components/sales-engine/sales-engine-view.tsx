@@ -36,6 +36,10 @@ import {
 } from "./research-sources-list";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
+import {
+  composeIcpQualifySummary,
+  composeIcpSearchBrief,
+} from "@/lib/sales-engine/icp-search-brief";
 import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
 import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration-status";
 import { usePendingChatDiscovery } from "@/hooks/use-pending-chat-discovery";
@@ -1177,6 +1181,28 @@ function IcpConfirmationCard({
   onManageIcps: () => void;
 }) {
   const activeIcp = icpProfiles.find((profile) => profile.isActive);
+  const searchBrief = activeIcp
+    ? composeIcpSearchBrief({
+        customPrompt: activeIcp.config.customPrompt,
+        description: activeIcp.description || activeIcp.config.description,
+        industries: activeIcp.config.industries,
+      })
+    : "";
+  const qualifySummary = activeIcp
+    ? composeIcpQualifySummary({
+        industries: activeIcp.config.industries,
+        territories: activeIcp.config.territories,
+        companySizes: activeIcp.config.companySizes,
+        revenueRanges: activeIcp.config.revenueRanges,
+      })
+    : "";
+  const filterChips = activeIcp
+    ? [
+        ...(activeIcp.config.industries ?? []).slice(0, 4),
+        ...(activeIcp.config.territories ?? []).slice(0, 3),
+        ...(activeIcp.config.companySizes ?? []).slice(0, 2),
+      ].filter(Boolean)
+    : [];
 
   return (
     <div className="max-w-[480px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
@@ -1191,6 +1217,36 @@ function IcpConfirmationCard({
           "No ICP build is active yet — select one below to continue."
         )}
       </p>
+
+      {activeIcp && (
+        <div className="mt-2.5 space-y-2 rounded-[14px] border border-[#09232d]/08 bg-white px-3 py-2.5">
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">
+              We will search
+            </p>
+            <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/85">{searchBrief}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">
+              Then qualify with
+            </p>
+            {filterChips.length > 0 ? (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {filterChips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-full border border-[#d7d7d7] bg-[#f8f8f8] px-2 py-0.5 text-[9px] font-medium text-[#09232d]/75"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-0.5 text-[10px] text-[#09232d]/55">{qualifySummary}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <p className="mt-2 text-[10px] text-[#09232d]/50">Loading ICP builds…</p>
