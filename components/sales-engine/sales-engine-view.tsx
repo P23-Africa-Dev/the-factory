@@ -86,6 +86,7 @@ import {
   formatLeadRoleLine,
   leadEntityBadge,
   primaryProfileUrl,
+  primaryWebsiteUrl,
 } from "@/lib/enriched-lead-card";
 import {
   cancelDiscoveryRun,
@@ -707,6 +708,7 @@ function LeadInlineResults({
 
   function renderLeadActions(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
     const profileUrl = primaryProfileUrl(lead);
+    const websiteUrl = primaryWebsiteUrl(lead);
 
     let crmControl: ReactNode;
     if (lead.crm_duplicate) {
@@ -761,6 +763,18 @@ function LeadInlineResults({
           >
             <ExternalLink size={10} className="shrink-0 opacity-80" />
             View Profile
+          </a>
+        ) : null}
+        {websiteUrl ? (
+          <a
+            href={websiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open company website"
+            className="inline-flex items-center gap-1 rounded-full border border-[#09232d]/15 bg-white px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5"
+          >
+            <ExternalLink size={10} className="shrink-0 opacity-80" />
+            Website
           </a>
         ) : null}
         {onNotRelevant ? (
@@ -877,7 +891,7 @@ function LeadInlineResults({
                     </p>
                   )}
 
-                  {(roleLine || contactLine || lead.email || lead.phone || lead.website) && (
+                  {(roleLine || contactLine || lead.email || lead.phone) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[8px]">
                       {roleLine && (
                         <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
@@ -910,16 +924,6 @@ function LeadInlineResults({
                         >
                           <Phone size={8} className="shrink-0 opacity-80" />
                           <span>{lead.phone}</span>
-                        </a>
-                      )}
-                      {entityBadge === "Account" && lead.website && (
-                        <a
-                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-[#087652] underline"
-                        >
-                          Website
                         </a>
                       )}
                       {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
@@ -998,7 +1002,7 @@ function LeadInlineResults({
                   {entityBadge === "Contact" && lead.location && (
                     <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
                   )}
-                  {(lead.email || lead.phone || lead.website) && (
+                  {(lead.email || lead.phone) && (
                     <div className="mt-1 flex flex-col gap-0.5">
                       {lead.email && (
                         <a
@@ -1018,16 +1022,6 @@ function LeadInlineResults({
                         >
                           <Phone size={9} className="shrink-0 opacity-80" />
                           <span className="truncate">{lead.phone}</span>
-                        </a>
-                      )}
-                      {entityBadge === "Account" && lead.website && (
-                        <a
-                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-block truncate text-[8px] font-medium text-[#087652] underline"
-                        >
-                          Website
                         </a>
                       )}
                       {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
@@ -1956,7 +1950,7 @@ function ChatWorkspace({
                 !message.leads?.length &&
                 !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads matched this search yet. Edit “What we search for” in the ICP builder, or loosen territory/size filters — then try again.
+                  No leads matched this search yet. Edit “What we search for” in the ICP builder, or loosen territory/size filters, then try again.
                 </p>
               )}
               {message.leads && message.leads.length > 0 && (
