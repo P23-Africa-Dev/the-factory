@@ -148,3 +148,21 @@ export function withEntityModeCue(body: string, mode: GenerateEntityMode): strin
   if (mode === "companies") return `${trimmed} (companies only)`;
   return `${trimmed} (people only)`;
 }
+
+export type GenerateProspectCount = 12 | 25 | 40;
+
+/** Encode confirm-card count in chat body so QueryIntentService.parseLimit sees it. */
+export function withProspectCountCue(body: string, count: GenerateProspectCount): string {
+  const trimmed = body.trim();
+  const alreadyNumbered =
+    /\b(?:give me|find|get|show|list|need|want)\s+\d{1,3}\b/i.test(trimmed) ||
+    /\b\d{1,3}\s+(?:people|persons|leads|prospects|contacts|names|executives|companies|accounts)\b/i.test(
+      trimmed
+    );
+  if (alreadyNumbered) return trimmed;
+  if (count === 12) return trimmed;
+  if (/^give me prospects\b/i.test(trimmed)) {
+    return trimmed.replace(/^give me prospects/i, `give me ${count} prospects`);
+  }
+  return `give me ${count} prospects`;
+}

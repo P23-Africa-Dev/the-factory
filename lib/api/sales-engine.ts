@@ -384,6 +384,7 @@ export type ChatLead = {
   query_relevance_score?: number;
   query_match?: boolean;
   icp_relevance_reason?: string | null;
+  location_status?: "unknown" | "confirmed" | "resolved" | "outside_territory" | string | null;
 };
 
 export type ChatMessageApi = {

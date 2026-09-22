@@ -43,7 +43,9 @@ import {
   entityModeLabel,
   isInsufficientIcpSearchBrief,
   withEntityModeCue,
+  withProspectCountCue,
   type GenerateEntityMode,
+  type GenerateProspectCount,
 } from "@/lib/sales-engine/icp-search-brief";
 import { shouldShowIcpConfirmCard } from "@/lib/sales-engine/is-generic-lead-request";
 import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
@@ -194,6 +196,14 @@ function formatSignalTypeKey(key: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function leadLocationCaption(lead: ChatLead): string | null {
+  const loc = (lead.location ?? "").trim();
+  if (loc) return loc;
+  if (lead.location_status === "outside_territory") return "Outside territory";
+  if (lead.location_status === "unknown") return "Location not confirmed.";
+  return null;
 }
 
 function formatPostedDate(iso: string | null | undefined): string {
@@ -905,8 +915,8 @@ function LeadInlineResults({
                           {contactLine}
                         </span>
                       )}
-                      {entityBadge === "Contact" && lead.location && (
-                        <span className="text-[#09232d]/50">· {lead.location}</span>
+                      {leadLocationCaption(lead) && (
+                        <span className="text-[#09232d]/50">· {leadLocationCaption(lead)}</span>
                       )}
                       {lead.email && (
                         <a
@@ -1001,8 +1011,8 @@ function LeadInlineResults({
                   {contactLine && (
                     <p className="mt-0.5 line-clamp-1 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
                   )}
-                  {entityBadge === "Contact" && lead.location && (
-                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{lead.location}</p>
+                  {leadLocationCaption(lead) && (
+                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{leadLocationCaption(lead)}</p>
                   )}
                   {(lead.email || lead.phone) && (
                     <div className="mt-1 flex flex-col gap-0.5">
@@ -1185,6 +1195,8 @@ function IcpConfirmationCard({
   isConfirming,
   entityMode,
   onEntityModeChange,
+  prospectCount,
+  onProspectCountChange,
   onSelectIcp,
   onConfirm,
   onManageIcps,
@@ -1196,6 +1208,8 @@ function IcpConfirmationCard({
   isConfirming: boolean;
   entityMode: GenerateEntityMode;
   onEntityModeChange: (mode: GenerateEntityMode) => void;
+  prospectCount: GenerateProspectCount;
+  onProspectCountChange: (count: GenerateProspectCount) => void;
   onSelectIcp: (id: string) => void;
   onConfirm: () => void;
   onManageIcps: () => void;
@@ -1252,7 +1266,7 @@ function IcpConfirmationCard({
               <p className="mt-1 text-[10px] leading-[14px] text-[#09232d]/70">{geoCaption}</p>
             ) : null}
             <p className="mt-1 text-[9px] leading-[13px] text-[#09232d]/50">
-              Territory is searched and filtered — other countries are dropped.
+              Search runs in this country. Other countries are excluded. Unconfirmed locations are marked.
             </p>
           </div>
           <div>
@@ -1281,6 +1295,28 @@ function IcpConfirmationCard({
             </div>
             <p className="mt-1 text-[9px] text-[#09232d]/55">
               Default is accounts + people. Change only if you want one entity type.
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">Count</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {([12, 25, 40] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onProspectCountChange(value)}
+                  className={`rounded-full px-2.5 py-0.5 text-[9px] font-semibold transition ${
+                    prospectCount === value
+                      ? "bg-[#09232d] text-white"
+                      : "border border-[#d7d7d7] bg-[#f8f8f8] text-[#09232d]/75 hover:bg-[#09232d]/5"
+                  }`}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[9px] text-[#09232d]/55">
+              First page size. Use Generate more for leftover matches.
             </p>
           </div>
           <div>
@@ -1371,6 +1407,7 @@ function ChatWorkspace({
   const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
   const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
   const [generateEntityMode, setGenerateEntityMode] = useState<GenerateEntityMode>("both");
+  const [generateProspectCount, setGenerateProspectCount] = useState<GenerateProspectCount>(12);
   const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
   const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
@@ -1591,6 +1628,9 @@ function ChatWorkspace({
     if (shouldShowIcpConfirmCard(intent, trimmed)) {
       const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
       setGenerateEntityMode("both");
+      setGenerateProspectCount(
+        targetCount === 25 || targetCount === 40 ? targetCount : 12
+      );
       setMessages((current) => [
         ...current,
         {
@@ -1667,7 +1707,8 @@ function ChatWorkspace({
     }
 
     const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
-    const modeAwareBody = withEntityModeCue(apiBody, generateEntityMode);
+    const countedBody = withProspectCountCue(apiBody, generateProspectCount);
+    const modeAwareBody = withEntityModeCue(countedBody, generateEntityMode);
     const searchBrief = composeIcpSearchBrief({
       customPrompt: activeIcp.config.customPrompt,
       description: activeIcp.description || activeIcp.config.description,
@@ -1941,6 +1982,8 @@ function ChatWorkspace({
                   isConfirming={isThinking}
                   entityMode={generateEntityMode}
                   onEntityModeChange={setGenerateEntityMode}
+                  prospectCount={generateProspectCount}
+                  onProspectCountChange={setGenerateProspectCount}
                   onSelectIcp={(id) => activateIcpProfile.mutate(id)}
                   onConfirm={confirmGenerateLeads}
                   onManageIcps={onOpenIcpBuilder}
@@ -1983,14 +2026,6 @@ function ChatWorkspace({
                 !isPendingMessage && (
                   <ResearchSourcesList sources={researchSourcesFromMeta(message.meta)} />
                 )}
-              {message.role === "assistant" &&
-                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
-                !message.leads?.length &&
-                !isPendingMessage && (
-                <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads matched this search yet. Edit “What we search for” in the ICP builder, or loosen territory/size filters, then try again.
-                </p>
-              )}
               {message.leads && message.leads.length > 0 && (
                 <LeadInlineResults
                   leads={message.leads}
