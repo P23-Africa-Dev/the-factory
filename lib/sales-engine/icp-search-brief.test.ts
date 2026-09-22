@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeIcpSearchBrief,
+  composeSearchGeoCaption,
   entityModeLabel,
   isInsufficientIcpSearchBrief,
   withEntityModeCue,
@@ -37,5 +38,21 @@ describe("icp-search-brief", () => {
       "give me prospects (people only)"
     );
     expect(entityModeLabel("both")).toBe("accounts + people");
+  });
+
+  it("composes a search geo caption from territories", () => {
+    expect(composeSearchGeoCaption(["Nigeria", "Lagos, NG"])).toContain("Nigeria");
+    expect(composeSearchGeoCaption(["Nigeria", "Lagos, NG"])).not.toBe("");
+    expect(composeSearchGeoCaption([])).toBe("");
+    expect(composeSearchGeoCaption(null)).toBe("");
+  });
+
+  it("keeps the search brief topic-only without territories", () => {
+    expect(
+      composeIcpSearchBrief({
+        customPrompt: "logistics 3PL operators",
+        industries: ["Logistics"],
+      })
+    ).toBe("logistics 3PL operators");
   });
 });

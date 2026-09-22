@@ -95,6 +95,21 @@ function isMostlyGenericFiller(text: string): boolean {
   return concrete.length === 0;
 }
 
+export function composeSearchGeoCaption(territories?: string[] | null): string {
+  const unique = [
+    ...new Set(
+      (territories ?? [])
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean)
+    ),
+  ];
+  if (unique.length === 0) return "";
+
+  const shown = unique.slice(0, 3);
+  const extra = unique.length > 3 ? ` +${unique.length - 3}` : "";
+  return `Searching in: ${shown.join(" · ")}${extra}`;
+}
+
 export function composeIcpQualifySummary(input: {
   industries?: string[] | null;
   territories?: string[] | null;

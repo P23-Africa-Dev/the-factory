@@ -39,6 +39,7 @@ import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/ho
 import {
   composeIcpQualifySummary,
   composeIcpSearchBrief,
+  composeSearchGeoCaption,
   entityModeLabel,
   isInsufficientIcpSearchBrief,
   withEntityModeCue,
@@ -1215,6 +1216,9 @@ function IcpConfirmationCard({
         revenueRanges: activeIcp.config.revenueRanges,
       })
     : "";
+  const geoCaption = activeIcp
+    ? composeSearchGeoCaption(activeIcp.config.territories)
+    : "";
   const filterChips = activeIcp
     ? [
         ...(activeIcp.config.industries ?? []).slice(0, 4),
@@ -1244,6 +1248,12 @@ function IcpConfirmationCard({
               We will search
             </p>
             <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/85">{searchBrief}</p>
+            {geoCaption ? (
+              <p className="mt-1 text-[10px] leading-[14px] text-[#09232d]/70">{geoCaption}</p>
+            ) : null}
+            <p className="mt-1 text-[9px] leading-[13px] text-[#09232d]/50">
+              Territory is searched and filtered — other countries are dropped.
+            </p>
           </div>
           <div>
             <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">Mode</p>

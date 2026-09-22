@@ -75,7 +75,7 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   revenueRanges: ["$1M - $10M"],
   territories: ["Lagos, NG"],
   decisionMakers: ["Head of Sales"],
-  minMatchScore: 75,
+  minMatchScore: 60,
   autoSyncCrm: true,
   enrichContactDetails: true,
   customPrompt: "",
@@ -675,7 +675,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                         Filter criteria: a company must match these to qualify
                       </p>
                       <p className="mt-0.5 text-[11px] leading-snug text-gray-500">
-                        Industry, size, revenue, and territory gate which companies appear. They are never used as search keywords.
+                        Industry, size, and revenue gate which companies appear. Territory locates the search and then rejects other countries.
                       </p>
                     </div>
                     <div className="flex items-center justify-between">
@@ -985,6 +985,16 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       placeholder="Describe products, buyers, events, or exclusions in concrete terms. Example: SaaS billing platforms hiring sales leaders; exclude agencies and consultancies…"
                       className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
                     />
+                    <p className="text-[11px] leading-snug text-gray-500">
+                      Use keywords (products, buyers, places you sell into). Do not write a definition like “Industries specialize in…”. Geographic hubs above also locate the search, then reject other countries.
+                    </p>
+                    {( /industries specialize/i.test(formConfig.customPrompt) ||
+                    ((formConfig.description ?? "").trim() !== "" &&
+                      formConfig.customPrompt.trim() === (formConfig.description ?? "").trim()) ) ? (
+                      <p className="text-[11px] leading-snug text-amber-700">
+                        This reads like a profile blurb. Search works better with products and buyers than a definition of the industry.
+                      </p>
+                    ) : null}
                   </div>
 
                   {/* Live search brief preview */}
@@ -1028,7 +1038,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           Minimum ICP Match Threshold
                         </span>
                         <p className="text-[11px] text-gray-500">
-                          Leads below this score are still shown when you ask directly. They&apos;ll show a lower ICP % on the card instead of being hidden.
+                          60 is a typical first-batch bar; 75 is strict. Leads below this score are still shown when you ask directly.
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-3 py-1 text-white shadow-xs">
@@ -1056,7 +1066,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       />
                       <div className="flex justify-between text-[10px] text-gray-400 font-medium px-1">
                         <span>50% (Broad reach)</span>
-                        <span>75% (Recommended)</span>
+                        <span>60% (Typical)</span>
                         <span>95% (Strict match)</span>
                       </div>
                     </div>
