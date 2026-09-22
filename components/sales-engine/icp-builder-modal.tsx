@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   X,
   Sparkles,
@@ -19,6 +19,8 @@ import {
   Copy,
   CheckCircle2,
   Layers,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Toggle } from "@/components/ui/toggle";
@@ -29,12 +31,14 @@ import {
   useDeleteIcpProfile,
   useDuplicateIcpProfile,
   useIcpProfiles,
+  useSuggestIcpSearchBrief,
   useUpdateIcpProfile,
 } from "@/hooks/use-sales-engine-icp";
 import {
   composeIcpQualifySummary,
   composeIcpSearchBrief,
   isInsufficientIcpSearchBrief,
+  suggestIcpSearchBriefLocal,
 } from "@/lib/sales-engine/icp-search-brief";
 
 export type IcpConfig = {
@@ -169,6 +173,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const [customIndustryInput, setCustomIndustryInput] = useState("");
   const [customRoleInput, setCustomRoleInput] = useState("");
   const [customTerritoryInput, setCustomTerritoryInput] = useState("");
+  const autoBriefRef = useRef("");
+  const [briefKeywords, setBriefKeywords] = useState<string[]>([]);
 
   const {
     data: profiles = [],
@@ -205,6 +211,30 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     onSuccess: (profile) => toast.success(`Duplicated "${profile.name}"`),
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to duplicate ICP build.")),
   });
+  const suggestBrief = useSuggestIcpSearchBrief();
+
+  useEffect(() => {
+    const local = suggestIcpSearchBriefLocal({
+      industries: formConfig.industries,
+      description: formConfig.description,
+    });
+    if (!local.brief) {
+      setBriefKeywords([]);
+      return;
+    }
+    setBriefKeywords(local.keywords);
+    setFormConfig((prev) => {
+      const current = prev.customPrompt.trim();
+      if (current !== "" && current !== autoBriefRef.current) {
+        return prev;
+      }
+      if (current === local.brief) {
+        return prev;
+      }
+      autoBriefRef.current = local.brief;
+      return { ...prev, customPrompt: local.brief };
+    });
+  }, [formConfig.industries, formConfig.description]);
 
   if (!isOpen) return null;
 
@@ -219,6 +249,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       profileName: `New ICP Build #${profiles.length + 1}`,
       description: "Custom target criteria profile for AI discovery.",
     });
+    autoBriefRef.current = "";
+    setBriefKeywords([]);
     setActiveTab("criteria");
     setViewMode("form");
   };
@@ -226,6 +258,13 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const handleStartEdit = (profile: IcpProfile) => {
     setEditingProfileId(profile.id);
     setFormConfig({ ...profile.config });
+    autoBriefRef.current = "";
+    setBriefKeywords(
+      suggestIcpSearchBriefLocal({
+        industries: profile.config.industries,
+        description: profile.config.description,
+      }).keywords
+    );
     setActiveTab("criteria");
     setViewMode("form");
   };
@@ -303,6 +342,52 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     }
     setCustomTerritoryInput("");
   };
+
+  function applySuggestedBrief(brief: string, keywords: string[]) {
+    autoBriefRef.current = "";
+    setBriefKeywords(keywords);
+    setFormConfig((prev) => ({ ...prev, customPrompt: brief }));
+  }
+
+  function insertBriefKeyword(keyword: string) {
+    const token = keyword.trim();
+    if (!token) return;
+    setFormConfig((prev) => {
+      if (prev.customPrompt.toLowerCase().includes(token.toLowerCase())) {
+        return prev;
+      }
+      const next = `${prev.customPrompt.trim()} ${token}`.trim();
+      autoBriefRef.current = "";
+      return { ...prev, customPrompt: next };
+    });
+  }
+
+  async function handleSuggestBrief(mode: "generate" | "improve" | "regenerate") {
+    try {
+      const result = await suggestBrief.mutateAsync({
+        mode,
+        customPrompt: formConfig.customPrompt,
+        description: formConfig.description,
+        industries: formConfig.industries,
+        territories: formConfig.territories,
+        decisionMakers: formConfig.decisionMakers,
+      });
+      if (!result.brief.trim()) {
+        toast.error("Couldn’t draft a search phrase. Add a product or buyer noun and try again.");
+        return;
+      }
+      applySuggestedBrief(result.brief, result.keywords);
+      toast.success(
+        mode === "improve"
+          ? "Search phrase improved."
+          : mode === "regenerate"
+            ? "New search phrase drafted."
+            : "Search phrase generated from your ICP."
+      );
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to generate search keywords."));
+    }
+  }
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
@@ -967,24 +1052,70 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
                   {/* What we search for */}
                   <div className="space-y-1.5">
-                    <label className="flex items-center justify-between text-[12px] font-semibold text-gray-700">
+                    <label className="flex items-center justify-between gap-2 text-[12px] font-semibold text-gray-700">
                       <span className="flex items-center gap-1.5">
                         <Sparkles size={14} className="text-amber-500" />
                         What kind of opportunity are you looking for?
                       </span>
-                      <span className="text-[10px] font-normal text-gray-400">
-                        What we search for
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={suggestBrief.isPending}
+                          onClick={() =>
+                            handleSuggestBrief(formConfig.customPrompt.trim() ? "improve" : "generate")
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-[#09232D]/15 bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232D] transition hover:bg-[#09232D]/5 disabled:opacity-50"
+                        >
+                          {suggestBrief.isPending ? (
+                            <Loader2 size={10} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={10} className="text-amber-500" />
+                          )}
+                          {formConfig.customPrompt.trim() ? "Improve" : "Generate"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={suggestBrief.isPending}
+                          onClick={() => handleSuggestBrief("regenerate")}
+                          className="inline-flex items-center gap-1 rounded-full border border-[#09232D]/15 bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232D]/70 transition hover:bg-[#09232D]/5 disabled:opacity-50"
+                          title="Draft a different phrasing"
+                        >
+                          <RefreshCw size={10} />
+                          Regenerate
+                        </button>
                       </span>
                     </label>
                     <textarea
                       rows={4}
                       value={formConfig.customPrompt}
-                      onChange={(e) =>
-                        setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        autoBriefRef.current = "";
+                        setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }));
+                      }}
                       placeholder="Describe products, buyers, events, or exclusions in concrete terms. Example: SaaS billing platforms hiring sales leaders; exclude agencies and consultancies…"
                       className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
                     />
+                    {briefKeywords.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {briefKeywords.map((keyword) => {
+                          const used = formConfig.customPrompt.toLowerCase().includes(keyword.toLowerCase());
+                          return (
+                            <button
+                              key={keyword}
+                              type="button"
+                              onClick={() => insertBriefKeyword(keyword)}
+                              className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition ${
+                                used
+                                  ? "bg-[#09232D] text-white"
+                                  : "border border-[#d7d7d7] bg-[#f8f8f8] text-[#09232d]/75 hover:bg-[#09232d]/5"
+                              }`}
+                            >
+                              {used ? keyword : `+ ${keyword}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                     <p className="text-[11px] leading-snug text-gray-500">
                       Use keywords (products, buyers, places you sell into). Do not write a definition like “Industries specialize in…”. Geographic hubs above also locate the search, then reject other countries.
                     </p>

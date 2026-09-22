@@ -346,6 +346,39 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
   });
 }
 
+export type IcpSearchBriefSuggestMode = "generate" | "improve" | "regenerate";
+
+export type IcpSearchBriefSuggestResult = {
+  brief: string;
+  keywords: string[];
+  source: "glm" | "heuristic" | string;
+};
+
+export function suggestIcpSearchBrief(payload: {
+  mode?: IcpSearchBriefSuggestMode;
+  customPrompt?: string;
+  description?: string;
+  industries?: string[];
+  territories?: string[];
+  decisionMakers?: string[];
+}): Promise<IcpSearchBriefSuggestResult> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpSearchBriefSuggestResult>({
+      method: "POST",
+      path: "/icp-profiles/suggest-search-brief",
+      body: payload,
+      timeoutMs: 30000,
+    });
+    return {
+      brief: typeof data?.brief === "string" ? data.brief : "",
+      keywords: Array.isArray(data?.keywords)
+        ? data.keywords.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+        : [],
+      source: typeof data?.source === "string" ? data.source : "heuristic",
+    };
+  });
+}
+
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
 export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "generate_more_leads" | "create_outreach";

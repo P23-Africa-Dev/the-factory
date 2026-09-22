@@ -6,6 +6,7 @@ import {
   isInsufficientIcpSearchBrief,
   withEntityModeCue,
   withProspectCountCue,
+  suggestIcpSearchBriefLocal,
 } from "./icp-search-brief";
 
 describe("icp-search-brief", () => {
@@ -66,5 +67,15 @@ describe("icp-search-brief", () => {
     expect(withProspectCountCue("find 50 logistics companies", 25)).toBe(
       "find 50 logistics companies"
     );
+  });
+
+  it("suggests logistics search nouns without geography", () => {
+    const suggestion = suggestIcpSearchBriefLocal({
+      industries: ["Logistics & Fleet"],
+      description: "Industries specialize in warehousing",
+    });
+    expect(suggestion.brief.toLowerCase()).toContain("3pl");
+    expect(suggestion.brief.toLowerCase()).not.toContain("nigeria");
+    expect(suggestion.keywords.length).toBeGreaterThan(0);
   });
 });

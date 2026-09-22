@@ -166,3 +166,66 @@ export function withProspectCountCue(body: string, count: GenerateProspectCount)
   }
   return `give me ${count} prospects`;
 }
+
+const INDUSTRY_SEARCH_SEEDS: Array<[needle: string, seed: string]> = [
+  ["logistics", "3PL warehousing last-mile delivery"],
+  ["fleet", "3PL freight fleet operators"],
+  ["fmcg", "FMCG distributors wholesale retail chains"],
+  ["retail", "retail distributors supermarket chains"],
+  ["fintech", "payments processors lending platforms"],
+  ["payment", "payments processors merchant acquiring"],
+  ["health", "healthcare distributors pharmacies clinics"],
+  ["pharma", "pharma distributors hospital suppliers"],
+  ["manufactur", "industrial manufacturers plant equipment"],
+  ["energy", "energy utilities power distributors"],
+  ["utilit", "utilities power water distributors"],
+  ["construction", "construction contractors developers"],
+  ["real estate", "property developers commercial real estate"],
+  ["agro", "agribusiness commodity traders processors"],
+  ["commodit", "commodity traders agribusiness processors"],
+];
+
+export type IcpSearchBriefSuggestion = {
+  brief: string;
+  keywords: string[];
+};
+
+/** Instant, no-network draft from selected industries. Geography stays out. */
+export function suggestIcpSearchBriefLocal(input: {
+  industries?: string[] | null;
+  description?: string | null;
+}): IcpSearchBriefSuggestion {
+  const parts: string[] = [];
+  for (const industry of input.industries ?? []) {
+    const lower = industry.toLowerCase();
+    const match = INDUSTRY_SEARCH_SEEDS.find(([needle]) => lower.includes(needle));
+    if (match) {
+      parts.push(match[1]);
+      continue;
+    }
+    const nouns = industry.replace(/[&,/]+/g, " ").trim();
+    if (nouns) parts.push(`${nouns} companies`);
+  }
+  const unique = [...new Set(parts)].slice(0, 2);
+  let brief = unique.join(" ").trim();
+  const description = (input.description ?? "").trim();
+  if (!brief && description && !/industries specialize/i.test(description)) {
+    brief = description;
+  }
+  return {
+    brief,
+    keywords: keywordsFromBrief(brief),
+  };
+}
+
+function keywordsFromBrief(brief: string): string[] {
+  const fillers = new Set(["and", "the", "for", "with", "from", "into", "that", "this", "companies", "company"]);
+  const picked: string[] = [];
+  for (const token of brief.toLowerCase().split(/[^\p{L}\p{N}\-&]+/u)) {
+    const t = token.trim();
+    if (t.length < 3 || fillers.has(t) || picked.includes(t)) continue;
+    picked.push(t);
+    if (picked.length >= 5) break;
+  }
+  return picked;
+}
