@@ -44,6 +44,7 @@ import {
   withEntityModeCue,
   type GenerateEntityMode,
 } from "@/lib/sales-engine/icp-search-brief";
+import { shouldShowIcpConfirmCard } from "@/lib/sales-engine/is-generic-lead-request";
 import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
 import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration-status";
 import { usePendingChatDiscovery } from "@/hooks/use-pending-chat-discovery";
@@ -1576,8 +1577,8 @@ function ChatWorkspace({
       return;
     }
 
-    // Item 1/2: gate prospect generation behind an inline ICP confirmation card.
-    if (intent === "generate_leads") {
+    // Vague generate asks → ICP confirm card. Specific niche asks → search user text immediately.
+    if (shouldShowIcpConfirmCard(intent, trimmed)) {
       const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
       setGenerateEntityMode("both");
       setMessages((current) => [
@@ -1586,13 +1587,40 @@ function ChatWorkspace({
           id: nextMessageId(),
           role: "user",
           body: trimmed,
-          intent,
+          intent: "generate_leads",
           ...(targetCount != null ? { targetCount } : {}),
         },
         { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
       ]);
       setDraft("");
       setPendingGenerateRequest({ prompt: trimmed });
+      return;
+    }
+
+    if (intent === "generate_leads") {
+      const { apiBody, targetCount } = resolveGenerateLeadsPrompt(trimmed);
+      const userMessageId = nextMessageId();
+      pendingUserMessageIdRef.current = userMessageId;
+      setMessages((current) => [
+        ...current,
+        {
+          id: userMessageId,
+          role: "user",
+          body: trimmed,
+          intent,
+          searchCaption: trimmed,
+          entityMode: "both",
+          ...(targetCount != null ? { targetCount } : {}),
+        },
+      ]);
+      setDraft("");
+      setSelectedIntent("freeform");
+      setUsage((current) => {
+        const next = { used: current.used + 1, limit: current.limit };
+        writeSearchUsage(next);
+        return next;
+      });
+      sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
       return;
     }
 
