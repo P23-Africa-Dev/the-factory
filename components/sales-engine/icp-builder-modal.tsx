@@ -34,6 +34,7 @@ import {
 import {
   composeIcpQualifySummary,
   composeIcpSearchBrief,
+  isInsufficientIcpSearchBrief,
 } from "@/lib/sales-engine/icp-search-brief";
 
 export type IcpConfig = {
@@ -239,6 +240,18 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   const handleActivateProfile = (profile: IcpProfile) => {
     if (profile.isActive) return;
+    if (
+      isInsufficientIcpSearchBrief({
+        customPrompt: profile.config?.customPrompt,
+        description: profile.description || profile.config?.description,
+        industries: profile.config?.industries,
+      })
+    ) {
+      toast.error(
+        "This ICP needs a niche “What we search for” before it can be activated. Edit the profile first."
+      );
+      return;
+    }
     activateProfile.mutate(profile.id);
   };
 
@@ -293,6 +306,18 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (
+      isInsufficientIcpSearchBrief({
+        customPrompt: formConfig.customPrompt,
+        description: formConfig.description,
+        industries: formConfig.industries,
+      })
+    ) {
+      toast.error(
+        "Add a niche “What we search for” (products, buyers, or exclusions) before saving this ICP."
+      );
+      return;
+    }
     const profileTitle = formConfig.profileName.trim() || "Untitled ICP Build";
     const selectedPacks = (formConfig.signalTypePacks ?? []).filter((pack) => pack !== "none");
     const config = {

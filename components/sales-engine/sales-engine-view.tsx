@@ -39,6 +39,10 @@ import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/ho
 import {
   composeIcpQualifySummary,
   composeIcpSearchBrief,
+  entityModeLabel,
+  isInsufficientIcpSearchBrief,
+  withEntityModeCue,
+  type GenerateEntityMode,
 } from "@/lib/sales-engine/icp-search-brief";
 import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
 import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration-status";
@@ -148,6 +152,10 @@ type ChatMessage = {
   kind?: "confirm-icp";
   /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
   targetCount?: number;
+  /** Entity mix for generate caption (both / companies / people). */
+  entityMode?: GenerateEntityMode;
+  /** Search brief echoed under the user bubble when ICP brief path is used. */
+  searchCaption?: string;
   /** True when the outbound send for this user prompt failed and can be retried. */
   failed?: boolean;
 };
@@ -598,9 +606,11 @@ function PromptButton({
 function LeadInlineResults({
   leads,
   onLeadsChange,
+  onNotRelevant,
 }: {
   leads: ChatLead[];
   onLeadsChange?: (leads: ChatLead[]) => void;
+  onNotRelevant?: (lead: ChatLead) => void;
 }) {
   const syncLead = useSyncLeadToCrm();
   const syncBatch = useSyncLeadsBatchToCrm();
@@ -752,6 +762,16 @@ function LeadInlineResults({
             <ExternalLink size={10} className="shrink-0 opacity-80" />
             View Profile
           </a>
+        ) : null}
+        {onNotRelevant ? (
+          <button
+            type="button"
+            onClick={() => onNotRelevant(lead)}
+            className="rounded-full border border-[#09232d]/12 px-2.5 py-0.5 text-[8px] font-semibold text-[#616263] transition-colors hover:bg-[#09232d]/5"
+            title="Hide and exclude from the next generate-more run"
+          >
+            Not relevant
+          </button>
         ) : null}
         {crmControl}
       </div>
@@ -1167,6 +1187,8 @@ function IcpConfirmationCard({
   isSwitching,
   switchingId,
   isConfirming,
+  entityMode,
+  onEntityModeChange,
   onSelectIcp,
   onConfirm,
   onManageIcps,
@@ -1176,6 +1198,8 @@ function IcpConfirmationCard({
   isSwitching: boolean;
   switchingId?: string;
   isConfirming: boolean;
+  entityMode: GenerateEntityMode;
+  onEntityModeChange: (mode: GenerateEntityMode) => void;
   onSelectIcp: (id: string) => void;
   onConfirm: () => void;
   onManageIcps: () => void;
@@ -1225,6 +1249,34 @@ function IcpConfirmationCard({
               We will search
             </p>
             <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/85">{searchBrief}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">Mode</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {(
+                [
+                  ["both", "Both"],
+                  ["companies", "Companies"],
+                  ["people", "People"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onEntityModeChange(value)}
+                  className={`rounded-full px-2.5 py-0.5 text-[9px] font-semibold transition ${
+                    entityMode === value
+                      ? "bg-[#09232d] text-white"
+                      : "border border-[#d7d7d7] bg-[#f8f8f8] text-[#09232d]/75 hover:bg-[#09232d]/5"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[9px] text-[#09232d]/55">
+              Default is accounts + people. Change only if you want one entity type.
+            </p>
           </div>
           <div>
             <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">
@@ -1313,6 +1365,7 @@ function ChatWorkspace({
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
   const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
   const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
+  const [generateEntityMode, setGenerateEntityMode] = useState<GenerateEntityMode>("both");
   const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
   const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
@@ -1532,6 +1585,7 @@ function ChatWorkspace({
     // Item 1/2: gate prospect generation behind an inline ICP confirmation card.
     if (intent === "generate_leads") {
       const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
+      setGenerateEntityMode("both");
       setMessages((current) => [
         ...current,
         {
@@ -1581,6 +1635,12 @@ function ChatWorkspace({
     }
 
     const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    const modeAwareBody = withEntityModeCue(apiBody, generateEntityMode);
+    const searchBrief = composeIcpSearchBrief({
+      customPrompt: activeIcp.config.customPrompt,
+      description: activeIcp.description || activeIcp.config.description,
+      industries: activeIcp.config.industries,
+    });
     const largeRequestHint =
       targetCount != null && targetCount >= 50
         ? " Searching multiple sources. This may take 30 to 60 seconds."
@@ -1596,16 +1656,24 @@ function ChatWorkspace({
     pendingUserMessageIdRef.current = lastUserId;
 
     setMessages((current) =>
-      current.map((message) =>
-        message.kind === "confirm-icp"
-          ? {
-              ...message,
-              kind: undefined,
-              body: `Using **${activeIcp.name}**. Generating prospects…${largeRequestHint}`,
-              intent: "generate_leads" as const,
-            }
-          : message
-      )
+      current.map((message) => {
+        if (lastUserId != null && message.id === lastUserId) {
+          return {
+            ...message,
+            entityMode: generateEntityMode,
+            searchCaption: searchBrief,
+          };
+        }
+        if (message.kind === "confirm-icp") {
+          return {
+            ...message,
+            kind: undefined,
+            body: `Using **${activeIcp.name}**. Generating prospects…${largeRequestHint}`,
+            intent: "generate_leads" as const,
+          };
+        }
+        return message;
+      })
     );
     setPendingGenerateRequest(null);
     // Clear the intent chip so a follow-up reply (e.g. "yes") is treated as freeform
@@ -1617,7 +1685,7 @@ function ChatWorkspace({
       return next;
     });
 
-    sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
+    sendMessage.mutate({ body: modeAwareBody, intent: "generate_leads" });
   }
 
   function scrollTranscriptToBottom() {
@@ -1792,6 +1860,17 @@ function ChatWorkspace({
                   <IntentModeChip intent={message.intent as ActionIntent} compact />
                 </div>
               )}
+              {message.role === "user" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                (message.searchCaption || message.entityMode) && (
+                  <p className="mb-1.5 text-right text-[9px] leading-[12px] text-[#09232d]/55">
+                    {message.searchCaption
+                      ? `Searching: ${message.searchCaption}`
+                      : "Searching from your ICP"}
+                    {" · "}
+                    Mode: {entityModeLabel(message.entityMode ?? "both")}
+                  </p>
+                )}
               {isBackgroundPending && (
                 <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
@@ -1828,6 +1907,8 @@ function ChatWorkspace({
                   isSwitching={activateIcpProfile.isPending}
                   switchingId={activateIcpProfile.variables}
                   isConfirming={isThinking}
+                  entityMode={generateEntityMode}
+                  onEntityModeChange={setGenerateEntityMode}
                   onSelectIcp={(id) => activateIcpProfile.mutate(id)}
                   onConfirm={confirmGenerateLeads}
                   onManageIcps={onOpenIcpBuilder}
@@ -1875,7 +1956,7 @@ function ChatWorkspace({
                 !message.leads?.length &&
                 !isPendingMessage && (
                 <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads matched this search yet. Try a broader industry or role, or run Generate Prospects with your ICP selected.
+                  No leads matched this search yet. Edit “What we search for” in the ICP builder, or loosen territory/size filters — then try again.
                 </p>
               )}
               {message.leads && message.leads.length > 0 && (
@@ -1886,6 +1967,19 @@ function ChatWorkspace({
                       current.map((item) => (item.id === message.id ? { ...item, leads } : item))
                     );
                   }}
+                  onNotRelevant={(lead) => {
+                    setMessages((current) =>
+                      current.map((item) =>
+                        item.id === message.id
+                          ? {
+                              ...item,
+                              leads: (item.leads ?? []).filter((entry) => entry.id !== lead.id),
+                            }
+                          : item
+                      )
+                    );
+                    toast.message(`Hidden “${lead.name}”. Generate more already skips prior lead names.`);
+                  }}
                 />
               )}
               {message.role === "assistant" &&
@@ -1893,16 +1987,42 @@ function ChatWorkspace({
                 Boolean(message.leads?.length) &&
                 !isPendingMessage &&
                 !isThinking && (
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleSend("Generate more prospects for the same ICP", "generate_more_leads")
-                      }
+                      onClick={() => {
+                        const moreBody = withEntityModeCue(
+                          "Generate more prospects for the same ICP",
+                          generateEntityMode
+                        );
+                        handleSend(moreBody, "generate_more_leads");
+                      }}
                       className="rounded-full border border-[#c8f0ff] bg-[#e4faff] px-3 py-1.5 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#d6f5ff]"
                     >
                       Generate more prospects
                     </button>
+                    <div className="flex items-center gap-1">
+                      {(
+                        [
+                          ["both", "Both"],
+                          ["companies", "Companies"],
+                          ["people", "People"],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setGenerateEntityMode(value)}
+                          className={`rounded-full px-2 py-0.5 text-[8px] font-semibold transition ${
+                            generateEntityMode === value
+                              ? "bg-[#09232d] text-white"
+                              : "border border-[#d7d7d7] bg-white text-[#09232d]/70"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               {message.role === "assistant" &&
