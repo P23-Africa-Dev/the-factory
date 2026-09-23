@@ -11,7 +11,7 @@ use App\Support\CountryCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class ActivateDemoRequest extends FormRequest
+class StoreDirectRegistrationRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -41,14 +41,14 @@ class ActivateDemoRequest extends FormRequest
 
         return [
             'action' => ['nullable', 'string', Rule::in(['draft', 'provision', 'activate'])],
-            'full_name' => ['nullable', 'string', 'min:2', 'max:255'],
-            'email' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'full_name' => ['required', 'string', 'min:2', 'max:255'],
+            'email' => ['required', 'string', 'email:rfc', 'max:255'],
             'phone' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
-            'company_name' => ['nullable', 'string', 'min:2', 'max:255'],
-            'country' => ['nullable', 'string', 'min:2', 'max:100', Rule::in(array_values(CountryCatalog::names()))],
-            'team_size' => ['nullable', 'string', Rule::in(TeamSizeEnum::values())],
-            'purpose' => ['nullable', 'string', Rule::in(WorkspacePurposeEnum::values())],
-            'user_type' => ['nullable', 'string', Rule::in(UserTypeEnum::values())],
+            'company_name' => ['required', 'string', 'min:2', 'max:255'],
+            'country' => ['required', 'string', 'min:2', 'max:100', Rule::in(array_values(CountryCatalog::names()))],
+            'team_size' => ['required', 'string', Rule::in(TeamSizeEnum::values())],
+            'purpose' => ['required', 'string', Rule::in(WorkspacePurposeEnum::values())],
+            'user_type' => ['required', 'string', Rule::in(UserTypeEnum::values())],
             'admin_notes' => ['nullable', 'string', 'max:2000'],
             'assigned_plan_key' => [
                 Rule::requiredIf($alreadyPaid),

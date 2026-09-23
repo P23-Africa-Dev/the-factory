@@ -411,6 +411,217 @@ class AdminActivationTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_provision_account_without_sending_activation_email(): void
+    {
+        Notification::fake();
+
+        $admin = Admin::create([
+            'name' => 'Platform Admin',
+            'email' => 'admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $demoRequest = CompanyDemoRequest::create([
+            'full_name' => 'Ada Lovelace',
+            'email' => 'ada@analytical.co',
+            'company_name' => 'Analytical Engines Ltd',
+            'country' => 'GB',
+            'team_size' => '11-50',
+            'use_case' => 'Enterprise workflows',
+            'status' => 'pending',
+            'requested_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->patch(route('admin.enterprise.demo-requests.activate', $demoRequest), [
+                'action' => 'provision',
+                'assigned_plan_key' => 'up_to_5',
+                'assigned_billing_interval' => 'monthly',
+            ])
+            ->assertRedirect(route('admin.enterprise.demo-requests.show', $demoRequest));
+
+        $demoRequest->refresh();
+
+        $this->assertSame('provisioned', $demoRequest->status);
+        $this->assertNotNull($demoRequest->company_id);
+        $this->assertNotNull($demoRequest->user_id);
+        $this->assertNull($demoRequest->activation_token_hash);
+        Notification::assertNothingSent();
+    }
+
+    public function test_admin_can_send_activation_after_provision(): void
+    {
+        Notification::fake();
+
+        $admin = Admin::create([
+            'name' => 'Platform Admin',
+            'email' => 'admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $demoRequest = CompanyDemoRequest::create([
+            'full_name' => 'Ada Lovelace',
+            'email' => 'ada@analytical.co',
+            'company_name' => 'Analytical Engines Ltd',
+            'country' => 'GB',
+            'team_size' => '11-50',
+            'use_case' => 'Enterprise workflows',
+            'status' => 'pending',
+            'requested_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->patch(route('admin.enterprise.demo-requests.activate', $demoRequest), [
+                'action' => 'provision',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($admin, 'admin')
+            ->patch(route('admin.enterprise.demo-requests.activate', $demoRequest), [
+                'action' => 'activate',
+            ])
+            ->assertRedirect(route('admin.enterprise.demo-requests.show', $demoRequest));
+
+        $demoRequest->refresh();
+
+        $this->assertSame('approved', $demoRequest->status);
+        $this->assertNotNull($demoRequest->activation_token_hash);
+        Notification::assertSentTo($demoRequest->user, EnterpriseActivationNotification::class);
+    }
+
+    public function test_admin_can_mark_already_paid_during_activation(): void
+    {
+        Notification::fake();
+
+        $admin = Admin::create([
+            'name' => 'Platform Admin',
+            'email' => 'admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $demoRequest = CompanyDemoRequest::create([
+            'full_name' => 'Ada Lovelace',
+            'email' => 'ada@analytical.co',
+            'company_name' => 'Analytical Engines Ltd',
+            'country' => 'GB',
+            'team_size' => '11-50',
+            'use_case' => 'Enterprise workflows',
+            'status' => 'pending',
+            'requested_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->patch(route('admin.enterprise.demo-requests.activate', $demoRequest), [
+                'action' => 'activate',
+                'assigned_plan_key' => 'up_to_5',
+                'assigned_billing_interval' => 'monthly',
+                'already_paid' => true,
+                'payment_start_date' => '2026-09-01',
+            ])
+            ->assertRedirect(route('admin.enterprise.demo-requests.show', $demoRequest));
+
+        $demoRequest->refresh();
+        $company = $demoRequest->company;
+
+        $this->assertNotNull($company);
+        $this->assertSame('active', $company->subscription_status);
+        $this->assertSame('up_to_5', $company->subscription_plan_key);
+        $this->assertSame('monthly', $company->subscription_billing_interval);
+        $this->assertSame('2026-09-01', $company->subscription_current_period_start?->format('Y-m-d'));
+        $this->assertSame('2026-10-01', $company->subscription_current_period_end?->format('Y-m-d'));
+        Notification::assertSentTo($demoRequest->user, EnterpriseActivationNotification::class);
+    }
+
+    public function test_admin_can_generate_payment_link_after_provision(): void
+    {
+        Notification::fake();
+
+        $admin = Admin::create([
+            'name' => 'Platform Admin',
+            'email' => 'admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $demoRequest = CompanyDemoRequest::create([
+            'full_name' => 'Ada Lovelace',
+            'email' => 'ada@analytical.co',
+            'company_name' => 'Analytical Engines Ltd',
+            'country' => 'GB',
+            'team_size' => '11-50',
+            'use_case' => 'Enterprise workflows',
+            'status' => 'pending',
+            'requested_at' => now(),
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->patch(route('admin.enterprise.demo-requests.activate', $demoRequest), [
+                'action' => 'provision',
+                'assigned_plan_key' => 'up_to_5',
+                'assigned_billing_interval' => 'monthly',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.enterprise.demo-requests.payment-link', $demoRequest), [
+                'plan_key' => 'up_to_5',
+                'interval' => 'monthly',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('payment_link_url');
+
+        $demoRequest->refresh();
+        $this->assertNotNull($demoRequest->company?->payment_link_token_hash);
+    }
+
+    public function test_admin_can_directly_register_user_and_send_activation(): void
+    {
+        Notification::fake();
+
+        $admin = Admin::create([
+            'name' => 'Platform Admin',
+            'email' => 'admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($admin, 'admin')
+            ->post(route('admin.enterprise.demo-requests.store'), [
+                'action' => 'activate',
+                'full_name' => 'Offline Buyer',
+                'email' => 'offline@buyer.test',
+                'company_name' => 'Offline Buyer Co',
+                'country' => 'Nigeria',
+                'team_size' => '2-10',
+                'purpose' => 'enterprise',
+                'user_type' => 'founder',
+                'assigned_plan_key' => 'up_to_10',
+                'assigned_billing_interval' => 'annual',
+                'already_paid' => true,
+                'payment_start_date' => '2026-01-15',
+            ]);
+
+        $demoRequest = CompanyDemoRequest::query()->where('email', 'offline@buyer.test')->first();
+        $this->assertNotNull($demoRequest);
+        $response->assertRedirect(route('admin.enterprise.demo-requests.show', $demoRequest));
+
+        $this->assertSame('admin_direct', $demoRequest->source);
+        $this->assertSame('approved', $demoRequest->status);
+        $this->assertSame('active', $demoRequest->company?->subscription_status);
+        $this->assertSame('up_to_10', $demoRequest->company?->subscription_plan_key);
+        $this->assertSame('2026-01-15', $demoRequest->company?->subscription_current_period_start?->format('Y-m-d'));
+        $this->assertSame('2027-01-15', $demoRequest->company?->subscription_current_period_end?->format('Y-m-d'));
+        Notification::assertSentTo($demoRequest->user, EnterpriseActivationNotification::class);
+    }
+
     private function extractActivationLink(EnterpriseActivationNotification $notification): string
     {
         $reflection = new ReflectionClass($notification);

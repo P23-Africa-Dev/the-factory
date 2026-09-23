@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Admin\Enterprise;
 
+use App\Enums\DemoRequestStatus;
 use App\Http\Controllers\Controller;
 use App\Exceptions\EnterpriseNotificationDeliveryException;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Requests\Enterprise\ActivateDemoRequest;
+use App\Http\Requests\Enterprise\StoreDirectRegistrationRequest;
 use App\Support\Billing\BillingPlanCatalog;
 use App\Models\Admin;
 use App\Models\CompanyDemoRequest;
 use App\Services\Enterprise\DemoRequestService;
+use DomainException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -29,6 +32,37 @@ class DemoRequestController extends Controller
             'requests' => $this->demoRequestService->paginateForAdmin($filters),
             'filters' => $filters,
         ]);
+    }
+
+    public function create(): View
+    {
+        return view('admin.enterprise.demo-requests.create', [
+            'billingPlans' => BillingPlanCatalog::all(),
+        ]);
+    }
+
+    public function store(StoreDirectRegistrationRequest $request): RedirectResponse
+    {
+        /** @var Admin $admin */
+        $admin = auth('admin')->user();
+
+        try {
+            $result = $this->demoRequestService->createDirectRegistration(
+                admin: $admin,
+                data: $request->validated(),
+            );
+        } catch (EnterpriseNotificationDeliveryException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['email' => $e->getMessage()]);
+        } catch (DomainException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['email' => $e->getMessage()]);
+        }
+
+        return redirect()->route('admin.enterprise.demo-requests.show', $result)
+            ->with('status', $this->statusMessageForResult($result, (string) ($request->validated('action') ?? 'activate')));
     }
 
     public function show(CompanyDemoRequest $demoRequest): View
@@ -60,8 +94,19 @@ class DemoRequestController extends Controller
         }
 
         return redirect()->route('admin.enterprise.demo-requests.show', $demoRequest)
-            ->with('status', $result->isApproved()
-                ? 'Enterprise registration activated and first-time access email sent successfully.'
-                : 'Enterprise registration draft saved successfully.');
+            ->with('status', $this->statusMessageForResult($result, (string) ($request->validated('action') ?? 'activate')));
+    }
+
+    private function statusMessageForResult(CompanyDemoRequest $result, string $action): string
+    {
+        return match (true) {
+            $action === 'draft' || $result->status === DemoRequestStatus::DRAFT->value
+                => 'Enterprise registration draft saved successfully.',
+            $action === 'provision' || $result->isProvisioned()
+                => 'Account provisioned. You can send a payment link or mark as paid, then send the activation email.',
+            $result->isApproved()
+                => 'Enterprise registration activated and first-time access email sent successfully.',
+            default => 'Enterprise registration updated successfully.',
+        };
     }
 }

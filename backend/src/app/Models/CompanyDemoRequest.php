@@ -22,6 +22,7 @@ class CompanyDemoRequest extends Model
         'registration_purpose',
         'registration_user_type',
         'status',
+        'source',
         'reviewed_by_admin_id',
         'company_id',
         'user_id',
@@ -67,6 +68,11 @@ class CompanyDemoRequest extends Model
     public function isPending(): bool
     {
         return $this->status === DemoRequestStatus::PENDING->value;
+    }
+
+    public function isProvisioned(): bool
+    {
+        return $this->status === DemoRequestStatus::PROVISIONED->value;
     }
 
     public function isApproved(): bool

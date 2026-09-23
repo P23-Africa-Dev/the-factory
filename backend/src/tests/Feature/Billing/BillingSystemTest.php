@@ -268,6 +268,37 @@ class BillingSystemTest extends TestCase
         $service->assertCanAddMember($company->fresh());
     }
 
+    public function test_offline_payment_activation_sets_period_dates_and_enforces_seats(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+
+        app(\App\Services\Billing\CompanySubscriptionService::class)->activateOfflinePayment(
+            company: $company,
+            planKey: 'up_to_5',
+            interval: \App\Enums\BillingInterval::MONTHLY,
+            periodStart: now()->startOfDay()->setDate(2026, 3, 1),
+        );
+
+        $company->refresh();
+
+        $this->assertSame(SubscriptionStatus::ACTIVE->value, $company->subscription_status);
+        $this->assertSame('up_to_5', $company->subscription_plan_key);
+        $this->assertSame('2026-03-01', $company->subscription_current_period_start?->format('Y-m-d'));
+        $this->assertSame('2026-04-01', $company->subscription_current_period_end?->format('Y-m-d'));
+
+        for ($i = 0; $i < 4; $i++) {
+            $company->users()->attach(User::factory()->create([
+                'internal_role' => 'agent',
+            ])->id, [
+                'role' => 'agent',
+                'joined_at' => now(),
+            ]);
+        }
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        app(CompanySeatLimitService::class)->assertCanAddMember($company->fresh());
+    }
+
     public function test_payment_link_generation_and_resolution(): void
     {
         ['company' => $company] = $this->createCompanyWithOwner();

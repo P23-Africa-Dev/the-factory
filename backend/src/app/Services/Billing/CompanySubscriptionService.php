@@ -337,6 +337,43 @@ class CompanySubscriptionService
         ])->save();
     }
 
+    /**
+     * Mark a company as paid offline (no Stripe subscription). Period end is
+     * derived from the payment start date and billing interval for renewal tracking.
+     */
+    public function activateOfflinePayment(
+        Company $company,
+        string $planKey,
+        BillingInterval $interval,
+        \Carbon\CarbonInterface $periodStart,
+    ): void {
+        if (! BillingPlanCatalog::has($planKey)) {
+            throw ValidationException::withMessages([
+                'assigned_plan_key' => ['A valid subscription plan is required when marking as already paid.'],
+            ]);
+        }
+
+        $start = $periodStart->copy()->startOfDay();
+        $end = $interval === BillingInterval::ANNUAL
+            ? $start->copy()->addYear()
+            : $start->copy()->addMonth();
+
+        $company->forceFill([
+            'assigned_plan_key' => $planKey,
+            'assigned_billing_interval' => $interval->value,
+            'subscription_plan_key' => $planKey,
+            'subscription_billing_interval' => $interval->value,
+            'subscription_status' => SubscriptionStatus::ACTIVE->value,
+            'subscription_current_period_start' => $start,
+            'subscription_current_period_end' => $end,
+            'subscription_grace_ends_at' => null,
+            'payment_link_token_hash' => null,
+            'payment_link_expires_at' => null,
+        ])->save();
+
+        $this->mapCredits->allocateForActivation($company->fresh());
+    }
+
     private function resolveBillableCompany(User $user, ?int $companyId = null, bool $requireBillingRole = true): Company
     {
         $query = $user->companies()->where('companies.status', 'active');

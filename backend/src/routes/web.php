@@ -88,6 +88,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::prefix('enterprise')->name('enterprise.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::prefix('demo-requests')->name('demo-requests.')->group(function (): void {
                 Route::get('/', [DemoRequestController::class, 'index'])->name('index');
+                Route::get('/create', [DemoRequestController::class, 'create'])->name('create');
+                Route::post('/', [DemoRequestController::class, 'store'])->name('store');
                 Route::get('/{demoRequest}', [DemoRequestController::class, 'show'])->name('show');
                 Route::patch('/{demoRequest}/activate', [DemoRequestController::class, 'activate'])->name('activate');
                 Route::post('/{demoRequest}/payment-link', [AdminPaymentLinkController::class, 'forDemoRequest'])->name('payment-link');
