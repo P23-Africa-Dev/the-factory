@@ -66,6 +66,8 @@ class CompanySubscriptionService
             'can_choose_plan' => $company->canChoosePlan(),
             'can_manage_billing' => $canManageBilling,
             'viewer_role' => $viewerRole,
+            'has_stripe_customer' => $company->hasStripeId(),
+            'has_active_stripe_subscription' => $this->hasActiveCashierSubscription($company),
             'current_period_start' => $company->subscription_current_period_start?->toIso8601String(),
             'current_period_end' => $company->subscription_current_period_end?->toIso8601String(),
             'grace_ends_at' => $company->subscription_grace_ends_at?->toIso8601String(),
@@ -89,6 +91,7 @@ class CompanySubscriptionService
     ): Checkout {
         $company = $this->resolveBillableCompany($user, $companyId);
         $this->assertCanCheckout($company, $planKey, $interval);
+        $this->assertCheckoutContextAllowed($company, $context, $planKey);
         $this->ensureStripeConfigured();
 
         if (! $company->hasStripeId()) {
@@ -107,9 +110,11 @@ class CompanySubscriptionService
 
         $frontendUrl = rtrim((string) config('billing.frontend_url'), '/');
         $successUrl = $frontendUrl . '/billing/success?session_id={CHECKOUT_SESSION_ID}';
-        $cancelUrl = $context === 'renewal'
-            ? $frontendUrl . '/subscribe?reason=expired'
-            : $frontendUrl . '/subscribe';
+        $cancelUrl = match ($context) {
+            'renewal' => $frontendUrl . '/subscribe?reason=expired',
+            'upgrade' => $frontendUrl . '/billing/change-plan',
+            default => $frontendUrl . '/subscribe',
+        };
 
         /** @var Checkout $checkout */
         $checkout = $this->performStripeOperation($company, 'create_checkout_session', function () use ($company, $priceId, $successUrl, $cancelUrl, $planKey, $interval, $context, $user): Checkout {
@@ -129,6 +134,81 @@ class CompanySubscriptionService
         });
 
         return $checkout;
+    }
+
+    /**
+     * Swap an existing Stripe subscription to a different plan (self-serve upgrade/downgrade).
+     *
+     * @return array<string, mixed>
+     */
+    public function changePlan(
+        User $user,
+        string $planKey,
+        BillingInterval $interval,
+        ?int $companyId = null,
+    ): array {
+        $company = $this->resolveBillableCompany($user, $companyId);
+        $this->assertCanCheckout($company, $planKey, $interval);
+        $this->seatLimitService->assertCanSwitchToPlan($company, $planKey);
+        $this->ensureStripeConfigured();
+
+        if (! $this->hasActiveCashierSubscription($company)) {
+            throw ValidationException::withMessages([
+                'plan_key' => [
+                    'No active Stripe subscription found. Use checkout to start or convert your plan.',
+                ],
+            ]);
+        }
+
+        $priceId = BillingPlanCatalog::stripePriceId($planKey, $interval);
+
+        if ($priceId === null) {
+            throw ValidationException::withMessages([
+                'plan_key' => ['This plan is not configured for billing yet. Please contact support.'],
+            ]);
+        }
+
+        $previousPlanKey = $company->subscription_plan_key;
+
+        $this->performStripeOperation($company, 'change_plan_swap', function () use ($company, $priceId): void {
+            $company->subscription('default')->swap($priceId);
+        });
+
+        $company->refresh();
+
+        $stripeSubscription = $company->subscription('default')?->asStripeSubscription();
+
+        $company->forceFill([
+            'subscription_plan_key' => $planKey,
+            'subscription_billing_interval' => $interval->value,
+            'subscription_status' => SubscriptionStatus::ACTIVE->value,
+            'subscription_current_period_start' => isset($stripeSubscription?->current_period_start)
+                ? now()->createFromTimestamp($stripeSubscription->current_period_start)
+                : $company->subscription_current_period_start,
+            'subscription_current_period_end' => isset($stripeSubscription?->current_period_end)
+                ? now()->createFromTimestamp($stripeSubscription->current_period_end)
+                : $company->subscription_current_period_end,
+            'subscription_grace_ends_at' => null,
+        ])->save();
+
+        $fresh = $company->fresh();
+
+        if ($previousPlanKey !== $planKey) {
+            $this->mapCredits->resetPlanCredits($fresh, 'change_plan');
+        } else {
+            $this->mapCredits->ensureRecord($fresh);
+        }
+
+        return $this->statusPayload($fresh);
+    }
+
+    public function hasActiveCashierSubscription(Company $company): bool
+    {
+        try {
+            return $company->subscribed('default');
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function createCheckoutSessionForPaymentLink(
@@ -440,6 +520,25 @@ class CompanySubscriptionService
                 'interval' => ['Your account is assigned to a specific billing interval.'],
             ]);
         }
+    }
+
+    private function assertCheckoutContextAllowed(Company $company, string $context, string $planKey): void
+    {
+        if ($this->hasActiveCashierSubscription($company)) {
+            throw ValidationException::withMessages([
+                'plan_key' => [
+                    'You already have an active Stripe subscription. Use Change plan to switch plans.',
+                ],
+            ]);
+        }
+
+        if ($context === 'upgrade') {
+            $this->seatLimitService->assertCanSwitchToPlan($company, $planKey);
+
+            return;
+        }
+
+        // onboarding / renewal: allow pending payment and expired renewals
     }
 
     public function ensureStripeConfigured(): void

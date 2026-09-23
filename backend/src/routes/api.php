@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\SupportAccessController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\Billing\BillingChangePlanController;
 use App\Http\Controllers\Api\V1\Billing\BillingCheckoutController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDefaultController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDetachController;
@@ -217,6 +218,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/status', BillingStatusController::class)->name('status');
         Route::get('/plans', BillingPlansController::class)->name('plans');
         Route::post('/checkout', BillingCheckoutController::class)->name('checkout');
+        Route::post('/change-plan', BillingChangePlanController::class)->name('change-plan');
         Route::post('/portal', BillingPortalController::class)->name('portal');
         Route::get('/payment-methods', [BillingPaymentMethodsController::class, 'index'])->name('payment-methods.index');
         Route::post('/payment-methods/setup', BillingPaymentMethodSetupController::class)->name('payment-methods.setup');

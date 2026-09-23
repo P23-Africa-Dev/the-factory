@@ -342,6 +342,36 @@
                         </button>
                     </form>
 
+                    <div class="mt-3 p-2 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+                        <div class="small fw-semibold mb-1" style="font-size:.78rem">Update plan (offline)</div>
+                        <p style="font-size:.72rem;color:var(--text-muted)" class="mb-2">
+                            Use for locked or offline-paid accounts that cannot self-upgrade. Sets subscription active with seat limit from the plan.
+                        </p>
+                        <form method="POST" action="{{ route('admin.billing.companies.offline-plan.update', $company) }}" class="d-grid gap-2">
+                            @csrf
+                            <select name="plan_key" class="form-select form-select-sm" required>
+                                @foreach ($billingPlans as $planKey => $plan)
+                                    <option value="{{ $planKey }}" @selected(old('plan_key', $company->subscription_plan_key ?? $company->assigned_plan_key) === $planKey)>
+                                        {{ $plan['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <select name="interval" class="form-select form-select-sm" required>
+                                @foreach (App\Enums\BillingInterval::cases() as $interval)
+                                    <option value="{{ $interval->value }}" @selected(old('interval', $company->subscription_billing_interval ?? $company->assigned_billing_interval ?? 'monthly') === $interval->value)>
+                                        {{ ucfirst($interval->value) }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <input type="date" name="payment_start_date" class="form-control form-control-sm" required
+                                   value="{{ old('payment_start_date', $company->subscription_current_period_start?->format('Y-m-d') ?? now()->format('Y-m-d')) }}">
+                            <button type="submit" class="btn btn-sm"
+                                style="background:rgba(245,158,11,.1);color:#d97706;border:1px solid rgba(245,158,11,.25)">
+                                <i class="bi bi-arrow-up-circle me-1"></i>Update offline plan
+                            </button>
+                        </form>
+                    </div>
+
                     @if (session('payment_link_url'))
                         <div class="alert alert-success mt-3 mb-0" style="font-size:.82rem">
                             Payment link generated:
@@ -376,6 +406,9 @@
                             <i class="bi bi-link-45deg me-1"></i>Generate Payment Link
                         </button>
                     </form>
+                    <p style="font-size:.72rem;color:var(--text-muted)" class="mt-2 mb-0">
+                        Locked plans (assigned by admin) cannot self-upgrade in the app — use Update offline plan or a payment link above.
+                    </p>
                 </div>
             @endif
 

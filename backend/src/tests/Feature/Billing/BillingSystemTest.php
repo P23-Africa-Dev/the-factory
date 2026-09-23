@@ -393,4 +393,204 @@ class BillingSystemTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonPath('errors.billing.0', 'Billing is temporarily unavailable. Please contact support to complete your subscription.');
     }
+
+    public function test_soft_deleted_users_do_not_consume_seats(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+        $this->activateCompanySubscription($company, 'up_to_5');
+
+        $member = User::factory()->create(['internal_role' => 'agent']);
+        $company->users()->attach($member->id, [
+            'role' => 'agent',
+            'joined_at' => now(),
+        ]);
+
+        $service = app(CompanySeatLimitService::class);
+        $this->assertSame(2, $service->countMembers($company->fresh()));
+
+        $member->delete();
+
+        $this->assertSame(1, $service->countMembers($company->fresh()));
+    }
+
+    public function test_missing_plan_key_on_active_company_blocks_adds(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner([
+            'subscription_status' => SubscriptionStatus::ACTIVE->value,
+            'subscription_plan_key' => null,
+        ]);
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectExceptionMessage('Subscription plan is not configured');
+
+        app(CompanySeatLimitService::class)->assertCanAddMember($company->fresh());
+    }
+
+    public function test_cannot_switch_to_plan_below_current_seat_usage(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+        $this->activateCompanySubscription($company, 'up_to_10');
+
+        for ($i = 0; $i < 6; $i++) {
+            $company->users()->attach(User::factory()->create([
+                'internal_role' => 'agent',
+            ])->id, [
+                'role' => 'agent',
+                'joined_at' => now(),
+            ]);
+        }
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectExceptionMessage('Remove');
+
+        app(CompanySeatLimitService::class)->assertCanSwitchToPlan($company->fresh(), 'up_to_5');
+    }
+
+    public function test_change_plan_requires_active_stripe_subscription(): void
+    {
+        ['user' => $user, 'company' => $company] = $this->createCompanyWithOwner();
+        $this->activateCompanySubscription($company, 'up_to_5');
+
+        config()->set('cashier.key', 'pk_test_x');
+        config()->set('cashier.secret', 'sk_test_x');
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->postJson('/api/v1/billing/change-plan', [
+                'plan_key' => 'up_to_10',
+                'interval' => 'monthly',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath(
+                'errors.plan_key.0',
+                'No active Stripe subscription found. Use checkout to start or convert your plan.',
+            );
+    }
+
+    public function test_checkout_upgrade_rejected_when_active_stripe_subscription_exists(): void
+    {
+        ['user' => $user, 'company' => $company] = $this->createCompanyWithOwner([
+            'stripe_id' => 'cus_test_seats',
+        ]);
+        $this->activateCompanySubscription($company, 'up_to_5');
+
+        \Illuminate\Support\Facades\DB::table('subscriptions')->insert([
+            'company_id' => $company->id,
+            'type' => 'default',
+            'stripe_id' => 'sub_test_seats_' . $company->id,
+            'stripe_status' => 'active',
+            'stripe_price' => 'price_test',
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->postJson('/api/v1/billing/checkout', [
+                'plan_key' => 'up_to_10',
+                'interval' => 'monthly',
+                'context' => 'upgrade',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath(
+                'errors.plan_key.0',
+                'You already have an active Stripe subscription. Use Change plan to switch plans.',
+            );
+    }
+
+    public function test_locked_assigned_plan_rejects_other_plans_on_change_plan(): void
+    {
+        ['user' => $user, 'company' => $company] = $this->createCompanyWithOwner([
+            'assigned_plan_key' => 'up_to_5',
+            'assigned_billing_interval' => 'monthly',
+            'stripe_id' => 'cus_locked',
+        ]);
+        $this->activateCompanySubscription($company, 'up_to_5');
+
+        \Illuminate\Support\Facades\DB::table('subscriptions')->insert([
+            'company_id' => $company->id,
+            'type' => 'default',
+            'stripe_id' => 'sub_locked_' . $company->id,
+            'stripe_status' => 'active',
+            'stripe_price' => 'price_test',
+            'quantity' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        config()->set('cashier.key', 'pk_test_x');
+        config()->set('cashier.secret', 'sk_test_x');
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->postJson('/api/v1/billing/change-plan', [
+                'plan_key' => 'up_to_10',
+                'interval' => 'monthly',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath(
+                'errors.plan_key.0',
+                'Your account is assigned to a specific plan. Please select the assigned plan.',
+            );
+    }
+
+    public function test_checkout_upgrade_context_allowed_for_offline_paid_without_stripe_sub(): void
+    {
+        ['user' => $user, 'company' => $company] = $this->createCompanyWithOwner([
+            'subscription_status' => SubscriptionStatus::ACTIVE->value,
+            'subscription_plan_key' => 'up_to_5',
+            'subscription_billing_interval' => 'monthly',
+            'subscription_current_period_start' => now(),
+            'subscription_current_period_end' => now()->addMonth(),
+            // Unlocked offline-paid (no assigned_plan_key) can self-serve upgrade via checkout.
+            'assigned_plan_key' => null,
+            'assigned_billing_interval' => null,
+        ]);
+
+        config()->set('cashier.key', '');
+        config()->set('cashier.secret', '');
+
+        $response = $this->withToken($this->ownerToken($user))
+            ->postJson('/api/v1/billing/checkout', [
+                'plan_key' => 'up_to_10',
+                'interval' => 'monthly',
+                'context' => 'upgrade',
+            ]);
+
+        // Offline paid has no Cashier sub, so upgrade checkout is allowed until Stripe config fails.
+        $response->assertStatus(422)
+            ->assertJsonPath('errors.billing.0', 'Billing is temporarily unavailable. Please contact support to complete your subscription.');
+    }
+
+    public function test_admin_can_update_offline_plan_for_company(): void
+    {
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class);
+
+        ['company' => $company] = $this->createCompanyWithOwner();
+        $this->activateCompanySubscription($company, 'up_to_5');
+
+        $admin = \App\Models\Admin::create([
+            'name' => 'Billing Admin',
+            'email' => 'billing-admin@example.com',
+            'password' => 'StrongPass123!',
+            'role' => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin, 'admin')
+            ->post(route('admin.billing.companies.offline-plan.update', $company), [
+                'plan_key' => 'up_to_10',
+                'interval' => 'annual',
+                'payment_start_date' => '2026-06-01',
+            ])
+            ->assertRedirect();
+
+        $company->refresh();
+        $this->assertSame('up_to_10', $company->subscription_plan_key);
+        $this->assertSame('annual', $company->subscription_billing_interval);
+        $this->assertSame('2026-06-01', $company->subscription_current_period_start?->format('Y-m-d'));
+        $this->assertSame('2027-06-01', $company->subscription_current_period_end?->format('Y-m-d'));
+        $this->assertSame(10, app(CompanySeatLimitService::class)->seatLimit($company));
+    }
 }

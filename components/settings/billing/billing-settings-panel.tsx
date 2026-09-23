@@ -139,13 +139,18 @@ export function BillingSettingsPanel() {
           <div className="flex flex-wrap gap-2 pt-2">
             {canManageBilling && status?.can_choose_plan && (
               <Link
-                href="/subscribe"
+                href="/billing/change-plan"
                 className="px-4 py-2.5 rounded-xl bg-dash-dark text-white text-[13px] font-semibold"
               >
-                Change plan
+                Upgrade / Change plan
               </Link>
             )}
-            {canManageBilling && (
+            {canManageBilling && !status?.can_choose_plan && (
+              <p className="text-[12px] text-gray-500 self-center">
+                Your plan is managed by Factory23. Contact support to change seats.
+              </p>
+            )}
+            {canManageBilling && status?.has_stripe_customer && (
               <button
                 type="button"
                 onClick={() => portalMutation.mutate()}

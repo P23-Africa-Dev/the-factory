@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\AI\AiStackSettingController;
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
 use App\Http\Controllers\Admin\Billing\BillingOverviewController;
+use App\Http\Controllers\Admin\Billing\AdminOfflinePlanController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Controllers\Admin\Billing\BillingPlanController;
 use App\Http\Controllers\Admin\Billing\CompanyDemoController;
@@ -149,6 +150,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
             Route::post('/companies/{company}/demo', [CompanyDemoController::class, 'update'])
                 ->name('companies.demo.update');
+            Route::post('/companies/{company}/offline-plan', [AdminOfflinePlanController::class, 'update'])
+                ->name('companies.offline-plan.update');
         });
 
         // ── Map Credits (Google API usage & allocation) ────────
