@@ -174,7 +174,7 @@
                             <label class="form-label small fw-semibold mb-1" style="font-size:.78rem">Subscription
                                 Plan</label>
                             <select name="assigned_plan_key" class="form-select form-select-sm">
-                                <option value="">No plan assigned — user chooses at checkout</option>
+                                <option value="">No plan assigned. User chooses at checkout</option>
                                 @foreach ($billingPlans as $planKey => $plan)
                                     <option value="{{ $planKey }}" @selected(old('assigned_plan_key', $demoRequest->assigned_plan_key) === $planKey)>
                                         {{ $plan['label'] }}
@@ -306,7 +306,7 @@
                     <div class="mt-3 p-2 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
                         <div class="small fw-semibold mb-1" style="font-size:.78rem">Update plan (offline)</div>
                         <p style="font-size:.72rem;color:var(--text-muted)" class="mb-2">
-                            Locked plans cannot self-upgrade. Update seats here for offline / admin-managed accounts.
+                            Locked plans cannot self upgrade. Update seats here for offline or admin managed accounts.
                         </p>
                         <form method="POST" action="{{ route('admin.billing.companies.offline-plan.update', $demoRequest->company) }}" class="d-grid gap-2">
                             @csrf
@@ -363,7 +363,7 @@
                         </form>
                     @else
                         <p style="font-size:.78rem;color:var(--text-muted)" class="mb-0 mt-3">
-                            Subscription is active — payment link is not needed.
+                            Subscription is active. Payment link is not needed.
                         </p>
                     @endif
                 </div>

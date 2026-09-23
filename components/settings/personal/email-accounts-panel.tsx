@@ -93,7 +93,7 @@ const STATUS_COLORS: Record<string, string> = {
 function openAuthorizationPopup(authorizationUrl: string, popupName: string) {
   const url = (authorizationUrl || "").trim();
   if (!url || !/^https:\/\//i.test(url)) {
-    toast.error("Microsoft sign-in URL was missing. Please try again.");
+    toast.error("Microsoft sign in URL was missing. Please try again.");
     return;
   }
 
@@ -108,7 +108,7 @@ function openAuthorizationPopup(authorizationUrl: string, popupName: string) {
       return;
     }
   } catch {
-    toast.error("Microsoft sign-in URL was invalid. Please try again.");
+    toast.error("Microsoft sign in URL was invalid. Please try again.");
     return;
   }
 
@@ -117,7 +117,7 @@ function openAuthorizationPopup(authorizationUrl: string, popupName: string) {
     window.location.href = url;
     return;
   }
-  toast.info("Complete sign-in in the popup. This page will update automatically.");
+  toast.info("Complete sign in in the popup. This page will update automatically.");
 }
 
 function notifyConnectionTest(test?: EmailAccountConnectionTest | null, fallbackSuccess?: string) {
@@ -677,7 +677,7 @@ function ConnectProviderPicker({
           onClose();
         },
         onError: (err: Error) => {
-          toast.error(getApiErrorMessage(err, `Failed to start ${PROVIDER_LABELS[provider]} sign-in.`), {
+          toast.error(getApiErrorMessage(err, `Failed to start ${PROVIDER_LABELS[provider]} sign in.`), {
             duration: 12000,
           });
           setPendingProvider(null);

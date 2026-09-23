@@ -263,7 +263,7 @@ class CompanySubscriptionService
 
         if ($amountCents < 100) {
             throw ValidationException::withMessages([
-                'amount_usd' => ['The minimum top-up amount is $1.'],
+                'amount_usd' => ['The minimum top up amount is $1.'],
             ]);
         }
 

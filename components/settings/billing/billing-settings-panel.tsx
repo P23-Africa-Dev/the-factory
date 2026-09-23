@@ -142,7 +142,7 @@ export function BillingSettingsPanel() {
                 href="/billing/change-plan"
                 className="px-4 py-2.5 rounded-xl bg-dash-dark text-white text-[13px] font-semibold"
               >
-                Upgrade / Change plan
+                Upgrade or change plan
               </Link>
             )}
             {canManageBilling && !status?.can_choose_plan && (

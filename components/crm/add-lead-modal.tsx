@@ -683,7 +683,7 @@ export function AddLeadModal({
                 <InlineInput
                   value={nextAction}
                   onChange={(e) => { setNextAction(e.target.value); clearError("nextAction"); }}
-                  placeholder="E.g Send follow-up email"
+                  placeholder="E.g Send follow up email"
                   className="col-span-2"
                 />
               </FormRow>

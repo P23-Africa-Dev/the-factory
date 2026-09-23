@@ -31,7 +31,7 @@ class PaymentLinkNotification extends Notification
         $intervalLabel = $this->interval === BillingInterval::ANNUAL ? 'annual' : 'monthly';
 
         return $this->factory23Mail()
-            ->subject("Complete your subscription — {$this->companyName}")
+            ->subject("Complete your subscription, {$this->companyName}")
             ->greeting("Hello {$notifiable->name},")
             ->line("Your Factory23 subscription for {$this->companyName} is ready to be completed.")
             ->line($this->factory23DetailTable([

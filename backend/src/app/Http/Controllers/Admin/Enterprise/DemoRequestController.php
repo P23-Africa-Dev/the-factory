@@ -105,7 +105,7 @@ class DemoRequestController extends Controller
             $action === 'provision' || $result->isProvisioned()
                 => 'Account provisioned. You can send a payment link or mark as paid, then send the activation email.',
             $result->isApproved()
-                => 'Enterprise registration activated and first-time access email sent successfully.',
+                => 'Enterprise registration activated and first time access email sent successfully.',
             default => 'Enterprise registration updated successfully.',
         };
     }

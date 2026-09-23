@@ -11,7 +11,7 @@ class AttendanceAutoClockOutCommand extends Command
 {
     protected $signature = 'attendance:auto-clockout {--company_id= : Limit auto-clockout to a single company id}';
 
-    protected $description = 'Auto clock-out open attendance records after company closing time and dispatch closure alerts.';
+    protected $description = 'Auto clock out open attendance records after company closing time and dispatch closure alerts.';
 
     public function __construct(private readonly AttendanceService $attendanceService)
     {

@@ -298,7 +298,7 @@ const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   quick_research: "Research market trends, competitors, or industry signals…",
   generate_leads: "Find people or companies that match your ICP…",
   generate_more_leads: "Find more prospects like the ones above…",
-  create_outreach: "Draft a follow-up email or WhatsApp message for…",
+  create_outreach: "Draft a follow up email or WhatsApp message for…",
 };
 
 const INTENT_MODE_CONFIG: Record<
@@ -392,7 +392,7 @@ const initialMessages: ChatMessage[] = [
     id: 1,
     role: "assistant",
     body:
-      "Welcome to Sales Engine.\n\nI'm your AI-powered assistant built to help you discover high-quality prospects, craft personalized outreach messages, and develop smart follow-up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain prospects aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new prospects, analyze your outreach performance, suggest improvements, or create follow-up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
+      "Welcome to Sales Engine.\n\nI'm your AI powered assistant built to help you discover high quality prospects, craft personalized outreach messages, and develop smart follow up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain prospects aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new prospects, analyze your outreach performance, suggest improvements, or create follow up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
   },
 ];
 
@@ -794,7 +794,7 @@ function LeadInlineResults({
             type="button"
             onClick={() => onNotRelevant(lead)}
             className="rounded-full border border-[#09232d]/12 px-2.5 py-0.5 text-[8px] font-semibold text-[#616263] transition-colors hover:bg-[#09232d]/5"
-            title="Hide and exclude from the next generate-more run"
+            title="Hide and exclude from the next generate more run"
           >
             Not relevant
           </button>
@@ -3782,7 +3782,7 @@ function SocialOpportunityDetail({
           )}
           {signal.followUpStrategy && (
             <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-              <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
+              <p className="text-[10px] font-bold leading-[12px]">Follow up Strategy</p>
               <p className="mt-1 text-[9px] leading-[12px]">{signal.followUpStrategy}</p>
             </div>
           )}
@@ -4106,7 +4106,7 @@ function ListeningSettingsModal({
                       className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none"
                     >
                       <option value="email">Email first</option>
-                      <option value="human_follow_up">Human follow-up</option>
+                      <option value="human_follow_up">Human follow up</option>
                     </select>
                   </label>
                 </div>
@@ -4586,7 +4586,7 @@ function SocialListeningTab({
         company={pendingOutreachSignal?.company || "—"}
         channel={
           listenSettings?.outreach_channel_default === "human_follow_up"
-            ? "Human follow-up"
+            ? "Human follow up"
             : "Email"
         }
         suggestedMessage={pendingOutreachSignal?.suggestedMessage || ""}

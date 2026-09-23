@@ -50,15 +50,15 @@ class AttendanceService
         [$windowStart, $openingTime, $closingTime] = $this->scheduleBoundsForDate($clockInAt, $setting);
 
         if ($clockInAt->lt($windowStart)) {
-            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_in_before_window', 'Clock-in is not open yet.');
+            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_in_before_window', 'Clock in is not open yet.');
 
             throw ValidationException::withMessages([
-                'clock_in' => ['Clock-in is not active yet for today.'],
+                'clock_in' => ['Clock in is not active yet for today.'],
             ]);
         }
 
         if ($clockInAt->gt($closingTime)) {
-            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_in_after_close', 'Clock-in is closed for the day.');
+            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_in_after_close', 'Clock in is closed for the day.');
 
             throw ValidationException::withMessages([
                 'clock_in' => ['Attendance actions are closed for today.'],
@@ -123,8 +123,8 @@ class AttendanceService
             'company_id' => (int) $context->company->id,
             'type' => 'attendance.clock_in_success',
             'category' => NotificationCategory::ATTENDANCE->value,
-            'title' => 'Clock-in successful',
-            'message' => 'Your attendance clock-in was recorded successfully.',
+            'title' => 'Clock in successful',
+            'message' => 'Your attendance clock in was recorded successfully.',
             'reference_type' => AttendanceRecord::class,
             'reference_id' => (int) $record->id,
             'action_url' => '/agent/operations/attendance',
@@ -176,7 +176,7 @@ class AttendanceService
             ->first();
 
         if (! $record || $record->clock_in_at === null) {
-            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_out_without_clock_in', 'Clock-out requires clock-in first.');
+            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_out_without_clock_in', 'Clock out requires clock in first.');
 
             throw ValidationException::withMessages([
                 'clock_out' => ['You must clock in before you can clock out.'],
@@ -192,7 +192,7 @@ class AttendanceService
         [,, $closingTime] = $this->scheduleBoundsForDate($clockOutAt, $setting);
 
         if ($clockOutAt->gt($closingTime)) {
-            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_out_after_close', 'Clock-out is closed for the day.');
+            $this->notifyAttendanceIssue($user, (int) $context->company->id, 'clock_out_after_close', 'Clock out is closed for the day.');
 
             throw ValidationException::withMessages([
                 'clock_out' => ['Attendance actions are closed for today.'],
@@ -233,8 +233,8 @@ class AttendanceService
             'company_id' => (int) $context->company->id,
             'type' => 'attendance.clock_out_success',
             'category' => NotificationCategory::ATTENDANCE->value,
-            'title' => 'Clock-out successful',
-            'message' => 'Your attendance clock-out was recorded successfully.',
+            'title' => 'Clock out successful',
+            'message' => 'Your attendance clock out was recorded successfully.',
             'reference_type' => AttendanceRecord::class,
             'reference_id' => (int) $record->id,
             'action_url' => '/agent/operations/attendance',
@@ -831,7 +831,7 @@ class AttendanceService
                     'company_id' => (int) $record->company_id,
                     'type' => 'attendance.auto_clock_out',
                     'category' => NotificationCategory::ATTENDANCE->value,
-                    'title' => 'Auto clock-out applied',
+                    'title' => 'Auto clock out applied',
                     'message' => 'You were automatically clocked out at company closing time.',
                     'reference_type' => AttendanceRecord::class,
                     'reference_id' => (int) $record->id,
@@ -968,7 +968,7 @@ class AttendanceService
     {
         if (! $this->isWorkingDay($date, $setting)) {
             throw ValidationException::withMessages([
-                'attendance_date' => ['Clock-in is only allowed on configured working days.'],
+                'attendance_date' => ['Clock in is only allowed on configured working days.'],
             ]);
         }
     }

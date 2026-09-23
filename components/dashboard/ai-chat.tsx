@@ -304,13 +304,13 @@ function parseDeliveryTypesValue(value: unknown): string[] {
 
 function formatDeliveryTypesLabel(value: unknown): string {
   const labels: Record<string, string> = {
-    in_app: "In-app",
+    in_app: "In app",
     push: "Push",
     email: "Email",
   };
 
   const types = Array.isArray(value) ? value.map((item) => String(item)) : parseDeliveryTypesValue(value);
-  return types.map((type) => labels[type] ?? type).join(", ") || "In-app, Push, Email";
+  return types.map((type) => labels[type] ?? type).join(", ") || "In app, Push, Email";
 }
 
 function highlightPlainText(content: string, query: string): string {
@@ -1477,7 +1477,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         { key: "outcomes", label: "Outcomes", control: "textarea" },
         { key: "opportunities", label: "Opportunities", control: "textarea" },
         { key: "objections", label: "Objections", control: "textarea" },
-        { key: "follow_up_actions", label: "Follow-up Actions", control: "textarea" },
+        { key: "follow_up_actions", label: "Follow up Actions", control: "textarea" },
       ];
     }
 
@@ -1990,7 +1990,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
         ...(gmailRequired ? [{
           key: "gmail",
           label: "Google Email",
-          value: "Connect Google to send this follow-up",
+          value: "Connect Google to send this follow up",
           warning: true,
         }] : []),
       ];
@@ -2108,7 +2108,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       return;
     }
 
-    toast.info("Complete email sign-in in the popup. Your follow-up will send automatically after connection.");
+    toast.info("Complete email sign in in the popup. Your follow up will send automatically after connection.");
   }
 
   async function ensureEmailAccountReadyForSend(): Promise<boolean> {
@@ -2175,7 +2175,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       }
 
       pendingEmailConfirmRef.current = null;
-      toast.success(payload.message || "Email connected. Sending your follow-up now.");
+      toast.success(payload.message || "Email connected. Sending your follow up now.");
       submitConfirmedAction(pending.index, pending.msg);
     };
 

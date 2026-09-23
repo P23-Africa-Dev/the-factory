@@ -125,7 +125,7 @@
                                 Plan</label>
                             <select name="assigned_plan_key" id="assigned_plan_key"
                                 class="form-select form-select-sm @error('assigned_plan_key') is-invalid @enderror">
-                                <option value="">No plan assigned — user chooses at checkout</option>
+                                <option value="">No plan assigned. User chooses at checkout</option>
                                 @foreach ($billingPlans as $planKey => $plan)
                                     <option value="{{ $planKey }}" @selected(old('assigned_plan_key') === $planKey)>
                                         {{ $plan['label'] }}

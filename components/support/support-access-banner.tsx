@@ -96,7 +96,7 @@ export function SupportAccessBanner() {
               Support session as {session.target_user.name} · {session.company.name}
             </p>
             <p className="truncate text-xs text-amber-800">
-              {readOnly ? "Read-only" : "Operational full"} · {session.reason}
+              {readOnly ? "Read only" : "Operational full"} · {session.reason}
               {session.ticket_reference ? ` · ${session.ticket_reference}` : ""}
             </p>
           </div>

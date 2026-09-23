@@ -21,7 +21,7 @@ class EnterpriseDemoRequestAdminNotification extends Notification
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
         return $this->factory23Mail()
-            ->subject('New demo request — Factory23')
+            ->subject('New demo request, Factory23')
             ->greeting('Hello,')
             ->line('A new company onboarding demo request has been submitted.')
             ->line($this->factory23DetailTable([

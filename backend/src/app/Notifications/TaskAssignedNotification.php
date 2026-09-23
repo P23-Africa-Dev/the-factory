@@ -47,7 +47,7 @@ class TaskAssignedNotification extends Notification
         }
 
         return $this->factory23Mail()
-            ->subject($this->selfAssigned ? 'Task created — Factory23' : 'New task assigned — Factory23')
+            ->subject($this->selfAssigned ? 'Task created, Factory23' : 'New task assigned, Factory23')
             ->greeting("Hello {$notifiable->name},")
             ->line($this->selfAssigned
                 ? 'A new standalone task has been created for you.'

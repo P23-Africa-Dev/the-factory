@@ -570,7 +570,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 />
               </FormRow>
               {role !== "agent" && (
-                <p className="text-[11px] text-gray-400">Agent-only profile fields are available when role is Agent.</p>
+                <p className="text-[11px] text-gray-400">Agent only profile fields are available when role is Agent.</p>
               )}
             </div>
 

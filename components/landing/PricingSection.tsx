@@ -33,7 +33,7 @@ const allPricingPlans = [
     annualAmount: "$2,790",
     users: "Up to 15 users",
     description:
-      "Ideal for expanding businesses managing larger field operations, customer pipelines, and performance-driven teams.",
+      "Ideal for expanding businesses managing larger field operations, customer pipelines, and performance driven teams.",
     featured: true,
   },
   {
@@ -52,7 +52,7 @@ const allPricingPlans = [
     monthlyAmount: "$389",
     annualAmount: "$3,890",
     users: "Up to 25 users",
-    description: "Ideal for mid-sized organizations with multiple field squads.",
+    description: "Ideal for mid sized organizations with multiple field squads.",
     featured: false,
   },
   {
@@ -88,7 +88,7 @@ const allPricingPlans = [
     monthlyAmount: "$1,049",
     annualAmount: "$10,490",
     users: "Up to 75 users",
-    description: "Enterprise-scale field management for multi-region operations.",
+    description: "Enterprise scale field management for multi region operations.",
     featured: false,
   },
   {
@@ -97,7 +97,7 @@ const allPricingPlans = [
     monthlyAmount: "$1,349",
     annualAmount: "$13,490",
     users: "Up to 100 users",
-    description: "Maximum self-serve plan for extensive workforce deployments.",
+    description: "Maximum self serve plan for extensive workforce deployments.",
     featured: false,
   },
 ];

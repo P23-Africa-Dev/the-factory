@@ -39,7 +39,7 @@ class PayrollStatusNotification extends Notification implements ShouldQueue
         }
 
         return $this->factory23Mail()
-            ->subject('Payroll update — Factory23')
+            ->subject('Payroll update, Factory23')
             ->greeting("Hello {$notifiable->name},")
             ->line('Your payroll status has been updated.')
             ->line($this->factory23DetailTable($rows))

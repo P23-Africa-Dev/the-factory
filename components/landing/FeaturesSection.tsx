@@ -13,7 +13,7 @@ export default function FeaturesSection() {
             The Ultimate Field Agent Tracking System
           </h2>
           <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed mt-4">
-            Real-time field operations management for Africa.
+            Real time field operations management for Africa.
           </p>
         </div>
 
@@ -28,7 +28,7 @@ export default function FeaturesSection() {
             <div>
               <h3 className="text-lg font-bold text-[#0B252C] mb-3">See your team in real time</h3>
               <p className="text-sm text-[#4A5F64] leading-relaxed">
-                Live GPS tracking across your entire field force. Know who is where, when they arrived, and how long they stayed. No check-in calls. No guesswork.
+                Live GPS tracking across your entire field force. Know who is where, when they arrived, and how long they stayed. No check in calls. No guesswork.
               </p>
             </div>
           </div>
@@ -54,7 +54,7 @@ export default function FeaturesSection() {
             <div>
               <h3 className="text-lg font-bold text-[#0B252C] mb-3">Track every lead and task</h3>
               <p className="text-sm text-[#4A5F64] leading-relaxed">
-                CRM and project management in one place. Every follow-up, assignment, and activity logged. Nothing falls through.
+                CRM and project management in one place. Every follow up, assignment, and activity logged. Nothing falls through.
               </p>
             </div>
           </div>
@@ -72,7 +72,7 @@ export default function FeaturesSection() {
             <div>
               <h3 className="text-lg font-bold text-[#0B252C] mb-3">Automate your outreach</h3>
               <p className="text-sm text-[#4A5F64] leading-relaxed">
-                AI-powered sequences that run from your own connected inbox. The platform decides when and who to contact next.
+                AI powered sequences that run from your own connected inbox. The platform decides when and who to contact next.
               </p>
             </div>
           </div>
