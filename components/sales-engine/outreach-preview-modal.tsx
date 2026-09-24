@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRegenerateOutreach, useSendOutreachActivity } from "@/hooks/use-sales-engine-outreach";
+import { useOutreachInboxes } from "@/hooks/use-sales-engine-outreach-inbox";
 import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { normalizeOutreachSubjectBody, SalesEngineApiError } from "@/lib/api/sales-engine";
 
@@ -116,6 +117,7 @@ export function OutreachPreviewModal({
   const sendOutreach = useSendOutreachActivity();
   const regenerate = useRegenerateOutreach();
   const { data: senderSettings } = useOutreachSenderSettings(open && channel === "email");
+  const { data: inboxes } = useOutreachInboxes(open && channel === "email");
 
   const [toEmail, setToEmail] = useState(initialToEmail);
   const [subject, setSubject] = useState(initialSubject ?? "");
@@ -127,6 +129,7 @@ export function OutreachPreviewModal({
   const [copied, setCopied] = useState(false);
   const [generatingLabelIndex, setGeneratingLabelIndex] = useState(0);
   const [isTypingOut, setIsTypingOut] = useState(false);
+  const [selectedInboxId, setSelectedInboxId] = useState<number | null>(null);
   const typewriterRef = useRef<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const draftWorkspaceRef = useRef<HTMLDivElement>(null);
@@ -218,8 +221,35 @@ export function OutreachPreviewModal({
   const bodyReady = body.trim().length > 0;
   const isBusy = sendOutreach.isPending || regenerate.isPending || isTypingOut;
   const isAiRewriting = regenerate.isPending || isTypingOut;
+
+  const confirmedInboxes = useMemo(
+    () => (inboxes ?? []).filter((i) => i.status === "confirmed"),
+    [inboxes]
+  );
+
+  useEffect(() => {
+    if (!open || channel !== "email") return;
+    const preferred =
+      senderSettings?.default_inbox?.id ??
+      confirmedInboxes.find((i) => i.is_default)?.id ??
+      confirmedInboxes[0]?.id ??
+      null;
+    setSelectedInboxId(preferred);
+  }, [open, channel, senderSettings?.default_inbox?.id, confirmedInboxes]);
+
+  const selectedInbox = useMemo(
+    () => confirmedInboxes.find((i) => i.id === selectedInboxId) ?? null,
+    [confirmedInboxes, selectedInboxId]
+  );
+
+  const setupReady = Boolean(senderSettings?.setup?.can_send && selectedInbox);
   const canSendEmail =
-    channel === "email" && Boolean(activityId) && emailValid && bodyReady && !isBusy;
+    channel === "email" &&
+    Boolean(activityId) &&
+    emailValid &&
+    bodyReady &&
+    !isBusy &&
+    setupReady;
 
   useEffect(() => {
     if (!isAiRewriting) return;
@@ -235,21 +265,9 @@ export function OutreachPreviewModal({
     return Math.max(10, Math.round((wordCount / 200) * 60));
   }, [wordCount]);
 
-  const fromAddress = useMemo(() => {
-    if (
-      senderSettings?.sender_mode === "organization" &&
-      senderSettings.org_connection_status === "verified" &&
-      senderSettings.org_verified_from_email
-    ) {
-      return senderSettings.org_verified_from_email;
-    }
-    return senderSettings?.platform_from_email || "The Factory platform email";
-  }, [senderSettings]);
+  const fromAddress = selectedInbox?.email ?? "Confirm an inbox in email settings";
 
-  const isVerifiedSender = Boolean(
-    senderSettings?.sender_mode === "organization" &&
-      senderSettings.org_connection_status === "verified"
-  );
+  const isVerifiedSender = setupReady;
 
   const handleCopy = async () => {
     try {
@@ -292,13 +310,14 @@ export function OutreachPreviewModal({
   };
 
   const handleSend = useCallback(() => {
-    if (!activityId || !canSendEmail) return;
+    if (!activityId || !canSendEmail || !selectedInboxId) return;
     sendOutreach.mutate(
       {
         activityId,
         to_email: toEmail.trim(),
         subject: subject.trim() || undefined,
         body: body.trim(),
+        inbox_id: selectedInboxId,
       },
       {
         onSuccess: () => {
@@ -310,7 +329,17 @@ export function OutreachPreviewModal({
           toast.error(getApiErrorMessage(error, "Could not send outreach email.")),
       }
     );
-  }, [activityId, canSendEmail, onSent, onClose, sendOutreach, toEmail, subject, body]);
+  }, [
+    activityId,
+    canSendEmail,
+    onSent,
+    onClose,
+    sendOutreach,
+    toEmail,
+    subject,
+    body,
+    selectedInboxId,
+  ]);
 
   // Keyboard shortcut: Cmd+Enter / Ctrl+Enter to send
   useEffect(() => {
@@ -513,25 +542,47 @@ export function OutreachPreviewModal({
 
                     {/* From Field */}
                     {channel === "email" && (
-                      <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200/60">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="w-14 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      <div className="flex items-start justify-between gap-3 pt-2 border-t border-slate-200/60">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <span className="w-14 shrink-0 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                             From:
                           </span>
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="truncate text-xs font-medium text-slate-800">
-                              {fromAddress}
-                            </span>
-                            {isVerifiedSender ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 shrink-0">
-                                <ShieldCheck size={12} />
-                                Verified
-                              </span>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            {confirmedInboxes.length > 0 ? (
+                              <select
+                                value={selectedInboxId ?? ""}
+                                onChange={(e) =>
+                                  setSelectedInboxId(
+                                    e.target.value ? Number(e.target.value) : null
+                                  )
+                                }
+                                className="h-8 w-full max-w-[280px] rounded-[8px] border border-slate-200 bg-white px-2 text-xs font-medium text-slate-800"
+                              >
+                                {confirmedInboxes.map((inbox) => (
+                                  <option key={inbox.id} value={inbox.id}>
+                                    {inbox.email}
+                                    {inbox.is_default ? " (default)" : ""}
+                                  </option>
+                                ))}
+                              </select>
                             ) : (
-                              <span className="text-[10px] text-slate-400 shrink-0">
-                                (Default sender)
+                              <span className="truncate text-xs font-medium text-slate-800">
+                                {fromAddress}
                               </span>
                             )}
+                            <div className="flex items-center gap-1.5">
+                              {isVerifiedSender ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 shrink-0">
+                                  <ShieldCheck size={12} />
+                                  Ready
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-rose-600 shrink-0">
+                                  {(senderSettings?.setup?.blocking_reasons ?? []).join(" ") ||
+                                    "Complete email setup before sending."}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 

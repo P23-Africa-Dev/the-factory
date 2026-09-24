@@ -73,6 +73,7 @@ export function useSendOutreachActivity() {
       to_email: string;
       subject?: string;
       body: string;
+      inbox_id?: number;
     }) => sendOutreachActivity(activityId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });

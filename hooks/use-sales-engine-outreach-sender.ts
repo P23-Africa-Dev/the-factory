@@ -5,7 +5,6 @@ import {
   fetchOutreachSenderSettings,
   SalesEngineApiError,
   updateOutreachSenderSettings,
-  type OutreachSenderSettings,
 } from "@/lib/api/sales-engine";
 import { useResetSalesEngineAuth, useSalesEngineAuth } from "@/hooks/use-sales-engine-auth";
 
@@ -42,7 +41,8 @@ export function useUpdateOutreachSenderSettings() {
   const resetAuth = useResetSalesEngineAuth();
 
   return useMutation({
-    mutationFn: (payload: Partial<OutreachSenderSettings>) => updateOutreachSenderSettings(payload),
+    mutationFn: (payload: { default_inbox_id?: number | null; reply_to_email?: string | null }) =>
+      updateOutreachSenderSettings(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_SENDER_KEYS.all });
     },
