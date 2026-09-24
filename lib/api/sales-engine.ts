@@ -82,18 +82,26 @@ function normalizeSignalTypePacks(packs: unknown): string[] {
 }
 
 export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
-  const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
+  const rawConfig = (raw.config ?? {}) as Partial<IcpConfig>;
+  const config = { ...DEFAULT_ICP_CONFIG, ...rawConfig };
   return {
     id: raw.id,
-    name: raw.name,
+    name: raw.name ?? "",
     description: raw.description ?? "",
-    isActive: raw.isActive,
+    isActive: Boolean(raw.isActive),
     leadCount: raw.leadCount ?? 0,
     lastUpdated: formatLastUpdated(raw.lastUpdated),
     config: {
       ...config,
-      profileName: config.profileName || raw.name,
-      signalTypePacks: normalizeSignalTypePacks(raw.config?.signalTypePacks),
+      profileName: (config.profileName || raw.name || "").trim(),
+      description: config.description ?? "",
+      industries: Array.isArray(config.industries) ? config.industries : [],
+      companySizes: Array.isArray(config.companySizes) ? config.companySizes : [],
+      revenueRanges: Array.isArray(config.revenueRanges) ? config.revenueRanges : [],
+      territories: Array.isArray(config.territories) ? config.territories : [],
+      decisionMakers: Array.isArray(config.decisionMakers) ? config.decisionMakers : [],
+      customPrompt: config.customPrompt ?? "",
+      signalTypePacks: normalizeSignalTypePacks(rawConfig.signalTypePacks),
     },
   };
 }
