@@ -56,6 +56,11 @@ const DELIVERY_STATUS_CONFIG: Record<
   string,
   { label: string; badgeCls: string; dotCls: string }
 > = {
+  queued: {
+    label: "Queued",
+    badgeCls: "bg-amber-50 text-amber-800 border-amber-200/80",
+    dotCls: "bg-amber-500",
+  },
   sent: {
     label: "Sent",
     badgeCls: "bg-slate-100 text-slate-700 border-slate-200/80",
@@ -75,6 +80,11 @@ const DELIVERY_STATUS_CONFIG: Record<
     label: "Clicked",
     badgeCls: "bg-purple-50 text-purple-700 border-purple-200/80",
     dotCls: "bg-purple-500",
+  },
+  failed: {
+    label: "Failed",
+    badgeCls: "bg-rose-50 text-rose-700 border-rose-200/80",
+    dotCls: "bg-rose-500",
   },
   bounced: {
     label: "Bounced",
@@ -566,6 +576,7 @@ export function SalesEngineOutreachView() {
                   className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm outline-none transition hover:border-slate-300 focus:border-[#09232d]"
                 >
                   <option value="all">All Statuses</option>
+                  <option value="queued">Queued</option>
                   <option value="sent">Sent</option>
                   <option value="delivered">Delivered</option>
                   <option value="opened">Opened</option>
@@ -1015,7 +1026,6 @@ export function SalesEngineOutreachView() {
         initialToEmail={preview?.toEmail}
         contextLabel={preview?.contextLabel}
         onSent={() => {
-          toast.success("Outreach dispatched successfully.");
           setPreview(null);
           refetch();
         }}

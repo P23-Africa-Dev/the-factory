@@ -302,7 +302,7 @@ export function OutreachPreviewModal({
       },
       {
         onSuccess: () => {
-          toast.success(`Outreach sent to ${toEmail.trim()}.`);
+          toast.success(`Outreach queued for ${toEmail.trim()}.`);
           onSent();
           onClose();
         },

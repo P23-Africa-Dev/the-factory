@@ -102,10 +102,14 @@ class DemoRequestController extends Controller
         return match (true) {
             $action === 'draft' || $result->status === DemoRequestStatus::DRAFT->value
                 => 'Enterprise registration draft saved successfully.',
-            $action === 'provision' || $result->isProvisioned()
-                => 'Account provisioned. You can send a payment link or mark as paid, then send the activation email.',
-            $result->isApproved()
-                => 'Enterprise registration activated and first time access email sent successfully.',
+            $action === 'provision' && ! $result->hasControlAccessEnabled()
+                => 'Account provisioned. Activate the account for Control review, then send the invitation email when ready.',
+            $action === 'activate' || ($result->isProvisioned() && $result->hasControlAccessEnabled())
+                => 'Account activated for Control review. Temporary password is shown on this page. Send the invitation email when ready.',
+            $action === 'send_invite' || $result->isApproved()
+                => 'Invitation email sent successfully. The customer can complete first time setup with their own password.',
+            $result->isProvisioned()
+                => 'Account provisioned. Activate the account for Control review, then send the invitation email when ready.',
             default => 'Enterprise registration updated successfully.',
         };
     }

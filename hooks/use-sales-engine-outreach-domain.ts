@@ -5,6 +5,7 @@ import {
   authenticateOutreachDomain,
   deleteOutreachDomain,
   fetchOutreachDomain,
+  recheckOutreachDomainIntegrity,
   SalesEngineApiError,
   verifyOutreachDomain,
 } from "@/lib/api/sales-engine";
@@ -36,8 +37,6 @@ export function useOutreachDomain(enabled = true) {
     },
     enabled: enabled && Boolean(token) && !isAuthLoading,
     staleTime: 1000 * 30,
-    // Keep polling while a verification attempt is pending so the UI can pick
-    // up the result of DNS propagation without a manual refresh.
     refetchInterval: (query) =>
       query.state.data?.verification_status === "pending" ? 1000 * 15 : false,
   });
@@ -66,6 +65,22 @@ export function useVerifyOutreachDomain() {
 
   return useMutation({
     mutationFn: () => verifyOutreachDomain(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_DOMAIN_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_SENDER_KEYS.all });
+    },
+    onError: (error) => {
+      if (isUnauthorized(error)) resetAuth();
+    },
+  });
+}
+
+export function useRecheckOutreachDomainIntegrity() {
+  const queryClient = useQueryClient();
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useMutation({
+    mutationFn: () => recheckOutreachDomainIntegrity(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_DOMAIN_KEYS.all });
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_SENDER_KEYS.all });

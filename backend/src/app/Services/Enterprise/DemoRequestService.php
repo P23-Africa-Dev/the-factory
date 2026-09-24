@@ -97,13 +97,13 @@ class DemoRequestService
 
     /**
      * Create an admin-direct registration (no website demo request) and optionally
-     * provision / activate in one step.
+     * provision / activate for Control review in one step.
      */
     public function createDirectRegistration(Admin $admin, array $data): CompanyDemoRequest
     {
         $action = (string) ($data['action'] ?? 'activate');
 
-        if (! in_array($action, ['draft', 'provision', 'activate'], true)) {
+        if (! in_array($action, ['draft', 'provision', 'activate', 'send_invite'], true)) {
             $action = 'activate';
         }
 
@@ -235,13 +235,38 @@ class DemoRequestService
                 return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
             }
 
-            // activate (default): send activation email
+            if ($action === 'activate') {
+                $this->enableControlAccess($user, $demoRequest);
+
+                $demoRequest->fill([
+                    'status' => DemoRequestStatus::PROVISIONED->value,
+                    'approved_at' => null,
+                    'activated_at' => null,
+                    'activation_token_hash' => null,
+                    'activation_link_expires_at' => null,
+                    'last_activation_sent_at' => null,
+                ])->save();
+
+                return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
+            }
+
+            // send_invite: require Control access first (except resend when already approved)
+            if (! $demoRequest->hasControlAccessEnabled() && ! $demoRequest->isApproved()) {
+                throw ValidationException::withMessages([
+                    'action' => ['Activate the account for Control team review before sending the invitation email.'],
+                ]);
+            }
+
+            if (! $demoRequest->hasControlAccessEnabled()) {
+                $this->enableControlAccess($user, $demoRequest);
+            }
+
             $plainToken = Str::random(64);
             $expiresAt = now()->addMinutes(config('enterprise.activation_link_ttl_minutes'));
 
             $demoRequest->fill([
                 'status' => DemoRequestStatus::APPROVED->value,
-                'approved_at' => now(),
+                'approved_at' => $demoRequest->approved_at ?? now(),
                 'activation_token_hash' => hash('sha256', $plainToken),
                 'activation_link_expires_at' => $expiresAt,
                 'last_activation_sent_at' => now(),
@@ -283,6 +308,32 @@ class DemoRequestService
 
             return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
         });
+    }
+
+    /**
+     * Enable Control team login with the shared temporary password (no customer email).
+     */
+    private function enableControlAccess(User $user, CompanyDemoRequest $demoRequest): void
+    {
+        $tempPassword = (string) config('enterprise.control_temp_password', 'Factory23Temp1');
+
+        if ($tempPassword === '') {
+            throw ValidationException::withMessages([
+                'action' => ['Control temporary password is not configured.'],
+            ]);
+        }
+
+        $user->update([
+            'password' => $tempPassword,
+            'is_active' => true,
+            'email_verified_at' => $user->email_verified_at ?? now(),
+            'enterprise_onboarding_completed_at' => $user->enterprise_onboarding_completed_at ?? now(),
+        ]);
+
+        $demoRequest->fill([
+            'control_temp_password' => $tempPassword,
+            'control_access_enabled_at' => now(),
+        ]);
     }
 
     /**

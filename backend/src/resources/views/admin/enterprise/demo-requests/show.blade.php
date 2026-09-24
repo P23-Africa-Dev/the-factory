@@ -65,6 +65,37 @@
                 @endforeach
             </div>
 
+            @if ($demoRequest->control_temp_password)
+                <div class="metric-card p-4 mb-3"
+                    style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25)">
+                    <div class="section-label"><i class="bi bi-key"></i>Control Access Credentials</div>
+                    <p style="font-size:.78rem;color:var(--text-secondary)" class="mb-3">
+                        For Control team review only. Sign in to the product with these credentials before sending the
+                        customer invitation. The customer sets their own password during first time setup.
+                    </p>
+                    <div class="detail-row">
+                        <div class="detail-label">Email</div>
+                        <div class="detail-value">
+                            <code style="font-size:.85rem">{{ $demoRequest->email }}</code>
+                        </div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Temporary password</div>
+                        <div class="detail-value">
+                            <code style="font-size:.85rem">{{ $demoRequest->control_temp_password }}</code>
+                        </div>
+                    </div>
+                    @if ($demoRequest->control_access_enabled_at)
+                        <div class="detail-row">
+                            <div class="detail-label">Enabled</div>
+                            <div class="detail-value">
+                                {{ $demoRequest->control_access_enabled_at->format('M j, Y H:i') }}
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            @endif
+
             <div class="metric-card p-4">
                 <div class="section-label"><i class="bi bi-calendar3"></i>Timeline</div>
                 @php
@@ -167,8 +198,8 @@
                             </select>
                         </div>
 
-                        <textarea name="admin_notes" rows="4" class="form-control form-control-sm" placeholder="Optional internal notes"
-                            style="border-color:var(--border);border-radius:.5rem;font-size:.85rem">{{ old('admin_notes', $demoRequest->admin_notes) }}</textarea>
+                        <textarea name="admin_notes" rows="4" class="form-control form-control-sm"
+                            placeholder="Optional internal notes" style="border-color:var(--border);border-radius:.5rem;font-size:.85rem">{{ old('admin_notes', $demoRequest->admin_notes) }}</textarea>
 
                         <div>
                             <label class="form-label small fw-semibold mb-1" style="font-size:.78rem">Subscription
@@ -239,16 +270,36 @@
                             </button>
                         @endif
 
-                        <button name="action" value="activate" class="btn btn-sm"
-                            style="background:rgba(16,185,129,.1);color:#059669;border:1px solid rgba(16,185,129,.2)">
-                            <i class="bi bi-check2-circle me-2"></i>
-                            {{ $demoRequest->status === 'approved' ? 'Resend Activation Email' : 'Send Activation Email' }}
-                        </button>
+                        @if ($demoRequest->status !== 'approved')
+                            <button name="action" value="activate" class="btn btn-sm"
+                                style="background:rgba(16,185,129,.1);color:#059669;border:1px solid rgba(16,185,129,.2)">
+                                <i class="bi bi-unlock me-2"></i>
+                                {{ $demoRequest->hasControlAccessEnabled() ? 'Refresh Control Access' : 'Activate Account' }}
+                            </button>
+                        @endif
 
-                        @if ($demoRequest->company_id && $demoRequest->status === 'provisioned')
+                        @if ($demoRequest->hasControlAccessEnabled() || $demoRequest->status === 'approved')
+                            <button name="action" value="send_invite" class="btn btn-sm"
+                                style="background:rgba(99,102,241,.1);color:#4f46e5;border:1px solid rgba(99,102,241,.25)">
+                                <i class="bi bi-envelope me-2"></i>
+                                {{ $demoRequest->status === 'approved' ? 'Resend Invitation Email' : 'Send Invitation Email' }}
+                            </button>
+                        @endif
+
+                        @if ($demoRequest->company_id && $demoRequest->status === 'provisioned' && !$demoRequest->hasControlAccessEnabled())
                             <p style="font-size:.72rem;color:var(--text-muted)" class="mb-0 mt-1">
-                                Account is provisioned. Send a payment link below if needed, then send the activation email
-                                when ready.
+                                Account is provisioned. Activate the account to unlock Control login credentials, then
+                                send the invitation email when ready.
+                            </p>
+                        @elseif ($demoRequest->hasControlAccessEnabled() && $demoRequest->status === 'provisioned')
+                            <p style="font-size:.72rem;color:var(--text-muted)" class="mb-0 mt-1">
+                                Control access is ready. Review the account with the temporary password, then send the
+                                invitation email when ready.
+                            </p>
+                        @elseif ($demoRequest->status === 'approved')
+                            <p style="font-size:.72rem;color:var(--text-muted)" class="mb-0 mt-1">
+                                Invitation email has been sent. The customer can complete first time setup with their own
+                                password.
                             </p>
                         @endif
                     </form>
@@ -303,12 +354,15 @@
                         </div>
                     @endif
 
-                    <div class="mt-3 p-2 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+                    <div class="mt-3 p-2 rounded"
+                        style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
                         <div class="small fw-semibold mb-1" style="font-size:.78rem">Update plan (offline)</div>
                         <p style="font-size:.72rem;color:var(--text-muted)" class="mb-2">
                             Locked plans cannot self upgrade. Update seats here for offline or admin managed accounts.
                         </p>
-                        <form method="POST" action="{{ route('admin.billing.companies.offline-plan.update', $demoRequest->company) }}" class="d-grid gap-2">
+                        <form method="POST"
+                            action="{{ route('admin.billing.companies.offline-plan.update', $demoRequest->company) }}"
+                            class="d-grid gap-2">
                             @csrf
                             <select name="plan_key" class="form-select form-select-sm" required>
                                 @foreach ($billingPlans as $planKey => $plan)
@@ -319,13 +373,13 @@
                             </select>
                             <select name="interval" class="form-select form-select-sm" required>
                                 @foreach (App\Enums\BillingInterval::cases() as $interval)
-                                    <option value="{{ $interval->value }}" @selected(old('interval', $demoRequest->company->subscription_billing_interval ?? $demoRequest->assigned_billing_interval ?? 'monthly') === $interval->value)>
+                                    <option value="{{ $interval->value }}" @selected(old('interval', $demoRequest->company->subscription_billing_interval ?? ($demoRequest->assigned_billing_interval ?? 'monthly')) === $interval->value)>
                                         {{ ucfirst($interval->value) }}
                                     </option>
                                 @endforeach
                             </select>
                             <input type="date" name="payment_start_date" class="form-control form-control-sm" required
-                                   value="{{ old('payment_start_date', $demoRequest->company->subscription_current_period_start?->format('Y-m-d') ?? now()->format('Y-m-d')) }}">
+                                value="{{ old('payment_start_date', $demoRequest->company->subscription_current_period_start?->format('Y-m-d') ?? now()->format('Y-m-d')) }}">
                             <button type="submit" class="btn btn-sm"
                                 style="background:rgba(245,158,11,.1);color:#d97706;border:1px solid rgba(245,158,11,.25)">
                                 <i class="bi bi-arrow-up-circle me-1"></i>Update offline plan

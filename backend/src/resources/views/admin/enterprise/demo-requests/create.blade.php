@@ -191,11 +191,14 @@
                         </button>
                         <button name="action" value="activate" class="btn btn-sm"
                             style="background:rgba(16,185,129,.1);color:#059669;border:1px solid rgba(16,185,129,.2)">
-                            <i class="bi bi-check2-circle me-1"></i>Register &amp; Send Activation
+                            <i class="bi bi-unlock me-1"></i>Activate Account
                         </button>
                         <a href="{{ route('admin.enterprise.demo-requests.index') }}"
                             class="btn btn-sm btn-outline-secondary">Cancel</a>
                     </div>
+                    <p style="font-size:.72rem;color:var(--text-muted)" class="mb-0 mt-2">
+                        Activate Account sets a temporary password for Control team review. Send the invitation email from the request page after you have checked the account.
+                    </p>
                 </form>
             </div>
         </div>

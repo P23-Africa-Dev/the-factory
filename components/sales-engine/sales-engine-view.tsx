@@ -2231,6 +2231,7 @@ function ChatWorkspace({
 }
 
 const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  queued: { label: "Queued", className: "bg-[#f59e0b]/20 text-[#92400e]" },
   sent: { label: "Sent", className: "bg-white/70 text-[#09232d]" },
   delivered: { label: "Delivered", className: "bg-[#16b37d]/20 text-[#087652]" },
   opened: { label: "Opened", className: "bg-[#2563eb]/15 text-[#1d4ed8]" },
@@ -2239,6 +2240,7 @@ const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string 
   dropped: { label: "Dropped", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
   spam: { label: "Marked spam", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
   unsubscribed: { label: "Unsubscribed", className: "bg-[#f59e0b]/20 text-[#92400e]" },
+  failed: { label: "Failed", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
 };
 
 function OutreachActionMenu({
@@ -2556,7 +2558,6 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         initialToEmail={preview?.toEmail}
         contextLabel={preview?.contextLabel}
         onSent={() => {
-          toast.success("Outreach sent.");
           setPreview(null);
         }}
         onConfigureSender={onOpenSettings}

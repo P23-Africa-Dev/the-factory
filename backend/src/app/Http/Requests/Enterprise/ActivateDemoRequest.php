@@ -40,7 +40,7 @@ class ActivateDemoRequest extends FormRequest
         $alreadyPaid = (bool) $this->boolean('already_paid');
 
         return [
-            'action' => ['nullable', 'string', Rule::in(['draft', 'provision', 'activate'])],
+            'action' => ['nullable', 'string', Rule::in(['draft', 'provision', 'activate', 'send_invite'])],
             'full_name' => ['nullable', 'string', 'min:2', 'max:255'],
             'email' => ['nullable', 'string', 'email:rfc', 'max:255'],
             'phone' => ['nullable', 'string', 'regex:/^\+[1-9][0-9]{7,14}$/'],
