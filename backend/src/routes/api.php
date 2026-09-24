@@ -40,6 +40,7 @@ use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Drive\DriveController;
 use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAssertionController;
+use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAccessRequestController;
 use App\Http\Controllers\Api\V1\EmailAccountController;
 use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -757,6 +758,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::post('/sales-engine/assertion', [SalesEngineAssertionController::class, 'store'])
                 ->middleware('throttle:api')
                 ->name('sales-engine.assertion');
+            Route::get('/sales-engine/access-requests/status', [SalesEngineAccessRequestController::class, 'status'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.status');
+            Route::post('/sales-engine/access-requests', [SalesEngineAccessRequestController::class, 'store'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.store');
         });
 
     // Canonical agent endpoints.
@@ -767,6 +774,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::post('/sales-engine/assertion', [SalesEngineAssertionController::class, 'store'])
                 ->middleware('throttle:api')
                 ->name('sales-engine.assertion');
+            Route::get('/sales-engine/access-requests/status', [SalesEngineAccessRequestController::class, 'status'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.status');
+            Route::post('/sales-engine/access-requests', [SalesEngineAccessRequestController::class, 'store'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.store');
 
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'agentIndex'])->name('index');

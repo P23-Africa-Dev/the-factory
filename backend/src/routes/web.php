@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\Places\PlacesAnalyticsController;
 use App\Http\Controllers\Admin\Database\DatabaseLockController;
 use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
+use App\Http\Controllers\Admin\SalesEngine\AccessRequestController as SalesEngineAccessRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\SupportAccessController;
@@ -94,6 +95,16 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
                 Route::get('/{demoRequest}', [DemoRequestController::class, 'show'])->name('show');
                 Route::patch('/{demoRequest}/activate', [DemoRequestController::class, 'activate'])->name('activate');
                 Route::post('/{demoRequest}/payment-link', [AdminPaymentLinkController::class, 'forDemoRequest'])->name('payment-link');
+            });
+        });
+
+        // ── Sales Engine Access ────────────────────────────────
+        Route::prefix('sales-engine')->name('sales-engine.')->middleware('admin.permission:manage_users')->group(function (): void {
+            Route::prefix('access-requests')->name('access-requests.')->group(function (): void {
+                Route::get('/', [SalesEngineAccessRequestController::class, 'index'])->name('index');
+                Route::get('/{accessRequest}', [SalesEngineAccessRequestController::class, 'show'])->name('show');
+                Route::post('/{accessRequest}/approve', [SalesEngineAccessRequestController::class, 'approve'])->name('approve');
+                Route::post('/{accessRequest}/decline', [SalesEngineAccessRequestController::class, 'decline'])->name('decline');
             });
         });
 
