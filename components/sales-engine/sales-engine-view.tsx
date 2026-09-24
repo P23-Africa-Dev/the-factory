@@ -36,6 +36,18 @@ import {
 } from "./research-sources-list";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
+import {
+  composeIcpQualifySummary,
+  composeIcpSearchBrief,
+  composeSearchGeoCaption,
+  entityModeLabel,
+  isInsufficientIcpSearchBrief,
+  withEntityModeCue,
+  withProspectCountCue,
+  type GenerateEntityMode,
+  type GenerateProspectCount,
+} from "@/lib/sales-engine/icp-search-brief";
+import { shouldShowIcpConfirmCard } from "@/lib/sales-engine/is-generic-lead-request";
 import { useSyncLeadToCrm, useSyncLeadsBatchToCrm } from "@/hooks/use-sync-leads-to-crm";
 import { useFactory23IntegrationStatus } from "@/hooks/use-factory23-integration-status";
 import { usePendingChatDiscovery } from "@/hooks/use-pending-chat-discovery";
@@ -78,6 +90,7 @@ import {
   formatLeadRoleLine,
   leadEntityBadge,
   primaryProfileUrl,
+  primaryWebsiteUrl,
 } from "@/lib/enriched-lead-card";
 import {
   cancelDiscoveryRun,
@@ -105,7 +118,9 @@ import {
   ExternalLink,
   Eye,
   Globe2,
+  LayoutGrid,
   Lightbulb,
+  List,
   Loader2,
   Mail,
   MessageCircle,
@@ -142,6 +157,10 @@ type ChatMessage = {
   kind?: "confirm-icp";
   /** Resolved prospect target shown as a caption under a "generate_leads" user bubble. */
   targetCount?: number;
+  /** Entity mix for generate caption (both / companies / people). */
+  entityMode?: GenerateEntityMode;
+  /** Search brief echoed under the user bubble when ICP brief path is used. */
+  searchCaption?: string;
   /** True when the outbound send for this user prompt failed and can be retried. */
   failed?: boolean;
 };
@@ -177,6 +196,14 @@ function formatSignalTypeKey(key: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function leadLocationCaption(lead: ChatLead): string | null {
+  const loc = (lead.location ?? "").trim();
+  if (loc) return loc;
+  if (lead.location_status === "outside_territory") return "Outside territory";
+  if (lead.location_status === "unknown") return "Location not confirmed.";
+  return null;
 }
 
 function formatPostedDate(iso: string | null | undefined): string {
@@ -271,7 +298,7 @@ const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   quick_research: "Research market trends, competitors, or industry signals…",
   generate_leads: "Find people or companies that match your ICP…",
   generate_more_leads: "Find more prospects like the ones above…",
-  create_outreach: "Draft a follow-up email or WhatsApp message for…",
+  create_outreach: "Draft a follow up email or WhatsApp message for…",
 };
 
 const INTENT_MODE_CONFIG: Record<
@@ -365,7 +392,7 @@ const initialMessages: ChatMessage[] = [
     id: 1,
     role: "assistant",
     body:
-      "Welcome to Sales Engine.\n\nI'm your AI-powered assistant built to help you discover high-quality prospects, craft personalized outreach messages, and develop smart follow-up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain prospects aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new prospects, analyze your outreach performance, suggest improvements, or create follow-up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
+      "Welcome to Sales Engine.\n\nI'm your AI powered assistant built to help you discover high quality prospects, craft personalized outreach messages, and develop smart follow up strategies that improve response rates.\n\nWhether you're looking to identify companies in a specific industry, refine your targeting, write compelling sales emails, or understand why certain prospects aren't responding, I'm here to guide you through the process step by step.\n\nYou can ask me to generate new prospects, analyze your outreach performance, suggest improvements, or create follow up messages based on engagement activity. The more details you provide about your target audience, location, or offer, the more precise and effective my recommendations will be.\n\nLet's start building smarter outreach.\n\nWhat would you like to work on today?",
   },
 ];
 
@@ -592,14 +619,17 @@ function PromptButton({
 function LeadInlineResults({
   leads,
   onLeadsChange,
+  onNotRelevant,
 }: {
   leads: ChatLead[];
   onLeadsChange?: (leads: ChatLead[]) => void;
+  onNotRelevant?: (lead: ChatLead) => void;
 }) {
   const syncLead = useSyncLeadToCrm();
   const syncBatch = useSyncLeadsBatchToCrm();
   const { data: integrationStatus } = useFactory23IntegrationStatus();
   const { pipelines, isLoading: pipelinesLoading } = useSalesEngineCrmPipelines();
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [displayCount, setDisplayCount] = useState(LEADS_PER_PAGE);
   const [crmModalState, setCrmModalState] = useState<
     | { mode: "single"; lead: ChatLead }
@@ -690,6 +720,7 @@ function LeadInlineResults({
 
   function renderLeadActions(lead: ChatLead, isSynced: boolean, fieldsUpdated: string[]) {
     const profileUrl = primaryProfileUrl(lead);
+    const websiteUrl = primaryWebsiteUrl(lead);
 
     let crmControl: ReactNode;
     if (lead.crm_duplicate) {
@@ -733,7 +764,7 @@ function LeadInlineResults({
     }
 
     return (
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         {profileUrl ? (
           <a
             href={profileUrl}
@@ -745,6 +776,28 @@ function LeadInlineResults({
             <ExternalLink size={10} className="shrink-0 opacity-80" />
             View Profile
           </a>
+        ) : null}
+        {websiteUrl ? (
+          <a
+            href={websiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open company website"
+            className="inline-flex items-center gap-1 rounded-full border border-[#09232d]/15 bg-white px-2.5 py-0.5 text-[8px] font-semibold text-[#09232d] transition-colors hover:bg-[#09232d]/5"
+          >
+            <ExternalLink size={10} className="shrink-0 opacity-80" />
+            Website
+          </a>
+        ) : null}
+        {onNotRelevant ? (
+          <button
+            type="button"
+            onClick={() => onNotRelevant(lead)}
+            className="rounded-full border border-[#09232d]/12 px-2.5 py-0.5 text-[8px] font-semibold text-[#616263] transition-colors hover:bg-[#09232d]/5"
+            title="Hide and exclude from the next generate more run"
+          >
+            Not relevant
+          </button>
         ) : null}
         {crmControl}
       </div>
@@ -776,10 +829,41 @@ function LeadInlineResults({
               {syncBatch.isPending ? "Saving…" : "Save all"}
             </button>
           )}
+          <div className="flex items-center rounded-lg border border-[#09232d]/10 bg-white p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              title="List view"
+              aria-label="List view"
+              aria-pressed={viewMode === "list"}
+              className={`rounded-md p-1 transition-colors ${
+                viewMode === "list"
+                  ? "bg-[#09232d] text-white"
+                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
+              }`}
+            >
+              <List size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              aria-label="Grid view"
+              aria-pressed={viewMode === "grid"}
+              className={`rounded-md p-1 transition-colors ${
+                viewMode === "grid"
+                  ? "bg-[#09232d] text-white"
+                  : "text-[#09232d]/50 hover:bg-[#09232d]/5 hover:text-[#09232d]"
+              }`}
+            >
+              <LayoutGrid size={13} />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      {viewMode === "list" ? (
+        <div className="flex flex-col gap-1.5">
           {visibleLeads.map((lead) => {
             const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
             const fieldsUpdated = lead.crm_fields_updated ?? [];
@@ -803,7 +887,7 @@ function LeadInlineResults({
                       className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
                       title={
                         lead.icp_relevance_reason
-                          ? `Score: ${overall}% · ${lead.icp_relevance_reason}`
+                          ? `Score: ${overall}%. ${lead.icp_relevance_reason}`
                           : "Overall priority score"
                       }
                     >
@@ -819,7 +903,7 @@ function LeadInlineResults({
                     </p>
                   )}
 
-                  {(roleLine || contactLine || lead.email || lead.phone || lead.website) && (
+                  {(roleLine || contactLine || lead.email || lead.phone) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[8px]">
                       {roleLine && (
                         <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
@@ -831,8 +915,8 @@ function LeadInlineResults({
                           {contactLine}
                         </span>
                       )}
-                      {entityBadge === "Contact" && lead.location && (
-                        <span className="text-[#09232d]/50">· {lead.location}</span>
+                      {leadLocationCaption(lead) && (
+                        <span className="text-[#09232d]/50">· {leadLocationCaption(lead)}</span>
                       )}
                       {lead.email && (
                         <a
@@ -852,16 +936,6 @@ function LeadInlineResults({
                         >
                           <Phone size={8} className="shrink-0 opacity-80" />
                           <span>{lead.phone}</span>
-                        </a>
-                      )}
-                      {entityBadge === "Account" && lead.website && (
-                        <a
-                          href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-[#087652] underline"
-                        >
-                          Website
                         </a>
                       )}
                       {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
@@ -897,6 +971,120 @@ function LeadInlineResults({
             );
           })}
         </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3">
+          {visibleLeads.map((lead) => {
+            const isSynced = lead.crm_synced || lead.crm_duplicate || lead.save_status === "saved";
+            const fieldsUpdated = lead.crm_fields_updated ?? [];
+            const { overall } = leadScoreBreakdown(lead);
+            const roleLine = formatLeadRoleLine(lead);
+            const contactLine = formatLeadContactLine(lead);
+            const entityBadge = leadEntityBadge(lead);
+
+            return (
+              <div
+                key={lead.id ?? lead.name}
+                className="flex flex-col justify-between rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2.5 shadow-sm transition hover:border-[#09232d]/20"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="rounded-full bg-[#09232d]/8 px-1.5 py-0.5 text-[7px] font-semibold text-[#09232d]/70">
+                        {entityBadge}
+                      </span>
+                      <span
+                        className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
+                        title={
+                          lead.icp_relevance_reason
+                            ? `Score: ${overall}%. ${lead.icp_relevance_reason}`
+                            : "Overall priority score"
+                        }
+                      >
+                        Overall {overall}%
+                      </span>
+                    </div>
+                  </div>
+                  {roleLine && (
+                    <p className="mt-1 line-clamp-1 text-[8px] font-medium text-[#09232d]/70">{roleLine}</p>
+                  )}
+                  {contactLine && (
+                    <p className="mt-0.5 line-clamp-1 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
+                  )}
+                  {leadLocationCaption(lead) && (
+                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{leadLocationCaption(lead)}</p>
+                  )}
+                  {(lead.email || lead.phone) && (
+                    <div className="mt-1 flex flex-col gap-0.5">
+                      {lead.email && (
+                        <a
+                          href={`mailto:${lead.email}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                          title={lead.email}
+                        >
+                          <Mail size={9} className="shrink-0 opacity-80" />
+                          <span className="truncate">{lead.email}</span>
+                        </a>
+                      )}
+                      {lead.phone && (
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[8px] font-medium text-[#087652] underline"
+                          title={lead.phone}
+                        >
+                          <Phone size={9} className="shrink-0 opacity-80" />
+                          <span className="truncate">{lead.phone}</span>
+                        </a>
+                      )}
+                      {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
+                        <span
+                          className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
+                          title={
+                            lead.contact_enrichment_provider
+                              ? `Contact via ${lead.contact_enrichment_provider}`
+                              : "Contact enrichment source"
+                          }
+                        >
+                          {lead.contact_enrichment_tier === "tier1"
+                            ? "Contact from web"
+                            : lead.contact_enrichment_tier === "tier2"
+                              ? "Contact enriched"
+                              : "Contact verified"}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {lead.contact_ready === false && (
+                    <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
+                  )}
+                  {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                    <p className="mt-1 text-[7px] font-medium text-[#616263]">
+                      Profile found. Email or phone still missing
+                    </p>
+                  )}
+                  {lead.summary && (
+                    <p className="mt-1 line-clamp-2 text-[8px] leading-[10px] text-[#09232d]/65">{lead.summary}</p>
+                  )}
+                  {lead.icp_relevance_reason && (
+                    <p className="mt-1 line-clamp-2 text-[7px] italic leading-[9px] text-[#616263]">
+                      {lead.icp_relevance_reason}
+                    </p>
+                  )}
+                  {lead.source && (
+                    <p className="mt-1 text-[8px] text-[#09232d]/50">{lead.source}</p>
+                  )}
+                  {lead.low_confidence && (
+                    <p className="mt-1 text-[7px] font-medium text-[#b45309]">Lower confidence match</p>
+                  )}
+                </div>
+                <div className="mt-2.5 border-t border-[#09232d]/5 pt-2">
+                  {renderLeadActions(lead, isSynced, fieldsUpdated)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {hasMore && (
         <button
           type="button"
@@ -1005,6 +1193,10 @@ function IcpConfirmationCard({
   isSwitching,
   switchingId,
   isConfirming,
+  entityMode,
+  onEntityModeChange,
+  prospectCount,
+  onProspectCountChange,
   onSelectIcp,
   onConfirm,
   onManageIcps,
@@ -1014,11 +1206,40 @@ function IcpConfirmationCard({
   isSwitching: boolean;
   switchingId?: string;
   isConfirming: boolean;
+  entityMode: GenerateEntityMode;
+  onEntityModeChange: (mode: GenerateEntityMode) => void;
+  prospectCount: GenerateProspectCount;
+  onProspectCountChange: (count: GenerateProspectCount) => void;
   onSelectIcp: (id: string) => void;
   onConfirm: () => void;
   onManageIcps: () => void;
 }) {
   const activeIcp = icpProfiles.find((profile) => profile.isActive);
+  const searchBrief = activeIcp
+    ? composeIcpSearchBrief({
+        customPrompt: activeIcp.config.customPrompt,
+        description: activeIcp.description || activeIcp.config.description,
+        industries: activeIcp.config.industries,
+      })
+    : "";
+  const qualifySummary = activeIcp
+    ? composeIcpQualifySummary({
+        industries: activeIcp.config.industries,
+        territories: activeIcp.config.territories,
+        companySizes: activeIcp.config.companySizes,
+        revenueRanges: activeIcp.config.revenueRanges,
+      })
+    : "";
+  const geoCaption = activeIcp
+    ? composeSearchGeoCaption(activeIcp.config.territories)
+    : "";
+  const filterChips = activeIcp
+    ? [
+        ...(activeIcp.config.industries ?? []).slice(0, 4),
+        ...(activeIcp.config.territories ?? []).slice(0, 3),
+        ...(activeIcp.config.companySizes ?? []).slice(0, 2),
+      ].filter(Boolean)
+    : [];
 
   return (
     <div className="max-w-[480px] rounded-[18px] bg-[#f8f8f8] px-4 py-3 text-[#09232d] shadow-[inset_0_0_0_1px_rgba(9,35,45,0.04)]">
@@ -1030,14 +1251,100 @@ function IcpConfirmationCard({
             one below.
           </>
         ) : (
-          "No ICP build is active yet — select one below to continue."
+          "No ICP build is active yet. Select one below to continue."
         )}
       </p>
+
+      {activeIcp && (
+        <div className="mt-2.5 space-y-2 rounded-[14px] border border-[#09232d]/08 bg-white px-3 py-2.5">
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">
+              We will search
+            </p>
+            <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/85">{searchBrief}</p>
+            {geoCaption ? (
+              <p className="mt-1 text-[10px] leading-[14px] text-[#09232d]/70">{geoCaption}</p>
+            ) : null}
+            <p className="mt-1 text-[9px] leading-[13px] text-[#09232d]/50">
+              Search runs in this country. Other countries are excluded. Unconfirmed locations are marked.
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">Mode</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {(
+                [
+                  ["both", "Both"],
+                  ["companies", "Companies"],
+                  ["people", "People"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onEntityModeChange(value)}
+                  className={`rounded-full px-2.5 py-0.5 text-[9px] font-semibold transition ${
+                    entityMode === value
+                      ? "bg-[#09232d] text-white"
+                      : "border border-[#d7d7d7] bg-[#f8f8f8] text-[#09232d]/75 hover:bg-[#09232d]/5"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[9px] text-[#09232d]/55">
+              Default is accounts + people. Change only if you want one entity type.
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">Count</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {([12, 25, 40] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onProspectCountChange(value)}
+                  className={`rounded-full px-2.5 py-0.5 text-[9px] font-semibold transition ${
+                    prospectCount === value
+                      ? "bg-[#09232d] text-white"
+                      : "border border-[#d7d7d7] bg-[#f8f8f8] text-[#09232d]/75 hover:bg-[#09232d]/5"
+                  }`}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[9px] text-[#09232d]/55">
+              First page size. Use Generate more for leftover matches.
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">
+              Then qualify with
+            </p>
+            {filterChips.length > 0 ? (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {filterChips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-full border border-[#d7d7d7] bg-[#f8f8f8] px-2 py-0.5 text-[9px] font-medium text-[#09232d]/75"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-0.5 text-[10px] text-[#09232d]/55">{qualifySummary}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <p className="mt-2 text-[10px] text-[#09232d]/50">Loading ICP builds…</p>
       ) : icpProfiles.length === 0 ? (
-        <p className="mt-2 text-[10px] text-[#09232d]/50">No ICP builds yet — create one to continue.</p>
+        <p className="mt-2 text-[10px] text-[#09232d]/50">No ICP builds yet. Create one to continue.</p>
       ) : (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {icpProfiles.map((profile) => (
@@ -1099,6 +1406,8 @@ function ChatWorkspace({
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
   const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
   const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
+  const [generateEntityMode, setGenerateEntityMode] = useState<GenerateEntityMode>("both");
+  const [generateProspectCount, setGenerateProspectCount] = useState<GenerateProspectCount>(12);
   const [isSyntheticThinking, setIsSyntheticThinking] = useState(false);
   const [outreachPreview, setOutreachPreview] = useState<OutreachPreviewState | null>(null);
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
@@ -1250,7 +1559,7 @@ function ChatWorkspace({
       }
       toast.error(
         isMissingActiveIcp(error)
-          ? "Select an active ICP profile first — open ICP Builder to create or activate one."
+          ? "Select an active ICP profile first. Open ICP Builder to create or activate one."
           : getApiErrorMessage(error, "Sales Engine couldn't process that request.")
       );
     },
@@ -1261,7 +1570,7 @@ function ChatWorkspace({
     if (typeof runId === "number") {
       setBackgroundRunIds((current) => new Set(current).add(runId));
     }
-    toast.info("Processing in background. You can keep chatting — we'll notify you when results are ready.");
+    toast.info("Processing in background. You can keep chatting, and we'll notify you when results are ready.");
   }
 
   async function handleStopSearching() {
@@ -1307,7 +1616,7 @@ function ChatWorkspace({
           {
             id: nextMessageId(),
             role: "assistant",
-            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle — ${remaining} remaining.`,
+            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle. ${remaining} remaining.`,
           },
         ]);
       }, 900);
@@ -1315,22 +1624,53 @@ function ChatWorkspace({
       return;
     }
 
-    // Item 1/2: gate prospect generation behind an inline ICP confirmation card.
-    if (intent === "generate_leads") {
+    // Vague generate asks → ICP confirm card. Specific niche asks → search user text immediately.
+    if (shouldShowIcpConfirmCard(intent, trimmed)) {
       const { targetCount } = resolveGenerateLeadsPrompt(trimmed);
+      setGenerateEntityMode("both");
+      setGenerateProspectCount(
+        targetCount === 25 || targetCount === 40 ? targetCount : 12
+      );
       setMessages((current) => [
         ...current,
         {
           id: nextMessageId(),
           role: "user",
           body: trimmed,
-          intent,
+          intent: "generate_leads",
           ...(targetCount != null ? { targetCount } : {}),
         },
         { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
       ]);
       setDraft("");
       setPendingGenerateRequest({ prompt: trimmed });
+      return;
+    }
+
+    if (intent === "generate_leads") {
+      const { apiBody, targetCount } = resolveGenerateLeadsPrompt(trimmed);
+      const userMessageId = nextMessageId();
+      pendingUserMessageIdRef.current = userMessageId;
+      setMessages((current) => [
+        ...current,
+        {
+          id: userMessageId,
+          role: "user",
+          body: trimmed,
+          intent,
+          searchCaption: trimmed,
+          entityMode: "both",
+          ...(targetCount != null ? { targetCount } : {}),
+        },
+      ]);
+      setDraft("");
+      setSelectedIntent("freeform");
+      setUsage((current) => {
+        const next = { used: current.used + 1, limit: current.limit };
+        writeSearchUsage(next);
+        return next;
+      });
+      sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
       return;
     }
 
@@ -1367,9 +1707,16 @@ function ChatWorkspace({
     }
 
     const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
+    const countedBody = withProspectCountCue(apiBody, generateProspectCount);
+    const modeAwareBody = withEntityModeCue(countedBody, generateEntityMode);
+    const searchBrief = composeIcpSearchBrief({
+      customPrompt: activeIcp.config.customPrompt,
+      description: activeIcp.description || activeIcp.config.description,
+      industries: activeIcp.config.industries,
+    });
     const largeRequestHint =
       targetCount != null && targetCount >= 50
-        ? " Searching multiple sources — this may take 30–60 seconds."
+        ? " Searching multiple sources. This may take 30 to 60 seconds."
         : "";
 
     let lastUserId: number | null = null;
@@ -1382,16 +1729,24 @@ function ChatWorkspace({
     pendingUserMessageIdRef.current = lastUserId;
 
     setMessages((current) =>
-      current.map((message) =>
-        message.kind === "confirm-icp"
-          ? {
-              ...message,
-              kind: undefined,
-              body: `Using **${activeIcp.name}** · generating prospects…${largeRequestHint}`,
-              intent: "generate_leads" as const,
-            }
-          : message
-      )
+      current.map((message) => {
+        if (lastUserId != null && message.id === lastUserId) {
+          return {
+            ...message,
+            entityMode: generateEntityMode,
+            searchCaption: searchBrief,
+          };
+        }
+        if (message.kind === "confirm-icp") {
+          return {
+            ...message,
+            kind: undefined,
+            body: `Using **${activeIcp.name}**. Generating prospects…${largeRequestHint}`,
+            intent: "generate_leads" as const,
+          };
+        }
+        return message;
+      })
     );
     setPendingGenerateRequest(null);
     // Clear the intent chip so a follow-up reply (e.g. "yes") is treated as freeform
@@ -1403,7 +1758,7 @@ function ChatWorkspace({
       return next;
     });
 
-    sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
+    sendMessage.mutate({ body: modeAwareBody, intent: "generate_leads" });
   }
 
   function scrollTranscriptToBottom() {
@@ -1578,12 +1933,23 @@ function ChatWorkspace({
                   <IntentModeChip intent={message.intent as ActionIntent} compact />
                 </div>
               )}
+              {message.role === "user" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                (message.searchCaption || message.entityMode) && (
+                  <p className="mb-1.5 text-right text-[9px] leading-[12px] text-[#09232d]/55">
+                    {message.searchCaption
+                      ? `Searching: ${message.searchCaption}`
+                      : "Searching from your ICP"}
+                    {" · "}
+                    Mode: {entityModeLabel(message.entityMode ?? "both")}
+                  </p>
+                )}
               {isBackgroundPending && (
                 <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
                     <Loader2 size={10} className="animate-spin" />
                     {message.meta?.awaiting_user_choice
-                      ? "Still searching — timeout is a last resort"
+                      ? "Still searching. Timeout is a last resort"
                       : "Processing in background"}
                   </span>
                   {typeof pendingRunId === "number" && Boolean(message.meta?.awaiting_user_choice) && (
@@ -1614,6 +1980,10 @@ function ChatWorkspace({
                   isSwitching={activateIcpProfile.isPending}
                   switchingId={activateIcpProfile.variables}
                   isConfirming={isThinking}
+                  entityMode={generateEntityMode}
+                  onEntityModeChange={setGenerateEntityMode}
+                  prospectCount={generateProspectCount}
+                  onProspectCountChange={setGenerateProspectCount}
                   onSelectIcp={(id) => activateIcpProfile.mutate(id)}
                   onConfirm={confirmGenerateLeads}
                   onManageIcps={onOpenIcpBuilder}
@@ -1656,14 +2026,6 @@ function ChatWorkspace({
                 !isPendingMessage && (
                   <ResearchSourcesList sources={researchSourcesFromMeta(message.meta)} />
                 )}
-              {message.role === "assistant" &&
-                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
-                !message.leads?.length &&
-                !isPendingMessage && (
-                <p className="mt-2 text-[9px] font-medium text-[#616263]">
-                  No leads matched this search yet · try a broader industry or role, or run Generate Prospects with your ICP selected.
-                </p>
-              )}
               {message.leads && message.leads.length > 0 && (
                 <LeadInlineResults
                   leads={message.leads}
@@ -1672,6 +2034,19 @@ function ChatWorkspace({
                       current.map((item) => (item.id === message.id ? { ...item, leads } : item))
                     );
                   }}
+                  onNotRelevant={(lead) => {
+                    setMessages((current) =>
+                      current.map((item) =>
+                        item.id === message.id
+                          ? {
+                              ...item,
+                              leads: (item.leads ?? []).filter((entry) => entry.id !== lead.id),
+                            }
+                          : item
+                      )
+                    );
+                    toast.message(`Hidden “${lead.name}”. Generate more already skips prior lead names.`);
+                  }}
                 />
               )}
               {message.role === "assistant" &&
@@ -1679,16 +2054,42 @@ function ChatWorkspace({
                 Boolean(message.leads?.length) &&
                 !isPendingMessage &&
                 !isThinking && (
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleSend("Generate more prospects for the same ICP", "generate_more_leads")
-                      }
+                      onClick={() => {
+                        const moreBody = withEntityModeCue(
+                          "Generate more prospects for the same ICP",
+                          generateEntityMode
+                        );
+                        handleSend(moreBody, "generate_more_leads");
+                      }}
                       className="rounded-full border border-[#c8f0ff] bg-[#e4faff] px-3 py-1.5 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#d6f5ff]"
                     >
                       Generate more prospects
                     </button>
+                    <div className="flex items-center gap-1">
+                      {(
+                        [
+                          ["both", "Both"],
+                          ["companies", "Companies"],
+                          ["people", "People"],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setGenerateEntityMode(value)}
+                          className={`rounded-full px-2 py-0.5 text-[8px] font-semibold transition ${
+                            generateEntityMode === value
+                              ? "bg-[#09232d] text-white"
+                              : "border border-[#d7d7d7] bg-white text-[#09232d]/70"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               {message.role === "assistant" &&
@@ -1830,6 +2231,7 @@ function ChatWorkspace({
 }
 
 const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  queued: { label: "Queued", className: "bg-[#f59e0b]/20 text-[#92400e]" },
   sent: { label: "Sent", className: "bg-white/70 text-[#09232d]" },
   delivered: { label: "Delivered", className: "bg-[#16b37d]/20 text-[#087652]" },
   opened: { label: "Opened", className: "bg-[#2563eb]/15 text-[#1d4ed8]" },
@@ -1838,6 +2240,7 @@ const DELIVERY_STATUS_BADGES: Record<string, { label: string; className: string 
   dropped: { label: "Dropped", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
   spam: { label: "Marked spam", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
   unsubscribed: { label: "Unsubscribed", className: "bg-[#f59e0b]/20 text-[#92400e]" },
+  failed: { label: "Failed", className: "bg-[#ef4444]/15 text-[#b91c1c]" },
 };
 
 function OutreachActionMenu({
@@ -2155,7 +2558,6 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         initialToEmail={preview?.toEmail}
         contextLabel={preview?.contextLabel}
         onSent={() => {
-          toast.success("Outreach sent.");
           setPreview(null);
         }}
         onConfigureSender={onOpenSettings}
@@ -2239,7 +2641,7 @@ const TAB_TRUST_MODE_COPY: Record<SalesEngineTab, string> = {
   "smart-lead":
     "Follows your question first. Results may include strong matches outside your saved ICP, with an explanation for each.",
   "social-listening":
-    "Strictly follows your saved ICP filters — nothing outside your filter criteria will appear here.",
+    "Strictly follows your saved ICP filters. Nothing outside your filter criteria will appear here.",
 };
 
 function SalesEngineTabs({
@@ -2250,8 +2652,8 @@ function SalesEngineTabs({
   onChange: (tab: SalesEngineTab) => void;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="inline-flex h-[42px] items-center gap-1 rounded-[21px] bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+    <div className="flex flex-col items-start gap-1.5">
+      <div className="inline-flex h-[42px] w-fit items-center gap-1 rounded-[21px] bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
         {salesEngineTabs.map((tab) => (
           <button
             key={tab.id}
@@ -2889,7 +3291,7 @@ function SocialSignalsTable({
       </div>
       <div className="shrink-0 flex items-center justify-between border-t border-[#f1f1f1] px-8 pb-3 pt-3 text-[9px] font-semibold text-[#333333] max-sm:px-3">
         <span>
-          Showing {rangeStart} - {rangeEnd} of {total} Signals
+          Showing {rangeStart} to {rangeEnd} of {total} Signals
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -3270,10 +3672,10 @@ function SocialOpportunityDetail({
                           {found
                             ? [contact.foundEmail ? "email" : null, contact.foundPhone ? "phone" : null]
                                 .filter(Boolean)
-                                .join(" · ")
+                                .join(", ")
                             : "not found"}
-                          {contact.provider ? ` · ${contact.provider}` : ""}
-                          {contact.tier ? ` · ${contact.tier}` : ""}
+                          {contact.provider ? `, ${contact.provider}` : ""}
+                          {contact.tier ? `, ${contact.tier}` : ""}
                         </p>
                       </div>
                       <span
@@ -3352,7 +3754,7 @@ function SocialOpportunityDetail({
             )}
             {!recommendedAction.title && !recommendedAction.detail && (
               <p className="mt-1 text-[9px] leading-[12px]">
-                Reach out within 24 hours — this prospect may be actively looking for solutions.
+                Reach out within 24 hours. This prospect may be actively looking for solutions.
               </p>
             )}
           </div>
@@ -3381,7 +3783,7 @@ function SocialOpportunityDetail({
           )}
           {signal.followUpStrategy && (
             <div className="rounded-[10px] border border-[#e8e5e5] bg-[#fcfcfc] px-3.5 py-2 text-[#616263] shadow-[inset_0_1px_4px_rgba(12,12,13,0.05)]">
-              <p className="text-[10px] font-bold leading-[12px]">Follow-up Strategy</p>
+              <p className="text-[10px] font-bold leading-[12px]">Follow up Strategy</p>
               <p className="mt-1 text-[9px] leading-[12px]">{signal.followUpStrategy}</p>
             </div>
           )}
@@ -3410,7 +3812,7 @@ function SocialOpportunityDetail({
             <CircleCheck size={14} />
             <span>
               In CRM
-              {signal.f23_lead_id ? ` · #${signal.f23_lead_id}` : ""}
+              {signal.f23_lead_id ? ` (#${signal.f23_lead_id})` : ""}
             </span>
           </div>
         ) : (
@@ -3705,7 +4107,7 @@ function ListeningSettingsModal({
                       className="mt-1 h-10 w-full rounded-[10px] border border-white/10 bg-[#14343e] px-3 text-white outline-none"
                     >
                       <option value="email">Email first</option>
-                      <option value="human_follow_up">Human follow-up</option>
+                      <option value="human_follow_up">Human follow up</option>
                     </select>
                   </label>
                 </div>
@@ -3950,7 +4352,7 @@ function SocialListeningTab({
     setReminder.mutate(
       {
         id: signal.id,
-        note: [actionNote.title, actionNote.detail].filter(Boolean).join(" — ") || undefined,
+        note: [actionNote.title, actionNote.detail].filter(Boolean).join(". ") || undefined,
       },
       {
         onSuccess: () => {
@@ -3986,7 +4388,7 @@ function SocialListeningTab({
   const reminderNoteForPending = pendingReminderSignal
     ? (() => {
         const actionNote = normalizeRecommendedAction(pendingReminderSignal.recommendedAction);
-        return [actionNote.title, actionNote.detail].filter(Boolean).join(" — ");
+        return [actionNote.title, actionNote.detail].filter(Boolean).join(". ");
       })()
     : "";
 
@@ -4126,7 +4528,7 @@ function SocialListeningTab({
           </div>
           {signalsError && isMissingActiveIcp(signalsError) ? (
             <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
-              Select an active ICP profile first — open ICP Builder to create or activate one.
+              Select an active ICP profile first. Open ICP Builder to create or activate one.
             </div>
           ) : (
             <SocialSignalsTable
@@ -4185,7 +4587,7 @@ function SocialListeningTab({
         company={pendingOutreachSignal?.company || "—"}
         channel={
           listenSettings?.outreach_channel_default === "human_follow_up"
-            ? "Human follow-up"
+            ? "Human follow up"
             : "Email"
         }
         suggestedMessage={pendingOutreachSignal?.suggestedMessage || ""}

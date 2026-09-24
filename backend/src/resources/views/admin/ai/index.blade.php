@@ -332,7 +332,7 @@
                     <h6 class="fw-bold mb-1" style="font-size:.9rem">ELY Intent Routing</h6>
                     <p class="mb-0" style="font-size:.8rem;color:var(--text-secondary)">
                         Active mode:
-                        <strong>{{ $activeIntentRoutingMode === 'ai_first' ? 'Semantic routing (AI-first)' : 'Keyword routing (Rules-first)' }}</strong>.
+                        <strong>{{ $activeIntentRoutingMode === 'ai_first' ? 'Semantic routing (AI first)' : 'Keyword routing (Rules first)' }}</strong>.
                         Applies to all AI stacks (OpenAI + Claude, NVIDIA NIM, GLM).
                         @if (!empty($intentRoutingSnapshot['updated_at']))
                             Last changed
@@ -353,7 +353,7 @@
                         <input type="radio" class="btn-check" name="mode" id="ai-intent-rules-first"
                             value="rules_first" {{ $activeIntentRoutingMode === 'rules_first' ? 'checked' : '' }}>
                         <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-intent-rules-first">
-                            <div class="fw-bold mb-1">Keyword routing (Rules-first)</div>
+                            <div class="fw-bold mb-1">Keyword routing (Rules first)</div>
                             <div style="font-size:.78rem;color:var(--text-secondary)">
                                 Match keywords and regex patterns first. Faster and cheaper; best for predictable
                                 operational phrases.
@@ -364,7 +364,7 @@
                         <input type="radio" class="btn-check" name="mode" id="ai-intent-ai-first" value="ai_first"
                             {{ $activeIntentRoutingMode === 'ai_first' ? 'checked' : '' }}>
                         <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-intent-ai-first">
-                            <div class="fw-bold mb-1">Semantic routing (AI-first)</div>
+                            <div class="fw-bold mb-1">Semantic routing (AI first)</div>
                             <div style="font-size:.78rem;color:var(--text-secondary)">
                                 AI classifies intent before choosing tools | better at create-vs-list and similar phrasing.
                             </div>
@@ -393,7 +393,7 @@
                     <i class="bi bi-cpu" style="font-size:1.4rem;color:var(--accent)"></i>
                 </div>
                 <div>
-                    <div class="fw-bold" style="font-size:1rem">Real-Time AI Status</div>
+                    <div class="fw-bold" style="font-size:1rem">Real time AI Status</div>
                     <div style="font-size:.8rem;color:var(--text-secondary)">
                         Active provider: <strong id="ai-active-provider-label">{{ $activeProviderLabel }}</strong>
                         · Stack: <strong>{{ $activeStackShortLabel }}</strong>

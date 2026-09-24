@@ -41,17 +41,17 @@ export const RESEARCH_PIPELINE_STEPS = ["Question", "Sources", "Brief"] as const
 export const PROCESSING_TIPS = [
   "Leads with recent hiring signals often convert 2× faster.",
   "Personalized outreach referencing a prospect's public post boosts reply rates.",
-  "ICPs with tighter industry + territory filters produce higher-quality matches.",
-  "Follow up within 24 hours when a buying-intent signal is detected.",
+  "ICPs with tighter industry and territory filters produce higher quality matches.",
+  "Follow up within 24 hours when a buying intent signal is detected.",
   "Social listening catches prospects before they appear in traditional databases.",
-  "Short, problem-focused emails outperform generic product pitches.",
+  "Short, problem focused emails outperform generic product pitches.",
 ] as const;
 
 export const RESEARCH_TIPS = [
-  "Cite primary sources when possible — secondary roundups drift from the facts.",
-  "Event calendars and trade-association pages often beat generic news summaries.",
+  "Cite primary sources when possible. Secondary roundups drift from the facts.",
+  "Event calendars and trade association pages often beat generic news summaries.",
   "Ground findings in your ICP territories so the brief stays actionable.",
-  "Ask a follow-up Quick Research question to go deeper on one finding.",
+  "Ask a follow up Quick Research question to go deeper on one finding.",
   "Recent funding or partnership news is often a stronger signal than evergreen listicles.",
   "Prefer pages with clear dates so stale market claims don’t sneak into the brief.",
 ] as const;
@@ -95,7 +95,7 @@ function icpResearchLine(context?: SalesEngineIcpContext): string | null {
   const name = context?.name?.trim();
 
   if (industry && territory) {
-    return `Grounding in ${industry} · ${territory}…`;
+    return `Grounding in ${industry}, ${territory}…`;
   }
   if (industry) {
     return `Grounding in your ${industry} ICP…`;

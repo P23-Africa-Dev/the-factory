@@ -383,7 +383,7 @@ function SupervisorJourneyContent() {
                                       )}
                                     </div>
                                   ) : (
-                                    <span className="text-xs text-gray-400 italic">No check-in record</span>
+                                    <span className="text-xs text-gray-400 italic">No check in record</span>
                                   )}
                                 </div>
                                 <span

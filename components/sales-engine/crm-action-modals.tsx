@@ -574,7 +574,7 @@ export function SetReminderConfirmModal({
             Reminder Scheduled
           </span>
           <p className="text-xs font-semibold text-amber-950 mt-0.5">
-            {remindAtLabel || "Next scheduled follow-up"}
+            {remindAtLabel || "Next scheduled follow up"}
           </p>
         </div>
       </div>
@@ -582,7 +582,7 @@ export function SetReminderConfirmModal({
       {/* Note Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          Follow-up note
+          Follow up note
         </span>
         <p className="mt-1 text-xs font-medium leading-relaxed text-slate-700 bg-slate-50/70 rounded-xl p-3 border border-slate-100">
           {note || "Follow up on this social opportunity."}

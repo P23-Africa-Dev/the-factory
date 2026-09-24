@@ -22,6 +22,7 @@ class CompanyDemoRequest extends Model
         'registration_purpose',
         'registration_user_type',
         'status',
+        'source',
         'reviewed_by_admin_id',
         'company_id',
         'user_id',
@@ -33,6 +34,8 @@ class CompanyDemoRequest extends Model
         'approved_at',
         'activated_at',
         'admin_notes',
+        'control_temp_password',
+        'control_access_enabled_at',
         'assigned_plan_key',
         'assigned_billing_interval',
     ];
@@ -46,7 +49,14 @@ class CompanyDemoRequest extends Model
             'reviewed_at' => 'datetime',
             'approved_at' => 'datetime',
             'activated_at' => 'datetime',
+            'control_access_enabled_at' => 'datetime',
         ];
+    }
+
+    public function hasControlAccessEnabled(): bool
+    {
+        return $this->control_access_enabled_at !== null
+            && filled($this->control_temp_password);
     }
 
     public function reviewedByAdmin(): BelongsTo
@@ -67,6 +77,11 @@ class CompanyDemoRequest extends Model
     public function isPending(): bool
     {
         return $this->status === DemoRequestStatus::PENDING->value;
+    }
+
+    public function isProvisioned(): bool
+    {
+        return $this->status === DemoRequestStatus::PROVISIONED->value;
     }
 
     public function isApproved(): bool

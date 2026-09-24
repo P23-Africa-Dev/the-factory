@@ -131,7 +131,7 @@ export function ResearchProcessingPanel({
 
         <div className="mt-3.5">
           <p className="mb-1.5 text-[8px] font-medium text-[#616263]">
-            Phase {stepIndex + 1} of {stepLabels.length} · {stepLabels[stepIndex]}
+            Phase {stepIndex + 1} of {stepLabels.length}: {stepLabels[stepIndex]}
           </p>
           <div className="flex items-center gap-1.5">
             {stepLabels.map((step, index) => {
@@ -205,7 +205,7 @@ export function ResearchProcessingPanel({
 
         {showLongRunHint && (
           <p className="mt-2.5 text-[8px] leading-[11px] text-[#616263]">
-            Still scanning — denser topics can take a little longer while sources are cross-checked.
+            Still scanning. Denser topics can take a little longer while sources are cross checked.
           </p>
         )}
 

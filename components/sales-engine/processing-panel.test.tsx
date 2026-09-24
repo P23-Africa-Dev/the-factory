@@ -27,7 +27,7 @@ describe("ProcessingPanel", () => {
     expect(html).toContain("Continue waiting");
     expect(html).toContain("Stop searching");
     expect(html).toContain("Process in background");
-    expect(html).toContain("timeout is a last resort");
+    expect(html).toContain("Timeout is a last resort");
   });
 
   it("wires continue and stop handlers", () => {

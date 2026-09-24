@@ -52,7 +52,7 @@ export function ScanRunSummaryPanel({ run }: ScanRunSummaryPanelProps) {
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold leading-[13px]">
             Checked {totalChecked} potential signal{totalChecked === 1 ? "" : "s"}
-            {qualified > 0 ? ` — ${qualified} qualified` : " — none qualified"}
+            {qualified > 0 ? `. ${qualified} qualified` : ". None qualified"}
           </p>
           {rejectionParts.length > 0 && (
             <p className="mt-1 text-[9px] leading-[12px] text-[#616263]">

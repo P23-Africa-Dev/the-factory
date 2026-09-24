@@ -125,7 +125,7 @@ final class EmailInferenceServiceTest extends TestCase
         $service = $this->app->make(EmailInferenceService::class);
 
         $normalized = $service->normalizeProvidedArgs((int) $company->id, [
-            'subject' => 'Follow-up: Demo Lead',
+            'subject' => 'Follow up: Demo Lead',
             'body_text' => "Subject: Factory23 update\n\nDear Deen,\n\nPlease share an update.\n\nBest regards,\nTommy",
             'lead_name' => 'Deen Dan',
         ], (int) $owner->id);
@@ -208,7 +208,7 @@ final class EmailInferenceServiceTest extends TestCase
         $service = $this->app->make(EmailInferenceService::class);
 
         $codes = $service->warningCodes([
-            'subject' => 'Follow-up',
+            'subject' => 'Follow up',
             'body_text' => 'Hello there',
         ]);
 

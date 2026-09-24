@@ -75,7 +75,7 @@ class CrmIntelligenceService
 
         $truncated = ($payload['truncated'] ?? false) === true;
         $header = $this->readListPresenter->formatListHeader(
-            resourceLabel: 'lead(s) needing follow-up',
+            resourceLabel: 'lead(s) needing follow up',
             shownCount: count($items),
             scopeTotal: $total,
             filterLabel: null,
@@ -84,8 +84,8 @@ class CrmIntelligenceService
         );
 
         $summary = $total <= 0
-            ? 'No leads requiring follow-up were found in your permitted scope.'
-            : rtrim($header, ':') . ($countOnly ? '.' : ': Here are leads that need follow-up attention in your scope, ordered by priority and staleness.');
+            ? 'No leads requiring follow up were found in your permitted scope.'
+            : rtrim($header, ':') . ($countOnly ? '.' : ': Here are leads that need follow up attention in your scope, ordered by priority and staleness.');
 
         if ($truncated && ! $countOnly && $total > 0) {
             $summary .= "\nWould you like me to list all of them?";

@@ -2,20 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Loader2, X } from "lucide-react";
+import { AlertTriangle, Check, Copy, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   useAuthenticateOutreachDomain,
   useOutreachDomain,
+  useRecheckOutreachDomainIntegrity,
   useResetOutreachDomain,
   useVerifyOutreachDomain,
 } from "@/hooks/use-sales-engine-outreach-domain";
+import {
+  useAuthorizeOutreachMailbox,
+  useConnectOutreachMailboxSmtp,
+  useDisconnectOutreachMailbox,
+  useOutreachMailboxes,
+} from "@/hooks/use-sales-engine-outreach-mailbox";
 import {
   useOutreachSenderSettings,
   useUpdateOutreachSenderSettings,
 } from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import type { OutreachDnsRecord } from "@/lib/api/sales-engine";
+import type {
+  OutreachDnsRecord,
+  OutreachIntegrityCheck,
+  OutreachSenderMode,
+} from "@/lib/api/sales-engine";
 
 export type OutreachSettingsModalProps = {
   open: boolean;
@@ -27,11 +38,24 @@ function connectionLabel(status: string | undefined): string {
     case "verified":
       return "Org email verified";
     case "failed":
-      return "Org DNS not detected";
+      return "Org DNS / integrity failed";
     case "pending":
       return "Org DNS pending";
     default:
       return "Org email not connected";
+  }
+}
+
+function integrityTone(status: string | undefined | null): string {
+  switch (status) {
+    case "pass":
+      return "text-[#087652]";
+    case "warn":
+      return "text-[#b45309]";
+    case "fail":
+      return "text-[#b91c1c]";
+    default:
+      return "text-[#616263]";
   }
 }
 
@@ -92,18 +116,84 @@ function DnsRecordRow({ record }: { record: OutreachDnsRecord }) {
   );
 }
 
+function IntegrityChecklist({
+  status,
+  checks,
+  onRecheck,
+  rechecking,
+}: {
+  status?: string | null;
+  checks?: OutreachIntegrityCheck[];
+  onRecheck: () => void;
+  rechecking: boolean;
+}) {
+  if (!checks || checks.length === 0) return null;
+
+  return (
+    <div className="mt-3 space-y-2 rounded-[12px] border border-[#ececec] bg-[#fafafa] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className={`text-[11px] font-semibold ${integrityTone(status)}`}>
+          Domain integrity: {status ?? "unchecked"}
+        </p>
+        <button
+          type="button"
+          onClick={onRecheck}
+          disabled={rechecking}
+          className="text-[10px] font-medium text-[#616263] underline underline-offset-2 hover:text-[#09232d] disabled:opacity-50"
+        >
+          {rechecking ? "Checking…" : "Recheck"}
+        </button>
+      </div>
+      <ul className="space-y-1.5">
+        {checks.map((check) => (
+          <li key={check.key} className="flex items-start gap-2 text-[10px] leading-[14px]">
+            {check.status === "pass" ? (
+              <Check size={12} className="mt-0.5 shrink-0 text-[#087652]" />
+            ) : (
+              <AlertTriangle
+                size={12}
+                className={`mt-0.5 shrink-0 ${
+                  check.status === "warn" ? "text-[#b45309]" : "text-[#b91c1c]"
+                }`}
+              />
+            )}
+            <span>
+              <span className="font-semibold text-[#09232d]">{check.label}: </span>
+              <span className="text-[#616263]">{check.message}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalProps) {
   const { data: senderSettings, isLoading: senderLoading } = useOutreachSenderSettings(open);
   const { data: domainAuth, isLoading: domainLoading } = useOutreachDomain(open);
+  const { data: mailboxes, isLoading: mailboxLoading } = useOutreachMailboxes(open);
   const updateSender = useUpdateOutreachSenderSettings();
   const authenticate = useAuthenticateOutreachDomain();
   const verify = useVerifyOutreachDomain();
   const reset = useResetOutreachDomain();
+  const recheck = useRecheckOutreachDomainIntegrity();
+  const authorizeMailbox = useAuthorizeOutreachMailbox();
+  const connectSmtp = useConnectOutreachMailboxSmtp();
+  const disconnectMailbox = useDisconnectOutreachMailbox();
 
-  const [senderMode, setSenderMode] = useState<"platform" | "organization">("platform");
+  const [senderMode, setSenderMode] = useState<OutreachSenderMode>("platform");
   const [domain, setDomain] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [showOrgSetup, setShowOrgSetup] = useState(false);
+  const [showSmtpForm, setShowSmtpForm] = useState(false);
+  const [smtpForm, setSmtpForm] = useState({
+    email: "",
+    smtp_host: "",
+    smtp_port: "587",
+    smtp_encryption: "tls" as "tls" | "ssl",
+    smtp_username: "",
+    smtp_password: "",
+  });
 
   const connectionStatus =
     senderSettings?.org_connection_status ??
@@ -115,8 +205,14 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
           : "pending"
       : "not_connected");
 
-  const orgVerified = connectionStatus === "verified";
-  const isLoading = senderLoading || domainLoading;
+  const integrityOk =
+    domainAuth?.integrity_status === "pass" || domainAuth?.integrity_status === "warn";
+  const orgVerified = connectionStatus === "verified" && integrityOk;
+  const connectedMailbox =
+    senderSettings?.connected_mailbox ??
+    mailboxes?.find((m) => m.status === "connected") ??
+    null;
+  const isLoading = senderLoading || domainLoading || mailboxLoading;
 
   useEffect(() => {
     if (!open) return;
@@ -125,19 +221,27 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
     setShowOrgSetup(
       (senderSettings?.sender_mode === "organization" && !orgVerified) ||
         connectionStatus === "pending" ||
-        connectionStatus === "failed"
+        connectionStatus === "failed" ||
+        (domainAuth?.verification_status === "verified" && !integrityOk)
     );
     if (domainAuth?.domain) setDomain(domainAuth.domain);
     if (domainAuth?.from_email) setFromEmail(domainAuth.from_email);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, senderSettings, domainAuth, orgVerified, connectionStatus]);
+  }, [open, senderSettings, domainAuth, orgVerified, connectionStatus, integrityOk]);
 
   const activeFrom = useMemo(() => {
+    if (senderMode === "connected_mailbox" && connectedMailbox?.email) {
+      return connectedMailbox.email;
+    }
     if (senderMode === "organization" && orgVerified && senderSettings?.org_verified_from_email) {
       return senderSettings.org_verified_from_email;
     }
     return senderSettings?.platform_from_email || "The Factory platform email";
-  }, [senderMode, orgVerified, senderSettings]);
+  }, [senderMode, orgVerified, senderSettings, connectedMailbox]);
+
+  const quotaLabel = senderSettings?.quota
+    ? `${senderSettings.quota.used}/${senderSettings.quota.limit} sends today`
+    : null;
 
   const handleSelectPlatform = async () => {
     setSenderMode("platform");
@@ -166,13 +270,28 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
     );
   };
 
+  const handleSelectMailbox = () => {
+    setSenderMode("connected_mailbox");
+    if (!connectedMailbox) {
+      return;
+    }
+    updateSender.mutate(
+      { sender_mode: "connected_mailbox" },
+      {
+        onSuccess: () => toast.success("Sending from your connected mailbox."),
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not update sender settings.")),
+      }
+    );
+  };
+
   const handleAuthenticate = () => {
     authenticate.mutate(
       { domain: domain.trim(), from_email: fromEmail.trim() },
       {
         onSuccess: () => {
           setShowOrgSetup(true);
-          toast.success("DNS records generated — add them at your DNS host.");
+          toast.success("DNS records generated. Add them at your DNS host.");
         },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not start domain authentication.")),
@@ -183,18 +302,27 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
   const handleVerify = () => {
     verify.mutate(undefined, {
       onSuccess: async (result) => {
-        if (result?.verification_status === "verified") {
+        const ok =
+          result?.verification_status === "verified" &&
+          (result.integrity_status === "pass" || result.integrity_status === "warn");
+        if (ok) {
           try {
             await updateSender.mutateAsync({ sender_mode: "organization" });
             setSenderMode("organization");
             setShowOrgSetup(false);
             toast.success("Domain verified! You can now send as your organization.");
           } catch (error) {
-            toast.error(getApiErrorMessage(error, "Domain verified, but could not switch sender mode."));
+            toast.error(
+              getApiErrorMessage(error, "Domain verified, but could not switch sender mode.")
+            );
           }
           return;
         }
-        toast("DNS not detected yet — this can take up to 48 hours.");
+        if (result?.verification_status === "verified") {
+          toast.error("SendGrid verified, but integrity checks failed. Fix the checklist below.");
+          return;
+        }
+        toast("DNS not detected yet. This can take up to 48 hours.");
       },
       onError: (error) => toast.error(getApiErrorMessage(error, "Could not verify domain.")),
     });
@@ -210,13 +338,49 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
         try {
           await updateSender.mutateAsync({ sender_mode: "platform" });
         } catch {
-          // ignore — domain already cleared
+          // ignore
         }
         toast.success("Domain removed. You can connect a different one.");
       },
       onError: (error) => toast.error(getApiErrorMessage(error, "Could not remove domain.")),
     });
   };
+
+  const handleOAuth = (provider: "google" | "microsoft" | "zoho") => {
+    authorizeMailbox.mutate(provider, {
+      onSuccess: (data) => {
+        window.location.href = data.authorization_url;
+      },
+      onError: (error) =>
+        toast.error(getApiErrorMessage(error, `Could not start ${provider} connection.`)),
+    });
+  };
+
+  const handleSmtpConnect = () => {
+    connectSmtp.mutate(
+      {
+        email: smtpForm.email.trim(),
+        smtp_host: smtpForm.smtp_host.trim(),
+        smtp_port: Number(smtpForm.smtp_port),
+        smtp_encryption: smtpForm.smtp_encryption,
+        smtp_username: smtpForm.smtp_username.trim(),
+        smtp_password: smtpForm.smtp_password,
+      },
+      {
+        onSuccess: async () => {
+          setShowSmtpForm(false);
+          setSenderMode("connected_mailbox");
+          toast.success("SMTP mailbox connected.");
+        },
+        onError: (error) =>
+          toast.error(getApiErrorMessage(error, "Could not connect SMTP mailbox.")),
+      }
+    );
+  };
+
+  const integrityChecks =
+    domainAuth?.integrity_checks ?? senderSettings?.integrity_checks ?? [];
+  const integrityStatus = domainAuth?.integrity_status ?? senderSettings?.integrity_status;
 
   return (
     <AnimatePresence>
@@ -248,6 +412,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                 <h3 className="mt-0.5 text-[16px] font-semibold">Email settings</h3>
                 <p className="mt-1 text-[11px] text-[#616263]">
                   Choose how outreach emails are sent from Sales Engine.
+                  {quotaLabel ? ` · ${quotaLabel}` : ""}
                 </p>
               </div>
               <button
@@ -293,7 +458,8 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                             Send using The Factory
                           </span>
                           <span className="mt-0.5 block text-[10px] text-[#616263]">
-                            (Recommended) uses the platform sending domain. Reply-To stays your email.
+                            Uses the platform sending domain. Reply-To stays your email. Lower daily
+                            cap.
                           </span>
                         </span>
                       </label>
@@ -311,14 +477,35 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                             Send using my organization email
                           </span>
                           <span className="mt-0.5 block text-[10px] text-[#616263]">
-                            Connect and verify your domain so messages appear From your company address.
+                            Authenticate your domain on SendGrid. Requires DMARC, MX, and a business
+                            domain.
+                          </span>
+                        </span>
+                      </label>
+
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-[#e8e8e8] bg-white px-3 py-2.5">
+                        <input
+                          type="radio"
+                          name="outreach-sender-mode"
+                          checked={senderMode === "connected_mailbox"}
+                          onChange={handleSelectMailbox}
+                          className="mt-0.5 accent-[#09232d]"
+                        />
+                        <span>
+                          <span className="block text-[12px] font-semibold">
+                            Send from my connected mailbox
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-[#616263]">
+                            Low-volume send via Google, Microsoft, Zoho, or SMTP as yourself.
                           </span>
                         </span>
                       </label>
                     </div>
                   </section>
 
-                  {(showOrgSetup || senderMode === "organization" || connectionStatus !== "not_connected") && (
+                  {(showOrgSetup ||
+                    senderMode === "organization" ||
+                    connectionStatus !== "not_connected") && (
                     <section className="rounded-[16px] border border-[#ececec] p-4">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[13px] font-semibold">Organization domain</p>
@@ -335,15 +522,31 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                       </div>
 
                       {orgVerified && domainAuth ? (
-                        <p className="mt-3 inline-flex items-center gap-1.5 rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3 py-2 text-[11px] font-semibold text-[#087652]">
-                          <Check size={13} /> Verified — sending as {domainAuth.from_email}
-                        </p>
+                        <>
+                          <p className="mt-3 inline-flex items-center gap-1.5 rounded-[10px] border border-[#cdeee0] bg-[#f0fdf7] px-3 py-2 text-[11px] font-semibold text-[#087652]">
+                            <Check size={13} /> Verified. Sending as {domainAuth.from_email}
+                          </p>
+                          <IntegrityChecklist
+                            status={integrityStatus}
+                            checks={integrityChecks}
+                            onRecheck={() =>
+                              recheck.mutate(undefined, {
+                                onSuccess: () => toast.success("Integrity rechecked."),
+                                onError: (error) =>
+                                  toast.error(
+                                    getApiErrorMessage(error, "Could not recheck integrity.")
+                                  ),
+                              })
+                            }
+                            rechecking={recheck.isPending}
+                          />
+                        </>
                       ) : !domainAuth ? (
                         <div className="mt-3 space-y-2">
                           <p className="text-[11px] leading-[15px] text-[#616263]">
-                            Enter your domain and a from-address on it. We&apos;ll generate DNS records
-                            to prove ownership. Email still sends through our platform — only the From
-                            domain changes.
+                            Enter your domain and a from-address on it. We&apos;ll generate DNS
+                            records to prove ownership. Email still sends through SendGrid. Only the
+                            From domain changes.
                           </p>
                           <input
                             type="text"
@@ -374,26 +577,150 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                         <div className="mt-3 space-y-2">
                           <p className="text-[11px] font-medium text-[#09232d]">{domainAuth.domain}</p>
                           <p className="text-[10px] leading-[14px] text-[#616263]">
-                            Add these DNS records at your domain host, then verify. Propagation can
-                            take up to 48 hours.
+                            Add these DNS records at your domain host, then verify. Also add a DMARC
+                            TXT at _dmarc.{domainAuth.domain}. Propagation can take up to 48 hours.
                           </p>
                           {(domainAuth.dns_records ?? []).map((record) => (
                             <DnsRecordRow key={record.label} record={record} />
                           ))}
                           {domainAuth.verification_status === "failed" && (
                             <p className="text-[10px] text-[#b91c1c]">
-                              DNS records weren&apos;t detected yet — double-check them at your DNS
+                              DNS records weren&apos;t detected yet. Double-check them at your DNS
                               host and try again.
                             </p>
                           )}
+                          <IntegrityChecklist
+                            status={integrityStatus}
+                            checks={integrityChecks}
+                            onRecheck={() =>
+                              recheck.mutate(undefined, {
+                                onError: (error) =>
+                                  toast.error(
+                                    getApiErrorMessage(error, "Could not recheck integrity.")
+                                  ),
+                              })
+                            }
+                            rechecking={recheck.isPending}
+                          />
                           <button
                             type="button"
                             disabled={verify.isPending}
                             onClick={handleVerify}
                             className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
                           >
-                            {verify.isPending ? "Checking…" : "I've added these records — Verify"}
+                            {verify.isPending ? "Checking…" : "I've added these records. Verify!"}
                           </button>
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {(senderMode === "connected_mailbox" || connectedMailbox) && (
+                    <section className="rounded-[16px] border border-[#ececec] p-4">
+                      <p className="text-[13px] font-semibold">Connected mailbox</p>
+                      <p className="mt-1 text-[10px] leading-[14px] text-[#616263]">
+                        Mail goes through your provider (not SendGrid). Lower daily cap. Open/click
+                        tracking and bounce webhooks apply only to SendGrid sends.
+                      </p>
+
+                      {connectedMailbox ? (
+                        <div className="mt-3 flex items-center justify-between gap-2 rounded-[12px] border border-[#cdeee0] bg-[#f0fdf7] px-3 py-2">
+                          <div>
+                            <p className="text-[11px] font-semibold text-[#087652]">
+                              {connectedMailbox.email}
+                            </p>
+                            <p className="text-[10px] capitalize text-[#616263]">
+                              {connectedMailbox.provider}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={disconnectMailbox.isPending}
+                            onClick={() =>
+                              disconnectMailbox.mutate(connectedMailbox.id, {
+                                onSuccess: () => {
+                                  setSenderMode("platform");
+                                  toast.success("Mailbox disconnected.");
+                                },
+                                onError: (error) =>
+                                  toast.error(
+                                    getApiErrorMessage(error, "Could not disconnect mailbox.")
+                                  ),
+                              })
+                            }
+                            className="text-[10px] font-medium text-[#616263] underline underline-offset-2"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            {(["google", "microsoft", "zoho"] as const).map((provider) => (
+                              <button
+                                key={provider}
+                                type="button"
+                                disabled={authorizeMailbox.isPending}
+                                onClick={() => handleOAuth(provider)}
+                                className="h-9 rounded-[10px] border border-[#e8e8e8] bg-white text-[10px] font-semibold capitalize text-[#09232d] transition hover:bg-[#f7f7f7] disabled:opacity-50"
+                              >
+                                {provider}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowSmtpForm((v) => !v)}
+                            className="text-[10px] font-medium text-[#616263] underline underline-offset-2"
+                          >
+                            {showSmtpForm ? "Hide SMTP form" : "Connect with SMTP instead"}
+                          </button>
+                          {showSmtpForm && (
+                            <div className="space-y-2 pt-1">
+                              {(
+                                [
+                                  ["email", "Email", "you@company.com"],
+                                  ["smtp_host", "SMTP host", "smtp.example.com"],
+                                  ["smtp_port", "Port", "587"],
+                                  ["smtp_username", "Username", "you@company.com"],
+                                  ["smtp_password", "Password", "••••••••"],
+                                ] as const
+                              ).map(([key, label, placeholder]) => (
+                                <input
+                                  key={key}
+                                  type={key === "smtp_password" ? "password" : "text"}
+                                  value={smtpForm[key]}
+                                  onChange={(e) =>
+                                    setSmtpForm((prev) => ({ ...prev, [key]: e.target.value }))
+                                  }
+                                  placeholder={placeholder}
+                                  aria-label={label}
+                                  className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] outline-none focus:border-[#09232d]/50"
+                                />
+                              ))}
+                              <select
+                                value={smtpForm.smtp_encryption}
+                                onChange={(e) =>
+                                  setSmtpForm((prev) => ({
+                                    ...prev,
+                                    smtp_encryption: e.target.value as "tls" | "ssl",
+                                  }))
+                                }
+                                className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px]"
+                              >
+                                <option value="tls">TLS</option>
+                                <option value="ssl">SSL</option>
+                              </select>
+                              <button
+                                type="button"
+                                disabled={connectSmtp.isPending}
+                                onClick={handleSmtpConnect}
+                                className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white disabled:opacity-50"
+                              >
+                                {connectSmtp.isPending ? "Connecting…" : "Connect SMTP"}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </section>

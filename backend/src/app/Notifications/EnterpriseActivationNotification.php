@@ -25,15 +25,15 @@ class EnterpriseActivationNotification extends Notification
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
         return $this->factory23Mail()
-            ->subject('Your enterprise account is ready — Factory23')
+            ->subject('Your enterprise account is ready, Factory23')
             ->greeting("Hello {$notifiable->name},")
             ->line('Your enterprise request has been approved and your account is ready for setup.')
             ->line($this->factory23DetailTable([
                 'Company ID' => $this->companyId,
                 'Email' => $this->email,
             ]))
-            ->line('Use the link below to complete first-time setup and create your password.')
-            ->action('Complete first-time setup', $this->onboardingLink)
+            ->line('Use the link below to complete first time setup and create your password.')
+            ->action('Complete first time setup', $this->onboardingLink)
             ->line('This link expires for security reasons.')
             ->salutation($this->factory23Salutation());
     }

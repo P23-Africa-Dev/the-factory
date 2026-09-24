@@ -289,7 +289,7 @@ export default function JourneyHistoryPage(): React.ReactElement {
                               )}
                             </div>
                           ) : (
-                            <span className="text-[10px] text-white/40 italic">No check-in record</span>
+                            <span className="text-[10px] text-white/40 italic">No check in record</span>
                           )}
                         </div>
 

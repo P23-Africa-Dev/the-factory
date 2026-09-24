@@ -24,7 +24,7 @@ class EnterpriseDemoRequestReceivedNotification extends Notification
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
         return $this->factory23Mail()
-            ->subject('Demo request received — Factory23')
+            ->subject('Demo request received, Factory23')
             ->greeting("Hello {$this->fullName},")
             ->line('Your enterprise demo request has been received successfully.')
             ->line($this->factory23DetailTable([

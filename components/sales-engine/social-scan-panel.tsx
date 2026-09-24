@@ -148,7 +148,7 @@ export function SocialScanPanel({
 
           <div className="mt-2">
             <p className="mb-1.5 text-[8px] font-medium text-[#616263]">
-              Step {stageInfo.stepIndex + 1} of {stageInfo.totalSteps} ·{" "}
+              Step {stageInfo.stepIndex + 1} of {stageInfo.totalSteps}:{" "}
               {SOCIAL_SCAN_PIPELINE_STEPS[stageInfo.stepIndex]}
             </p>
             <div className="flex items-center gap-1">
@@ -182,7 +182,7 @@ export function SocialScanPanel({
 
           {showLongRunHint && (
             <p className="mt-2 text-[8px] leading-[11px] text-[#616263]">
-              Still working — large scans can take 1–2 minutes.
+              Still working. Large scans can take 1 to 2 minutes.
             </p>
           )}
 

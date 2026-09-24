@@ -69,7 +69,7 @@ class CalendarIntegrationController extends Controller
         );
 
         return $this->success(
-            message: 'Google Calendar switch-account URL generated successfully.',
+            message: 'Google Calendar switch account URL generated successfully.',
             data: $data,
         );
     }
