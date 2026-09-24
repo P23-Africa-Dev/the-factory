@@ -242,14 +242,15 @@ export function OutreachPreviewModal({
     [confirmedInboxes, selectedInboxId]
   );
 
-  const setupReady = Boolean(senderSettings?.setup?.can_send && selectedInbox);
+  const setupReady = Boolean(senderSettings?.setup?.can_send_organization && selectedInbox);
+  const usingPlatform = (senderSettings?.sender_mode ?? "platform") === "platform" || !setupReady;
   const canSendEmail =
     channel === "email" &&
     Boolean(activityId) &&
     emailValid &&
     bodyReady &&
     !isBusy &&
-    setupReady;
+    (usingPlatform || setupReady);
 
   useEffect(() => {
     if (!isAiRewriting) return;
@@ -265,9 +266,11 @@ export function OutreachPreviewModal({
     return Math.max(10, Math.round((wordCount / 200) * 60));
   }, [wordCount]);
 
-  const fromAddress = selectedInbox?.email ?? "Confirm an inbox in email settings";
+  const fromAddress = usingPlatform
+    ? senderSettings?.platform_from_email || "Platform email"
+    : selectedInbox?.email ?? "Confirm an inbox in email settings";
 
-  const isVerifiedSender = setupReady;
+  const isVerifiedSender = usingPlatform || setupReady;
 
   const handleCopy = async () => {
     try {
@@ -310,14 +313,15 @@ export function OutreachPreviewModal({
   };
 
   const handleSend = useCallback(() => {
-    if (!activityId || !canSendEmail || !selectedInboxId) return;
+    if (!activityId || !canSendEmail) return;
+    if (!usingPlatform && !selectedInboxId) return;
     sendOutreach.mutate(
       {
         activityId,
         to_email: toEmail.trim(),
         subject: subject.trim() || undefined,
         body: body.trim(),
-        inbox_id: selectedInboxId,
+        ...(usingPlatform ? {} : { inbox_id: selectedInboxId ?? undefined }),
       },
       {
         onSuccess: () => {
@@ -332,13 +336,14 @@ export function OutreachPreviewModal({
   }, [
     activityId,
     canSendEmail,
+    usingPlatform,
+    selectedInboxId,
     onSent,
     onClose,
     sendOutreach,
     toEmail,
     subject,
     body,
-    selectedInboxId,
   ]);
 
   // Keyboard shortcut: Cmd+Enter / Ctrl+Enter to send
@@ -548,7 +553,7 @@ export function OutreachPreviewModal({
                             From:
                           </span>
                           <div className="min-w-0 flex-1 space-y-1">
-                            {confirmedInboxes.length > 0 ? (
+                            {confirmedInboxes.length > 0 && !usingPlatform ? (
                               <select
                                 value={selectedInboxId ?? ""}
                                 onChange={(e) =>
@@ -574,7 +579,7 @@ export function OutreachPreviewModal({
                               {isVerifiedSender ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 shrink-0">
                                   <ShieldCheck size={12} />
-                                  Ready
+                                  {usingPlatform ? "Platform ready" : "Ready"}
                                 </span>
                               ) : (
                                 <span className="text-[10px] text-rose-600 shrink-0">

@@ -41,8 +41,11 @@ export function useUpdateOutreachSenderSettings() {
   const resetAuth = useResetSalesEngineAuth();
 
   return useMutation({
-    mutationFn: (payload: { default_inbox_id?: number | null; reply_to_email?: string | null }) =>
-      updateOutreachSenderSettings(payload),
+    mutationFn: (payload: {
+      sender_mode?: "platform" | "organization";
+      default_inbox_id?: number | null;
+      reply_to_email?: string | null;
+    }) => updateOutreachSenderSettings(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_SENDER_KEYS.all });
     },

@@ -20,9 +20,9 @@ import {
   useResendOutreachInboxConfirmation,
   useSetDefaultOutreachInbox,
 } from "@/hooks/use-sales-engine-outreach-inbox";
-import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
+import { useOutreachSenderSettings, useUpdateOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import type { OutreachDnsRecord, OutreachIntegrityCheck } from "@/lib/api/sales-engine";
+import type { OutreachDnsRecord, OutreachIntegrityCheck, OutreachSenderMode } from "@/lib/api/sales-engine";
 
 export type OutreachSettingsModalProps = {
   open: boolean;
@@ -178,12 +178,16 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
   const setDefaultInbox = useSetDefaultOutreachInbox();
   const deleteInbox = useDeleteOutreachInbox();
   const askSupport = useCreateOutreachSetupRequest();
+  const updateSender = useUpdateOutreachSenderSettings();
 
   const [domain, setDomain] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [inboxEmail, setInboxEmail] = useState("");
   const [confirmCodes, setConfirmCodes] = useState<Record<number, string>>({});
   const [supportNote, setSupportNote] = useState("");
+  const [senderMode, setSenderMode] = useState<OutreachSenderMode>("platform");
+  const [replyToEmail, setReplyToEmail] = useState("");
+  const [showOrgSetup, setShowOrgSetup] = useState(false);
 
   const connectionStatus =
     senderSettings?.org_connection_status ??
@@ -206,6 +210,16 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
     if (domainAuth?.from_email) setFromEmail(domainAuth.from_email);
   }, [open, domainAuth]);
 
+  useEffect(() => {
+    if (!open || !senderSettings) return;
+    setSenderMode(senderSettings.sender_mode ?? "platform");
+    setReplyToEmail(senderSettings.reply_to_email ?? "");
+    setShowOrgSetup(
+      senderSettings.sender_mode === "organization" ||
+        senderSettings.org_connection_status !== "not_connected"
+    );
+  }, [open, senderSettings]);
+
   const confirmedInboxes = useMemo(
     () => (inboxes ?? []).filter((i) => i.status === "confirmed"),
     [inboxes]
@@ -216,9 +230,64 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
     : null;
 
   const setup = senderSettings?.setup;
+  const orgReady = Boolean(setup?.can_send_organization);
   const integrityChecks =
     domainAuth?.integrity_checks ?? senderSettings?.integrity_checks ?? [];
   const integrityStatus = domainAuth?.integrity_status ?? senderSettings?.integrity_status;
+
+  const activeFrom =
+    senderMode === "organization" && orgReady
+      ? senderSettings?.default_inbox?.email ||
+        senderSettings?.org_verified_from_email ||
+        "Your organization inbox"
+      : senderSettings?.platform_from_email || "Platform email";
+
+  const handleSelectPlatform = async () => {
+    setSenderMode("platform");
+    setShowOrgSetup(connectionStatus !== "not_connected");
+    try {
+      await updateSender.mutateAsync({
+        sender_mode: "platform",
+        reply_to_email: replyToEmail.trim() || undefined,
+      });
+      toast.success("Using platform sending.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not switch to platform sending."));
+    }
+  };
+
+  const handleSelectOrganization = async () => {
+    setShowOrgSetup(true);
+    if (!orgReady) {
+      setSenderMode("organization");
+      toast("Finish domain + inbox setup below, then switch to organization sending.");
+      return;
+    }
+    try {
+      await updateSender.mutateAsync({ sender_mode: "organization" });
+      setSenderMode("organization");
+      toast.success("Using your organization domain.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not switch to organization sending."));
+    }
+  };
+
+  const handleSaveReplyTo = async () => {
+    const value = replyToEmail.trim();
+    if (!value) {
+      toast.error("Reply-To email is required.");
+      return;
+    }
+    try {
+      await updateSender.mutateAsync({
+        sender_mode: senderMode,
+        reply_to_email: value,
+      });
+      toast.success("Reply-To updated.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not update Reply-To."));
+    }
+  };
 
   const handleAuthenticate = () => {
     authenticate.mutate(
@@ -291,8 +360,8 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                 </p>
                 <h3 className="mt-0.5 text-[16px] font-semibold">Email setup</h3>
                 <p className="mt-1 text-[11px] text-[#616263]">
-                  Authenticate your domain, confirm inboxes, then send through SendGrid as those
-                  addresses.
+                  Recommended: connect your organization domain. Platform sending stays available
+                  until you are ready.
                   {quotaLabel ? ` · ${quotaLabel}` : ""}
                 </p>
               </div>
@@ -316,12 +385,89 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                 <>
                   <section className="rounded-[16px] border border-[#ececec] bg-[#fafafa] p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[13px] font-semibold">Ready to send?</p>
+                      <p className="text-[13px] font-semibold">How you send</p>
                       <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wide text-[#616263] shadow-[inset_0_0_0_1px_#ececec]">
                         {connectionLabel(connectionStatus)}
                       </span>
                     </div>
-                    {setup?.can_send ? (
+                    <p className="mt-1 text-[11px] text-[#616263]">
+                      Current From: <span className="font-medium text-[#09232d]">{activeFrom}</span>
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-[#e8e8e8] bg-white px-3 py-2.5">
+                        <input
+                          type="radio"
+                          name="outreach-sender-mode"
+                          checked={senderMode === "platform"}
+                          onChange={() => void handleSelectPlatform()}
+                          className="mt-0.5 accent-[#09232d]"
+                        />
+                        <span>
+                          <span className="block text-[12px] font-semibold">
+                            Send using The Factory (platform)
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-[#616263]">
+                            Uses the platform sending domain. Reply-To defaults to your email (you
+                            can change it). Lower daily cap.
+                          </span>
+                        </span>
+                      </label>
+
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-[#e8e8e8] bg-white px-3 py-2.5">
+                        <input
+                          type="radio"
+                          name="outreach-sender-mode"
+                          checked={senderMode === "organization"}
+                          onChange={() => void handleSelectOrganization()}
+                          className="mt-0.5 accent-[#09232d]"
+                        />
+                        <span>
+                          <span className="block text-[12px] font-semibold">
+                            Send using my organization email{" "}
+                            <span className="text-[9px] font-semibold uppercase tracking-wide text-[#087652]">
+                              Recommended
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-[#616263]">
+                            Authenticate your domain and confirm inboxes for better deliverability.
+                            {orgReady ? " Ready." : " Finish setup below to enable."}
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    {senderMode === "platform" && (
+                      <div className="mt-3 space-y-2 rounded-[12px] border border-[#e8e8e8] bg-white p-3">
+                        <p className="text-[11px] font-semibold text-[#09232d]">Reply-To</p>
+                        <p className="text-[10px] text-[#616263]">
+                          Replies go here. Defaults to your account email.
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="email"
+                            value={replyToEmail}
+                            onChange={(e) => setReplyToEmail(e.target.value)}
+                            placeholder="you@company.com"
+                            className="h-9 flex-1 rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] outline-none focus:border-[#09232d]/50"
+                          />
+                          <button
+                            type="button"
+                            disabled={updateSender.isPending}
+                            onClick={() => void handleSaveReplyTo()}
+                            className="h-9 shrink-0 rounded-[10px] bg-[#09232d] px-3 text-[11px] font-semibold text-white disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {senderMode === "platform" ? (
+                      <p className="mt-2 text-[11px] font-medium text-[#087652]">
+                        Platform sending is available now.
+                      </p>
+                    ) : orgReady ? (
                       <p className="mt-2 text-[11px] font-medium text-[#087652]">
                         Domain and inbox ready. Choose an inbox when you send.
                       </p>
@@ -336,6 +482,9 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                     )}
                   </section>
 
+                  {(showOrgSetup ||
+                    senderMode === "organization" ||
+                    connectionStatus !== "not_connected") && (
                   <section className="rounded-[16px] border border-[#ececec] p-4">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[13px] font-semibold">1. Organization domain</p>
@@ -580,12 +729,13 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                         </div>
                         {confirmedInboxes.length === 0 && (
                           <p className="text-[10px] text-[#b45309]">
-                            Confirm at least one inbox before you can send outreach.
+                            Confirm at least one inbox before switching to organization sending.
                           </p>
                         )}
                       </div>
                     )}
                   </section>
+                  )}
 
                   <section className="rounded-[16px] border border-[#ececec] p-4">
                     <p className="text-[13px] font-semibold">Need help?</p>

@@ -1281,7 +1281,7 @@ export type SocialListeningSettings = {
   last_run_at?: string | null;
 };
 
-export type OutreachSenderMode = "organization";
+export type OutreachSenderMode = "platform" | "organization";
 
 export type OutreachIntegrityCheck = {
   key: string;
@@ -1309,6 +1309,9 @@ export type OutreachInbox = {
 
 export type OutreachSetupStatus = {
   can_send: boolean;
+  can_send_platform?: boolean;
+  can_send_organization?: boolean;
+  recommended_mode?: OutreachSenderMode;
   domain_connected: boolean;
   domain_verified: boolean;
   integrity_status?: string | null;
@@ -1658,6 +1661,7 @@ export function fetchOutreachSenderSettings(): Promise<OutreachSenderSettings> {
 }
 
 export function updateOutreachSenderSettings(payload: {
+  sender_mode?: OutreachSenderMode;
   default_inbox_id?: number | null;
   reply_to_email?: string | null;
 }): Promise<OutreachSenderSettings> {
