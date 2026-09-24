@@ -54,8 +54,8 @@ class MapPoiDisplayController extends Controller
         return redirect()
             ->route('admin.map-display.index')
             ->with('status', $enabled
-                ? 'Business pins are now enabled platform-wide.'
-                : 'Business pins are now disabled platform-wide (Google Places display cost paused).');
+                ? 'Business pins are now enabled platform wide.'
+                : 'Business pins are now disabled platform wide (Google Places display cost paused).');
     }
 
     public function updateCompany(Request $request, Company $company): RedirectResponse

@@ -36,10 +36,10 @@ class OtpNotification extends Notification
     private function resolveSubject(): string
     {
         return match ($this->type) {
-            'registration' => 'Verify your email — Factory23',
-            'login' => 'Your login verification code — Factory23',
-            'password_reset' => 'Reset your password — Factory23',
-            default => 'Your verification code — Factory23',
+            'registration' => 'Verify your email, Factory23',
+            'login' => 'Your login verification code, Factory23',
+            'password_reset' => 'Reset your password, Factory23',
+            default => 'Your verification code, Factory23',
         };
     }
 

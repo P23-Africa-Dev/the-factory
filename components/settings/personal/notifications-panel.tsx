@@ -140,9 +140,9 @@ export function NotificationsPanel() {
               {pref.is_enabled && (
                 <div className="grid sm:grid-cols-3 gap-3 pt-2 border-t border-gray-50">
                   <label className="flex items-center justify-between gap-2 text-[12px] text-gray-600">
-                    In-app
+                    In app
                     <Toggle
-                      label="In-app"
+                      label="In app"
                       checked={pref.in_app_enabled}
                       onChange={(value) => updateDraft(pref.id, { in_app_enabled: value })}
                     />

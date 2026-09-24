@@ -28,7 +28,7 @@ export function TopupModal({
 
   const submit = async () => {
     if (usd < 1) {
-      toast.error("The minimum top-up amount is $1.");
+      toast.error("The minimum top up amount is $1.");
       return;
     }
     try {

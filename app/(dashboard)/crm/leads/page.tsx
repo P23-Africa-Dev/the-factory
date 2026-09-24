@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   Tag,
   Trash2,
+  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -122,9 +123,27 @@ export default function AllLeadsPage() {
     "uploaded_by_agents",
     "uploaded by agents",
   ].includes(sourceParam);
+
+  const salesEngineScope = [
+    "sales_engine",
+    "sales engine",
+    "sales-engine",
+    "smart_lead",
+    "smart lead",
+    "smart-lead",
+    "smart_leads",
+    "smart leads",
+  ].includes(sourceParam);
+
+  const effectiveSourceFilter = agentUploadScope
+    ? "agent_upload"
+    : salesEngineScope
+      ? "sales_engine"
+      : sourceParam || undefined;
+
   const boardUrl = useMemo(
-    () => (agentUploadScope ? `${basePath}?source=agent_upload` : basePath),
-    [agentUploadScope, basePath],
+    () => (agentUploadScope ? `${basePath}?source=agent_upload` : salesEngineScope ? `${basePath}?source=sales_engine` : basePath),
+    [agentUploadScope, salesEngineScope, basePath],
   );
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/admin");
@@ -154,12 +173,28 @@ export default function AllLeadsPage() {
     search: search.trim() || undefined,
     pipeline_id: selectedPipelineId ?? undefined,
     status: selectedLabel === "all" ? undefined : selectedLabel,
-    source: agentUploadScope ? "agent_upload" : undefined,
+    source: effectiveSourceFilter,
   }, "/admin");
   const updateLeadMutation = useUpdateLead(undefined, "/admin");
   const deleteLeadMutation = useDeleteLead(undefined, "/admin");
 
-  const apiLeads = data?.leads ?? [];
+  const isSalesEngineLead = (lead: LeadApiItem): boolean => {
+    const s = (lead.source ?? "").toLowerCase().trim();
+    const loc = (lead.location ?? "").toLowerCase().trim();
+    const comp = (lead.company_name ?? "").toLowerCase().trim();
+    return (
+      s.includes("sales") ||
+      s.includes("smart_lead") ||
+      s.includes("smart lead") ||
+      loc.includes("sales engine") ||
+      comp.includes("sales engine")
+    );
+  };
+
+  const rawApiLeads = data?.leads ?? [];
+  const apiLeads = salesEngineScope
+    ? rawApiLeads.filter(isSalesEngineLead)
+    : rawApiLeads;
 
   const statusOptions = labels.map((label) => ({
     label: label.name,
@@ -167,7 +202,7 @@ export default function AllLeadsPage() {
     color: label.color,
   }));
 
-  const leads: Lead[] = (data?.leads ?? []).map((l) => ({
+  const leads: Lead[] = apiLeads.map((l) => ({
     id: String(l.id),
     name: l.name,
     company: l.location ?? l.source ?? "—",
@@ -321,7 +356,7 @@ export default function AllLeadsPage() {
                 search: search.trim() || undefined,
                 pipeline_id: selectedPipelineId ?? undefined,
                 status: selectedLabel === "all" ? undefined : selectedLabel,
-                source: agentUploadScope ? "agent_upload" : undefined,
+                source: effectiveSourceFilter,
               }}
               selectedLeadIds={Array.from(selected)}
               onViewImportedPipeline={(pipelineId) => {
@@ -343,6 +378,24 @@ export default function AllLeadsPage() {
             </button>
           </div>
         </div>
+
+        {salesEngineScope && (
+          <div className="flex items-center justify-between rounded-2xl border border-[#09232d]/15 bg-[#09232d]/[0.03] px-4 py-2.5 text-xs text-[#09232d] shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-semibold text-slate-900">Filtered by: Sales Engine</span>
+              <span className="text-slate-500 hidden sm:inline">• Displaying leads discovered and saved from Sales Engine</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(basePath)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-xs hover:bg-slate-100 transition cursor-pointer"
+            >
+              <span>Clear Filter</span>
+              <X size={12} />
+            </button>
+          </div>
+        )}
 
         {showFilter && (
           <CrmFilterBar

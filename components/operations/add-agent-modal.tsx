@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import {
 import { useCompanyZones, useCreateInternalUser } from "@/hooks/use-internal-users";
 import { CreateZoneModal } from "@/components/zones/create-zone-modal";
 import { getProfile } from "@/lib/api/profile";
+import { getBillingStatus } from "@/lib/api/billing";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { useInternalUsers } from "@/hooks/use-projects";
 import { useSupportedCurrencies } from "@/hooks/use-currencies";
@@ -93,6 +95,21 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     },
     enabled: !!token,
   });
+
+  const { data: billingStatus } = useQuery({
+    queryKey: ["billing-status"],
+    queryFn: async () => {
+      const res = await getBillingStatus();
+      return res.data;
+    },
+    enabled: !!token,
+  });
+
+  const seatUsage = billingStatus?.seat_usage;
+  const seatsAtCap =
+    seatUsage != null &&
+    seatUsage.remaining !== null &&
+    seatUsage.remaining <= 0;
 
   const createMutation = useCreateInternalUser();
   const { data: currenciesData, isLoading: loadingCurrencies } = useSupportedCurrencies();
@@ -185,7 +202,25 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const handleError = (err: unknown) => {
     const apiErr = err as ApiRequestError;
     const msg = apiErr.message ?? "Something went wrong. Please try again.";
-    toast.error(msg);
+    const emailError = apiErr.errors?.email?.[0] ?? "";
+    const isSeatError =
+      /upgrade|plan allows|seat|subscription plan is not configured/i.test(
+        `${msg} ${emailError}`,
+      );
+
+    if (isSeatError) {
+      toast.error(emailError || msg, {
+        action: {
+          label: "Upgrade plan",
+          onClick: () => {
+            window.location.href = "/billing/change-plan";
+          },
+        },
+      });
+    } else {
+      toast.error(msg);
+    }
+
     if (apiErr.errors) {
       const fe: FormErrors = {};
       if (apiErr.errors.full_name) fe.name = apiErr.errors.full_name[0];
@@ -207,6 +242,18 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (seatsAtCap) {
+      toast.error("Your plan is at its seat limit. Upgrade to add more users.", {
+        action: {
+          label: "Upgrade plan",
+          onClick: () => {
+            window.location.href = "/billing/change-plan";
+          },
+        },
+      });
+      return;
+    }
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
@@ -305,6 +352,33 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
             <div className="space-y-4 mb-5">
               <SectionDivider label="Add New Agent" />
 
+              {seatUsage && (
+                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 flex items-center justify-between gap-3">
+                  <p className="text-[12px] text-gray-600">
+                    Seats used{" "}
+                    <span className="font-semibold text-dash-dark">
+                      {seatUsage.used}
+                      {seatUsage.limit != null ? ` / ${seatUsage.limit}` : ""}
+                    </span>
+                  </p>
+                  {seatsAtCap && (
+                    <Link
+                      href="/billing/change-plan"
+                      className="text-[12px] font-semibold text-dash-dark underline underline-offset-2"
+                      onClick={onClose}
+                    >
+                      Upgrade plan
+                    </Link>
+                  )}
+                </div>
+              )}
+
+              {seatsAtCap && (
+                <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                  Your plan is at capacity. Upgrade to add more team members.
+                </p>
+              )}
+
               <div>
                 <FormRow label="Fullname" labelClassName="w-28">
                   <InlineInput
@@ -312,6 +386,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                     onChange={(e) => { setName(e.target.value); clearError("name"); }}
                     placeholder="E.g Alison Thomson"
                     className="col-span-2"
+                    disabled={seatsAtCap}
                   />
                 </FormRow>
                 <FieldError message={errors.name} />
@@ -495,7 +570,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 />
               </FormRow>
               {role !== "agent" && (
-                <p className="text-[11px] text-gray-400">Agent-only profile fields are available when role is Agent.</p>
+                <p className="text-[11px] text-gray-400">Agent only profile fields are available when role is Agent.</p>
               )}
             </div>
 
@@ -503,10 +578,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
               <div className="flex items-center justify-start">
                 <button
                   type="submit"
-                  disabled={isPending}
+                  disabled={isPending || seatsAtCap}
                   className="w-full sm:w-auto px-9.25 py-3 sm:py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isPending ? "Saving…" : "Done"}
+                  {isPending ? "Saving…" : seatsAtCap ? "Seats full" : "Done"}
                 </button>
               </div>
             )}

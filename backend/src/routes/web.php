@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\AI\AiStackSettingController;
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
 use App\Http\Controllers\Admin\Billing\BillingOverviewController;
+use App\Http\Controllers\Admin\Billing\AdminOfflinePlanController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Controllers\Admin\Billing\BillingPlanController;
 use App\Http\Controllers\Admin\Billing\CompanyDemoController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Admin\Places\PlacesAnalyticsController;
 use App\Http\Controllers\Admin\Database\DatabaseLockController;
 use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
+use App\Http\Controllers\Admin\SalesEngine\AccessRequestController as SalesEngineAccessRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\SupportAccessController;
@@ -88,9 +90,21 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::prefix('enterprise')->name('enterprise.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::prefix('demo-requests')->name('demo-requests.')->group(function (): void {
                 Route::get('/', [DemoRequestController::class, 'index'])->name('index');
+                Route::get('/create', [DemoRequestController::class, 'create'])->name('create');
+                Route::post('/', [DemoRequestController::class, 'store'])->name('store');
                 Route::get('/{demoRequest}', [DemoRequestController::class, 'show'])->name('show');
                 Route::patch('/{demoRequest}/activate', [DemoRequestController::class, 'activate'])->name('activate');
                 Route::post('/{demoRequest}/payment-link', [AdminPaymentLinkController::class, 'forDemoRequest'])->name('payment-link');
+            });
+        });
+
+        // ── Sales Engine Access ────────────────────────────────
+        Route::prefix('sales-engine')->name('sales-engine.')->middleware('admin.permission:manage_users')->group(function (): void {
+            Route::prefix('access-requests')->name('access-requests.')->group(function (): void {
+                Route::get('/', [SalesEngineAccessRequestController::class, 'index'])->name('index');
+                Route::get('/{accessRequest}', [SalesEngineAccessRequestController::class, 'show'])->name('show');
+                Route::post('/{accessRequest}/approve', [SalesEngineAccessRequestController::class, 'approve'])->name('approve');
+                Route::post('/{accessRequest}/decline', [SalesEngineAccessRequestController::class, 'decline'])->name('decline');
             });
         });
 
@@ -147,6 +161,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
             Route::post('/companies/{company}/demo', [CompanyDemoController::class, 'update'])
                 ->name('companies.demo.update');
+            Route::post('/companies/{company}/offline-plan', [AdminOfflinePlanController::class, 'update'])
+                ->name('companies.offline-plan.update');
         });
 
         // ── Map Credits (Google API usage & allocation) ────────

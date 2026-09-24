@@ -30,13 +30,12 @@ class LeadFieldNormalizer
                 continue;
             }
 
-            $trimmed = trim($url);
-
-            if ($trimmed === '') {
+            $normalized = self::normalizeWebsite($url);
+            if ($normalized === null) {
                 continue;
             }
 
-            $urls[] = $trimmed;
+            $urls[] = $normalized;
         }
 
         return array_values(array_unique($urls));
@@ -54,11 +53,36 @@ class LeadFieldNormalizer
             return null;
         }
 
+        // Phone numbers, emails, and free-text must never become websites.
+        if (self::looksLikePhoneOrEmail($trimmed)) {
+            return null;
+        }
+
         if (! preg_match('/^https?:\/\//i', $trimmed)) {
-            $trimmed = 'https://' . $trimmed;
+            $trimmed = 'https://'.$trimmed;
+        }
+
+        if (filter_var($trimmed, FILTER_VALIDATE_URL) === false) {
+            return null;
+        }
+
+        $host = parse_url($trimmed, PHP_URL_HOST);
+        if (! is_string($host) || $host === '' || ! str_contains($host, '.')) {
+            return null;
         }
 
         return $trimmed;
+    }
+
+    private static function looksLikePhoneOrEmail(string $value): bool
+    {
+        if (str_contains($value, '@') && filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            return true;
+        }
+
+        $digits = preg_replace('/\D+/', '', $value) ?? '';
+
+        return strlen($digits) >= 7 && preg_match('/^[\d\s\-\+\(\)\.]+$/', $value) === 1;
     }
 
     /**

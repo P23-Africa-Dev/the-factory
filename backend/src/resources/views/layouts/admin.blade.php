@@ -714,6 +714,10 @@
                 class="nav-link {{ request()->routeIs('admin.enterprise.*') ? 'active' : '' }}">
                 <i class="bi bi-building"></i><span class="nav-link-text">Enterprise</span>
             </a>
+            <a href="{{ route('admin.sales-engine.access-requests.index') }}"
+                class="nav-link {{ request()->routeIs('admin.sales-engine.*') ? 'active' : '' }}">
+                <i class="bi bi-key"></i><span class="nav-link-text">SE Access</span>
+            </a>
             @if (auth('admin')->user()?->canAccessAbility('manage_billing'))
                 <a href="{{ route('admin.billing.index') }}"
                     class="nav-link {{ request()->routeIs('admin.billing.*') ? 'active' : '' }}">

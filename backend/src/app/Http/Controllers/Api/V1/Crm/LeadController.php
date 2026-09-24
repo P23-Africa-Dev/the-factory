@@ -69,6 +69,67 @@ class LeadController extends Controller
         );
     }
 
+    public function checkDuplicate(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'company_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $result = $this->leadService->checkDuplicate($request->user(), [
+            'company_id' => $this->resolveCompanyContextId($data['company_id'] ?? null),
+            'email' => $data['email'] ?? null,
+            'name' => $data['name'] ?? null,
+            'company_name' => $data['company_name'] ?? null,
+        ]);
+
+        return $this->success(
+            message: $result['exists'] ? 'Duplicate lead found.' : 'No duplicate lead found.',
+            data: [
+                'exists' => $result['exists'],
+                'match_reason' => $result['match_reason'],
+                'lead' => $result['lead'] ? new LeadResource($result['lead']) : null,
+            ],
+        );
+    }
+
+    public function merge(Request $request, Lead $lead): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'strategy' => ['nullable', 'string', 'in:only_new_fields,better_quality,always_update'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'company_name' => ['nullable', 'string', 'max:255'],
+            'company_email' => ['nullable', 'email', 'max:255'],
+            'website' => ['nullable', 'string', 'max:255'],
+            'position' => ['nullable', 'string', 'max:120'],
+            'profile_urls' => ['nullable', 'array'],
+            'profile_urls.*' => ['nullable', 'string', 'max:2048'],
+            'next_action' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $strategy = (string) ($data['strategy'] ?? 'better_quality');
+        unset($data['strategy']);
+        $data['company_id'] = $this->resolveCompanyContextId($data['company_id'] ?? null);
+
+        $result = $this->leadService->merge($request->user(), $lead, $data, $strategy);
+
+        return $this->success(
+            message: $result['updated']
+                ? 'CRM lead updated with richer fields.'
+                : 'CRM lead already up to date.',
+            data: [
+                'updated' => $result['updated'],
+                'fields_changed' => $result['fields_changed'],
+                'lead' => new LeadResource($result['lead']),
+            ],
+        );
+    }
+
     public function assignees(Request $request): JsonResponse
     {
         $assignees = $this->leadService->listAssignees(

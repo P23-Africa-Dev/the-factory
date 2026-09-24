@@ -30,6 +30,8 @@ export type BillingStatus = {
   can_choose_plan: boolean;
   can_manage_billing: boolean;
   viewer_role: string | null;
+  has_stripe_customer?: boolean;
+  has_active_stripe_subscription?: boolean;
   current_period_start: string | null;
   current_period_end: string | null;
   grace_ends_at: string | null;
@@ -101,11 +103,24 @@ export async function getBillingPlans() {
 export async function createCheckoutSession(payload: {
   plan_key: string;
   interval: "monthly" | "annual";
-  context?: "onboarding" | "renewal";
+  context?: "onboarding" | "renewal" | "upgrade";
 }) {
   return apiRequest<{ checkout_url: string }>({
     method: "POST",
     path: "/billing/checkout",
+    token: authToken(),
+    body: payload,
+  });
+}
+
+export async function changeBillingPlan(payload: {
+  plan_key: string;
+  interval: "monthly" | "annual";
+  company_id?: number;
+}) {
+  return apiRequest<BillingStatus>({
+    method: "POST",
+    path: "/billing/change-plan",
     token: authToken(),
     body: payload,
   });

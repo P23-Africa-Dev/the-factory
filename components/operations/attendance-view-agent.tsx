@@ -44,12 +44,12 @@ function mapRecord(record: AgentAttendanceRecord, userName: string, avatarUrl?: 
     address: lat != null && lng != null ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : "No location data",
     checkIn: record.clock_in_at
       ? format(parseISO(record.clock_in_at), "h:mma")
-      : "No check-in record",
+      : "No check in record",
     checkOut: record.clock_out_at
       ? format(parseISO(record.clock_out_at), "h:mma")
       : record.status !== "absent"
       ? "Still Active"
-      : "No check-out record",
+      : "No check out record",
     role: "Field Agent",
     status: record.status === "present" || record.status === "late" ? "Present" : "Absent",
     subText:
@@ -154,7 +154,7 @@ function HistoryEntry({ record }: { record: AgentAttendanceRecord }) {
                   )}
                 </div>
               ) : (
-                <span className="text-[11px] text-gray-400 italic">No clock-in recorded</span>
+                <span className="text-[11px] text-gray-400 italic">No clock in recorded</span>
               )}
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -589,13 +589,13 @@ export function AttendanceViewAgent() {
                           isSelected={isSelected}
                         />
                         <OpsTableCol
-                          label="Check-In"
+                          label="Check In"
                           value={item.checkIn}
                           isSelected={isSelected}
                           className="hidden sm:block w-28 sm:w-32"
                         />
                         <OpsTableCol
-                          label="Check-Out"
+                          label="Check Out"
                           value={item.checkOut}
                           isSelected={isSelected}
                           className="hidden md:block w-36 sm:w-40"
@@ -687,11 +687,11 @@ export function AttendanceViewAgent() {
                       <p className="text-[12px] text-gray-400">{selected.date}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-In</p>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
                       <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-Out</p>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check Out</p>
                       <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
                     </div>
                   </div>

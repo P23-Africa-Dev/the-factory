@@ -17,7 +17,7 @@
         <div>
             <h4 class="fw-bold mb-1" style="font-size:1.05rem">Places Search Analytics</h4>
             <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">
-                Geoapify ∥ Foursquare fan-out with Google conditional backstop. Cache hits are free; one credit charge per settled search.
+                Geoapify ∥ Foursquare fan out with Google conditional backstop. Cache hits are free; one credit charge per settled search.
             </p>
         </div>
         <form method="get" class="d-flex gap-2 align-items-center">
@@ -83,7 +83,7 @@
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <h6 class="fw-semibold mb-3">Result attribution mix</h6>
-                    <p class="small text-muted mb-3">How often each provider appears in returned result <code>sources[]</code> (multi-source = one card tagged by 2+ providers).</p>
+                    <p class="small text-muted mb-3">How often each provider appears in returned result <code>sources[]</code> (multi source = one card tagged by 2+ providers).</p>
                     @foreach (['geoapify' => 'Geoapify', 'foursquare' => 'Foursquare', 'google' => 'Google'] as $key => $label)
                         <div class="d-flex justify-content-between mb-2" style="font-size:.85rem">
                             <span>{{ $label }}</span>
@@ -95,10 +95,10 @@
                         </div>
                     @endforeach
                     <div class="d-flex justify-content-between" style="font-size:.85rem">
-                        <span>Multi-source cards</span>
+                        <span>Multi source cards</span>
                         <span class="fw-semibold">{{ number_format($o['sources_mix']['multi_source'] ?? 0) }}</span>
                     </div>
-                    <p class="small text-muted mt-2 mb-0">Today live multi-source: {{ number_format($o['live_sources_mix']['multi_source'] ?? 0) }}</p>
+                    <p class="small text-muted mt-2 mb-0">Today live multi source: {{ number_format($o['live_sources_mix']['multi_source'] ?? 0) }}</p>
                 </div>
             </div>
         </div>
@@ -135,11 +135,11 @@
                         @csrf
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" name="geoapify_enabled" value="1" id="geoapify_enabled" @checked($settings['geoapify_enabled'])>
-                            <label class="form-check-label" for="geoapify_enabled">Geoapify (fan-out) @unless($settings['keys_configured']['geoapify']) <span class="badge text-bg-warning">no key</span> @endunless</label>
+                            <label class="form-check-label" for="geoapify_enabled">Geoapify (fan out) @unless($settings['keys_configured']['geoapify']) <span class="badge text-bg-warning">no key</span> @endunless</label>
                         </div>
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" name="foursquare_enabled" value="1" id="foursquare_enabled" @checked($settings['foursquare_enabled'])>
-                            <label class="form-check-label" for="foursquare_enabled">Foursquare (fan-out) @unless($settings['keys_configured']['foursquare']) <span class="badge text-bg-warning">no key</span> @endunless</label>
+                            <label class="form-check-label" for="foursquare_enabled">Foursquare (fan out) @unless($settings['keys_configured']['foursquare']) <span class="badge text-bg-warning">no key</span> @endunless</label>
                         </div>
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" name="google_enabled" value="1" id="google_enabled" @checked($settings['google_enabled'])>

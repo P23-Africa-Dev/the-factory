@@ -36,8 +36,8 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
       : !today.workingDay
         ? "Today isn't a scheduled working day."
         : isClockedIn
-          ? (!today.canClockOut ? 'Clock-out is not available right now.' : null)
-          : (!today.canClockIn ? 'Clock-in is not available right now.' : null);
+          ? (!today.canClockOut ? 'Clock out is not available right now.' : null)
+          : (!today.canClockIn ? 'Clock in is not available right now.' : null);
 
   useEffect(() => {
     if (visible) refresh();

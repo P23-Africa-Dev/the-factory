@@ -28,7 +28,7 @@ function formatDateTime(iso: string | null): string {
 
 const TX_LABELS: Record<string, string> = {
   allocation: "Plan allocation",
-  topup: "Top-up",
+  topup: "Top up",
   consumption: "Usage",
   reset: "Cycle reset",
   admin_adjust: "Adjustment",
@@ -126,7 +126,7 @@ export function MapCreditsPanel() {
               </p>
             </div>
             <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
-              <p className="text-[11px] font-bold text-gray-400 uppercase">Top-up credits</p>
+              <p className="text-[11px] font-bold text-gray-400 uppercase">Top up credits</p>
               <p className="text-[16px] font-bold text-dash-dark mt-1">
                 {(credits?.topup_credits ?? 0).toLocaleString()}
               </p>
