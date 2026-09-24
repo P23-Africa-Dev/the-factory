@@ -485,6 +485,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                   {(showOrgSetup ||
                     senderMode === "organization" ||
                     connectionStatus !== "not_connected") && (
+                  <>
                   <section className="rounded-[16px] border border-[#ececec] p-4">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[13px] font-semibold">1. Organization domain</p>
@@ -735,6 +736,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                       </div>
                     )}
                   </section>
+                  </>
                   )}
 
                   <section className="rounded-[16px] border border-[#ececec] p-4">
