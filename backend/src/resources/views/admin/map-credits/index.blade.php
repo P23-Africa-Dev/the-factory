@@ -16,7 +16,7 @@
         <h4 class="fw-bold mb-1" style="font-size:1.05rem">Google API Usage &amp; Credit Allocation</h4>
         <p class="mb-0" style="font-size:.82rem;color:var(--text-secondary)">
             Organizations spend credits when they hit Google (map) API endpoints. Plan credits are granted as a
-            percentage of each plan's monthly price and reset every cycle; purchased top-ups roll over.
+            percentage of each plan's monthly price and reset every cycle; purchased top ups roll over.
         </p>
     </div>
 
@@ -37,7 +37,7 @@
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card p-3">
-                <div class="stat-label mb-1">Lifetime Top-ups</div>
+                <div class="stat-label mb-1">Lifetime Top ups</div>
                 <div class="stat-value">{{ number_format($stats['lifetime_topped_up'], 0) }}</div>
                 <div style="font-size:.75rem;color:var(--text-muted)">≈ ${{ number_format($stats['lifetime_topped_up'] / $rate, 2) }}</div>
             </div>
@@ -46,7 +46,7 @@
             <div class="stat-card p-3">
                 <div class="stat-label mb-1">Outstanding Balance</div>
                 <div class="stat-value">{{ number_format($stats['balance_outstanding'], 0) }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">Plan + top-up credits</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">Plan + top up credits</div>
             </div>
         </div>
     </div>
@@ -114,7 +114,7 @@
         <div class="col-lg-7">
             <div class="metric-card p-0 overflow-hidden h-100">
                 <div class="d-flex align-items-center justify-content-between px-4 py-3" style="border-bottom:1px solid var(--border)">
-                    <div class="section-label mb-0"><i class="bi bi-tags"></i>Per-call Credit Costs (SKUs)</div>
+                    <div class="section-label mb-0"><i class="bi bi-tags"></i>Per call Credit Costs (SKUs)</div>
                     <a href="{{ route('admin.map-credits.skus.create') }}" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-plus-lg me-1"></i>New SKU
                     </a>
@@ -161,7 +161,7 @@
                             @empty
                                 <tr>
                                     <td colspan="6" class="text-center py-4" style="color:var(--text-muted)">
-                                        No SKUs configured. Falls back to built-in defaults.
+                                        No SKUs configured. Falls back to built in defaults.
                                     </td>
                                 </tr>
                             @endforelse
@@ -191,7 +191,7 @@
                         <th>Allocation</th>
                         <th>Used / cycle</th>
                         <th>Plan left</th>
-                        <th>Top-up</th>
+                        <th>Top up</th>
                         <th>Balance</th>
                         <th>Lifetime</th>
                         <th></th>

@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\AI\AiStackSettingController;
 use App\Http\Controllers\Admin\Auth\LoginController;
 use App\Http\Controllers\Admin\Billing\BillingEnforcementController;
 use App\Http\Controllers\Admin\Billing\BillingOverviewController;
+use App\Http\Controllers\Admin\Billing\AdminOfflinePlanController;
 use App\Http\Controllers\Admin\Billing\AdminPaymentLinkController;
 use App\Http\Controllers\Admin\Billing\BillingPlanController;
 use App\Http\Controllers\Admin\Billing\CompanyDemoController;
@@ -88,6 +89,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::prefix('enterprise')->name('enterprise.')->middleware('admin.permission:manage_users')->group(function (): void {
             Route::prefix('demo-requests')->name('demo-requests.')->group(function (): void {
                 Route::get('/', [DemoRequestController::class, 'index'])->name('index');
+                Route::get('/create', [DemoRequestController::class, 'create'])->name('create');
+                Route::post('/', [DemoRequestController::class, 'store'])->name('store');
                 Route::get('/{demoRequest}', [DemoRequestController::class, 'show'])->name('show');
                 Route::patch('/{demoRequest}/activate', [DemoRequestController::class, 'activate'])->name('activate');
                 Route::post('/{demoRequest}/payment-link', [AdminPaymentLinkController::class, 'forDemoRequest'])->name('payment-link');
@@ -147,6 +150,8 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
 
             Route::post('/companies/{company}/demo', [CompanyDemoController::class, 'update'])
                 ->name('companies.demo.update');
+            Route::post('/companies/{company}/offline-plan', [AdminOfflinePlanController::class, 'update'])
+                ->name('companies.offline-plan.update');
         });
 
         // ── Map Credits (Google API usage & allocation) ────────

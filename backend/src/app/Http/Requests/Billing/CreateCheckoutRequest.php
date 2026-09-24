@@ -21,7 +21,7 @@ class CreateCheckoutRequest extends FormRequest
         return [
             'plan_key' => ['required', 'string', Rule::in(BillingPlanCatalog::keys())],
             'interval' => ['required', 'string', Rule::in(BillingInterval::values())],
-            'context' => ['nullable', 'string', Rule::in(['onboarding', 'renewal'])],
+            'context' => ['nullable', 'string', Rule::in(['onboarding', 'renewal', 'upgrade'])],
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ];
     }

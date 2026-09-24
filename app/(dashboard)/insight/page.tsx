@@ -93,7 +93,7 @@ export default function InsightPage() {
           <p className="text-sm font-semibold">Field Activity Intelligence</p>
           <p className="text-xs text-white/50 mt-1">
             {settingsQuery.data?.enabled
-              ? "Enabled for this organization — clock-in starts day tracking."
+              ? "Enabled for this organization. Clock in starts day tracking."
               : "Disabled — enable to start attendance-linked field sessions."}
           </p>
         </div>

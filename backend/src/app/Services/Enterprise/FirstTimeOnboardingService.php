@@ -80,6 +80,8 @@ class FirstTimeOnboardingService
                 'activated_at' => now(),
                 'activation_token_hash' => null,
                 'activation_link_expires_at' => null,
+                'control_temp_password' => null,
+                'control_access_enabled_at' => null,
             ]);
 
             $token = $user->createToken(

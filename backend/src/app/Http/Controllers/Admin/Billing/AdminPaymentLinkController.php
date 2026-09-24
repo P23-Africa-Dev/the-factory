@@ -29,7 +29,7 @@ class AdminPaymentLinkController extends Controller
         $company = $demoRequest->company;
 
         if (! $company) {
-            return back()->withErrors(['payment_link' => 'Approve this request and create a company before generating a payment link.']);
+            return back()->withErrors(['payment_link' => 'Provision this request to create a company before generating a payment link.']);
         }
 
         $result = $this->paymentLinkService->generate(

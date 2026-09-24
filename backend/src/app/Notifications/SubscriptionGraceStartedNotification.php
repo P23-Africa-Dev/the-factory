@@ -30,7 +30,7 @@ class SubscriptionGraceStartedNotification extends Notification
         $graceEnd = $this->graceEndsAt->format('F j, Y');
 
         return $this->factory23Mail()
-            ->subject("Grace period started — {$this->companyName}")
+            ->subject("Grace period started, {$this->companyName}")
             ->greeting("Hello {$notifiable->name},")
             ->line("Your Factory23 subscription for {$this->companyName} has entered a grace period.")
             ->line(new HtmlString(

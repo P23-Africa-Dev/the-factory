@@ -18,7 +18,7 @@ export default async function ResetPasswordPage({ params, searchParams }: ResetP
                     Reset Password
                 </h2>
                 <p className="text-gray-500 text-sm tracking-[0px] leading-[22px] max-w-[380px] md:mx-auto">
-                    Create a new password for your account. This reset link is single-use and expires automatically.
+                    Create a new password for your account. This reset link is single use and expires automatically.
                 </p>
             </div>
 

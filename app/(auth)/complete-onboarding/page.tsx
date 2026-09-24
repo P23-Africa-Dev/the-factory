@@ -15,7 +15,7 @@ export default function CompleteOnboardingPage() {
           Complete your workspace setup
         </h2>
         <p className="text-gray-500 text-sm tracking-[0px] leading-5.5 max-w-100 md:mx-auto">
-          Set up your company profile to finish self-serve onboarding.
+          Set up your company profile to finish self serve onboarding.
         </p>
       </div>
 

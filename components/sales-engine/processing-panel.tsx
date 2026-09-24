@@ -61,7 +61,7 @@ export function ProcessingPanel({
         <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-[#09232d]/8 pb-3">
           <span className="text-[8px] font-medium text-[#616263]">
             {showChoicePrompt
-              ? "Still searching — timeout is a last resort."
+              ? "Still searching. Timeout is a last resort."
               : "This may take a minute."}
           </span>
           <div className="flex flex-wrap gap-2">
@@ -128,7 +128,7 @@ export function ProcessingPanel({
           {showStepper && (
             <div className="mt-2.5">
               <p className="mb-1.5 text-[8px] font-medium text-[#616263]">
-                Step {state.stepIndex + 1} of {state.totalSteps} · {stepLabels[state.stepIndex]}
+                Step {state.stepIndex + 1} of {state.totalSteps}: {stepLabels[state.stepIndex]}
               </p>
               <div className="flex items-center gap-1">
                 {stepLabels.map((step, index) => {
@@ -171,8 +171,8 @@ export function ProcessingPanel({
           {showLongRunHint && (
             <p className="mt-2 text-[8px] leading-[11px] text-[#616263]">
               {state.intent === "generate_leads" || state.intent === "generate_more_leads"
-                ? "Still working... multi-source lead searches often take 1–3 minutes. We will not time out while results may still arrive."
-                : "Still working... large scans can take 1–2 minutes."}
+                ? "Still working... multi source lead searches often take 1 to 3 minutes. We will not time out while results may still arrive."
+                : "Still working... large scans can take 1 to 2 minutes."}
             </p>
           )}
 

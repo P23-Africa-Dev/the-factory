@@ -150,7 +150,7 @@ function HistoryEntry({ record }: { record: AgentAttendanceRecord }) {
                   )}
                 </div>
               ) : (
-                <span className="text-[11px] text-gray-400 italic">No clock-in recorded</span>
+                <span className="text-[11px] text-gray-400 italic">No clock in recorded</span>
               )}
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -427,10 +427,10 @@ function AttendanceSettingsModal({
                 </div>
               </div>
 
-              {/* Clock-in window */}
+              {/* Clock in window */}
               <div>
                 <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                  Clock-in Window <span className="normal-case font-normal text-gray-400">(minutes before/after opening)</span>
+                  Clock in Window <span className="normal-case font-normal text-gray-400">(minutes before/after opening)</span>
                 </label>
                 <input
                   type="number"
@@ -456,7 +456,7 @@ function AttendanceSettingsModal({
 
               <div className="flex items-center justify-between py-4 px-4 bg-gray-50 rounded-2xl border border-gray-100">
                 <div>
-                  <p className="text-[13px] font-bold text-dash-dark">Auto Clock-out</p>
+                  <p className="text-[13px] font-bold text-dash-dark">Auto Clock out</p>
                   <p className="text-[11px] text-gray-400 mt-0.5">Automatically clock out agents at closing time</p>
                 </div>
                 <button
@@ -864,13 +864,13 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                           isSelected={isSelected}
                         />
                         <OpsTableCol
-                          label="Check-In"
+                          label="Check In"
                           value={item.checkIn}
                           isSelected={isSelected}
                           className="hidden sm:block w-28 sm:w-32"
                         />
                         <OpsTableCol
-                          label="Check-Out"
+                          label="Check Out"
                           value={item.checkOut}
                           isSelected={isSelected}
                           className="hidden md:block w-36 sm:w-40"
@@ -958,11 +958,11 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                       <p className="text-[12px] text-gray-400">{selected.role}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-In</p>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
                       <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-Out</p>
+                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check Out</p>
                       <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
                     </div>
                   </div>

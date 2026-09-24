@@ -2,7 +2,9 @@
 
 namespace App\Services\Enterprise;
 
+use App\Enums\BillingInterval;
 use App\Enums\CompanyUserRole;
+use App\Enums\DemoRequestSource;
 use App\Enums\DemoRequestStatus;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
@@ -15,8 +17,10 @@ use App\Models\User;
 use App\Notifications\EnterpriseActivationNotification;
 use App\Notifications\EnterpriseDemoRequestAdminNotification;
 use App\Notifications\EnterpriseDemoRequestReceivedNotification;
+use App\Services\Billing\CompanySubscriptionService;
 use App\Services\Notification\NotificationService;
 use App\Support\CountryCatalog;
+use Carbon\Carbon;
 use DomainException;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +32,10 @@ use Illuminate\Validation\ValidationException;
 
 class DemoRequestService
 {
-    public function __construct(private readonly NotificationService $notificationService) {}
+    public function __construct(
+        private readonly NotificationService $notificationService,
+        private readonly CompanySubscriptionService $subscriptionService,
+    ) {}
 
     public function submit(array $data): CompanyDemoRequest
     {
@@ -44,6 +51,7 @@ class DemoRequestService
                 'team_size' => $data['team_size'],
                 'use_case' => $data['use_case'],
                 'status' => DemoRequestStatus::PENDING->value,
+                'source' => DemoRequestSource::WEBSITE->value,
                 'requested_at' => now(),
             ]);
 
@@ -64,6 +72,7 @@ class DemoRequestService
                 'company_name',
                 'team_size',
                 'status',
+                'source',
                 'requested_at',
             ])
             ->latest('id');
@@ -86,6 +95,49 @@ class DemoRequestService
         return $query->simplePaginate(20)->withQueryString();
     }
 
+    /**
+     * Create an admin-direct registration (no website demo request) and optionally
+     * provision / activate for Control review in one step.
+     */
+    public function createDirectRegistration(Admin $admin, array $data): CompanyDemoRequest
+    {
+        $action = (string) ($data['action'] ?? 'activate');
+
+        if (! in_array($action, ['draft', 'provision', 'activate', 'send_invite'], true)) {
+            $action = 'activate';
+        }
+
+        return DB::transaction(function () use ($admin, $data, $action): CompanyDemoRequest {
+            $email = strtolower(trim((string) ($data['email'] ?? '')));
+            $this->preventActiveDuplicate($email);
+
+            $countryName = CountryCatalog::resolveName(trim((string) ($data['country'] ?? '')))
+                ?? trim((string) ($data['country'] ?? ''));
+
+            $demoRequest = CompanyDemoRequest::create([
+                'full_name' => trim((string) ($data['full_name'] ?? '')),
+                'email' => $email,
+                'phone' => $this->normalizePhone($data['phone'] ?? null),
+                'company_name' => trim((string) ($data['company_name'] ?? '')),
+                'country' => $countryName,
+                'team_size' => (string) ($data['team_size'] ?? ''),
+                'use_case' => (string) ($data['purpose'] ?? $data['use_case'] ?? 'enterprise'),
+                'registration_purpose' => (string) ($data['purpose'] ?? 'enterprise'),
+                'registration_user_type' => (string) ($data['user_type'] ?? 'other'),
+                'status' => DemoRequestStatus::PENDING->value,
+                'source' => DemoRequestSource::ADMIN_DIRECT->value,
+                'requested_at' => now(),
+                'admin_notes' => $data['admin_notes'] ?? null,
+                'assigned_plan_key' => $this->normalizeOptionalString($data['assigned_plan_key'] ?? null),
+                'assigned_billing_interval' => $this->normalizeOptionalString($data['assigned_billing_interval'] ?? null),
+            ]);
+
+            return $this->registerFromAdmin($demoRequest, $admin, array_merge($data, [
+                'action' => $action,
+            ]));
+        });
+    }
+
     public function registerFromAdmin(CompanyDemoRequest $demoRequest, Admin $admin, array $data): CompanyDemoRequest
     {
         $action = (string) ($data['action'] ?? 'activate');
@@ -98,6 +150,13 @@ class DemoRequestService
                 throw ValidationException::withMessages([
                     'country' => ['Country must be a valid country name.'],
                 ]);
+            }
+
+            $alreadyPaid = $this->wantsAlreadyPaid($data);
+            $paymentStartDate = $this->resolvePaymentStartDate($data, $alreadyPaid);
+
+            if ($alreadyPaid) {
+                $this->assertOfflinePaymentFields($registration);
             }
 
             $demoRequest->fill([
@@ -125,75 +184,89 @@ class DemoRequestService
                     'activation_token_hash' => null,
                     'activation_link_expires_at' => null,
                     'last_activation_sent_at' => null,
-                    'company_id' => null,
-                    'user_id' => null,
-                ])->save();
+                ]);
+
+                // Preserve an already-provisioned company/user; only clear when none exists yet.
+                if (! $demoRequest->company_id) {
+                    $demoRequest->fill([
+                        'company_id' => null,
+                        'user_id' => null,
+                    ]);
+                }
+
+                $demoRequest->save();
 
                 return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
             }
 
             $this->assertEnterpriseEmailEligible($registration['email'], $demoRequest->user_id);
 
-            $company = $demoRequest->company;
+            [$company, $user] = $this->provisionCompanyAndOwner(
+                demoRequest: $demoRequest,
+                registration: $registration,
+                companyCountryCode: $companyCountryCode,
+            );
 
-            if (! $company) {
-                $company = Company::create([
-                    'company_id' => $this->generateUniqueCompanyId(),
-                    'name' => $registration['company_name'],
-                    'country' => $companyCountryCode,
-                    'team_size' => $registration['team_size'],
-                    'use_case' => $registration['purpose'],
-                    'status' => 'active',
-                    'activated_at' => now(),
-                    'assigned_plan_key' => $registration['assigned_plan_key'],
-                    'assigned_billing_interval' => $registration['assigned_billing_interval'],
-                    'subscription_status' => SubscriptionStatus::PENDING_PAYMENT->value,
-                ]);
-            } else {
-                $company->update([
-                    'name' => $registration['company_name'],
-                    'country' => $companyCountryCode,
-                    'team_size' => $registration['team_size'],
-                    'use_case' => $registration['purpose'],
-                    'status' => 'active',
-                    'activated_at' => $company->activated_at ?? now(),
-                    'assigned_plan_key' => $registration['assigned_plan_key'],
-                    'assigned_billing_interval' => $registration['assigned_billing_interval'],
-                    'subscription_status' => $company->hasPaidSubscription()
-                        ? $company->subscription_status
-                        : SubscriptionStatus::PENDING_PAYMENT->value,
+            if ($alreadyPaid && $paymentStartDate !== null) {
+                $this->subscriptionService->activateOfflinePayment(
+                    company: $company,
+                    planKey: (string) $registration['assigned_plan_key'],
+                    interval: BillingInterval::from((string) $registration['assigned_billing_interval']),
+                    periodStart: $paymentStartDate,
+                );
+                $company = $company->fresh();
+            }
+
+            $demoRequest->fill([
+                'company_id' => $company->id,
+                'user_id' => $user->id,
+            ]);
+
+            if ($action === 'provision') {
+                $demoRequest->fill([
+                    'status' => DemoRequestStatus::PROVISIONED->value,
+                    'approved_at' => null,
+                    'activated_at' => null,
+                    'activation_token_hash' => null,
+                    'activation_link_expires_at' => null,
+                    'last_activation_sent_at' => null,
+                ])->save();
+
+                return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
+            }
+
+            if ($action === 'activate') {
+                $this->enableControlAccess($user, $demoRequest);
+
+                $demoRequest->fill([
+                    'status' => DemoRequestStatus::PROVISIONED->value,
+                    'approved_at' => null,
+                    'activated_at' => null,
+                    'activation_token_hash' => null,
+                    'activation_link_expires_at' => null,
+                    'last_activation_sent_at' => null,
+                ])->save();
+
+                return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
+            }
+
+            // send_invite: require Control access first (except resend when already approved)
+            if (! $demoRequest->hasControlAccessEnabled() && ! $demoRequest->isApproved()) {
+                throw ValidationException::withMessages([
+                    'action' => ['Activate the account for Control team review before sending the invitation email.'],
                 ]);
             }
 
-            $user = User::firstOrCreate(
-                ['email' => $registration['email']],
-                [
-                    'name' => $registration['full_name'],
-                    'password' => Str::password(32),
-                    'is_active' => true,
-                ],
-            );
-
-            $user->update([
-                'name' => $registration['full_name'],
-                'is_active' => true,
-            ]);
-
-            $company->users()->syncWithoutDetaching([
-                $user->id => [
-                    'role' => CompanyUserRole::OWNER->value,
-                    'joined_at' => now(),
-                ],
-            ]);
+            if (! $demoRequest->hasControlAccessEnabled()) {
+                $this->enableControlAccess($user, $demoRequest);
+            }
 
             $plainToken = Str::random(64);
             $expiresAt = now()->addMinutes(config('enterprise.activation_link_ttl_minutes'));
 
             $demoRequest->fill([
                 'status' => DemoRequestStatus::APPROVED->value,
-                'approved_at' => now(),
-                'company_id' => $company->id,
-                'user_id' => $user->id,
+                'approved_at' => $demoRequest->approved_at ?? now(),
                 'activation_token_hash' => hash('sha256', $plainToken),
                 'activation_link_expires_at' => $expiresAt,
                 'last_activation_sent_at' => now(),
@@ -235,6 +308,156 @@ class DemoRequestService
 
             return $demoRequest->fresh(['company', 'user', 'reviewedByAdmin']);
         });
+    }
+
+    /**
+     * Enable Control team login with the shared temporary password (no customer email).
+     */
+    private function enableControlAccess(User $user, CompanyDemoRequest $demoRequest): void
+    {
+        $tempPassword = (string) config('enterprise.control_temp_password', 'Factory23Temp1');
+
+        if ($tempPassword === '') {
+            throw ValidationException::withMessages([
+                'action' => ['Control temporary password is not configured.'],
+            ]);
+        }
+
+        $user->update([
+            'password' => $tempPassword,
+            'is_active' => true,
+            'email_verified_at' => $user->email_verified_at ?? now(),
+            'enterprise_onboarding_completed_at' => $user->enterprise_onboarding_completed_at ?? now(),
+        ]);
+
+        $demoRequest->fill([
+            'control_temp_password' => $tempPassword,
+            'control_access_enabled_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param  array{
+     *     full_name: string,
+     *     email: string,
+     *     phone: ?string,
+     *     company_name: string,
+     *     country: string,
+     *     team_size: string,
+     *     purpose: string,
+     *     user_type: string,
+     *     admin_notes: mixed,
+     *     assigned_plan_key: ?string,
+     *     assigned_billing_interval: ?string
+     * }  $registration
+     * @return array{0: Company, 1: User}
+     */
+    private function provisionCompanyAndOwner(
+        CompanyDemoRequest $demoRequest,
+        array $registration,
+        string $companyCountryCode,
+    ): array {
+        $company = $demoRequest->company;
+
+        if (! $company) {
+            $company = Company::create([
+                'company_id' => $this->generateUniqueCompanyId(),
+                'name' => $registration['company_name'],
+                'country' => $companyCountryCode,
+                'team_size' => $registration['team_size'],
+                'use_case' => $registration['purpose'],
+                'status' => 'active',
+                'activated_at' => now(),
+                'assigned_plan_key' => $registration['assigned_plan_key'],
+                'assigned_billing_interval' => $registration['assigned_billing_interval'],
+                'subscription_status' => SubscriptionStatus::PENDING_PAYMENT->value,
+            ]);
+        } else {
+            $company->update([
+                'name' => $registration['company_name'],
+                'country' => $companyCountryCode,
+                'team_size' => $registration['team_size'],
+                'use_case' => $registration['purpose'],
+                'status' => 'active',
+                'activated_at' => $company->activated_at ?? now(),
+                'assigned_plan_key' => $registration['assigned_plan_key'],
+                'assigned_billing_interval' => $registration['assigned_billing_interval'],
+                'subscription_status' => $company->hasPaidSubscription()
+                    ? $company->subscription_status
+                    : SubscriptionStatus::PENDING_PAYMENT->value,
+            ]);
+        }
+
+        $user = User::firstOrCreate(
+            ['email' => $registration['email']],
+            [
+                'name' => $registration['full_name'],
+                'password' => Str::password(32),
+                'is_active' => true,
+            ],
+        );
+
+        $user->update([
+            'name' => $registration['full_name'],
+            'is_active' => true,
+        ]);
+
+        $company->users()->syncWithoutDetaching([
+            $user->id => [
+                'role' => CompanyUserRole::OWNER->value,
+                'joined_at' => now(),
+            ],
+        ]);
+
+        return [$company->fresh(), $user->fresh()];
+    }
+
+    private function wantsAlreadyPaid(array $data): bool
+    {
+        $value = $data['already_paid'] ?? false;
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN) || $value === '1' || $value === 1;
+    }
+
+    private function resolvePaymentStartDate(array $data, bool $alreadyPaid): ?Carbon
+    {
+        if (! $alreadyPaid) {
+            return null;
+        }
+
+        $raw = trim((string) ($data['payment_start_date'] ?? ''));
+
+        if ($raw === '') {
+            throw ValidationException::withMessages([
+                'payment_start_date' => ['Payment start date is required when marking as already paid.'],
+            ]);
+        }
+
+        try {
+            return Carbon::parse($raw)->startOfDay();
+        } catch (Throwable) {
+            throw ValidationException::withMessages([
+                'payment_start_date' => ['Payment start date must be a valid date.'],
+            ]);
+        }
+    }
+
+    /**
+     * @param  array{assigned_plan_key: ?string, assigned_billing_interval: ?string}  $registration
+     */
+    private function assertOfflinePaymentFields(array $registration): void
+    {
+        if ($registration['assigned_plan_key'] === null || $registration['assigned_plan_key'] === '') {
+            throw ValidationException::withMessages([
+                'assigned_plan_key' => ['A subscription plan is required when marking as already paid.'],
+            ]);
+        }
+
+        if ($registration['assigned_billing_interval'] === null || $registration['assigned_billing_interval'] === '') {
+            throw ValidationException::withMessages([
+                'assigned_billing_interval' => ['A billing interval is required when marking as already paid.'],
+            ]);
+        }
     }
 
     private function sendDemoRequestNotifications(CompanyDemoRequest $request): void
@@ -389,6 +612,7 @@ class DemoRequestService
             ->whereIn('status', [
                 DemoRequestStatus::PENDING->value,
                 DemoRequestStatus::DRAFT->value,
+                DemoRequestStatus::PROVISIONED->value,
                 DemoRequestStatus::APPROVED->value,
             ])
             ->exists();

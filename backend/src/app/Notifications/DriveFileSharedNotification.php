@@ -32,7 +32,7 @@ class DriveFileSharedNotification extends Notification implements ShouldQueue
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
         return $this->factory23Mail()
-            ->subject('File shared with you — Factory23')
+            ->subject('File shared with you, Factory23')
             ->greeting('Hello ' . ($notifiable->name ?? 'there') . ',')
             ->line(sprintf('%s shared a file with you in Company Drive.', $this->sharerName))
             ->line($this->factory23DetailTable([

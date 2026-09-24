@@ -21,7 +21,7 @@ function openAuthorizationPopup(authorizationUrl: string, popupName: string) {
         window.location.href = authorizationUrl;
         return;
     }
-    toast.info("Complete sign-in in the popup. Connection status will update automatically.");
+    toast.info("Complete sign in in the popup. Connection status will update automatically.");
 }
 
 export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps) {
@@ -81,7 +81,7 @@ export function EmailConnectionBanner({ companyId }: EmailConnectionBannerProps)
                     openAuthorizationPopup(result.data.authorization_url, "email-oauth-google");
                 },
                 onError: (err: Error) => {
-                    toast.error(err.message || "Failed to start Google sign-in.");
+                    toast.error(err.message || "Failed to start Google sign in.");
                 },
             },
         );

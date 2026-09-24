@@ -82,18 +82,26 @@ function normalizeSignalTypePacks(packs: unknown): string[] {
 }
 
 export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
-  const config = { ...DEFAULT_ICP_CONFIG, ...raw.config };
+  const rawConfig = (raw.config ?? {}) as Partial<IcpConfig>;
+  const config = { ...DEFAULT_ICP_CONFIG, ...rawConfig };
   return {
     id: raw.id,
-    name: raw.name,
+    name: raw.name ?? "",
     description: raw.description ?? "",
-    isActive: raw.isActive,
+    isActive: Boolean(raw.isActive),
     leadCount: raw.leadCount ?? 0,
     lastUpdated: formatLastUpdated(raw.lastUpdated),
     config: {
       ...config,
-      profileName: config.profileName || raw.name,
-      signalTypePacks: normalizeSignalTypePacks(raw.config?.signalTypePacks),
+      profileName: (config.profileName || raw.name || "").trim(),
+      description: config.description ?? "",
+      industries: Array.isArray(config.industries) ? config.industries : [],
+      companySizes: Array.isArray(config.companySizes) ? config.companySizes : [],
+      revenueRanges: Array.isArray(config.revenueRanges) ? config.revenueRanges : [],
+      territories: Array.isArray(config.territories) ? config.territories : [],
+      decisionMakers: Array.isArray(config.decisionMakers) ? config.decisionMakers : [],
+      customPrompt: config.customPrompt ?? "",
+      signalTypePacks: normalizeSignalTypePacks(rawConfig.signalTypePacks),
     },
   };
 }
@@ -346,6 +354,39 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
   });
 }
 
+export type IcpSearchBriefSuggestMode = "generate" | "improve" | "regenerate";
+
+export type IcpSearchBriefSuggestResult = {
+  brief: string;
+  keywords: string[];
+  source: "glm" | "heuristic" | string;
+};
+
+export function suggestIcpSearchBrief(payload: {
+  mode?: IcpSearchBriefSuggestMode;
+  customPrompt?: string;
+  description?: string;
+  industries?: string[];
+  territories?: string[];
+  decisionMakers?: string[];
+}): Promise<IcpSearchBriefSuggestResult> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpSearchBriefSuggestResult>({
+      method: "POST",
+      path: "/icp-profiles/suggest-search-brief",
+      body: payload,
+      timeoutMs: 30000,
+    });
+    return {
+      brief: typeof data?.brief === "string" ? data.brief : "",
+      keywords: Array.isArray(data?.keywords)
+        ? data.keywords.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+        : [],
+      source: typeof data?.source === "string" ? data.source : "heuristic",
+    };
+  });
+}
+
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
 export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "generate_more_leads" | "create_outreach";
@@ -384,6 +425,7 @@ export type ChatLead = {
   query_relevance_score?: number;
   query_match?: boolean;
   icp_relevance_reason?: string | null;
+  location_status?: "unknown" | "confirmed" | "resolved" | "outside_territory" | string | null;
 };
 
 export type ChatMessageApi = {
@@ -625,7 +667,7 @@ export async function pollDiscoveryRunUntilComplete(
       if (softWait) {
         options?.onStage?.({
           ...mapDiscoveryStage(rechecked.stages, intent, rechecked.progress ?? null),
-          label: "Still searching — you can keep waiting or stop anytime.",
+          label: "Still searching. You can keep waiting or stop anytime.",
         });
         await new Promise((resolve) => window.setTimeout(resolve, CHAT_POLL_INTERVAL_MS));
         continue;
@@ -1042,8 +1084,32 @@ export type SocialListeningSettings = {
   last_run_at?: string | null;
 };
 
+export type OutreachSenderMode = "platform" | "organization" | "connected_mailbox";
+
+export type OutreachIntegrityCheck = {
+  key: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  message: string;
+};
+
+export type OutreachQuotaSnapshot = {
+  sender_type: string;
+  used: number;
+  limit: number;
+  remaining: number;
+};
+
+export type OutreachConnectedMailbox = {
+  id: number;
+  email: string;
+  provider: string;
+  status: string;
+  last_error?: string | null;
+};
+
 export type OutreachSenderSettings = {
-  sender_mode: "platform" | "organization";
+  sender_mode: OutreachSenderMode;
   reply_to_email: string;
   org_verified_from_email?: string | null;
   org_verified_domain?: string | null;
@@ -1051,6 +1117,11 @@ export type OutreachSenderSettings = {
   verification_status: "pending" | "verified" | "failed";
   org_connection_status: "not_connected" | "pending" | "failed" | "verified";
   platform_from_email?: string | null;
+  integrity_status?: "pass" | "warn" | "fail" | null;
+  integrity_checks?: OutreachIntegrityCheck[];
+  integrity_checked_at?: string | null;
+  connected_mailbox?: OutreachConnectedMailbox | null;
+  quota?: OutreachQuotaSnapshot | null;
 };
 
 export type OutreachDnsRecord = {
@@ -1069,6 +1140,9 @@ export type OutreachDomainAuthentication = {
   valid: boolean;
   verified_at?: string | null;
   last_checked_at?: string | null;
+  integrity_status?: "pass" | "warn" | "fail" | null;
+  integrity_checks?: OutreachIntegrityCheck[];
+  integrity_checked_at?: string | null;
 } | null;
 
 export type OutreachDraft = {
@@ -1405,6 +1479,57 @@ export function verifyOutreachDomain(): Promise<OutreachDomainAuthentication> {
 export function deleteOutreachDomain(): Promise<void> {
   return withSessionRetry(async () => {
     await seRequest<null>({ method: "DELETE", path: "/outreach/domain" });
+  });
+}
+
+export function recheckOutreachDomainIntegrity(): Promise<
+  NonNullable<OutreachDomainAuthentication>
+> {
+  return withSessionRetry(async () =>
+    seRequest<NonNullable<OutreachDomainAuthentication>>({
+      method: "POST",
+      path: "/outreach/domain/integrity-recheck",
+    })
+  );
+}
+
+export function fetchOutreachMailboxes(): Promise<OutreachConnectedMailbox[]> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachConnectedMailbox[]>({ method: "GET", path: "/outreach/mailboxes" })
+  );
+}
+
+export function authorizeOutreachMailboxOAuth(
+  provider: "google" | "microsoft" | "zoho"
+): Promise<{ authorization_url: string; state: string }> {
+  return withSessionRetry(async () =>
+    seRequest<{ authorization_url: string; state: string }>({
+      method: "GET",
+      path: `/outreach/mailboxes/oauth/${provider}/authorize`,
+    })
+  );
+}
+
+export function connectOutreachMailboxSmtp(payload: {
+  email: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_encryption?: "tls" | "ssl" | null;
+  smtp_username: string;
+  smtp_password: string;
+}): Promise<OutreachConnectedMailbox> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachConnectedMailbox>({
+      method: "POST",
+      path: "/outreach/mailboxes/smtp",
+      body: payload,
+    })
+  );
+}
+
+export function disconnectOutreachMailbox(id: number): Promise<void> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: `/outreach/mailboxes/${id}` });
   });
 }
 
