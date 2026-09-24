@@ -78,4 +78,16 @@ describe("icp-search-brief", () => {
     expect(suggestion.brief.toLowerCase()).not.toContain("nigeria");
     expect(suggestion.keywords.length).toBeGreaterThan(0);
   });
+
+  it("handles null or undefined customPrompt safely without throwing", () => {
+    expect(isInsufficientIcpSearchBrief({ customPrompt: null })).toBe(true);
+    expect(isInsufficientIcpSearchBrief({ customPrompt: undefined })).toBe(true);
+    expect(
+      composeIcpSearchBrief({
+        customPrompt: null,
+        description: "Logistics warehouse operators",
+      })
+    ).toBe("Logistics warehouse operators");
+  });
 });
+

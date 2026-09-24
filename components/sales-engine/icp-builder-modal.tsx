@@ -52,7 +52,7 @@ export type IcpConfig = {
   minMatchScore: number;
   autoSyncCrm: boolean;
   enrichContactDetails: boolean;
-  customPrompt: string;
+  customPrompt?: string | null;
   /**
    * Stage 2 signal-type packs. Core Buyer Signals (`default`) is on unless
    * the user clears every pack — save then sends `none` so the backend does
@@ -85,6 +85,23 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   customPrompt: "",
   signalTypePacks: ["default"],
 };
+
+export function normalizeIcpConfig(config?: Partial<IcpConfig> | null): IcpConfig {
+  return {
+    profileName: config?.profileName ?? "",
+    description: config?.description ?? "",
+    industries: Array.isArray(config?.industries) ? config.industries : BLANK_ICP_CONFIG.industries,
+    companySizes: Array.isArray(config?.companySizes) ? config.companySizes : BLANK_ICP_CONFIG.companySizes,
+    revenueRanges: Array.isArray(config?.revenueRanges) ? config.revenueRanges : BLANK_ICP_CONFIG.revenueRanges,
+    territories: Array.isArray(config?.territories) ? config.territories : BLANK_ICP_CONFIG.territories,
+    decisionMakers: Array.isArray(config?.decisionMakers) ? config.decisionMakers : BLANK_ICP_CONFIG.decisionMakers,
+    minMatchScore: typeof config?.minMatchScore === "number" ? config.minMatchScore : 60,
+    autoSyncCrm: config?.autoSyncCrm ?? true,
+    enrichContactDetails: config?.enrichContactDetails ?? true,
+    customPrompt: config?.customPrompt ?? "",
+    signalTypePacks: Array.isArray(config?.signalTypePacks) ? config.signalTypePacks : ["default"],
+  };
+}
 
 const AVAILABLE_INDUSTRIES = [
   "FMCG & Retail",
@@ -175,6 +192,17 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const [customTerritoryInput, setCustomTerritoryInput] = useState("");
   const autoBriefRef = useRef("");
   const [briefKeywords, setBriefKeywords] = useState<string[]>([]);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+
+  const isProfileNameValid = Boolean((formConfig.profileName ?? "").trim().length > 0);
+  const isDescriptionValid = Boolean((formConfig.description ?? "").trim().length > 0);
+  const isCustomPromptValid = Boolean((formConfig.customPrompt ?? "").trim().length > 0);
+  const isFormValid = isProfileNameValid && isDescriptionValid && isCustomPromptValid;
+
+  const showProfileNameError = (hasAttemptedSubmit || touchedFields.profileName) && !isProfileNameValid;
+  const showDescriptionError = (hasAttemptedSubmit || touchedFields.description) && !isDescriptionValid;
+  const showCustomPromptError = (hasAttemptedSubmit || touchedFields.customPrompt) && !isCustomPromptValid;
 
   const {
     data: profiles = [],
@@ -218,22 +246,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       industries: formConfig.industries,
       description: formConfig.description,
     });
-    if (!local.brief) {
-      setBriefKeywords([]);
-      return;
-    }
-    setBriefKeywords(local.keywords);
-    setFormConfig((prev) => {
-      const current = prev.customPrompt.trim();
-      if (current !== "" && current !== autoBriefRef.current) {
-        return prev;
-      }
-      if (current === local.brief) {
-        return prev;
-      }
-      autoBriefRef.current = local.brief;
-      return { ...prev, customPrompt: local.brief };
-    });
+    setBriefKeywords(local.keywords ?? []);
   }, [formConfig.industries, formConfig.description]);
 
   if (!isOpen) return null;
@@ -244,10 +257,13 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   const handleStartCreateNew = () => {
     setEditingProfileId(null);
+    setHasAttemptedSubmit(false);
+    setTouchedFields({});
     setFormConfig({
       ...BLANK_ICP_CONFIG,
       profileName: `New ICP Build #${profiles.length + 1}`,
-      description: "Custom target criteria profile for AI discovery.",
+      description: "",
+      customPrompt: "",
     });
     autoBriefRef.current = "";
     setBriefKeywords([]);
@@ -257,12 +273,15 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   const handleStartEdit = (profile: IcpProfile) => {
     setEditingProfileId(profile.id);
-    setFormConfig({ ...profile.config });
+    setHasAttemptedSubmit(false);
+    setTouchedFields({});
+    const normalized = normalizeIcpConfig(profile.config);
+    setFormConfig(normalized);
     autoBriefRef.current = "";
     setBriefKeywords(
       suggestIcpSearchBriefLocal({
-        industries: profile.config.industries,
-        description: profile.config.description,
+        industries: normalized.industries,
+        description: normalized.description,
       }).keywords
     );
     setActiveTab("criteria");
@@ -353,10 +372,11 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     const token = keyword.trim();
     if (!token) return;
     setFormConfig((prev) => {
-      if (prev.customPrompt.toLowerCase().includes(token.toLowerCase())) {
+      const prompt = prev.customPrompt ?? "";
+      if (prompt.toLowerCase().includes(token.toLowerCase())) {
         return prev;
       }
-      const next = `${prev.customPrompt.trim()} ${token}`.trim();
+      const next = `${prompt.trim()} ${token}`.trim();
       autoBriefRef.current = "";
       return { ...prev, customPrompt: next };
     });
@@ -366,7 +386,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     try {
       const result = await suggestBrief.mutateAsync({
         mode,
-        customPrompt: formConfig.customPrompt,
+        customPrompt: formConfig.customPrompt ?? "",
         description: formConfig.description,
         industries: formConfig.industries,
         territories: formConfig.territories,
@@ -391,9 +411,22 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFormValid) {
+      setHasAttemptedSubmit(true);
+      setActiveTab("criteria");
+      if (!isProfileNameValid) {
+        toast.error("ICP Profile Name is required.");
+      } else if (!isDescriptionValid) {
+        toast.error("Description / Target Objective is required.");
+      } else if (!isCustomPromptValid) {
+        toast.error("What kind of opportunity you are looking for is required.");
+      }
+      return;
+    }
+
     if (
       isInsufficientIcpSearchBrief({
-        customPrompt: formConfig.customPrompt,
+        customPrompt: formConfig.customPrompt ?? "",
         description: formConfig.description,
         industries: formConfig.industries,
       })
@@ -403,23 +436,25 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       );
       return;
     }
-    const profileTitle = formConfig.profileName.trim() || "Untitled ICP Build";
+    const profileTitle = (formConfig.profileName ?? "").trim() || "Untitled ICP Build";
     const selectedPacks = (formConfig.signalTypePacks ?? []).filter((pack) => pack !== "none");
-    const config = {
+    const config: IcpConfig = {
       ...formConfig,
       profileName: profileTitle,
+      description: formConfig.description?.trim() ?? "",
+      customPrompt: formConfig.customPrompt?.trim() ?? "",
       signalTypePacks: selectedPacks.length > 0 ? selectedPacks : ["none"],
     };
 
     if (editingProfileId) {
       updateProfile.mutate({
         id: editingProfileId,
-        payload: { name: profileTitle, description: formConfig.description, config },
+        payload: { name: profileTitle, description: formConfig.description?.trim(), config },
       });
     } else {
       createProfile.mutate({
         name: profileTitle,
-        description: formConfig.description || "Custom configured target ICP profile.",
+        description: formConfig.description?.trim() || "Custom configured target ICP profile.",
         config,
       });
     }
@@ -620,22 +655,22 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     {/* Criteria Tags Summary */}
                     <div className="mt-3.5 flex flex-wrap items-center gap-1.5 pt-2 border-t border-gray-100">
                       <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">
-                        {prof.config.industries.slice(0, 2).join(", ")}
-                        {prof.config.industries.length > 2
-                          ? ` +${prof.config.industries.length - 2}`
+                        {(prof.config?.industries ?? []).slice(0, 2).join(", ")}
+                        {(prof.config?.industries ?? []).length > 2
+                          ? ` +${(prof.config?.industries ?? []).length - 2}`
                           : ""}
                       </span>
                       <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">
-                        📍 {prof.config.territories.slice(0, 2).join(", ")}
-                        {prof.config.territories.length > 2
-                          ? ` +${prof.config.territories.length - 2}`
+                        📍 {(prof.config?.territories ?? []).slice(0, 2).join(", ")}
+                        {(prof.config?.territories ?? []).length > 2
+                          ? ` +${(prof.config?.territories ?? []).length - 2}`
                           : ""}
                       </span>
                       <span className="rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/50 px-2 py-0.5 text-[10px] font-semibold">
-                        🎯 {prof.config.minMatchScore}% Min Fit
+                        🎯 {prof.config?.minMatchScore ?? 60}% Min Fit
                       </span>
                       <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-                        👥 {prof.config.decisionMakers.length} Roles
+                        👥 {(prof.config?.decisionMakers ?? []).length} Roles
                       </span>
                     </div>
 
@@ -720,37 +755,71 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                   {/* Profile Preset Name */}
                   <div>
                     <label className="mb-1.5 flex items-center justify-between text-[12px] font-semibold text-gray-700">
-                      <span>ICP Profile Name</span>
+                      <span className="flex items-center gap-1">
+                        <span>ICP Profile Name</span>
+                        <span className="text-red-500 font-bold" aria-hidden="true">*</span>
+                      </span>
                       <span className="text-[11px] font-normal text-gray-400">
                         Required
                       </span>
                     </label>
                     <input
                       type="text"
-                      value={formConfig.profileName}
+                      value={formConfig.profileName ?? ""}
                       onChange={(e) =>
                         setFormConfig((prev) => ({ ...prev, profileName: e.target.value }))
                       }
+                      onBlur={() =>
+                        setTouchedFields((prev) => ({ ...prev, profileName: true }))
+                      }
                       placeholder="e.g. Tier-1 FMCG Distributors"
-                      className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] px-4 py-3 text-[13px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10"
+                      className={`w-full rounded-2xl border px-4 py-3 text-[13px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 ${
+                        showProfileNameError
+                          ? "border-red-400 bg-red-50/20 focus:border-red-500 focus:ring-2 focus:ring-red-500/10"
+                          : "border-gray-200 bg-[#F6F6F6] focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10"
+                      }`}
                       required
                     />
+                    {showProfileNameError && (
+                      <p className="mt-1 text-[11px] font-medium text-red-600">
+                        ICP Profile Name is required.
+                      </p>
+                    )}
                   </div>
 
                   {/* Profile Description */}
                   <div>
-                    <label className="mb-1.5 block text-[12px] font-semibold text-gray-700">
-                      Description / Target Objective
+                    <label className="mb-1.5 flex items-center justify-between text-[12px] font-semibold text-gray-700">
+                      <span className="flex items-center gap-1">
+                        <span>Description / Target Objective</span>
+                        <span className="text-red-500 font-bold" aria-hidden="true">*</span>
+                      </span>
+                      <span className="text-[11px] font-normal text-gray-400">
+                        Required
+                      </span>
                     </label>
                     <input
                       type="text"
-                      value={formConfig.description || ""}
+                      value={formConfig.description ?? ""}
                       onChange={(e) =>
                         setFormConfig((prev) => ({ ...prev, description: e.target.value }))
                       }
-                      placeholder="Brief note on what this ICP model targets..."
-                      className="w-full rounded-xl border border-gray-200 bg-[#F6F6F6] px-4 py-2.5 text-[12px] text-[#09232D] outline-none placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white"
+                      onBlur={() =>
+                        setTouchedFields((prev) => ({ ...prev, description: true }))
+                      }
+                      placeholder="e.g. B2B SaaS and supply-chain logistics providers in East & West Africa expanding enterprise operations…"
+                      className={`w-full rounded-xl border px-4 py-2.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 ${
+                        showDescriptionError
+                          ? "border-red-400 bg-red-50/20 focus:border-red-500 focus:ring-2 focus:ring-red-500/10"
+                          : "border-gray-200 bg-[#F6F6F6] focus:border-[#09232D]/40 focus:bg-white"
+                      }`}
+                      required
                     />
+                    {showDescriptionError && (
+                      <p className="mt-1 text-[11px] font-medium text-red-600">
+                        Description / Target Objective is required.
+                      </p>
+                    )}
                   </div>
 
                   {/* Target Industries */}
@@ -1055,14 +1124,15 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     <label className="flex items-center justify-between gap-2 text-[12px] font-semibold text-gray-700">
                       <span className="flex items-center gap-1.5">
                         <Sparkles size={14} className="text-amber-500" />
-                        What kind of opportunity are you looking for?
+                        <span>What kind of opportunity are you looking for?</span>
+                        <span className="text-red-500 font-bold" aria-hidden="true">*</span>
                       </span>
                       <span className="flex shrink-0 items-center gap-1">
                         <button
                           type="button"
                           disabled={suggestBrief.isPending}
                           onClick={() =>
-                            handleSuggestBrief(formConfig.customPrompt.trim() ? "improve" : "generate")
+                            handleSuggestBrief((formConfig.customPrompt ?? "").trim() ? "improve" : "generate")
                           }
                           className="inline-flex items-center gap-1 rounded-full border border-[#09232D]/15 bg-white px-2 py-0.5 text-[9px] font-semibold text-[#09232D] transition hover:bg-[#09232D]/5 disabled:opacity-50"
                         >
@@ -1071,7 +1141,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           ) : (
                             <Sparkles size={10} className="text-amber-500" />
                           )}
-                          {formConfig.customPrompt.trim() ? "Improve" : "Generate"}
+                          {(formConfig.customPrompt ?? "").trim() ? "Improve" : "Generate"}
                         </button>
                         <button
                           type="button"
@@ -1087,18 +1157,31 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     </label>
                     <textarea
                       rows={4}
-                      value={formConfig.customPrompt}
+                      value={formConfig.customPrompt ?? ""}
                       onChange={(e) => {
                         autoBriefRef.current = "";
                         setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }));
                       }}
-                      placeholder="Describe products, buyers, events, or exclusions in concrete terms. Example: SaaS billing platforms hiring sales leaders; exclude agencies and consultancies…"
-                      className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10 leading-relaxed"
+                      onBlur={() =>
+                        setTouchedFields((prev) => ({ ...prev, customPrompt: true }))
+                      }
+                      placeholder="Describe target companies, products, buyer roles, events, or exclusions in concrete terms (e.g. Cold-chain storage providers hiring operations leads; exclude brokerages and consultants)…"
+                      className={`w-full rounded-2xl border p-3.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 leading-relaxed ${
+                        showCustomPromptError
+                          ? "border-red-400 bg-red-50/20 focus:border-red-500 focus:ring-2 focus:ring-red-500/10"
+                          : "border-gray-200 bg-[#F6F6F6] focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10"
+                      }`}
+                      required
                     />
+                    {showCustomPromptError && (
+                      <p className="mt-1 text-[11px] font-medium text-red-600">
+                        Please specify what kind of opportunity you are looking for.
+                      </p>
+                    )}
                     {briefKeywords.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
                         {briefKeywords.map((keyword) => {
-                          const used = formConfig.customPrompt.toLowerCase().includes(keyword.toLowerCase());
+                          const used = (formConfig.customPrompt ?? "").toLowerCase().includes(keyword.toLowerCase());
                           return (
                             <button
                               key={keyword}
@@ -1119,9 +1202,9 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     <p className="text-[11px] leading-snug text-gray-500">
                       Use keywords (products, buyers, places you sell into). Do not write a definition like “Industries specialize in…”. Geographic hubs above also locate the search, then reject other countries.
                     </p>
-                    {( /industries specialize/i.test(formConfig.customPrompt) ||
+                    {( /industries specialize/i.test(formConfig.customPrompt ?? "") ||
                     ((formConfig.description ?? "").trim() !== "" &&
-                      formConfig.customPrompt.trim() === (formConfig.description ?? "").trim()) ) ? (
+                      (formConfig.customPrompt ?? "").trim() === (formConfig.description ?? "").trim()) ) ? (
                       <p className="text-[11px] leading-snug text-amber-700">
                         This reads like a profile blurb. Search works better with products and buyers than a definition of the industry.
                       </p>
@@ -1135,7 +1218,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     </p>
                     <p className="mt-1 text-[12px] leading-snug text-[#09232D]/85">
                       {composeIcpSearchBrief({
-                        customPrompt: formConfig.customPrompt,
+                        customPrompt: formConfig.customPrompt ?? "",
                         description: formConfig.description,
                         industries: formConfig.industries,
                       })}
@@ -1254,7 +1337,11 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
               {profiles.length > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setViewMode("list")}
+                  onClick={() => {
+                    setHasAttemptedSubmit(false);
+                    setTouchedFields({});
+                    setViewMode("list");
+                  }}
                   className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                 >
                   Cancel
@@ -1262,7 +1349,11 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setFormConfig(BLANK_ICP_CONFIG)}
+                  onClick={() => {
+                    setHasAttemptedSubmit(false);
+                    setTouchedFields({});
+                    setFormConfig(BLANK_ICP_CONFIG);
+                  }}
                   className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                 >
                   Clear Fields
@@ -1274,9 +1365,28 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                   type="submit"
                   form="icp-builder-form"
                   disabled={isSavingForm}
-                  className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#09232D] via-[#0E3D4E] to-[#0A2632] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md transition-all hover:shadow-lg hover:brightness-110 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-disabled={!isFormValid}
+                  onClick={(e) => {
+                    if (!isFormValid) {
+                      e.preventDefault();
+                      setHasAttemptedSubmit(true);
+                      setActiveTab("criteria");
+                      if (!isProfileNameValid) {
+                        toast.error("ICP Profile Name is required.");
+                      } else if (!isDescriptionValid) {
+                        toast.error("Description / Target Objective is required.");
+                      } else if (!isCustomPromptValid) {
+                        toast.error("What kind of opportunity you are looking for is required.");
+                      }
+                    }
+                  }}
+                  className={`group flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-all ${
+                    !isFormValid
+                      ? "bg-gray-400 cursor-not-allowed opacity-60 shadow-none"
+                      : "bg-gradient-to-r from-[#09232D] via-[#0E3D4E] to-[#0A2632] shadow-md hover:shadow-lg hover:brightness-110 cursor-pointer"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
-                  <Sparkles size={15} className="text-[#38BDF8] group-hover:rotate-12 transition-transform" />
+                  <Sparkles size={15} className={`text-[#38BDF8] transition-transform ${isFormValid ? "group-hover:rotate-12" : ""}`} />
                   {isSavingForm ? "Saving…" : editingProfileId ? "Save Changes" : "Save & Activate ICP"}
                 </button>
               </div>
