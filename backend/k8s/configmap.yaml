@@ -184,4 +184,8 @@ data:
 
   # ── Sales Engine (Continue-with-Factory23) ───────────────────────────────────
   # JWT secret lives in factory23-secret as SALES_ENGINE_JWT_SECRET (must match SE FACTORY23_JWT_SECRET).
+  # Internal provision token lives in factory23-secret as SALES_ENGINE_INTERNAL_TOKEN
+  # (must match SE FACTORY23_INTERNAL_TOKEN). operation@thefactory23.com is the default email for the sales engine.
   SALES_ENGINE_API_URL: "https://api.salesengine.thefactory23.com"
+  SALES_ENGINE_ACCESS_REQUEST_NOTIFY_EMAIL: "nurudeen@p23africa.com"
+  ENTERPRISE_DEMO_NOTIFICATION_EMAIL: "nurudeen@p23africa.com"

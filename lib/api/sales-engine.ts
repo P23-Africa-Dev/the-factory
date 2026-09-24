@@ -38,6 +38,28 @@ type SeExchangeResponse = {
   organization: { id: number };
 };
 
+export type SalesEngineAccessRequestStatus = "none" | "pending" | "approved" | "declined";
+
+export type SalesEngineAccessState =
+  | "ready"
+  | "needs_access"
+  | "pending"
+  | "declined"
+  | "error";
+
+type SeAccessRequestPayload = {
+  status: SalesEngineAccessRequestStatus;
+  request: {
+    id: number;
+    status: string;
+    email: string;
+    name: string;
+    company_name: string | null;
+    requested_at: string | null;
+    reviewed_at: string | null;
+  } | null;
+};
+
 const DEFAULT_ICP_CONFIG: IcpConfig = {
   profileName: "",
   description: "",
@@ -110,6 +132,38 @@ function resolveAssertionPath(accessRole: string | undefined): string {
   return accessRole === "agent"
     ? "/agent/sales-engine/assertion"
     : "/admin/sales-engine/assertion";
+}
+
+function resolveAccessRequestBasePath(accessRole: string | undefined): string {
+  return accessRole === "agent"
+    ? "/agent/sales-engine/access-requests"
+    : "/admin/sales-engine/access-requests";
+}
+
+async function fetchFactory23Assertion(): Promise<{
+  assertion: string;
+  f23Token: string;
+}> {
+  const f23Token = getAuthTokenFromDocument();
+  if (!f23Token) {
+    throw new SalesEngineApiError("Factory23 session is not available.", 401);
+  }
+
+  const accessRole = useAuthStore.getState().user?.access_role;
+  const companyId = resolveCompanyId();
+
+  const assertionRes = await apiRequest<SeAssertionData>({
+    method: "POST",
+    path: resolveAssertionPath(accessRole),
+    token: f23Token,
+    body: companyId ? { company_id: companyId } : undefined,
+  });
+
+  return { assertion: assertionRes.data.assertion, f23Token };
+}
+
+function applyExchangeSession(exchange: SeExchangeResponse): void {
+  setSalesEngineSession(exchange.token, exchange.organization.id);
 }
 
 function resolveCompanyId(): number | undefined {
@@ -212,20 +266,7 @@ async function seRequest<T>({
 }
 
 export async function ensureSalesEngineSession(): Promise<void> {
-  const f23Token = getAuthTokenFromDocument();
-  if (!f23Token) {
-    throw new SalesEngineApiError("Factory23 session is not available.", 401);
-  }
-
-  const accessRole = useAuthStore.getState().user?.access_role;
-  const companyId = resolveCompanyId();
-
-  const assertionRes = await apiRequest<SeAssertionData>({
-    method: "POST",
-    path: resolveAssertionPath(accessRole),
-    token: f23Token,
-    body: companyId ? { company_id: companyId } : undefined,
-  });
+  const { assertion, f23Token } = await fetchFactory23Assertion();
 
   const exchangeResponse = await fetch(`${SALES_ENGINE_API_BASE_URL}/auth/factory23/exchange`, {
     method: "POST",
@@ -234,14 +275,14 @@ export async function ensureSalesEngineSession(): Promise<void> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      assertion: assertionRes.data.assertion,
+      assertion,
       f23_access_token: f23Token,
     }),
   });
 
   const exchangePayload = (await exchangeResponse.json().catch(() => null)) as
     | SeExchangeResponse
-    | { message?: string }
+    | { message?: string; reason?: string }
     | null;
 
   if (!exchangeResponse.ok) {
@@ -252,12 +293,146 @@ export async function ensureSalesEngineSession(): Promise<void> {
       typeof exchangePayload.message === "string"
         ? exchangePayload.message
         : `Sales Engine token exchange failed (${exchangeResponse.status})`;
-    throw new SalesEngineApiError(message, exchangeResponse.status);
+    const reason =
+      exchangePayload &&
+      typeof exchangePayload === "object" &&
+      "reason" in exchangePayload &&
+      typeof exchangePayload.reason === "string"
+        ? exchangePayload.reason
+        : null;
+    throw new SalesEngineApiError(message, exchangeResponse.status, reason);
   }
 
   const exchange = exchangePayload as SeExchangeResponse;
-  setSalesEngineSession(exchange.token, exchange.organization.id);
+  applyExchangeSession(exchange);
   await ensureFactory23CrmLink({ skipSessionRetry: true });
+}
+
+export async function fetchSalesEngineAccessRequestStatus(): Promise<SeAccessRequestPayload> {
+  const f23Token = getAuthTokenFromDocument();
+  if (!f23Token) {
+    throw new SalesEngineApiError("Factory23 session is not available.", 401);
+  }
+
+  const accessRole = useAuthStore.getState().user?.access_role;
+  const res = await apiRequest<SeAccessRequestPayload>({
+    method: "GET",
+    path: `${resolveAccessRequestBasePath(accessRole)}/status`,
+    token: f23Token,
+  });
+
+  return res.data;
+}
+
+export async function requestSalesEngineAccess(): Promise<SeAccessRequestPayload> {
+  const f23Token = getAuthTokenFromDocument();
+  if (!f23Token) {
+    throw new SalesEngineApiError("Factory23 session is not available.", 401);
+  }
+
+  const accessRole = useAuthStore.getState().user?.access_role;
+  const companyId = resolveCompanyId();
+
+  const res = await apiRequest<SeAccessRequestPayload>({
+    method: "POST",
+    path: resolveAccessRequestBasePath(accessRole),
+    token: f23Token,
+    body: companyId ? { company_id: companyId } : undefined,
+  });
+
+  return res.data;
+}
+
+/**
+ * Log in with existing Sales Engine credentials and link this Factory23 identity.
+ * Used when F23 email ≠ SE email (or user prefers explicit SE login).
+ */
+export async function loginLinkSalesEngineSession(
+  email: string,
+  password: string,
+): Promise<void> {
+  const { assertion, f23Token } = await fetchFactory23Assertion();
+
+  const response = await fetch(`${SALES_ENGINE_API_BASE_URL}/auth/factory23/login-link`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      assertion,
+      email,
+      password,
+      f23_access_token: f23Token,
+    }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | SeExchangeResponse
+    | { message?: string }
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : `Sales Engine login failed (${response.status})`;
+    throw new SalesEngineApiError(message, response.status);
+  }
+
+  applyExchangeSession(payload as SeExchangeResponse);
+  await ensureFactory23CrmLink({ skipSessionRetry: true });
+}
+
+/**
+ * Resolve whether the current Factory23 user can enter Sales Engine.
+ * Prefers an existing local SE session; otherwise attempts exchange / request status.
+ */
+export async function resolveSalesEngineAccess(): Promise<{
+  state: SalesEngineAccessState;
+  token: string | null;
+  message?: string;
+}> {
+  if (getSalesEngineToken()) {
+    return { state: "ready", token: getSalesEngineToken() };
+  }
+
+  try {
+    await ensureSalesEngineSession();
+    return { state: "ready", token: getSalesEngineToken() };
+  } catch (error) {
+    if (!(error instanceof SalesEngineApiError) || error.reason !== "access_required") {
+      return {
+        state: "error",
+        token: null,
+        message: error instanceof Error ? error.message : "Could not connect to Sales Engine.",
+      };
+    }
+  }
+
+  try {
+    const statusPayload = await fetchSalesEngineAccessRequestStatus();
+    if (statusPayload.status === "pending") {
+      return { state: "pending", token: null };
+    }
+    if (statusPayload.status === "declined") {
+      return { state: "declined", token: null };
+    }
+    if (statusPayload.status === "approved") {
+      // Approved but exchange still failed — treat as needs_access so user can retry/login.
+      return { state: "needs_access", token: null };
+    }
+    return { state: "needs_access", token: null };
+  } catch (error) {
+    return {
+      state: "error",
+      token: null,
+      message: error instanceof Error ? error.message : "Could not load access status.",
+    };
+  }
 }
 
 /** Bridges the signed-in Factory23 session to Sales Engine CRM sync (no manual API tokens). */

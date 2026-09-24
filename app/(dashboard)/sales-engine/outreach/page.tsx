@@ -1,4 +1,5 @@
 import { SalesEngineOutreachView } from "@/components/sales-engine/sales-engine-outreach-view";
+import { SalesEngineAccessShell } from "@/components/sales-engine/sales-engine-access-gate";
 
 export const metadata = {
   title: "Outreach Activities | Sales Engine | The Factory",
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function SalesEngineOutreachPage() {
-  return <SalesEngineOutreachView />;
+  return (
+    <SalesEngineAccessShell>
+      <SalesEngineOutreachView />
+    </SalesEngineAccessShell>
+  );
 }
