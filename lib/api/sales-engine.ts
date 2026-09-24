@@ -1012,10 +1012,22 @@ export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
 
 export function sendOutreachActivity(
   activityId: number,
-  payload: { to_email: string; subject?: string; body: string }
-): Promise<{ message_id: string | null; sent: boolean; activity_id: number }> {
+  payload: { to_email: string; subject?: string; body: string; inbox_id?: number }
+): Promise<{
+  message_id: string | null;
+  sent: boolean;
+  queued?: boolean;
+  delivery_status?: string;
+  activity_id: number;
+}> {
   return withSessionRetry(async () =>
-    seRequest<{ message_id: string | null; sent: boolean; activity_id: number }>({
+    seRequest<{
+      message_id: string | null;
+      sent: boolean;
+      queued?: boolean;
+      delivery_status?: string;
+      activity_id: number;
+    }>({
       method: "POST",
       path: `/outreach/activities/${activityId}/send`,
       body: payload,
@@ -1259,7 +1271,7 @@ export type SocialListeningSettings = {
   last_run_at?: string | null;
 };
 
-export type OutreachSenderMode = "platform" | "organization" | "connected_mailbox";
+export type OutreachSenderMode = "organization";
 
 export type OutreachIntegrityCheck = {
   key: string;
@@ -1275,12 +1287,32 @@ export type OutreachQuotaSnapshot = {
   remaining: number;
 };
 
-export type OutreachConnectedMailbox = {
+export type OutreachInbox = {
   id: number;
   email: string;
-  provider: string;
+  display_name?: string | null;
+  status: "pending" | "confirmed";
+  is_default: boolean;
+  confirmed_at?: string | null;
+  confirmation_sent_at?: string | null;
+};
+
+export type OutreachSetupStatus = {
+  can_send: boolean;
+  domain_connected: boolean;
+  domain_verified: boolean;
+  integrity_status?: string | null;
+  confirmed_inbox_count: number;
+  blocking_reasons: string[];
+};
+
+export type OutreachSetupRequest = {
+  id: number;
+  domain?: string | null;
+  note?: string | null;
   status: string;
-  last_error?: string | null;
+  failing_checks?: OutreachIntegrityCheck[];
+  created_at?: string | null;
 };
 
 export type OutreachSenderSettings = {
@@ -1288,14 +1320,15 @@ export type OutreachSenderSettings = {
   reply_to_email: string;
   org_verified_from_email?: string | null;
   org_verified_domain?: string | null;
-  /** Legacy; prefer org_connection_status for UI labels. */
   verification_status: "pending" | "verified" | "failed";
   org_connection_status: "not_connected" | "pending" | "failed" | "verified";
   platform_from_email?: string | null;
   integrity_status?: "pass" | "warn" | "fail" | null;
   integrity_checks?: OutreachIntegrityCheck[];
   integrity_checked_at?: string | null;
-  connected_mailbox?: OutreachConnectedMailbox | null;
+  default_inbox?: OutreachInbox | null;
+  setup?: OutreachSetupStatus | null;
+  support_request?: { id: number; status: string; domain?: string | null; created_at?: string | null } | null;
   quota?: OutreachQuotaSnapshot | null;
 };
 
@@ -1614,9 +1647,10 @@ export function fetchOutreachSenderSettings(): Promise<OutreachSenderSettings> {
   );
 }
 
-export function updateOutreachSenderSettings(
-  payload: Partial<OutreachSenderSettings>
-): Promise<OutreachSenderSettings> {
+export function updateOutreachSenderSettings(payload: {
+  default_inbox_id?: number | null;
+  reply_to_email?: string | null;
+}): Promise<OutreachSenderSettings> {
   return withSessionRetry(async () =>
     seRequest<OutreachSenderSettings>({
       method: "PUT",
@@ -1668,44 +1702,66 @@ export function recheckOutreachDomainIntegrity(): Promise<
   );
 }
 
-export function fetchOutreachMailboxes(): Promise<OutreachConnectedMailbox[]> {
+export function fetchOutreachInboxes(): Promise<OutreachInbox[]> {
   return withSessionRetry(async () =>
-    seRequest<OutreachConnectedMailbox[]>({ method: "GET", path: "/outreach/mailboxes" })
+    seRequest<OutreachInbox[]>({ method: "GET", path: "/outreach/inboxes" })
   );
 }
 
-export function authorizeOutreachMailboxOAuth(
-  provider: "google" | "microsoft" | "zoho"
-): Promise<{ authorization_url: string; state: string }> {
+export function createOutreachInbox(payload: {
+  email: string;
+  display_name?: string;
+}): Promise<OutreachInbox> {
   return withSessionRetry(async () =>
-    seRequest<{ authorization_url: string; state: string }>({
-      method: "GET",
-      path: `/outreach/mailboxes/oauth/${provider}/authorize`,
+    seRequest<OutreachInbox>({ method: "POST", path: "/outreach/inboxes", body: payload })
+  );
+}
+
+export function confirmOutreachInbox(id: number, code: string): Promise<OutreachInbox> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachInbox>({
+      method: "POST",
+      path: `/outreach/inboxes/${id}/confirm`,
+      body: { code },
     })
   );
 }
 
-export function connectOutreachMailboxSmtp(payload: {
-  email: string;
-  smtp_host: string;
-  smtp_port: number;
-  smtp_encryption?: "tls" | "ssl" | null;
-  smtp_username: string;
-  smtp_password: string;
-}): Promise<OutreachConnectedMailbox> {
+export function resendOutreachInboxConfirmation(id: number): Promise<OutreachInbox> {
   return withSessionRetry(async () =>
-    seRequest<OutreachConnectedMailbox>({
+    seRequest<OutreachInbox>({ method: "POST", path: `/outreach/inboxes/${id}/resend` })
+  );
+}
+
+export function setDefaultOutreachInbox(id: number): Promise<OutreachInbox> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachInbox>({ method: "POST", path: `/outreach/inboxes/${id}/default` })
+  );
+}
+
+export function deleteOutreachInbox(id: number): Promise<void> {
+  return withSessionRetry(async () => {
+    await seRequest<null>({ method: "DELETE", path: `/outreach/inboxes/${id}` });
+  });
+}
+
+export function fetchOutreachSetupRequest(): Promise<OutreachSetupRequest | null> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachSetupRequest | null>({ method: "GET", path: "/outreach/setup-request" })
+  );
+}
+
+export function createOutreachSetupRequest(payload: {
+  note?: string;
+  domain?: string;
+}): Promise<OutreachSetupRequest> {
+  return withSessionRetry(async () =>
+    seRequest<OutreachSetupRequest>({
       method: "POST",
-      path: "/outreach/mailboxes/smtp",
+      path: "/outreach/setup-request",
       body: payload,
     })
   );
-}
-
-export function disconnectOutreachMailbox(id: number): Promise<void> {
-  return withSessionRetry(async () => {
-    await seRequest<null>({ method: "DELETE", path: `/outreach/mailboxes/${id}` });
-  });
 }
 
 export type Factory23IntegrationStatus = {
