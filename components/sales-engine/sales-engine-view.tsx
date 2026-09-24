@@ -99,6 +99,7 @@ import {
   isFreshSignal,
   normalizeOutreachSubjectBody,
   normalizeRecommendedAction,
+  outreachActivitySortTime,
   type ChatIntent,
   type ChatLead,
   type FreshnessWindowDays,
@@ -2513,7 +2514,7 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
                 name={item.name}
                 channel={item.channel}
                 preview={item.preview}
-                time={formatRelativeTime(item.occurred_at)}
+                time={formatRelativeTime(new Date(outreachActivitySortTime(item)).toISOString())}
                 deliveryStatus={item.delivery_status}
                 bounceReason={item.bounce_reason}
                 onView={() => void handleView(item)}

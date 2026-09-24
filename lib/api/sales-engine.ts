@@ -999,10 +999,20 @@ export type OutreachActivity = {
   accentBg: string;
   accentIcon: string;
   occurred_at: string;
+  updated_at?: string | null;
   delivery_status?: OutreachDeliveryStatus;
   last_event_at?: string | null;
   bounce_reason?: string | null;
 };
+
+/** Newest action: send, edit, or delivery event — not original draft time. */
+export function outreachActivitySortTime(item: Pick<OutreachActivity, "occurred_at" | "updated_at" | "last_event_at">): number {
+  const times = [item.updated_at, item.last_event_at, item.occurred_at]
+    .filter((v): v is string => Boolean(v))
+    .map((v) => new Date(v).getTime())
+    .filter((n) => !Number.isNaN(n));
+  return times.length ? Math.max(...times) : 0;
+}
 
 export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
   return withSessionRetry(async () =>

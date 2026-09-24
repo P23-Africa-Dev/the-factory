@@ -37,6 +37,7 @@ import {
   fetchOutreachActivity,
   formatRelativeTime,
   normalizeOutreachSubjectBody,
+  outreachActivitySortTime,
   SalesEngineApiError,
   type OutreachActivity,
 } from "@/lib/api/sales-engine";
@@ -210,10 +211,10 @@ export function SalesEngineOutreachView() {
 
     result.sort((a, b) => {
       if (sortBy === "newest") {
-        return new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime();
+        return outreachActivitySortTime(b) - outreachActivitySortTime(a);
       }
       if (sortBy === "oldest") {
-        return new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime();
+        return outreachActivitySortTime(a) - outreachActivitySortTime(b);
       }
       if (sortBy === "name_asc") {
         return a.name.localeCompare(b.name);
@@ -719,7 +720,7 @@ export function SalesEngineOutreachView() {
                             <span>•</span>
                             <span className="flex items-center gap-1">
                               <Clock size={11} className="text-slate-400" />
-                              {formatRelativeTime(item.occurred_at)}
+                              {formatRelativeTime(new Date(outreachActivitySortTime(item)).toISOString())}
                             </span>
                           </div>
                         </div>
@@ -878,7 +879,7 @@ export function SalesEngineOutreachView() {
                           </p>
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-slate-500">
-                          {formatRelativeTime(item.occurred_at)}
+                          {formatRelativeTime(new Date(outreachActivitySortTime(item)).toISOString())}
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
