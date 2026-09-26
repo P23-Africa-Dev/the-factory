@@ -10,6 +10,7 @@ import {
   splitBriefIntoSearchQueries,
   entityModeLabel,
   isInsufficientIcpSearchBrief,
+  scoreIcpStrength,
   withEntityModeCue,
   withProspectCountCue,
   suggestIcpSearchBriefLocal,
@@ -26,6 +27,38 @@ describe("icp-search-brief", () => {
         industries: ["Manufacturing"],
       })
     ).toBe("earthmoving plant hire dealers");
+  });
+
+  it("scores a concrete brief with territory as strong", () => {
+    const strong = scoreIcpStrength({
+      profileName: "Cold-chain 3PLs",
+      description: "Operators who store and move temperature-sensitive freight.",
+      customPrompt: "cold-chain 3PL operators hiring warehouse leads",
+      industries: ["Logistics & Fleet"],
+      territories: ["Lagos, Nigeria"],
+    });
+    expect(strong.band).toBe("strong");
+    expect(strong.score).toBeGreaterThanOrEqual(75);
+
+    const vague = scoreIcpStrength({
+      profileName: "Buyers",
+      description: "Companies",
+      customPrompt: "companies",
+      industries: ["FMCG & Retail"],
+      territories: ["Nigeria"],
+    });
+    expect(vague.band).toBe("weak");
+    expect(vague.hint.toLowerCase()).toContain("vague");
+
+    const noCountry = scoreIcpStrength({
+      profileName: "Cold-chain 3PLs",
+      description: "Operators who store and move temperature-sensitive freight.",
+      customPrompt: "cold-chain 3PL operators hiring warehouse leads",
+      industries: ["Logistics & Fleet"],
+      territories: [],
+    });
+    expect(noCountry.band).not.toBe("strong");
+    expect(noCountry.hint.toLowerCase()).toContain("country");
   });
 
   it("flags generic filler briefs as insufficient", () => {

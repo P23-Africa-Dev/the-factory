@@ -2080,6 +2080,32 @@ function ChatWorkspace({
                 (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
                 !isPendingMessage &&
                 (() => {
+                  const degraded = message.meta?.retrieval_degraded as
+                    | { web_search?: boolean; reason?: string }
+                    | undefined;
+                  if (!degraded?.web_search) return null;
+                  const label =
+                    degraded.reason === "credits_exhausted"
+                      ? "Web search is out of credits"
+                      : degraded.reason === "unauthorized"
+                        ? "Web search key was rejected"
+                        : degraded.reason === "rate_limited"
+                          ? "Web search hit its rate limit"
+                          : "Web search failed on every query";
+                  return (
+                    <div className="mt-2 rounded-[14px] border border-red-200/80 bg-red-50/70 px-3 py-2">
+                      <p className="text-[10px] font-semibold text-[#09232d]">{label}</p>
+                      <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/75">
+                        These results came from the company database only, so location and
+                        search-brief fit are unverified.
+                      </p>
+                    </div>
+                  );
+                })()}
+              {message.role === "assistant" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                !isPendingMessage &&
+                (() => {
                   const tighten = message.meta?.icp_tighten as
                     | { suggested?: boolean; reason?: string }
                     | undefined;

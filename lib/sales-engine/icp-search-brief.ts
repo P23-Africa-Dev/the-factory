@@ -188,6 +188,75 @@ export function composeSearchGeoCaption(territories?: string[] | null): string {
   return `Searching in: ${shown.join(" · ")}${extra}`;
 }
 
+export type IcpStrengthBand = "weak" | "fair" | "strong";
+
+export type IcpStrengthScore = {
+  score: number;
+  band: IcpStrengthBand;
+  label: string;
+  hint: string;
+};
+
+/**
+ * Live ICP strength from what the user has typed.
+ * Territory and a concrete search brief are required to reach "Strong".
+ * Size and revenue are not scored — they stay filters, not search text.
+ */
+export function scoreIcpStrength(input: {
+  profileName?: string | null;
+  description?: string | null;
+  customPrompt?: string | null;
+  industries?: string[] | null;
+  territories?: string[] | null;
+}): IcpStrengthScore {
+  const name = (input.profileName ?? "").trim();
+  const description = (input.description ?? "").trim();
+  const brief = (input.customPrompt ?? "").trim();
+  const industries = (input.industries ?? [])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  const territories = (input.territories ?? [])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+
+  const briefConcrete = brief !== "" && !isInsufficientIcpSearchBrief({ customPrompt: brief });
+  const words = countWords(brief);
+  const copiesStory =
+    brief !== "" && description !== "" && brief.toLowerCase() === description.toLowerCase();
+  const readsLikeDefinition = /industries specialize/i.test(brief);
+
+  let score = 0;
+  if (briefConcrete) score += 40;
+  if (words >= 6) score += 15;
+  else if (words >= 3) score += 8;
+  if (briefConcrete && !copiesStory && !readsLikeDefinition) score += 10;
+  if (territories.length > 0) score += 20;
+  if (industries.length > 0) score += 10;
+  if (name && description) score += 5;
+
+  if (!briefConcrete) score = Math.min(score, 39);
+  if (territories.length === 0) score = Math.min(score, 64);
+  score = Math.max(0, Math.min(100, score));
+
+  const band: IcpStrengthBand = score >= 75 ? "strong" : score >= 45 ? "fair" : "weak";
+  const label = band === "strong" ? "Strong" : band === "fair" ? "Fair" : "Weak";
+
+  let hint = "This ICP is strong enough to search.";
+  if (territories.length === 0) {
+    hint = "Add a catalog country or city. Discovery drops leads outside your territories.";
+  } else if (!briefConcrete) {
+    hint = "The search brief is still vague. Name products, buyers, or exclusions.";
+  } else if (copiesStory || readsLikeDefinition) {
+    hint = "This reads like a profile story. Search works better with products and buyers.";
+  } else if (industries.length === 0) {
+    hint = "Pick an industry so weaker fits can be filtered out.";
+  } else if (band !== "strong") {
+    hint = "Add a bit more specificity, or strengthen the search brief.";
+  }
+
+  return { score, band, label, hint };
+}
+
 export function composeIcpQualifySummary(input: {
   industries?: string[] | null;
   territories?: string[] | null;
