@@ -261,6 +261,11 @@ const INDUSTRY_SEARCH_SEEDS: Array<[needle: string, seed: string]> = [
   ["real estate", "property developers commercial real estate"],
   ["agro", "agribusiness commodity traders processors"],
   ["commodit", "commodity traders agribusiness processors"],
+  ["software", "SaaS platforms software vendors product companies"],
+  ["tech", "technology product companies software platforms"],
+  ["saas", "SaaS platforms B2B software vendors"],
+  ["develop", "software product companies engineering platforms"],
+  ["mobile", "mobile app product companies digital platforms"],
 ];
 
 export type IcpSearchBriefSuggestion = {
@@ -268,10 +273,13 @@ export type IcpSearchBriefSuggestion = {
   keywords: string[];
 };
 
+const VISIBLE_KEYWORD_COUNT = 6;
+
 /** Instant, no-network draft from selected industries. Geography stays out. */
 export function suggestIcpSearchBriefLocal(input: {
   industries?: string[] | null;
   description?: string | null;
+  profileName?: string | null;
 }): IcpSearchBriefSuggestion {
   const parts: string[] = [];
   for (const industry of input.industries ?? []) {
@@ -290,11 +298,73 @@ export function suggestIcpSearchBriefLocal(input: {
   if (!brief && description && !/industries specialize/i.test(description)) {
     brief = description;
   }
+  if (!brief) {
+    const name = (input.profileName ?? "").trim();
+    if (name) brief = name;
+  }
   brief = clampToMaxWords(brief, ICP_BRIEF_MAX_WORDS).trim();
   return {
     brief,
-    keywords: keywordsFromBrief(brief),
+    keywords: expandKeywordPool({
+      brief,
+      industries: input.industries,
+      existing: [],
+    }),
   };
+}
+
+/** Build a rolling pool of add-on chips (unused first). */
+export function expandKeywordPool(input: {
+  brief?: string | null;
+  industries?: string[] | null;
+  existing?: string[] | null;
+  excludeInText?: string | null;
+}): string[] {
+  const excludeText = (input.excludeInText ?? "").toLowerCase();
+  const seen = new Set(
+    (input.existing ?? []).map((k) => k.toLowerCase()).filter(Boolean)
+  );
+  const out: string[] = [];
+
+  const push = (raw: string) => {
+    const token = raw.trim();
+    if (!token || token.length < 3) return;
+    const key = token.toLowerCase();
+    if (seen.has(key)) return;
+    if (excludeText && excludeText.includes(key)) return;
+    seen.add(key);
+    out.push(token);
+  };
+
+  for (const k of keywordsFromBrief(input.brief ?? "")) push(k);
+
+  for (const industry of input.industries ?? []) {
+    const lower = industry.toLowerCase();
+    const match = INDUSTRY_SEARCH_SEEDS.find(([needle]) => lower.includes(needle));
+    if (!match) {
+      for (const part of industry.replace(/[&,/]+/g, " ").split(/\s+/)) push(part);
+      continue;
+    }
+    const words = match[1].split(/\s+/);
+    for (const w of words) push(w);
+    for (let i = 0; i < words.length - 1; i++) {
+      push(`${words[i]} ${words[i + 1]}`);
+    }
+  }
+
+  for (const k of input.existing ?? []) push(k);
+
+  return out;
+}
+
+/** Next unused chips to show under the opportunity box. */
+export function nextVisibleKeywords(
+  pool: string[],
+  prompt: string,
+  limit: number = VISIBLE_KEYWORD_COUNT
+): string[] {
+  const lower = prompt.toLowerCase();
+  return pool.filter((k) => !lower.includes(k.toLowerCase())).slice(0, limit);
 }
 
 function keywordsFromBrief(brief: string): string[] {
@@ -304,7 +374,7 @@ function keywordsFromBrief(brief: string): string[] {
     const t = token.trim();
     if (t.length < 3 || fillers.has(t) || picked.includes(t)) continue;
     picked.push(t);
-    if (picked.length >= 5) break;
+    if (picked.length >= 8) break;
   }
   return picked;
 }

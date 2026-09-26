@@ -13,6 +13,8 @@ import {
   withEntityModeCue,
   withProspectCountCue,
   suggestIcpSearchBriefLocal,
+  expandKeywordPool,
+  nextVisibleKeywords,
 } from "./icp-search-brief";
 
 describe("icp-search-brief", () => {
@@ -83,6 +85,18 @@ describe("icp-search-brief", () => {
     expect(suggestion.brief.toLowerCase()).toContain("3pl");
     expect(suggestion.brief.toLowerCase()).not.toContain("nigeria");
     expect(suggestion.keywords.length).toBeGreaterThan(0);
+  });
+
+  it("rolls unused keyword chips as the prompt fills", () => {
+    const pool = expandKeywordPool({
+      brief: "3PL warehousing last-mile delivery",
+      industries: ["Logistics & Fleet"],
+      existing: ["cold-chain", "freight"],
+    });
+    expect(pool.length).toBeGreaterThan(4);
+    const visible = nextVisibleKeywords(pool, "3PL warehousing last-mile", 6);
+    expect(visible.every((k) => !"3pl warehousing last-mile".includes(k.toLowerCase()))).toBe(true);
+    expect(visible.length).toBeGreaterThan(0);
   });
 
   it("handles null or undefined customPrompt safely without throwing", () => {

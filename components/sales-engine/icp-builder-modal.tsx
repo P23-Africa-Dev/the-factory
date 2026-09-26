@@ -45,6 +45,8 @@ import {
   ICP_BRIEF_MAX_WORDS,
   isInsufficientIcpSearchBrief,
   suggestIcpSearchBriefLocal,
+  expandKeywordPool,
+  nextVisibleKeywords,
 } from "@/lib/sales-engine/icp-search-brief";
 
 export type IcpConfig = {
@@ -203,6 +205,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const geoSearchTimer = useRef<number | null>(null);
   const autoBriefRef = useRef("");
   const [briefKeywords, setBriefKeywords] = useState<string[]>([]);
+  const [keywordPool, setKeywordPool] = useState<string[]>([]);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
 
@@ -253,12 +256,42 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const suggestBrief = useSuggestIcpSearchBrief();
 
   useEffect(() => {
+    // Seed chips from industries/description only when the pool is empty (don't wipe AI results).
+    if (keywordPool.length > 0) return;
     const local = suggestIcpSearchBriefLocal({
       industries: formConfig.industries,
       description: formConfig.description,
+      profileName: formConfig.profileName,
     });
-    setBriefKeywords(local.keywords ?? []);
-  }, [formConfig.industries, formConfig.description]);
+    const pool = local.keywords ?? [];
+    setKeywordPool(pool);
+    setBriefKeywords(nextVisibleKeywords(pool, formConfig.customPrompt ?? ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed once when empty
+  }, [formConfig.industries, formConfig.description, formConfig.profileName]);
+
+  useEffect(() => {
+    if (keywordPool.length === 0) return;
+    setBriefKeywords(nextVisibleKeywords(keywordPool, formConfig.customPrompt ?? ""));
+  }, [formConfig.customPrompt, keywordPool]);
+
+  useEffect(() => {
+    // Grow the pool when industries change without clearing AI suggestions.
+    setKeywordPool((prev) => {
+      const next = expandKeywordPool({
+        brief: formConfig.customPrompt,
+        industries: formConfig.industries,
+        existing: prev,
+        excludeInText: formConfig.customPrompt,
+      });
+      if (
+        next.length === prev.length &&
+        next.every((keyword, index) => keyword === prev[index])
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [formConfig.industries, formConfig.customPrompt]);
 
   if (!isOpen) return null;
 
@@ -278,6 +311,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     });
     autoBriefRef.current = "";
     setBriefKeywords([]);
+    setKeywordPool([]);
     setActiveTab("criteria");
     setViewMode("form");
   };
@@ -289,12 +323,13 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     const normalized = normalizeIcpConfig(profile.config);
     setFormConfig(normalized);
     autoBriefRef.current = "";
-    setBriefKeywords(
-      suggestIcpSearchBriefLocal({
-        industries: normalized.industries,
-        description: normalized.description,
-      }).keywords
-    );
+    const pool = suggestIcpSearchBriefLocal({
+      industries: normalized.industries,
+      description: normalized.description,
+      profileName: normalized.profileName,
+    }).keywords;
+    setKeywordPool(pool);
+    setBriefKeywords(nextVisibleKeywords(pool, normalized.customPrompt ?? ""));
     setActiveTab("criteria");
     setViewMode("form");
   };
@@ -409,8 +444,16 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
 
   function applySuggestedBrief(brief: string, keywords: string[]) {
     autoBriefRef.current = "";
-    setBriefKeywords(keywords);
-    setFormConfig((prev) => ({ ...prev, customPrompt: brief }));
+    const clamped = clampToMaxWords(brief, ICP_BRIEF_MAX_WORDS).trim();
+    const pool = expandKeywordPool({
+      brief: clamped,
+      industries: formConfig.industries,
+      existing: keywords,
+      excludeInText: clamped,
+    });
+    setKeywordPool(pool);
+    setBriefKeywords(nextVisibleKeywords(pool, clamped));
+    setFormConfig((prev) => ({ ...prev, customPrompt: clamped }));
   }
 
   function insertBriefKeyword(keyword: string) {
@@ -421,8 +464,16 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       if (prompt.toLowerCase().includes(token.toLowerCase())) {
         return prev;
       }
-      const next = `${prompt.trim()} ${token}`.trim();
+      const next = clampToMaxWords(`${prompt.trim()} ${token}`.trim(), ICP_BRIEF_MAX_WORDS);
       autoBriefRef.current = "";
+      const expanded = expandKeywordPool({
+        brief: next,
+        industries: prev.industries,
+        existing: keywordPool,
+        excludeInText: next,
+      });
+      setKeywordPool(expanded);
+      setBriefKeywords(nextVisibleKeywords(expanded, next));
       return { ...prev, customPrompt: next };
     });
   }
@@ -431,6 +482,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     try {
       const result = await suggestBrief.mutateAsync({
         mode,
+        profileName: formConfig.profileName,
         customPrompt: formConfig.customPrompt ?? "",
         description: formConfig.description,
         industries: formConfig.industries,
@@ -444,7 +496,7 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       applySuggestedBrief(result.brief, result.keywords);
       toast.success(
         mode === "improve"
-          ? "Search phrase improved."
+          ? "Search phrase improved for discovery."
           : mode === "regenerate"
             ? "New search phrase drafted."
             : "Search phrase generated from your ICP."
@@ -1267,23 +1319,16 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     )}
                     {briefKeywords.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
-                        {briefKeywords.map((keyword) => {
-                          const used = (formConfig.customPrompt ?? "").toLowerCase().includes(keyword.toLowerCase());
-                          return (
-                            <button
-                              key={keyword}
-                              type="button"
-                              onClick={() => insertBriefKeyword(keyword)}
-                              className={`rounded-full px-2 py-0.5 text-[9px] font-medium transition ${
-                                used
-                                  ? "bg-[#09232D] text-white"
-                                  : "border border-[#d7d7d7] bg-[#f8f8f8] text-[#09232d]/75 hover:bg-[#09232d]/5"
-                              }`}
-                            >
-                              {used ? keyword : `+ ${keyword}`}
-                            </button>
-                          );
-                        })}
+                        {briefKeywords.map((keyword) => (
+                          <button
+                            key={keyword}
+                            type="button"
+                            onClick={() => insertBriefKeyword(keyword)}
+                            className="rounded-full border border-[#d7d7d7] bg-[#f8f8f8] px-2 py-0.5 text-[9px] font-medium text-[#09232d]/75 transition hover:bg-[#09232d]/5"
+                          >
+                            + {keyword}
+                          </button>
+                        ))}
                       </div>
                     ) : null}
                     <p className="text-[11px] leading-snug text-gray-500">

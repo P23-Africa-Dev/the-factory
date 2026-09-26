@@ -552,6 +552,7 @@ export type IcpSearchBriefSuggestResult = {
 
 export function suggestIcpSearchBrief(payload: {
   mode?: IcpSearchBriefSuggestMode;
+  profileName?: string;
   customPrompt?: string;
   description?: string;
   industries?: string[];

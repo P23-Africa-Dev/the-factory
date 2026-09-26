@@ -111,6 +111,7 @@ export function useSuggestIcpSearchBrief(
   return useMutation({
     mutationFn: (payload: {
       mode?: IcpSearchBriefSuggestMode;
+      profileName?: string;
       customPrompt?: string;
       description?: string;
       industries?: string[];
