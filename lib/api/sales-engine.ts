@@ -480,10 +480,16 @@ export type IcpProfilePayload = {
   config: IcpConfig;
 };
 
-export function fetchIcpProfiles(): Promise<IcpProfile[]> {
+export function searchGeoPlaces(
+  query: string,
+  limit = 20
+): Promise<Array<{ label: string; type: string; country: string; gl: string }>> {
   return withSessionRetry(async () => {
-    const data = await seRequest<IcpProfile[]>({ method: "GET", path: "/icp-profiles" });
-    return (data ?? []).map(mapApiIcpProfile);
+    const data = await seRequest<Array<{ label: string; type: string; country: string; gl: string }>>({
+      method: "GET",
+      path: `/geo/places?q=${encodeURIComponent(query)}&limit=${limit}`,
+    });
+    return data ?? [];
   });
 }
 
@@ -583,6 +589,7 @@ export type ChatLead = {
   linkedin_url?: string | null;
   profile_urls?: string[] | null;
   contact_ready?: boolean;
+  contact_status?: "not_attempted" | "found" | "not_found" | string | null;
   contact_enrichment_tier?: string | null;
   contact_enrichment_provider?: string | null;
   next_action?: string | null;
@@ -784,6 +791,12 @@ export async function pollDiscoveryRunUntilComplete(
   runId: number,
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
+    onPartial?: (info: {
+      leads: ChatLead[];
+      progressMessage: string | null;
+      count?: number;
+      requested?: number;
+    }) => void;
     intent?: ChatIntent;
     maxMs?: number;
     /** Mutable extension — Continue waiting can bump this without restarting the poll. */
@@ -803,7 +816,25 @@ export async function pollDiscoveryRunUntilComplete(
     const run = await fetchDiscoveryRun(runId);
     const intent = options?.intent ?? (run.intent as ChatIntent | undefined);
     const stageInfo = mapDiscoveryStage(run.stages, intent, run.progress ?? null);
-    options?.onStage?.(stageInfo);
+    const summary =
+      run.result_summary && typeof run.result_summary === "object"
+        ? (run.result_summary as Record<string, unknown>)
+        : null;
+    const progressMessage =
+      typeof summary?.progress_message === "string" ? summary.progress_message : null;
+    options?.onStage?.({
+      ...stageInfo,
+      label: progressMessage || stageInfo.label,
+    });
+    if (typeof options?.onPartial === "function" && Array.isArray(summary?.partial_leads)) {
+      options.onPartial({
+        leads: summary.partial_leads as ChatLead[],
+        progressMessage,
+        count: typeof summary.partial_lead_count === "number" ? summary.partial_lead_count : undefined,
+        requested:
+          typeof summary.requested_lead_count === "number" ? summary.requested_lead_count : undefined,
+      });
+    }
 
     if (run.status === "completed") {
       return { run, timedOut: false };
@@ -882,6 +913,12 @@ export async function sendChatMessage(
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
     onDiscoveryRun?: (runId: number) => void;
+    onPartial?: (info: {
+      leads: ChatLead[];
+      progressMessage: string | null;
+      count?: number;
+      requested?: number;
+    }) => void;
     icpContext?: { industries?: string[]; territories?: string[]; name?: string };
     signal?: AbortSignal;
     extraWaitMsRef?: { current: number };
@@ -910,6 +947,7 @@ export async function sendChatMessage(
       const pollResult = await pollDiscoveryRunUntilComplete(initial.discovery_run_id, {
         intent: payload.intent,
         onStage: options?.onStage,
+        onPartial: options?.onPartial,
         signal: options?.signal,
         extraWaitMsRef: options?.extraWaitMsRef,
         maxMs:

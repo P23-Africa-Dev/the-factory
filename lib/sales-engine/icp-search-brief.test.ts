@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   composeIcpSearchBrief,
+  composeIcpSearchQueries,
   composeSearchGeoCaption,
+  clampToMaxWords,
+  countWords,
+  wordsRemaining,
+  ICP_BRIEF_MAX_WORDS,
+  splitBriefIntoSearchQueries,
   entityModeLabel,
   isInsufficientIcpSearchBrief,
   withEntityModeCue,
@@ -88,6 +94,25 @@ describe("icp-search-brief", () => {
         description: "Logistics warehouse operators",
       })
     ).toBe("Logistics warehouse operators");
+  });
+
+  it("clamps the ICP brief at 40 words", () => {
+    const fortyOne = Array.from({ length: 41 }, (_, i) => `w${i + 1}`).join(" ");
+    const clamped = clampToMaxWords(fortyOne, ICP_BRIEF_MAX_WORDS);
+    expect(countWords(clamped)).toBe(40);
+    expect(wordsRemaining(clamped)).toBe(0);
+  });
+
+  it("splits a long brief into short search queries instead of chopping silently", () => {
+    const brief =
+      "cold chain logistics providers hiring ops leads, warehouse automation vendors, or last mile delivery fleets expanding abroad";
+    const queries = splitBriefIntoSearchQueries(brief);
+    expect(queries.length).toBeGreaterThan(1);
+    for (const q of queries) {
+      expect(countWords(q)).toBeLessThanOrEqual(12);
+    }
+    expect(queries.some((q) => q.toLowerCase().includes("cold chain"))).toBe(true);
+    expect(queries.some((q) => q.toLowerCase().includes("last mile"))).toBe(true);
   });
 });
 

@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { Toggle } from "@/components/ui/toggle";
 import { getApiErrorMessage } from "@/lib/api/errors";
+import { searchGeoPlaces } from "@/lib/api/sales-engine";
 import {
   useActivateIcpProfile,
   useCreateIcpProfile,
@@ -37,6 +38,11 @@ import {
 import {
   composeIcpQualifySummary,
   composeIcpSearchBrief,
+  composeIcpSearchQueries,
+  clampToMaxWords,
+  countWords,
+  wordsRemaining,
+  ICP_BRIEF_MAX_WORDS,
   isInsufficientIcpSearchBrief,
   suggestIcpSearchBriefLocal,
 } from "@/lib/sales-engine/icp-search-brief";
@@ -77,7 +83,7 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   industries: ["FMCG & Retail"],
   companySizes: ["51-200"],
   revenueRanges: ["$1M - $10M"],
-  territories: ["Lagos, NG"],
+  territories: ["Lagos, Nigeria"],
   decisionMakers: ["Head of Sales"],
   minMatchScore: 60,
   autoSyncCrm: true,
@@ -131,14 +137,14 @@ const AVAILABLE_REVENUE_RANGES = [
 ];
 
 const AVAILABLE_TERRITORIES = [
-  "Lagos, NG",
-  "Abuja, NG",
-  "Port Harcourt, NG",
-  "Kano, NG",
-  "Nairobi, KE",
-  "Accra, GH",
-  "Johannesburg, SA",
-  "Kigali, RW",
+  "Lagos, Nigeria",
+  "Abuja, Nigeria",
+  "Nairobi, Kenya",
+  "Accra, Ghana",
+  "Johannesburg, South Africa",
+  "London, England",
+  "Berlin, Germany",
+  "Amsterdam, Netherlands",
 ];
 
 const AVAILABLE_DECISION_MAKERS = [
@@ -190,6 +196,11 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const [customIndustryInput, setCustomIndustryInput] = useState("");
   const [customRoleInput, setCustomRoleInput] = useState("");
   const [customTerritoryInput, setCustomTerritoryInput] = useState("");
+  const [geoSuggestions, setGeoSuggestions] = useState<
+    Array<{ label: string; type: string; country: string; gl: string }>
+  >([]);
+  const [geoSearchLoading, setGeoSearchLoading] = useState(false);
+  const geoSearchTimer = useRef<number | null>(null);
   const autoBriefRef = useRef("");
   const [briefKeywords, setBriefKeywords] = useState<string[]>([]);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -350,16 +361,50 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     setCustomRoleInput("");
   };
 
-  const handleAddCustomTerritory = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customTerritoryInput.trim()) return;
-    if (!formConfig.territories.includes(customTerritoryInput.trim())) {
+  const handleTerritorySearchChange = (value: string) => {
+    setCustomTerritoryInput(value);
+    if (geoSearchTimer.current != null) {
+      window.clearTimeout(geoSearchTimer.current);
+    }
+    const q = value.trim();
+    if (q.length < 2) {
+      setGeoSuggestions([]);
+      return;
+    }
+    geoSearchTimer.current = window.setTimeout(async () => {
+      setGeoSearchLoading(true);
+      try {
+        const places = await searchGeoPlaces(q, 12);
+        setGeoSuggestions(places);
+      } catch {
+        setGeoSuggestions([]);
+      } finally {
+        setGeoSearchLoading(false);
+      }
+    }, 250);
+  };
+
+  const handleSelectGeoPlace = (label: string) => {
+    if (!formConfig.territories.includes(label)) {
       setFormConfig((prev) => ({
         ...prev,
-        territories: [...prev.territories, customTerritoryInput.trim()],
+        territories: [...prev.territories, label],
       }));
     }
     setCustomTerritoryInput("");
+    setGeoSuggestions([]);
+  };
+
+  const handleAddCustomTerritory = (e: React.FormEvent) => {
+    e.preventDefault();
+    const match = geoSuggestions.find(
+      (place) => place.label.toLowerCase() === customTerritoryInput.trim().toLowerCase()
+    );
+    if (!match) {
+      toast.error("Pick a country or city from the search results.");
+      return;
+    }
+    handleSelectGeoPlace(match.label);
   };
 
   function applySuggestedBrief(brief: string, keywords: string[]) {
@@ -1004,21 +1049,46 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                           </button>
                         ))}
                     </div>
-                    <div className="flex gap-2 pt-1">
-                      <input
-                        type="text"
-                        value={customTerritoryInput}
-                        onChange={(e) => setCustomTerritoryInput(e.target.value)}
-                        placeholder="Add city or region (e.g. Mombasa, KE)..."
-                        className="flex-1 rounded-xl border border-gray-200 bg-[#F6F6F6] px-3.5 py-2 text-[12px] text-[#09232D] outline-none placeholder:text-gray-400 focus:border-[#09232D]/30 focus:bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddCustomTerritory}
-                        className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
-                      >
-                        Add
-                      </button>
+                    <div className="relative space-y-1 pt-1">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={customTerritoryInput}
+                          onChange={(e) => handleTerritorySearchChange(e.target.value)}
+                          placeholder="Search countries or cities (e.g. Germany, Lagos)…"
+                          className="flex-1 rounded-xl border border-gray-200 bg-[#F6F6F6] px-3.5 py-2 text-[12px] text-[#09232D] outline-none placeholder:text-gray-400 focus:border-[#09232D]/30 focus:bg-white"
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCustomTerritory}
+                          className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      {(geoSearchLoading || geoSuggestions.length > 0) && (
+                        <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                          {geoSearchLoading && geoSuggestions.length === 0 ? (
+                            <p className="px-3 py-2 text-[11px] text-gray-500">Searching…</p>
+                          ) : (
+                            geoSuggestions.map((place) => (
+                              <button
+                                key={`${place.type}-${place.label}`}
+                                type="button"
+                                onClick={() => handleSelectGeoPlace(place.label)}
+                                className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] text-[#09232D] hover:bg-[#09232D]/5"
+                              >
+                                <span>{place.label}</span>
+                                <span className="text-[10px] uppercase text-gray-400">{place.type}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                      <p className="text-[10px] text-gray-500">
+                        Only catalog countries and cities can be added. Each selected country is searched.
+                      </p>
                     </div>
                   </div>
 
@@ -1160,7 +1230,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       value={formConfig.customPrompt ?? ""}
                       onChange={(e) => {
                         autoBriefRef.current = "";
-                        setFormConfig((prev) => ({ ...prev, customPrompt: e.target.value }));
+                        const next = clampToMaxWords(e.target.value, ICP_BRIEF_MAX_WORDS);
+                        setFormConfig((prev) => ({ ...prev, customPrompt: next }));
                       }}
                       onBlur={() =>
                         setTouchedFields((prev) => ({ ...prev, customPrompt: true }))
@@ -1173,6 +1244,22 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       }`}
                       required
                     />
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                      <p
+                        className={`text-[11px] font-medium ${
+                          wordsRemaining(formConfig.customPrompt ?? "") === 0
+                            ? "text-amber-700"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {wordsRemaining(formConfig.customPrompt ?? "") === 0
+                          ? "40 words is the limit"
+                          : `${wordsRemaining(formConfig.customPrompt ?? "")} words left`}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {countWords(formConfig.customPrompt ?? "")}/{ICP_BRIEF_MAX_WORDS} words
+                      </p>
+                    </div>
                     {showCustomPromptError && (
                       <p className="mt-1 text-[11px] font-medium text-red-600">
                         Please specify what kind of opportunity you are looking for.
@@ -1216,13 +1303,17 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     <p className="text-[11px] font-semibold text-[#09232D]">
                       When you ask for leads, we will search:
                     </p>
-                    <p className="mt-1 text-[12px] leading-snug text-[#09232D]/85">
-                      {composeIcpSearchBrief({
+                    <ul className="mt-1 space-y-1">
+                      {composeIcpSearchQueries({
                         customPrompt: formConfig.customPrompt ?? "",
                         description: formConfig.description,
                         industries: formConfig.industries,
-                      })}
-                    </p>
+                      }).map((q) => (
+                        <li key={q} className="text-[12px] leading-snug text-[#09232D]/85">
+                          “{q}”
+                        </li>
+                      ))}
+                    </ul>
                     <p className="mt-2.5 text-[11px] font-semibold text-[#09232D]">
                       Then qualify with:
                     </p>

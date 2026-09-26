@@ -39,6 +39,7 @@ import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/ho
 import {
   composeIcpQualifySummary,
   composeIcpSearchBrief,
+  composeIcpSearchQueries,
   composeSearchGeoCaption,
   entityModeLabel,
   isInsufficientIcpSearchBrief,
@@ -904,7 +905,7 @@ function LeadInlineResults({
                     </p>
                   )}
 
-                  {(roleLine || contactLine || lead.email || lead.phone) && (
+                  {(roleLine || contactLine || lead.email || lead.phone || lead.contact_status) && (
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[8px]">
                       {roleLine && (
                         <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
@@ -938,6 +939,12 @@ function LeadInlineResults({
                           <Phone size={8} className="shrink-0 opacity-80" />
                           <span>{lead.phone}</span>
                         </a>
+                      )}
+                      {!lead.email && !lead.phone && lead.contact_status === "not_attempted" && (
+                        <span className="font-medium text-[#09232d]/45">Looking up…</span>
+                      )}
+                      {!lead.email && !lead.phone && lead.contact_status === "not_found" && (
+                        <span className="font-medium text-[#09232d]/45">Not published</span>
                       )}
                       {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
                         <span
@@ -1223,6 +1230,13 @@ function IcpConfirmationCard({
         industries: activeIcp.config.industries,
       })
     : "";
+  const searchQueries = activeIcp
+    ? composeIcpSearchQueries({
+        customPrompt: activeIcp.config.customPrompt,
+        description: activeIcp.description || activeIcp.config.description,
+        industries: activeIcp.config.industries,
+      })
+    : [];
   const qualifySummary = activeIcp
     ? composeIcpQualifySummary({
         industries: activeIcp.config.industries,
@@ -1262,12 +1276,24 @@ function IcpConfirmationCard({
             <p className="text-[9px] font-semibold uppercase tracking-wide text-[#09232d]/45">
               We will search
             </p>
-            <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/85">{searchBrief}</p>
+            {searchQueries.length > 1 ? (
+              <ul className="mt-0.5 space-y-0.5">
+                {searchQueries.map((q) => (
+                  <li key={q} className="text-[10px] leading-[14px] text-[#09232d]/85">
+                    “{q}”
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-0.5 text-[10px] leading-[14px] text-[#09232d]/85">
+                {searchQueries[0] || searchBrief}
+              </p>
+            )}
             {geoCaption ? (
               <p className="mt-1 text-[10px] leading-[14px] text-[#09232d]/70">{geoCaption}</p>
             ) : null}
             <p className="mt-1 text-[9px] leading-[13px] text-[#09232d]/50">
-              Search runs in this country. Other countries are excluded. Unconfirmed locations are marked.
+              Each selected country is searched. Other countries are excluded. Unconfirmed locations are marked.
             </p>
           </div>
           <div>

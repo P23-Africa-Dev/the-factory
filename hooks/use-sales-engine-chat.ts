@@ -365,6 +365,9 @@ export function useSendChatMessage(icpProfileId?: string, options?: SendMessageO
           onDiscoveryRun: (runId) => {
             pendingRunIdRef.current = runId;
           },
+          onPartial: () => {
+            queryClient.invalidateQueries({ queryKey: SALES_ENGINE_CHAT_KEYS.history(icpProfileId) });
+          },
           icpContext,
           signal: abortControllerRef.current.signal,
           extraWaitMsRef,

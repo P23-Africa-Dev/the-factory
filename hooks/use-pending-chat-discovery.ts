@@ -63,6 +63,13 @@ export function usePendingChatDiscovery(
 
       try {
         const run = await fetchDiscoveryRun(current.runId);
+        const summary =
+          run.result_summary && typeof run.result_summary === "object"
+            ? (run.result_summary as { partial_leads?: unknown[] })
+            : null;
+        if (Array.isArray(summary?.partial_leads) && summary.partial_leads.length > 0) {
+          queryClient.invalidateQueries({ queryKey: SALES_ENGINE_CHAT_KEYS.history(icpProfileId) });
+        }
         if (run.status !== "completed" && run.status !== "failed" && run.status !== "cancelled") {
           return;
         }

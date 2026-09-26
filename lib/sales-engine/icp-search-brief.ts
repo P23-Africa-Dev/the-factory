@@ -1,5 +1,5 @@
 /**
- * Mirrors backend IcpBrief::searchBrief() priority:
+ * Mirrors backend IcpBrief::searchBrief() / searchQueries() priority:
  * customPrompt → description → industries → neutral fallback.
  * Territory / size / revenue / personas are gates only — never search text.
  */
@@ -9,6 +9,14 @@ export type IcpSearchBriefInput = {
   description?: string | null;
   industries?: string[] | null;
 };
+
+/** Live cap in the ICP builder — words the user may type. */
+export const ICP_BRIEF_MAX_WORDS = 40;
+
+/** Each Serper query stays short so results are companies, not essays. */
+export const ICP_SEARCH_QUERY_MAX_WORDS = 12;
+
+export const ICP_SEARCH_QUERY_MAX_CLAUSES = 6;
 
 const GENERIC_BRIEF_FILLERS = new Set([
   "companies",
@@ -49,6 +57,37 @@ const GENERIC_BRIEF_FILLERS = new Set([
   "or",
 ]);
 
+export function countWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return (trimmed.match(/\S+/g) ?? []).length;
+}
+
+/** Keep at most `maxWords` words; preserve trailing space while typing when under the cap. */
+export function clampToMaxWords(text: string, maxWords: number = ICP_BRIEF_MAX_WORDS): string {
+  if (maxWords < 1) return "";
+  const matches = text.match(/\S+/g) ?? [];
+  if (matches.length <= maxWords) return text;
+  // Rebuild from word starts so we drop anything after the Nth word.
+  let seen = 0;
+  let end = 0;
+  const re = /\S+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    seen += 1;
+    end = m.index + m[0].length;
+    if (seen >= maxWords) break;
+  }
+  return text.slice(0, end);
+}
+
+export function wordsRemaining(text: string, maxWords: number = ICP_BRIEF_MAX_WORDS): number {
+  return Math.max(0, maxWords - countWords(text));
+}
+
+/**
+ * Full human brief (what is stored). Not silently truncated.
+ */
 export function composeIcpSearchBrief(input: IcpSearchBriefInput): string {
   const interest = (input.customPrompt ?? "").trim();
   if (interest) return interest;
@@ -67,14 +106,53 @@ export function composeIcpSearchBrief(input: IcpSearchBriefInput): string {
 }
 
 /**
+ * Short queries that will actually hit Serper (mirrors backend searchQueries).
+ */
+export function composeIcpSearchQueries(input: IcpSearchBriefInput): string[] {
+  const brief = composeIcpSearchBrief(input);
+  return splitBriefIntoSearchQueries(brief);
+}
+
+export function splitBriefIntoSearchQueries(
+  brief: string,
+  maxClauses: number = ICP_SEARCH_QUERY_MAX_CLAUSES,
+  maxWords: number = ICP_SEARCH_QUERY_MAX_WORDS,
+): string[] {
+  const text = brief.trim().replace(/\s+/g, " ");
+  if (!text) return [];
+
+  const wordCount = countWords(text);
+  if (wordCount <= maxWords) {
+    return [text];
+  }
+
+  const parts = text
+    .split(/\s*(?:,|;|\n|\bor\b)\s*/i)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const clauses: string[] = [];
+  for (const part of parts) {
+    const clamped = clampToMaxWords(part, maxWords).trim();
+    if (!clamped) continue;
+    if (!clauses.includes(clamped)) clauses.push(clamped);
+    if (clauses.length >= maxClauses) break;
+  }
+
+  if (clauses.length === 0) {
+    return [clampToMaxWords(text, maxWords).trim()].filter(Boolean);
+  }
+
+  return clauses;
+}
+
+/**
  * True when the composed brief is empty or only generic filler (no niche nouns).
  * Used to require a real "What we search for" before save/activate.
  */
 export function isInsufficientIcpSearchBrief(input: IcpSearchBriefInput): boolean {
   const custom = (input.customPrompt ?? "").trim();
   if (!custom) {
-    // Description-only or industries-only is allowed as a soft fallback, but
-    // saving without any customPrompt when description is also empty/generic fails.
     const description = (input.description ?? "").trim();
     if (!description) return true;
     return isMostlyGenericFiller(description);
@@ -212,6 +290,7 @@ export function suggestIcpSearchBriefLocal(input: {
   if (!brief && description && !/industries specialize/i.test(description)) {
     brief = description;
   }
+  brief = clampToMaxWords(brief, ICP_BRIEF_MAX_WORDS).trim();
   return {
     brief,
     keywords: keywordsFromBrief(brief),
