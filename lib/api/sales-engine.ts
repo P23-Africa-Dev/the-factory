@@ -493,6 +493,13 @@ export function searchGeoPlaces(
   });
 }
 
+export function fetchIcpProfiles(): Promise<IcpProfile[]> {
+  return withSessionRetry(async () => {
+    const data = await seRequest<IcpProfile[]>({ method: "GET", path: "/icp-profiles" });
+    return (data ?? []).map(mapApiIcpProfile);
+  });
+}
+
 /** @deprecated kept for compatibility — same as {@link fetchIcpProfiles}, which now retries on 401 itself. */
 export const refreshSalesEngineProfiles = fetchIcpProfiles;
 
