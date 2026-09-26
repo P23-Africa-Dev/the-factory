@@ -185,12 +185,60 @@ const AVAILABLE_SIGNAL_TYPE_PACKS: Array<{ value: string; label: string; descrip
 interface IcpBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** When set, open the active (or given) profile on the refine-before-save preview. */
+  tightenProfileId?: string | null;
+  onTightenHandled?: () => void;
 }
 
-export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
+type FormStep = "wizard" | "form" | "refine";
+
+type RefinePreview = {
+  brief: string;
+  keywords: string[];
+  source: string;
+};
+
+function inferIndustriesFromText(text: string): string[] {
+  const lower = text.toLowerCase();
+  const matched: string[] = [];
+  const rules: Array<[string, string]> = [
+    ["logistics", "Logistics & Fleet"],
+    ["fleet", "Logistics & Fleet"],
+    ["3pl", "Logistics & Fleet"],
+    ["freight", "Logistics & Fleet"],
+    ["fmcg", "FMCG & Retail"],
+    ["retail", "FMCG & Retail"],
+    ["fintech", "Fintech & Payments"],
+    ["payment", "Fintech & Payments"],
+    ["bank", "Fintech & Payments"],
+    ["health", "Health & Pharma"],
+    ["pharma", "Health & Pharma"],
+    ["manufactur", "Manufacturing"],
+    ["energy", "Energy & Utilities"],
+    ["utilit", "Energy & Utilities"],
+    ["construction", "Construction & Real Estate"],
+    ["real estate", "Construction & Real Estate"],
+    ["agro", "Agro & Commodities"],
+    ["commodit", "Agro & Commodities"],
+  ];
+  for (const [needle, industry] of rules) {
+    if (lower.includes(needle) && !matched.includes(industry)) {
+      matched.push(industry);
+    }
+  }
+  return matched.slice(0, 3);
+}
+
+export function IcpBuilderModal({
+  isOpen,
+  onClose,
+  tightenProfileId = null,
+  onTightenHandled,
+}: IcpBuilderModalProps) {
   // If user has existing profiles, default to "list" view; otherwise immediately open "form" view
   const [viewMode, setViewMode] = useState<"list" | "form">("list");
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [formStep, setFormStep] = useState<FormStep>("form");
 
   const [formConfig, setFormConfig] = useState<IcpConfig>(BLANK_ICP_CONFIG);
   const [activeTab, setActiveTab] = useState<"criteria" | "scoring">("criteria");
@@ -208,15 +256,30 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const [keywordPool, setKeywordPool] = useState<string[]>([]);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+  const [refinePreview, setRefinePreview] = useState<RefinePreview | null>(null);
+  const [isRefiningSave, setIsRefiningSave] = useState(false);
+
+  // Guided create wizard
+  const [wizardSellTo, setWizardSellTo] = useState("");
+  const [wizardBuyProblem, setWizardBuyProblem] = useState("");
+  const [wizardTerritories, setWizardTerritories] = useState<string[]>([]);
+  const [wizardGeoInput, setWizardGeoInput] = useState("");
+  const [wizardGeoSuggestions, setWizardGeoSuggestions] = useState<
+    Array<{ label: string; type: string; country: string; gl: string }>
+  >([]);
+  const [wizardDrafting, setWizardDrafting] = useState(false);
+  const tightenHandledRef = useRef<string | null>(null);
 
   const isProfileNameValid = Boolean((formConfig.profileName ?? "").trim().length > 0);
   const isDescriptionValid = Boolean((formConfig.description ?? "").trim().length > 0);
   const isCustomPromptValid = Boolean((formConfig.customPrompt ?? "").trim().length > 0);
-  const isFormValid = isProfileNameValid && isDescriptionValid && isCustomPromptValid;
+  const isTerritoryValid = formConfig.territories.length > 0;
+  const isFormValid = isProfileNameValid && isDescriptionValid && isCustomPromptValid && isTerritoryValid;
 
   const showProfileNameError = (hasAttemptedSubmit || touchedFields.profileName) && !isProfileNameValid;
   const showDescriptionError = (hasAttemptedSubmit || touchedFields.description) && !isDescriptionValid;
   const showCustomPromptError = (hasAttemptedSubmit || touchedFields.customPrompt) && !isCustomPromptValid;
+  const showTerritoryError = hasAttemptedSubmit && !isTerritoryValid;
 
   const {
     data: profiles = [],
@@ -231,6 +294,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const createProfile = useCreateIcpProfile({
     onSuccess: (profile) => {
       toast.success(`Created & Activated "${profile.name}"`);
+      setRefinePreview(null);
+      setFormStep("form");
       setViewMode("list");
     },
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to create ICP build.")),
@@ -238,6 +303,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
   const updateProfile = useUpdateIcpProfile({
     onSuccess: (profile) => {
       toast.success(`Updated "${profile.name}"`);
+      setRefinePreview(null);
+      setFormStep("form");
       setViewMode("list");
     },
     onError: (error) => toast.error(getApiErrorMessage(error, "Failed to update ICP build.")),
@@ -293,6 +360,110 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     });
   }, [formConfig.industries, formConfig.customPrompt]);
 
+  const seededEmptyWizardRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      tightenHandledRef.current = null;
+      seededEmptyWizardRef.current = false;
+      return;
+    }
+    if (seededEmptyWizardRef.current) return;
+    if (!isConnecting && !connectionError && profiles.length === 0) {
+      seededEmptyWizardRef.current = true;
+      setFormStep("wizard");
+      setViewMode("form");
+    }
+  }, [isOpen, isConnecting, connectionError, profiles.length]);
+
+  useEffect(() => {
+    if (!isOpen || !tightenProfileId) return;
+    if (isConnecting || connectionError || profiles.length === 0) return;
+    if (tightenHandledRef.current === tightenProfileId) return;
+
+    const profile =
+      profiles.find((p) => p.id === tightenProfileId) ??
+      profiles.find((p) => p.isActive) ??
+      profiles[0];
+    if (!profile) return;
+
+    tightenHandledRef.current = tightenProfileId;
+    const normalized = normalizeIcpConfig(profile.config);
+    setEditingProfileId(profile.id);
+    setHasAttemptedSubmit(false);
+    setTouchedFields({});
+    setFormConfig(normalized);
+    autoBriefRef.current = "";
+    const pool = suggestIcpSearchBriefLocal({
+      industries: normalized.industries,
+      description: normalized.description,
+      profileName: normalized.profileName,
+    }).keywords;
+    setKeywordPool(pool);
+    setBriefKeywords(nextVisibleKeywords(pool, normalized.customPrompt ?? ""));
+    setActiveTab("criteria");
+    setViewMode("form");
+    setFormStep("form");
+    setRefinePreview(null);
+
+    let cancelled = false;
+    (async () => {
+      setIsRefiningSave(true);
+      try {
+        const mode = (normalized.customPrompt ?? "").trim() ? "improve" : "generate";
+        const result = await suggestBrief.mutateAsync({
+          mode,
+          profileName: normalized.profileName,
+          customPrompt: normalized.customPrompt ?? "",
+          description: normalized.description,
+          industries: normalized.industries,
+          territories: normalized.territories,
+          decisionMakers: normalized.decisionMakers,
+        });
+        if (cancelled) return;
+        const brief = clampToMaxWords(result.brief.trim(), ICP_BRIEF_MAX_WORDS).trim();
+        if (
+          !brief ||
+          isInsufficientIcpSearchBrief({
+            customPrompt: brief,
+            description: normalized.description,
+            industries: normalized.industries,
+          })
+        ) {
+          toast.error("Couldn’t refine a searchable brief. Edit the form, then save to improve again.");
+          return;
+        }
+        setRefinePreview({
+          brief,
+          keywords: result.keywords,
+          source: result.source,
+        });
+        setFormStep("refine");
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(getApiErrorMessage(error, "Couldn’t open Improve preview for this ICP."));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRefiningSave(false);
+          onTightenHandled?.();
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    tightenProfileId,
+    profiles,
+    isConnecting,
+    connectionError,
+    suggestBrief,
+    onTightenHandled,
+  ]);
+
   if (!isOpen) return null;
 
   // Determine initial display if profiles is empty (wait for the first load to settle first)
@@ -308,11 +479,19 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       profileName: `New ICP Build #${profiles.length + 1}`,
       description: "",
       customPrompt: "",
+      territories: [],
     });
     autoBriefRef.current = "";
     setBriefKeywords([]);
     setKeywordPool([]);
+    setWizardSellTo("");
+    setWizardBuyProblem("");
+    setWizardTerritories([]);
+    setWizardGeoInput("");
+    setWizardGeoSuggestions([]);
+    setRefinePreview(null);
     setActiveTab("criteria");
+    setFormStep("wizard");
     setViewMode("form");
   };
 
@@ -330,7 +509,9 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     }).keywords;
     setKeywordPool(pool);
     setBriefKeywords(nextVisibleKeywords(pool, normalized.customPrompt ?? ""));
+    setRefinePreview(null);
     setActiveTab("criteria");
+    setFormStep("form");
     setViewMode("form");
   };
 
@@ -506,7 +687,32 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
     }
   }
 
-  const handleSaveForm = (e: React.FormEvent) => {
+  const persistIcp = (config: IcpConfig) => {
+    const profileTitle = (config.profileName ?? "").trim() || "Untitled ICP Build";
+    const selectedPacks = (config.signalTypePacks ?? []).filter((pack) => pack !== "none");
+    const payloadConfig: IcpConfig = {
+      ...config,
+      profileName: profileTitle,
+      description: config.description?.trim() ?? "",
+      customPrompt: config.customPrompt?.trim() ?? "",
+      signalTypePacks: selectedPacks.length > 0 ? selectedPacks : ["none"],
+    };
+
+    if (editingProfileId) {
+      updateProfile.mutate({
+        id: editingProfileId,
+        payload: { name: profileTitle, description: payloadConfig.description, config: payloadConfig },
+      });
+    } else {
+      createProfile.mutate({
+        name: profileTitle,
+        description: payloadConfig.description || "Custom configured target ICP profile.",
+        config: payloadConfig,
+      });
+    }
+  };
+
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) {
       setHasAttemptedSubmit(true);
@@ -517,6 +723,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
         toast.error("Description / Target Objective is required.");
       } else if (!isCustomPromptValid) {
         toast.error("What kind of opportunity you are looking for is required.");
+      } else if (!isTerritoryValid) {
+        toast.error("Pick at least one country or city from the catalog.");
       }
       return;
     }
@@ -533,31 +741,131 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
       );
       return;
     }
-    const profileTitle = (formConfig.profileName ?? "").trim() || "Untitled ICP Build";
-    const selectedPacks = (formConfig.signalTypePacks ?? []).filter((pack) => pack !== "none");
-    const config: IcpConfig = {
-      ...formConfig,
-      profileName: profileTitle,
-      description: formConfig.description?.trim() ?? "",
-      customPrompt: formConfig.customPrompt?.trim() ?? "",
-      signalTypePacks: selectedPacks.length > 0 ? selectedPacks : ["none"],
-    };
 
-    if (editingProfileId) {
-      updateProfile.mutate({
-        id: editingProfileId,
-        payload: { name: profileTitle, description: formConfig.description?.trim(), config },
+    setIsRefiningSave(true);
+    try {
+      const mode = (formConfig.customPrompt ?? "").trim() ? "improve" : "generate";
+      const result = await suggestBrief.mutateAsync({
+        mode,
+        profileName: formConfig.profileName,
+        customPrompt: formConfig.customPrompt ?? "",
+        description: formConfig.description,
+        industries: formConfig.industries,
+        territories: formConfig.territories,
+        decisionMakers: formConfig.decisionMakers,
       });
-    } else {
-      createProfile.mutate({
-        name: profileTitle,
-        description: formConfig.description?.trim() || "Custom configured target ICP profile.",
-        config,
+      const brief = clampToMaxWords(result.brief.trim(), ICP_BRIEF_MAX_WORDS).trim();
+      if (
+        !brief ||
+        isInsufficientIcpSearchBrief({
+          customPrompt: brief,
+          description: formConfig.description,
+          industries: formConfig.industries,
+        })
+      ) {
+        toast.error("Couldn’t refine a searchable brief. Add products or buyers, then try again.");
+        return;
+      }
+      setRefinePreview({
+        brief,
+        keywords: result.keywords,
+        source: result.source,
       });
+      setFormStep("refine");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Couldn’t refine the search brief before save."));
+    } finally {
+      setIsRefiningSave(false);
     }
   };
 
-  const isSavingForm = createProfile.isPending || updateProfile.isPending;
+  const confirmRefineAndSave = () => {
+    if (!refinePreview) return;
+    const brief = refinePreview.brief;
+    applySuggestedBrief(brief, refinePreview.keywords);
+    const nextConfig: IcpConfig = {
+      ...formConfig,
+      customPrompt: brief,
+    };
+    setFormConfig(nextConfig);
+    setFormStep("form");
+    setRefinePreview(null);
+    persistIcp(nextConfig);
+  };
+
+  const handleWizardGeoSearch = (value: string) => {
+    setWizardGeoInput(value);
+    if (geoSearchTimer.current != null) window.clearTimeout(geoSearchTimer.current);
+    const q = value.trim();
+    if (q.length < 2) {
+      setWizardGeoSuggestions([]);
+      return;
+    }
+    geoSearchTimer.current = window.setTimeout(async () => {
+      setGeoSearchLoading(true);
+      try {
+        setWizardGeoSuggestions(await searchGeoPlaces(q, 12));
+      } catch {
+        setWizardGeoSuggestions([]);
+      } finally {
+        setGeoSearchLoading(false);
+      }
+    }, 250);
+  };
+
+  const handleWizardDraft = async () => {
+    const sellTo = wizardSellTo.trim();
+    const buyProblem = wizardBuyProblem.trim();
+    if (!sellTo || !buyProblem) {
+      toast.error("Tell us who you sell to and what they buy (or the problem you solve).");
+      return;
+    }
+    if (wizardTerritories.length === 0) {
+      toast.error("Pick at least one country or city from the catalog.");
+      return;
+    }
+
+    setWizardDrafting(true);
+    try {
+      const seedDescription = `${sellTo}. ${buyProblem}`.trim();
+      const industries = inferIndustriesFromText(`${sellTo} ${buyProblem}`);
+      const result = await suggestBrief.mutateAsync({
+        mode: "generate",
+        profileName: sellTo.slice(0, 60),
+        customPrompt: "",
+        description: seedDescription,
+        industries,
+        territories: wizardTerritories,
+        decisionMakers: [],
+      });
+      const brief = clampToMaxWords(
+        result.brief.trim() || buyProblem,
+        ICP_BRIEF_MAX_WORDS
+      ).trim();
+      const name =
+        sellTo.length > 48 ? `${sellTo.slice(0, 45)}…` : sellTo || `ICP Build #${profiles.length + 1}`;
+      const next: IcpConfig = {
+        ...BLANK_ICP_CONFIG,
+        profileName: name,
+        description: seedDescription,
+        customPrompt: brief,
+        industries,
+        territories: wizardTerritories,
+        signalTypePacks: ["default"],
+      };
+      setFormConfig(next);
+      applySuggestedBrief(brief, result.keywords);
+      setFormStep("form");
+      setActiveTab("criteria");
+      toast.success("Draft ready — review and save when it looks right.");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Couldn’t draft this ICP from your answers."));
+    } finally {
+      setWizardDrafting(false);
+    }
+  };
+
+  const isSavingForm = createProfile.isPending || updateProfile.isPending || isRefiningSave;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
@@ -593,9 +901,21 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
             {currentMode === "form" && profiles.length > 0 ? (
               <button
                 type="button"
-                onClick={() => setViewMode("list")}
+                onClick={() => {
+                  if (formStep === "refine") {
+                    setRefinePreview(null);
+                    setFormStep("form");
+                    return;
+                  }
+                  if (formStep === "wizard") {
+                    setViewMode("list");
+                    setFormStep("form");
+                    return;
+                  }
+                  setViewMode("list");
+                }}
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white/90 backdrop-blur-md ring-1 ring-white/20 hover:bg-white/20 transition-colors cursor-pointer"
-                title="Back to Profiles"
+                title="Back"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
@@ -610,6 +930,10 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                 <h2 className="text-[17px] font-bold tracking-tight text-white">
                   {currentMode === "list"
                     ? "ICP Builds & Profiles"
+                    : formStep === "wizard"
+                    ? "New ICP"
+                    : formStep === "refine"
+                    ? "Confirm search recipe"
                     : editingProfileId
                     ? "Edit ICP Build"
                     : "Create ICP Build"}
@@ -621,6 +945,10 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
               <p className="text-[11px] text-white/70">
                 {currentMode === "list"
                   ? "Select, manage or switch targeting models for Sales Engine"
+                  : formStep === "wizard"
+                  ? "Three questions → a draft you can edit before saving"
+                  : formStep === "refine"
+                  ? "Confirm the searchable brief, then we persist the ICP"
                   : "Define target criteria & qualification rules for prospect discovery"}
               </p>
             </div>
@@ -810,7 +1138,243 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
         )}
 
         {/* MODE 2: FORM VIEW (Create / Edit ICP) */}
-        {currentMode === "form" && (
+        {currentMode === "form" && formStep === "wizard" && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-[#09232D]">
+              <div className="rounded-2xl border border-[#09232D]/10 bg-[#09232D]/[0.03] px-3.5 py-3">
+                <p className="text-[13px] font-semibold text-[#09232D]">Quick start</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-gray-500">
+                  Answer three questions. We’ll draft a searchable ICP — you review before saving.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[12px] font-semibold text-gray-700">
+                  Who do you sell to? <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={wizardSellTo}
+                  onChange={(e) => setWizardSellTo(e.target.value)}
+                  placeholder="e.g. Mid-size cold-chain 3PLs in West Africa"
+                  className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] px-4 py-3 text-[13px] text-[#09232D] outline-none placeholder:text-gray-400 focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[12px] font-semibold text-gray-700">
+                  What do they buy / what problem do you solve? <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={wizardBuyProblem}
+                  onChange={(e) => setWizardBuyProblem(e.target.value)}
+                  placeholder="e.g. Temperature-controlled storage and last-mile for pharma and perishables"
+                  className="w-full rounded-2xl border border-gray-200 bg-[#F6F6F6] p-3.5 text-[12px] text-[#09232D] outline-none placeholder:text-gray-400 leading-relaxed focus:border-[#09232D]/40 focus:bg-white focus:ring-2 focus:ring-[#09232D]/10"
+                />
+              </div>
+
+              <div className="space-y-2.5">
+                <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
+                  <MapPin size={15} className="text-gray-400" />
+                  Countries / cities <span className="text-red-500">*</span>
+                </label>
+                {wizardTerritories.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {wizardTerritories.map((terr) => (
+                      <button
+                        key={terr}
+                        type="button"
+                        onClick={() =>
+                          setWizardTerritories((prev) => prev.filter((t) => t !== terr))
+                        }
+                        className="flex items-center gap-1 rounded-full bg-[#09232D] px-3 py-1.5 text-[12px] font-medium text-white cursor-pointer"
+                      >
+                        <Check size={12} />
+                        {terr}
+                        <X size={12} className="text-white/60" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={wizardGeoInput}
+                    onChange={(e) => handleWizardGeoSearch(e.target.value)}
+                    placeholder="Search catalog (e.g. Lagos, Nigeria)"
+                    className="w-full rounded-xl border border-gray-200 bg-[#F6F6F6] px-3.5 py-2 text-[12px] text-[#09232D] outline-none placeholder:text-gray-400 focus:border-[#09232D]/30 focus:bg-white"
+                  />
+                  {geoSearchLoading && (
+                    <Loader2
+                      size={14}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+                    />
+                  )}
+                  {wizardGeoSuggestions.length > 0 && (
+                    <ul className="absolute z-20 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                      {wizardGeoSuggestions.map((place) => (
+                        <li key={`${place.label}-${place.gl}`}>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-[12px] text-[#09232D] hover:bg-gray-50 cursor-pointer"
+                            onClick={() => {
+                              if (!wizardTerritories.includes(place.label)) {
+                                setWizardTerritories((prev) => [...prev, place.label]);
+                              }
+                              setWizardGeoInput("");
+                              setWizardGeoSuggestions([]);
+                            }}
+                          >
+                            {place.label}
+                            <span className="ml-1 text-[10px] text-gray-400">{place.type}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Territories come only from the catalog — they locate search and drop wrong countries.
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 bg-[#fbfbfb] px-6 py-4 flex items-center justify-between shrink-0">
+              {profiles.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormStep("form");
+                    setViewMode("list");
+                  }}
+                  className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormStep("form")}
+                  className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                >
+                  Skip to full form
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={wizardDrafting}
+                onClick={() => void handleWizardDraft()}
+                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#09232D] via-[#0E3D4E] to-[#0A2632] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {wizardDrafting ? (
+                  <Loader2 size={15} className="animate-spin text-[#38BDF8]" />
+                ) : (
+                  <Sparkles size={15} className="text-[#38BDF8]" />
+                )}
+                {wizardDrafting ? "Drafting…" : "Generate draft"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {currentMode === "form" && formStep === "refine" && refinePreview && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-[#09232D]">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-3">
+                <p className="text-[13px] font-semibold text-[#09232D]">Confirm search recipe</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-gray-600">
+                  Review the refined brief before we save. Description stays your story; this box is what discovery searches.
+                </p>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-[12px] font-semibold text-gray-700">What we search for</p>
+                <div className="rounded-2xl border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-[#09232D]">
+                  {refinePreview.brief}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-[12px] font-semibold text-gray-700">Short searches</p>
+                <ul className="space-y-1.5 rounded-2xl border border-[#09232D]/10 bg-[#09232D]/[0.03] px-3.5 py-3">
+                  {composeIcpSearchQueries({
+                    customPrompt: refinePreview.brief,
+                    description: formConfig.description,
+                    industries: formConfig.industries,
+                  }).map((q) => (
+                    <li key={q} className="text-[12px] leading-snug text-[#09232D]/85">
+                      “{q}”
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <p className="mb-1.5 text-[12px] font-semibold text-gray-700">Qualify with</p>
+                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                  {formConfig.territories.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-full bg-[#09232D] px-2.5 py-1 font-medium text-white"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                  {formConfig.industries.map((ind) => (
+                    <span
+                      key={ind}
+                      className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700"
+                    >
+                      {ind}
+                    </span>
+                  ))}
+                  {formConfig.companySizes.map((s) => (
+                    <span
+                      key={s}
+                      className="rounded-full border border-gray-200 bg-white px-2.5 py-1 font-medium text-gray-600"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                  {formConfig.territories.length === 0 && formConfig.industries.length === 0 && (
+                    <span className="text-amber-700">No territory selected — go back and add one.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 bg-[#fbfbfb] px-6 py-4 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setRefinePreview(null);
+                  setFormStep("form");
+                }}
+                className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+              >
+                Back to form
+              </button>
+              <button
+                type="button"
+                disabled={
+                  createProfile.isPending ||
+                  updateProfile.isPending ||
+                  formConfig.territories.length === 0
+                }
+                onClick={confirmRefineAndSave}
+                className="group flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#09232D] via-[#0E3D4E] to-[#0A2632] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 size={15} className="text-[#38BDF8]" />
+                {createProfile.isPending || updateProfile.isPending
+                  ? "Saving…"
+                  : "Confirm & save"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {currentMode === "form" && formStep === "form" && (
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Tab Navigation (2 Clean Tabs) */}
             <div className="flex border-b border-gray-100 bg-[#fbfbfb] px-6 pt-2 shrink-0">
@@ -1062,11 +1626,17 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                       <label className="flex items-center gap-1.5 text-[12px] font-semibold text-gray-700">
                         <MapPin size={15} className="text-gray-400" />
                         Target Geographic Hubs & Territories
+                        <span className="text-red-500 font-bold" aria-hidden="true">*</span>
                       </label>
                       <span className="text-[11px] text-gray-400">
                         {formConfig.territories.length} hubs
                       </span>
                     </div>
+                    {showTerritoryError && (
+                      <p className="text-[11px] font-medium text-red-600">
+                        Pick at least one country or city from the catalog.
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       {AVAILABLE_TERRITORIES.map((terr) => {
                         const isSelected = formConfig.territories.includes(terr);
@@ -1476,6 +2046,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                   onClick={() => {
                     setHasAttemptedSubmit(false);
                     setTouchedFields({});
+                    setRefinePreview(null);
+                    setFormStep("form");
                     setViewMode("list");
                   }}
                   className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
@@ -1489,10 +2061,11 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                     setHasAttemptedSubmit(false);
                     setTouchedFields({});
                     setFormConfig(BLANK_ICP_CONFIG);
+                    setFormStep("wizard");
                   }}
                   className="text-[12px] font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                 >
-                  Clear Fields
+                  Back to quick start
                 </button>
               )}
 
@@ -1513,6 +2086,8 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                         toast.error("Description / Target Objective is required.");
                       } else if (!isCustomPromptValid) {
                         toast.error("What kind of opportunity you are looking for is required.");
+                      } else if (!isTerritoryValid) {
+                        toast.error("Pick at least one country or city from the catalog.");
                       }
                     }
                   }}
@@ -1523,7 +2098,13 @@ export function IcpBuilderModal({ isOpen, onClose }: IcpBuilderModalProps) {
                   } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   <Sparkles size={15} className={`text-[#38BDF8] transition-transform ${isFormValid ? "group-hover:rotate-12" : ""}`} />
-                  {isSavingForm ? "Saving…" : editingProfileId ? "Save Changes" : "Save & Activate ICP"}
+                  {isRefiningSave
+                    ? "Improving…"
+                    : isSavingForm
+                      ? "Saving…"
+                      : editingProfileId
+                        ? "Save Changes"
+                        : "Save & Activate ICP"}
                 </button>
               </div>
             </div>

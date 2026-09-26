@@ -1421,7 +1421,7 @@ function ChatWorkspace({
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
-  onOpenIcpBuilder: () => void;
+  onOpenIcpBuilder: (opts?: { tightenProfileId?: string }) => void;
   onOpenOutreachSettings?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -2013,7 +2013,7 @@ function ChatWorkspace({
                   onProspectCountChange={setGenerateProspectCount}
                   onSelectIcp={(id) => activateIcpProfile.mutate(id)}
                   onConfirm={confirmGenerateLeads}
-                  onManageIcps={onOpenIcpBuilder}
+                  onManageIcps={() => onOpenIcpBuilder()}
                 />
               ) : (
                 <div
@@ -2076,6 +2076,35 @@ function ChatWorkspace({
                   }}
                 />
               )}
+              {message.role === "assistant" &&
+                (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
+                !isPendingMessage &&
+                (() => {
+                  const tighten = message.meta?.icp_tighten as
+                    | { suggested?: boolean; reason?: string }
+                    | undefined;
+                  if (!tighten?.suggested) return null;
+                  return (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[14px] border border-amber-200/80 bg-amber-50/70 px-3 py-2">
+                      <p className="flex-1 text-[10px] leading-[14px] text-[#09232d]/80">
+                        {typeof tighten.reason === "string" && tighten.reason.trim()
+                          ? tighten.reason
+                          : "Few usable leads matched this ICP."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenIcpBuilder(
+                            activeIcpId ? { tightenProfileId: activeIcpId } : undefined
+                          )
+                        }
+                        className="shrink-0 rounded-full border border-[#09232d]/20 bg-white px-3 py-1 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#09232d]/5"
+                      >
+                        Tighten ICP
+                      </button>
+                    </div>
+                  );
+                })()}
               {message.role === "assistant" &&
                 (message.intent === "generate_leads" || message.intent === "generate_more_leads") &&
                 Boolean(message.leads?.length) &&
@@ -4171,7 +4200,7 @@ function SocialListeningTab({
   onOpenIcpBuilder,
   onOpenOutreachSettings,
 }: {
-  onOpenIcpBuilder: () => void;
+  onOpenIcpBuilder: (opts?: { tightenProfileId?: string }) => void;
   onOpenOutreachSettings?: () => void;
 }) {
   const { data: activeProfile } = useActiveIcpProfile();
@@ -4510,7 +4539,7 @@ function SocialListeningTab({
         </p>
         <button
           type="button"
-          onClick={onOpenIcpBuilder}
+          onClick={() => onOpenIcpBuilder()}
           className="mt-5 h-11 rounded-[14px] bg-[#09232d] px-5 text-sm font-medium text-white transition-colors hover:bg-[#0c2e3b]"
         >
           Open ICP Builder
@@ -4671,6 +4700,7 @@ function SocialListeningTab({
 export function SalesEngineView() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const [isIcpModalOpen, setIsIcpModalOpen] = useState(false);
+  const [tightenProfileId, setTightenProfileId] = useState<string | null>(null);
   const [isOutreachSettingsOpen, setIsOutreachSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
   const [icpSetupDismissed, setIcpSetupDismissed] = useState(false);
@@ -4695,8 +4725,14 @@ export function SalesEngineView() {
     !isIcpAuthLoading &&
     icpProfiles.length === 0;
 
-  const handleOpenIcpBuilder = () => {
+  const handleOpenIcpBuilder = (opts?: { tightenProfileId?: string }) => {
+    setTightenProfileId(opts?.tightenProfileId ?? null);
     setIsIcpModalOpen(true);
+  };
+
+  const handleCloseIcpBuilder = () => {
+    setIsIcpModalOpen(false);
+    setTightenProfileId(null);
   };
 
   return (
@@ -4750,7 +4786,7 @@ export function SalesEngineView() {
                 </Link>
                 <button
                   type="button"
-                  onClick={handleOpenIcpBuilder}
+                  onClick={() => handleOpenIcpBuilder()}
                   className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b] cursor-pointer"
                 >
                   <IcpBuilderIcon className="h-5 w-5 text-white" />
@@ -4794,9 +4830,14 @@ export function SalesEngineView() {
       <IcpSetupPromptModal
         isOpen={showIcpSetupPrompt}
         onClose={() => setIcpSetupDismissed(true)}
-        onCreateIcp={handleOpenIcpBuilder}
+        onCreateIcp={() => handleOpenIcpBuilder()}
       />
-      <IcpBuilderModal isOpen={isIcpModalOpen} onClose={() => setIsIcpModalOpen(false)} />
+      <IcpBuilderModal
+        isOpen={isIcpModalOpen}
+        onClose={handleCloseIcpBuilder}
+        tightenProfileId={tightenProfileId}
+        onTightenHandled={() => setTightenProfileId(null)}
+      />
       <OutreachSettingsModal
         open={isOutreachSettingsOpen}
         onClose={() => setIsOutreachSettingsOpen(false)}
