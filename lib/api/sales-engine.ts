@@ -1290,6 +1290,8 @@ export type SocialListeningRunResultSummary = {
     missingSourceDate: number;
     stale: number;
     typeMismatch?: number;
+    belowMinScore?: number;
+    duplicate?: number;
     total: number;
   };
   enrichment?: {
@@ -1297,6 +1299,19 @@ export type SocialListeningRunResultSummary = {
     found?: number;
     notFound?: number;
   };
+  unlabeled?: number;
+  budget_exhausted?: boolean;
+  sources?: SocialSourceHealthItem[];
+};
+
+export type SocialSourceHealthItem = {
+  key: string;
+  label: string;
+  status: string;
+  attempts?: number;
+  hits?: number;
+  last_status?: number | null;
+  reason?: string | null;
 };
 
 export type SocialListeningRunStatus = {
@@ -1324,6 +1339,9 @@ export type SocialListeningMetrics = {
   added_to_crm: number;
   percent_change: number;
   last_run_at?: string | null;
+  cadence_days?: number | null;
+  freshness_window_days?: number | null;
+  source_health?: SocialSourceHealthItem[];
   latest_run?: SocialListeningRunStatus | null;
 };
 
@@ -1343,6 +1361,7 @@ export type SocialListeningSettings = {
   org_verified_domain?: string | null;
   verification_status: "pending" | "verified" | "failed";
   last_run_at?: string | null;
+  source_health?: SocialSourceHealthItem[];
 };
 
 export type OutreachSenderMode = "platform" | "organization";

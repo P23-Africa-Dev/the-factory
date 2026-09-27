@@ -69,6 +69,33 @@ describe("social-listening-empty-state", () => {
     expect(state?.showActions).toBe(true);
   });
 
+  it("explains why a completed scan kept nothing", () => {
+    const latestRun: SocialListeningRunStatus = {
+      id: 3,
+      status: "completed",
+      signals_created: 0,
+      result_summary: {
+        totalChecked: 4,
+        qualified: 0,
+        rejected: {
+          icpMismatch: 2,
+          missingSourceUrl: 0,
+          missingSourceDate: 0,
+          stale: 0,
+          belowMinScore: 0,
+          duplicate: 0,
+          total: 2,
+        },
+      },
+    };
+
+    const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
+
+    expect(state?.title).toBe("No opportunities kept");
+    expect(state?.description).toContain("checked 4 recent posts");
+    expect(state?.description).toContain("2 outside the ICP");
+  });
+
   it("never returns empty title or description", () => {
     const scenarios = [
       getSocialListeningEmptyState(null, null, false),

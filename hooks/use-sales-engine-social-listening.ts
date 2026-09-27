@@ -168,6 +168,14 @@ export function useSocialListeningBootstrap() {
 
   const latestRun = metrics?.latest_run ?? null;
   const isScanning = isRunInProgress(latestRun?.status);
+  const wasScanning = useRef(false);
+
+  useEffect(() => {
+    if (wasScanning.current && !isScanning) {
+      queryClient.invalidateQueries({ queryKey: SALES_ENGINE_SOCIAL_KEYS.all });
+    }
+    wasScanning.current = isScanning;
+  }, [isScanning, queryClient]);
 
   return {
     metrics,
