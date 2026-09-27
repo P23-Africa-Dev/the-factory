@@ -109,7 +109,6 @@ import {
   type SocialListeningSettings,
   type SocialSignalApi,
   type SocialSignalIcpFilter,
-  type SocialSourceHealthItem,
 } from "@/lib/api/sales-engine";
 import {
   Check,
@@ -284,6 +283,12 @@ function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
 type SalesEngineTab = "smart-lead" | "social-listening";
+
+const SALES_ENGINE_TAB_STORAGE_KEY = "sales-engine-active-tab";
+
+function isSalesEngineTab(value: string | null): value is SalesEngineTab {
+  return value === "smart-lead" || value === "social-listening";
+}
 type SocialSignal = SocialSignalApi;
 
 type SocialStatCard = {
@@ -3429,65 +3434,6 @@ function SocialSignalsTable({
   );
 }
 
-function sourceHealthLabel(status: string): string {
-  switch (status) {
-    case "live":
-      return "Live";
-    case "ready":
-      return "Ready";
-    case "missing_key":
-      return "Needs key";
-    case "needs_page_ids":
-      return "Needs page IDs";
-    case "needs_upgrade":
-      return "Needs upgrade";
-    case "unauthorized":
-      return "Key rejected";
-    case "rate_limited":
-      return "Rate limited";
-    case "credits":
-      return "Out of credits";
-    case "error":
-      return "Error";
-    default:
-      return "Off";
-  }
-}
-
-function SocialSourceHealthRow({
-  sources,
-  lastRunAt,
-  cadenceDays,
-}: {
-  sources: SocialSourceHealthItem[];
-  lastRunAt?: string | null;
-  cadenceDays?: number | null;
-}) {
-  const visible = sources.filter((source) => source.status !== "disabled");
-  const lastScan = lastRunAt
-    ? `Last scan ${formatRelativeTime(lastRunAt)}`
-    : "No scan yet";
-  const cadence = cadenceDays ? `every ${cadenceDays} days` : null;
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-[10px] text-[#616263]">
-        {lastScan}
-        {cadence ? ` · ${cadence}` : ""}
-      </span>
-      {visible.map((source) => (
-        <span
-          key={source.key}
-          className="rounded-full border border-[#d1d1d1] bg-[#f8f8f8] px-2 py-0.5 text-[10px] text-[#34373c]"
-          title={source.reason ?? source.status}
-        >
-          {source.label}: {sourceHealthLabel(source.status)}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function SocialListeningFilters({
   search,
   source,
@@ -4655,13 +4601,6 @@ function SocialListeningTab({
             ))}
           </div>
           <div className="shrink-0">
-            <SocialSourceHealthRow
-              sources={metrics?.source_health ?? []}
-              lastRunAt={metrics?.last_run_at ?? listenSettings?.last_run_at}
-              cadenceDays={metrics?.cadence_days ?? listenSettings?.cadence_days}
-            />
-          </div>
-          <div className="shrink-0">
             <SocialListeningFilters
               search={search}
               source={source}
@@ -4799,6 +4738,19 @@ export function SalesEngineView() {
   const [tightenProfileId, setTightenProfileId] = useState<string | null>(null);
   const [isOutreachSettingsOpen, setIsOutreachSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SalesEngineTab>("smart-lead");
+
+  useLayoutEffect(() => {
+    const stored = window.sessionStorage.getItem(SALES_ENGINE_TAB_STORAGE_KEY);
+    if (isSalesEngineTab(stored)) {
+      setActiveTab(stored);
+    }
+  }, []);
+
+  const selectTab = (tab: SalesEngineTab) => {
+    setActiveTab(tab);
+    window.sessionStorage.setItem(SALES_ENGINE_TAB_STORAGE_KEY, tab);
+    setChatExpanded(false);
+  };
   const [icpSetupDismissed, setIcpSetupDismissed] = useState(false);
   const { data: activeProfile } = useActiveIcpProfile();
   const {
@@ -4837,10 +4789,7 @@ export function SalesEngineView() {
         {!chatExpanded && (
           <SalesEngineTabs
             activeTab={activeTab}
-            onChange={(tab) => {
-              setActiveTab(tab);
-              setChatExpanded(false);
-            }}
+            onChange={selectTab}
           />
         )}
 
