@@ -62,6 +62,8 @@ export type IcpConfig = {
   autoSyncCrm: boolean;
   enrichContactDetails: boolean;
   customPrompt?: string | null;
+  searchKeywords?: string[];
+  exclusions?: string[];
   /**
    * Stage 2 signal-type packs. Core Buyer Signals (`default`) is on unless
    * the user clears every pack — save then sends `none` so the backend does
@@ -92,6 +94,8 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: true,
   enrichContactDetails: true,
   customPrompt: "",
+  searchKeywords: [],
+  exclusions: [],
   signalTypePacks: ["default"],
 };
 
@@ -108,6 +112,8 @@ export function normalizeIcpConfig(config?: Partial<IcpConfig> | null): IcpConfi
     autoSyncCrm: config?.autoSyncCrm ?? true,
     enrichContactDetails: config?.enrichContactDetails ?? true,
     customPrompt: config?.customPrompt ?? "",
+    searchKeywords: Array.isArray(config?.searchKeywords) ? config.searchKeywords : [],
+    exclusions: Array.isArray(config?.exclusions) ? config.exclusions : [],
     signalTypePacks: Array.isArray(config?.signalTypePacks) ? config.signalTypePacks : ["default"],
   };
 }
@@ -218,6 +224,15 @@ export function IcpBuilderModal({
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
   const [isStrengthening, setIsStrengthening] = useState(false);
+  const [strengthenPreview, setStrengthenPreview] = useState<{
+    brief: string;
+    keywords: string[];
+    industries: string[];
+    decisionMakers: string[];
+    companySizes: string[];
+    exclusions: string[];
+    minMatchScore: number;
+  } | null>(null);
   const tightenHandledRef = useRef<string | null>(null);
 
   const isProfileNameValid = Boolean((formConfig.profileName ?? "").trim().length > 0);
@@ -312,6 +327,8 @@ export function IcpBuilderModal({
     customPrompt: formConfig.customPrompt,
     industries: formConfig.industries,
     territories: formConfig.territories,
+    decisionMakers: formConfig.decisionMakers,
+    keywords: formConfig.searchKeywords ?? keywordPool,
   });
 
   useEffect(() => {
@@ -570,7 +587,31 @@ export function IcpBuilderModal({
     });
     setKeywordPool(pool);
     setBriefKeywords(nextVisibleKeywords(pool, clamped));
-    setFormConfig((prev) => ({ ...prev, customPrompt: clamped }));
+    setFormConfig((prev) => ({ ...prev, customPrompt: clamped, searchKeywords: pool }));
+  }
+
+  function applyStrengthenPreview(preview: NonNullable<typeof strengthenPreview>) {
+    autoBriefRef.current = "";
+    const clamped = clampToMaxWords(preview.brief, ICP_BRIEF_MAX_WORDS).trim();
+    const pool = expandKeywordPool({
+      brief: clamped,
+      industries: preview.industries.length > 0 ? preview.industries : formConfig.industries,
+      existing: preview.keywords,
+      excludeInText: clamped,
+    });
+    setKeywordPool(pool);
+    setBriefKeywords(nextVisibleKeywords(pool, clamped));
+    setFormConfig((prev) => ({
+      ...prev,
+      customPrompt: clamped,
+      searchKeywords: pool,
+      industries: preview.industries.length > 0 ? preview.industries : prev.industries,
+      decisionMakers: preview.decisionMakers.length > 0 ? preview.decisionMakers : prev.decisionMakers,
+      companySizes: preview.companySizes.length > 0 ? preview.companySizes : prev.companySizes,
+      exclusions: preview.exclusions,
+      minMatchScore: preview.minMatchScore || prev.minMatchScore,
+    }));
+    setStrengthenPreview(null);
   }
 
   function insertBriefKeyword(keyword: string) {
@@ -693,30 +734,58 @@ export function IcpBuilderModal({
 
     setIsStrengthening(true);
     try {
-      const mode = (formConfig.customPrompt ?? "").trim() ? "improve" : "generate";
-      const result = await suggestBrief.mutateAsync({
-        mode,
+      const before = icpStrength.score;
+      const payload = {
         profileName: formConfig.profileName,
         customPrompt: formConfig.customPrompt ?? "",
         description: formConfig.description,
         industries: formConfig.industries,
         territories: formConfig.territories,
         decisionMakers: formConfig.decisionMakers,
-      });
-      const brief = clampToMaxWords(result.brief.trim(), ICP_BRIEF_MAX_WORDS).trim();
+        companySizes: formConfig.companySizes,
+        minMatchScore: formConfig.minMatchScore,
+      };
+      const mode = (formConfig.customPrompt ?? "").trim() ? "improve" : "generate";
+      let result = await suggestBrief.mutateAsync({ mode, ...payload });
+      const afterScore = (brief: string, keywords: string[], industries: string[], buyers: string[]) =>
+        scoreIcpStrength({
+          profileName: formConfig.profileName,
+          description: formConfig.description,
+          customPrompt: brief,
+          industries,
+          territories: formConfig.territories,
+          decisionMakers: buyers,
+          keywords,
+        }).score;
+
+      let brief = clampToMaxWords(result.brief.trim(), ICP_BRIEF_MAX_WORDS).trim();
+      if (afterScore(brief, result.keywords, result.industries ?? [], result.decisionMakers ?? []) <= before) {
+        result = await suggestBrief.mutateAsync({ mode: "regenerate", ...payload });
+        brief = clampToMaxWords(result.brief.trim(), ICP_BRIEF_MAX_WORDS).trim();
+      }
+
       if (
         !brief ||
         isInsufficientIcpSearchBrief({
           customPrompt: brief,
           description: formConfig.description,
-          industries: formConfig.industries,
+          industries: result.industries ?? formConfig.industries,
         })
       ) {
         toast.error("Couldn’t strengthen this brief. Add products or buyers, then try again.");
         return;
       }
-      applySuggestedBrief(brief, result.keywords);
-      toast.success("ICP strengthened. Review the brief, then save.");
+
+      setStrengthenPreview({
+        brief,
+        keywords: result.keywords,
+        industries: result.industries ?? [],
+        decisionMakers: result.decisionMakers ?? [],
+        companySizes: result.companySizes ?? [],
+        exclusions: result.exclusions ?? [],
+        minMatchScore: result.minMatchScore ?? formConfig.minMatchScore,
+      });
+      toast.success("Review the strengthened ICP, then accept to apply it.");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Couldn’t strengthen this ICP."));
     } finally {
@@ -1049,6 +1118,60 @@ export function IcpBuilderModal({
                   {isStrengthening ? "Strengthening…" : "Strengthen ICP"}
                 </button>
               </div>
+              {strengthenPreview && (
+                <div className="mt-3 rounded-2xl border border-sky-100 bg-sky-50/70 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+                    Strengthened ICP — accept to apply
+                  </p>
+                  <p className="mt-1.5 text-[12px] leading-snug text-[#09232D]">
+                    {strengthenPreview.brief}
+                  </p>
+                  {composeIcpSearchQueries({
+                    customPrompt: strengthenPreview.brief,
+                    industries: strengthenPreview.industries,
+                    keywords: strengthenPreview.keywords,
+                  }).length > 0 && (
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      Searches:{" "}
+                      {composeIcpSearchQueries({
+                        customPrompt: strengthenPreview.brief,
+                        industries: strengthenPreview.industries,
+                        keywords: strengthenPreview.keywords,
+                      }).join(" · ")}
+                    </p>
+                  )}
+                  <ul className="mt-2 space-y-0.5 text-[11px] text-gray-600">
+                    {strengthenPreview.industries.join(", ") !== formConfig.industries.join(", ") && (
+                      <li>Industries: {strengthenPreview.industries.join(", ") || "—"}</li>
+                    )}
+                    {strengthenPreview.decisionMakers.join(", ") !== formConfig.decisionMakers.join(", ") && (
+                      <li>Buyers: {strengthenPreview.decisionMakers.join(", ") || "—"}</li>
+                    )}
+                    {strengthenPreview.companySizes.join(", ") !== formConfig.companySizes.join(", ") && (
+                      <li>Sizes: {strengthenPreview.companySizes.join(", ") || "—"}</li>
+                    )}
+                    {strengthenPreview.keywords.length > 0 && (
+                      <li>Keywords: {strengthenPreview.keywords.slice(0, 8).join(", ")}</li>
+                    )}
+                  </ul>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyStrengthenPreview(strengthenPreview)}
+                      className="rounded-lg bg-[#09232D] px-3 py-1.5 text-[11px] font-semibold text-white cursor-pointer"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStrengthenPreview(null)}
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 cursor-pointer"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Scrollable Form Body */}

@@ -72,6 +72,8 @@ const DEFAULT_ICP_CONFIG: IcpConfig = {
   autoSyncCrm: false,
   enrichContactDetails: true,
   customPrompt: "",
+  searchKeywords: [],
+  exclusions: [],
   signalTypePacks: ["default"],
 };
 
@@ -123,6 +125,8 @@ export function mapApiIcpProfile(raw: IcpProfile): IcpProfile {
       territories: Array.isArray(config.territories) ? config.territories : [],
       decisionMakers: Array.isArray(config.decisionMakers) ? config.decisionMakers : [],
       customPrompt: config.customPrompt ?? "",
+      searchKeywords: Array.isArray(config.searchKeywords) ? config.searchKeywords : [],
+      exclusions: Array.isArray(config.exclusions) ? config.exclusions : [],
       signalTypePacks: normalizeSignalTypePacks(rawConfig.signalTypePacks),
     },
   };
@@ -548,6 +552,11 @@ export type IcpSearchBriefSuggestResult = {
   brief: string;
   keywords: string[];
   source: "glm" | "heuristic" | string;
+  industries?: string[];
+  decisionMakers?: string[];
+  companySizes?: string[];
+  exclusions?: string[];
+  minMatchScore?: number;
 };
 
 export function suggestIcpSearchBrief(payload: {
@@ -558,6 +567,8 @@ export function suggestIcpSearchBrief(payload: {
   industries?: string[];
   territories?: string[];
   decisionMakers?: string[];
+  companySizes?: string[];
+  minMatchScore?: number;
 }): Promise<IcpSearchBriefSuggestResult> {
   return withSessionRetry(async () => {
     const data = await seRequest<IcpSearchBriefSuggestResult>({
@@ -566,12 +577,19 @@ export function suggestIcpSearchBrief(payload: {
       body: payload,
       timeoutMs: 30000,
     });
+    const asStrings = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+        : [];
     return {
       brief: typeof data?.brief === "string" ? data.brief : "",
-      keywords: Array.isArray(data?.keywords)
-        ? data.keywords.filter((item): item is string => typeof item === "string" && item.trim() !== "")
-        : [],
+      keywords: asStrings(data?.keywords),
       source: typeof data?.source === "string" ? data.source : "heuristic",
+      industries: asStrings(data?.industries),
+      decisionMakers: asStrings(data?.decisionMakers),
+      companySizes: asStrings(data?.companySizes),
+      exclusions: asStrings(data?.exclusions),
+      minMatchScore: typeof data?.minMatchScore === "number" ? data.minMatchScore : undefined,
     };
   });
 }

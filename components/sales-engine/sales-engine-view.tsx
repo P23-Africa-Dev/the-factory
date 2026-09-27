@@ -1975,7 +1975,9 @@ function ChatWorkspace({
                 <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 rounded-full bg-[#09232d]/8 px-2 py-0.5 text-[8px] font-semibold text-[#09232d]/70">
                     <Loader2 size={10} className="animate-spin" />
-                    {message.meta?.awaiting_user_choice
+                    {typeof message.meta?.progress_message === "string" && message.meta.progress_message
+                      ? message.meta.progress_message
+                      : message.meta?.awaiting_user_choice
                       ? "Still searching. Timeout is a last resort"
                       : "Processing in background"}
                   </span>

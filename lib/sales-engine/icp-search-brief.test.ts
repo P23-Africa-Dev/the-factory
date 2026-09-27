@@ -59,6 +59,17 @@ describe("icp-search-brief", () => {
     });
     expect(noCountry.band).not.toBe("strong");
     expect(noCountry.hint.toLowerCase()).toContain("country");
+
+    const withBuyers = scoreIcpStrength({
+      profileName: "Cold-chain 3PLs",
+      description: "Operators who store and move temperature-sensitive freight.",
+      customPrompt: "cold-chain 3PL operators hiring warehouse leads",
+      industries: ["Logistics & Fleet"],
+      territories: ["Lagos, Nigeria"],
+      decisionMakers: ["Head of Sales"],
+      keywords: ["last-mile", "3PL", "cold-chain", "warehouse"],
+    });
+    expect(withBuyers.score).toBeGreaterThan(strong.score);
   });
 
   it("flags generic filler briefs as insufficient", () => {

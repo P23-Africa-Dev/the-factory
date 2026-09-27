@@ -108,9 +108,18 @@ export function composeIcpSearchBrief(input: IcpSearchBriefInput): string {
 /**
  * Short queries that will actually hit Serper (mirrors backend searchQueries).
  */
-export function composeIcpSearchQueries(input: IcpSearchBriefInput): string[] {
+export function composeIcpSearchQueries(input: IcpSearchBriefInput & { keywords?: string[] | null }): string[] {
   const brief = composeIcpSearchBrief(input);
-  return splitBriefIntoSearchQueries(brief);
+  const clauses = splitBriefIntoSearchQueries(brief);
+  const keywords = (input.keywords ?? [])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  for (const keyword of keywords) {
+    const clamped = clampToMaxWords(keyword, ICP_SEARCH_QUERY_MAX_WORDS).trim();
+    if (clamped && !clauses.includes(clamped)) clauses.push(clamped);
+    if (clauses.length >= ICP_SEARCH_QUERY_MAX_CLAUSES) break;
+  }
+  return clauses;
 }
 
 export function splitBriefIntoSearchQueries(
@@ -208,6 +217,8 @@ export function scoreIcpStrength(input: {
   customPrompt?: string | null;
   industries?: string[] | null;
   territories?: string[] | null;
+  decisionMakers?: string[] | null;
+  keywords?: string[] | null;
 }): IcpStrengthScore {
   const name = (input.profileName ?? "").trim();
   const description = (input.description ?? "").trim();
@@ -218,6 +229,18 @@ export function scoreIcpStrength(input: {
   const territories = (input.territories ?? [])
     .map((value) => (typeof value === "string" ? value.trim() : ""))
     .filter(Boolean);
+  const buyers = (input.decisionMakers ?? [])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  const keywords = (input.keywords ?? [])
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  const clauses = composeIcpSearchQueries({
+    customPrompt: brief,
+    description,
+    industries,
+    keywords,
+  });
 
   const briefConcrete = brief !== "" && !isInsufficientIcpSearchBrief({ customPrompt: brief });
   const words = countWords(brief);
@@ -226,13 +249,17 @@ export function scoreIcpStrength(input: {
   const readsLikeDefinition = /industries specialize/i.test(brief);
 
   let score = 0;
-  if (briefConcrete) score += 40;
-  if (words >= 6) score += 15;
-  else if (words >= 3) score += 8;
-  if (briefConcrete && !copiesStory && !readsLikeDefinition) score += 10;
-  if (territories.length > 0) score += 20;
-  if (industries.length > 0) score += 10;
-  if (name && description) score += 5;
+  if (briefConcrete) score += 34;
+  if (words >= 6) score += 12;
+  else if (words >= 3) score += 6;
+  if (briefConcrete && !copiesStory && !readsLikeDefinition) score += 8;
+  if (territories.length > 0) score += 18;
+  if (industries.length > 0) score += 8;
+  if (buyers.length > 0) score += 8;
+  if (keywords.length >= 4) score += 6;
+  else if (keywords.length > 0) score += 3;
+  if (clauses.length >= 2) score += 4;
+  if (name && description) score += 4;
 
   if (!briefConcrete) score = Math.min(score, 39);
   if (territories.length === 0) score = Math.min(score, 64);
@@ -250,6 +277,8 @@ export function scoreIcpStrength(input: {
     hint = "This reads like a profile story. Search works better with products and buyers.";
   } else if (industries.length === 0) {
     hint = "Pick an industry so weaker fits can be filtered out.";
+  } else if (buyers.length === 0) {
+    hint = "Add a buyer role so people searches know who to look for.";
   } else if (band !== "strong") {
     hint = "Add a bit more specificity, or strengthen the search brief.";
   }

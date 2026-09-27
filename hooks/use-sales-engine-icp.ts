@@ -117,6 +117,8 @@ export function useSuggestIcpSearchBrief(
       industries?: string[];
       territories?: string[];
       decisionMakers?: string[];
+      companySizes?: string[];
+      minMatchScore?: number;
     }) => suggestIcpSearchBrief(payload),
     onSuccess: (data) => options?.onSuccess?.(data),
     onError: (error) => {
