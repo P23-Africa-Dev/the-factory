@@ -15,6 +15,7 @@ use App\Models\Task;
 use App\Models\User;
 use App\Notifications\PayrollStatusNotification;
 use App\Services\Notification\NotificationService;
+use App\Services\Security\SecurityAuditLogger;
 use App\Support\AvatarUrlResolver;
 use App\Support\CurrencyCatalog;
 use Carbon\Carbon;
@@ -56,6 +57,7 @@ class PayrollService
     public function __construct(
         private readonly PayrollAccessService $accessService,
         private readonly NotificationService $notificationService,
+        private readonly SecurityAuditLogger $securityAudit,
     ) {}
 
     public function findForUser(User $user, ?int $companyId = null): ?PayrollSetting
@@ -538,7 +540,10 @@ class PayrollService
             return [
                 'filename' => $filename,
                 'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'stream' => function () use ($context, $user, $filters): void {
+                'stream' => function () use ($context, $user, $filters, $format): void {
+                    $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_PAYROLL, $user, (int) $context->company->id, [
+                        'format' => $format,
+                    ]);
                     $this->streamXlsxExport((int) $context->company->id, $user, $filters);
                 },
             ];
@@ -547,7 +552,10 @@ class PayrollService
         return [
             'filename' => $filename,
             'content_type' => 'text/csv; charset=UTF-8',
-            'stream' => function () use ($context, $user, $filters): void {
+            'stream' => function () use ($context, $user, $filters, $format): void {
+                $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_PAYROLL, $user, (int) $context->company->id, [
+                    'format' => $format,
+                ]);
                 $this->streamCsvExport((int) $context->company->id, $user, $filters);
             },
         ];

@@ -22,6 +22,7 @@ use App\Http\Controllers\Admin\Database\DatabaseManagerController;
 use App\Http\Controllers\Admin\Enterprise\DemoRequestController;
 use App\Http\Controllers\Admin\SalesEngine\AccessRequestController as SalesEngineAccessRequestController;
 use App\Http\Controllers\Admin\MapProviderSettingController;
+use App\Http\Controllers\Admin\Records\RecordsController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\SupportAccessController;
 use App\Http\Controllers\Web\InternalOnboardingRedirectController;
@@ -192,6 +193,18 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
         Route::prefix('places')->name('places.')->middleware('admin.permission:manage_billing')->group(function (): void {
             Route::get('/', [PlacesAnalyticsController::class, 'index'])->name('index');
             Route::post('/settings', [PlacesAnalyticsController::class, 'updateSettings'])->name('settings.update');
+        });
+
+        Route::prefix('records')->name('records.')->middleware('admin.permission:view_records')->group(function (): void {
+            Route::get('/', [RecordsController::class, 'index'])->name('index');
+            Route::get('/person', [RecordsController::class, 'person'])->name('person');
+            Route::post('/person/export', [RecordsController::class, 'exportPerson'])->name('person.export');
+            Route::get('/{report}', [RecordsController::class, 'show'])
+                ->where('report', 'security-events|control-actions|workforce-changes|support-access|people|attendance|location|work|crm|payroll|billing|ai-usage|disclosures')
+                ->name('show');
+            Route::post('/{report}/export', [RecordsController::class, 'export'])
+                ->where('report', 'security-events|control-actions|workforce-changes|support-access|people|attendance|location|work|crm|payroll|billing|ai-usage|disclosures')
+                ->name('export');
         });
     });
 });

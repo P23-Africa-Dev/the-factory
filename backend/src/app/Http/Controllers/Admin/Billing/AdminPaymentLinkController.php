@@ -10,6 +10,7 @@ use App\Http\Requests\Billing\GeneratePaymentLinkRequest;
 use App\Models\Company;
 use App\Models\CompanyDemoRequest;
 use App\Models\User;
+use App\Services\Admin\AdminActionLogger;
 use App\Services\Billing\CompanySeatLimitService;
 use App\Services\Billing\CompanySubscriptionService;
 use App\Services\Billing\PaymentLinkService;
@@ -22,6 +23,7 @@ class AdminPaymentLinkController extends Controller
         private readonly PaymentLinkService $paymentLinkService,
         private readonly CompanySubscriptionService $subscriptionService,
         private readonly CompanySeatLimitService $seatLimitService,
+        private readonly AdminActionLogger $actionLogger,
     ) {}
 
     public function forDemoRequest(GeneratePaymentLinkRequest $request, CompanyDemoRequest $demoRequest): RedirectResponse
@@ -39,6 +41,12 @@ class AdminPaymentLinkController extends Controller
             sendEmail: (bool) $request->boolean('send_email'),
             recipient: $demoRequest->user,
         );
+        $this->actionLogger->log('billing.payment_link.generated', 'company', (string) $company->id, [
+            'company_id' => (int) $company->id,
+            'plan_key' => (string) $request->validated('plan_key'),
+            'interval' => (string) $request->validated('interval'),
+            'send_email' => (bool) $request->boolean('send_email'),
+        ]);
 
         return back()->with('payment_link_url', $result['url']);
     }
@@ -58,6 +66,13 @@ class AdminPaymentLinkController extends Controller
             sendEmail: (bool) $request->boolean('send_email'),
             recipient: $user,
         );
+        $this->actionLogger->log('billing.payment_link.generated', 'company', (string) $company->id, [
+            'company_id' => (int) $company->id,
+            'plan_key' => (string) $request->validated('plan_key'),
+            'interval' => (string) $request->validated('interval'),
+            'send_email' => (bool) $request->boolean('send_email'),
+            'user_id' => (int) $user->id,
+        ]);
 
         return back()->with('payment_link_url', $result['url']);
     }

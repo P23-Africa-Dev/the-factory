@@ -710,6 +710,12 @@
                 class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                 <i class="bi bi-people"></i><span class="nav-link-text">Users</span>
             </a>
+            @if (auth('admin')->user()?->canAccessAbility('view_records'))
+                <a href="{{ route('admin.records.index') }}"
+                    class="nav-link {{ request()->routeIs('admin.records.*') ? 'active' : '' }}">
+                    <i class="bi bi-journal-text"></i><span class="nav-link-text">Records</span>
+                </a>
+            @endif
             <a href="{{ route('admin.enterprise.demo-requests.index') }}"
                 class="nav-link {{ request()->routeIs('admin.enterprise.*') ? 'active' : '' }}">
                 <i class="bi bi-building"></i><span class="nav-link-text">Enterprise</span>

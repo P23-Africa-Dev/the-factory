@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\LoginRequest;
 use App\Models\Admin;
+use App\Services\Security\SecurityAuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -13,6 +14,10 @@ use Illuminate\View\View;
 
 class LoginController extends Controller
 {
+    public function __construct(
+        private readonly SecurityAuditLogger $securityAudit,
+    ) {}
+
     public function show(): View
     {
         return view('admin.auth.login');
@@ -38,6 +43,9 @@ class LoginController extends Controller
                     'email' => $email,
                     'ip' => $request->ip(),
                 ]);
+                $this->securityAudit->adminWebLogin(SecurityAuditLogger::FAILURE, null, $email, [
+                    'reason' => 'user_not_found',
+                ]);
             } else {
                 $passwordMatches = Hash::check($password, (string) $candidate->password);
 
@@ -47,6 +55,9 @@ class LoginController extends Controller
                     'ip' => $request->ip(),
                     'password_matches_hash' => $passwordMatches,
                     'is_active' => (bool) $candidate->is_active,
+                ]);
+                $this->securityAudit->adminWebLogin(SecurityAuditLogger::FAILURE, $candidate, $email, [
+                    'reason' => 'invalid_credentials',
                 ]);
             }
 
@@ -62,17 +73,32 @@ class LoginController extends Controller
 
         if (! $admin->is_active) {
             Auth::guard('admin')->logout();
+            $this->securityAudit->adminWebLogin(SecurityAuditLogger::FAILURE, $admin, $email, [
+                'reason' => 'inactive',
+            ]);
 
             return back()->withErrors(['email' => 'Your admin account is inactive.']);
         }
 
         $admin->update(['last_login_at' => now()]);
+        $this->securityAudit->adminWebLogin(SecurityAuditLogger::SUCCESS, $admin, $email);
 
         return redirect()->route('admin.dashboard');
     }
 
     public function destroy(): RedirectResponse
     {
+        $admin = Auth::guard('admin')->user();
+        if ($admin instanceof Admin) {
+            $this->securityAudit->log(
+                action: SecurityAuditLogger::LOGOUT,
+                result: SecurityAuditLogger::SUCCESS,
+                channel: SecurityAuditLogger::CHANNEL_ADMIN_WEB,
+                adminId: (int) $admin->id,
+                email: $admin->email,
+            );
+        }
+
         Auth::guard('admin')->logout();
         request()->session()->invalidate();
         request()->session()->regenerateToken();

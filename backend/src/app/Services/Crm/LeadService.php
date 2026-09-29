@@ -13,6 +13,7 @@ use App\Models\LeadNote;
 use App\Models\LeadPipeline;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Services\Security\SecurityAuditLogger;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
 use App\Support\LeadFieldNormalizer;
@@ -54,6 +55,7 @@ class LeadService
         private readonly CompanyContextService $companyContextService,
         private readonly NotificationService $notificationService,
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
+        private readonly SecurityAuditLogger $securityAudit,
     ) {}
 
     public function listForUser(User $user, array $filters): Paginator
@@ -1612,7 +1614,10 @@ class LeadService
             return [
                 'filename' => $filename,
                 'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'stream' => function () use ($companyId, $user, $role, $filters): void {
+                'stream' => function () use ($companyId, $user, $role, $filters, $format): void {
+                    $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_LEADS, $user, $companyId, [
+                        'format' => $format,
+                    ]);
                     $this->streamLeadsXlsxExport($companyId, $user, $role, $filters);
                 },
             ];
@@ -1621,7 +1626,10 @@ class LeadService
         return [
             'filename' => $filename,
             'content_type' => 'text/csv; charset=UTF-8',
-            'stream' => function () use ($companyId, $user, $role, $filters): void {
+            'stream' => function () use ($companyId, $user, $role, $filters, $format): void {
+                $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_LEADS, $user, $companyId, [
+                    'format' => $format,
+                ]);
                 $this->streamLeadsCsvExport($companyId, $user, $role, $filters);
             },
         ];

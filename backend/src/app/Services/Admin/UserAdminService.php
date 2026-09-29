@@ -8,6 +8,10 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 class UserAdminService
 {
+    public function __construct(
+        private readonly AdminActionLogger $actionLogger,
+    ) {}
+
     /**
      * Account Owners: all users without an internal_role.
      * Includes self-serve and enterprise owners, plus pending (not-yet-onboarded) accounts.
@@ -130,7 +134,10 @@ class UserAdminService
             'deactivated_at' => $isActive ? null : now(),
         ]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+        $this->logUser($isActive ? 'users.activated' : 'users.deactivated', $fresh ?? $user);
+
+        return $fresh;
     }
 
     public function suspend(User $user, Carbon $until): User
@@ -140,14 +147,22 @@ class UserAdminService
             'is_active'       => true,
         ]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+        $this->logUser('users.suspended', $fresh ?? $user, [
+            'suspended_until' => $until->toIso8601String(),
+        ]);
+
+        return $fresh;
     }
 
     public function liftSuspension(User $user): User
     {
         $user->update(['suspended_until' => null]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+        $this->logUser('users.suspension_lifted', $fresh ?? $user);
+
+        return $fresh;
     }
 
     public function reactivate(User $user): User
@@ -158,11 +173,15 @@ class UserAdminService
             'suspended_until' => null,
         ]);
 
-        return $user->fresh();
+        $fresh = $user->fresh();
+        $this->logUser('users.reactivated', $fresh ?? $user);
+
+        return $fresh;
     }
 
     public function delete(User $user): void
     {
+        $this->logUser('users.deleted', $user);
         $user->delete();
     }
 
@@ -171,11 +190,15 @@ class UserAdminService
         if (method_exists($user, 'trashed') && $user->trashed()) {
             $user->restore();
         }
-        return $user->fresh() ?? $user;
+        $fresh = $user->fresh() ?? $user;
+        $this->logUser('users.restored', $fresh);
+
+        return $fresh;
     }
 
     public function forceDelete(User $user): void
     {
+        $this->logUser('users.force_deleted', $user);
         $user->forceDelete();
     }
 
@@ -188,6 +211,24 @@ class UserAdminService
             ->whereNotNull('suspended_until')
             ->where('suspended_until', '<=', now())
             ->update(['suspended_until' => null]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function logUser(string $action, User $user, array $context = []): void
+    {
+        $companyId = $user->companies()->value('companies.id');
+
+        $this->actionLogger->log(
+            action: $action,
+            targetType: 'user',
+            targetId: (string) $user->id,
+            context: array_merge([
+                'email' => $user->email,
+                'company_id' => $companyId !== null ? (int) $companyId : null,
+            ], $context),
+        );
     }
 }
 

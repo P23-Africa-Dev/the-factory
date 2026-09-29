@@ -10,6 +10,7 @@ use App\Models\Company;
 use App\Models\CompanyMapCredit;
 use App\Models\MapCreditSku;
 use App\Models\MapCreditTransaction;
+use App\Services\Admin\AdminActionLogger;
 use App\Services\Billing\CreditAllocationSettingService;
 use App\Services\Billing\MapCreditService;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,7 @@ class MapCreditController extends Controller
     public function __construct(
         private readonly CreditAllocationSettingService $settings,
         private readonly MapCreditService $mapCredits,
+        private readonly AdminActionLogger $actionLogger,
     ) {}
 
     public function index(Request $request): View
@@ -76,6 +78,12 @@ class MapCreditController extends Controller
         $this->settings->setCreditsPerUsd((float) $validated['credits_per_usd'], $admin);
         $this->settings->setLowThresholdPercent((float) $validated['low_threshold_percent'], $admin);
         $this->settings->setEnforcement($request->boolean('enforce'), $admin);
+        $this->actionLogger->log('map_credits.settings.updated', 'platform_setting', 'map_credits', [
+            'allocation_percent' => (float) $validated['allocation_percent'],
+            'credits_per_usd' => (float) $validated['credits_per_usd'],
+            'low_threshold_percent' => (float) $validated['low_threshold_percent'],
+            'enforce' => $request->boolean('enforce'),
+        ]);
 
         return redirect()
             ->route('admin.map-credits.index')
@@ -127,6 +135,11 @@ class MapCreditController extends Controller
             admin: $admin,
             reason: (string) ($validated['reason'] ?? ''),
         );
+        $this->actionLogger->log('map_credits.adjusted', 'company', (string) $company->id, [
+            'company_id' => (int) $company->id,
+            'credits' => (float) $validated['credits'],
+            'reason' => (string) ($validated['reason'] ?? ''),
+        ]);
 
         return redirect()
             ->route('admin.map-credits.companies.show', $company)

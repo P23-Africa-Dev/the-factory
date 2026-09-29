@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Admin\Billing;
 use App\Enums\BillingInterval;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Services\Admin\AdminActionLogger;
 use App\Services\Billing\CompanySeatLimitService;
 use App\Services\Billing\CompanySubscriptionService;
 use App\Support\Billing\BillingPlanCatalog;
@@ -21,6 +22,7 @@ class AdminOfflinePlanController extends Controller
     public function __construct(
         private readonly CompanySubscriptionService $subscriptionService,
         private readonly CompanySeatLimitService $seatLimitService,
+        private readonly AdminActionLogger $actionLogger,
     ) {}
 
     public function update(Request $request, Company $company): RedirectResponse
@@ -46,6 +48,12 @@ class AdminOfflinePlanController extends Controller
             interval: $interval,
             periodStart: Carbon::parse((string) $validated['payment_start_date'])->startOfDay(),
         );
+        $this->actionLogger->log('billing.offline_plan.updated', 'company', (string) $company->id, [
+            'company_id' => (int) $company->id,
+            'plan_key' => $planKey,
+            'interval' => $interval->value,
+            'payment_start_date' => (string) $validated['payment_start_date'],
+        ]);
 
         return back()->with('status', 'Offline plan updated. Seat limit and renewal dates now reflect the selected plan.');
     }
