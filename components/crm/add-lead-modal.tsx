@@ -500,7 +500,9 @@ export function AddLeadModal({
       source: source.trim() || (isAgentContext ? "agent_upload" : null),
       status: effectiveStatus,
       priority,
-      assigned_to_user_id: isAgentContext ? null : (assignedToUserId ? Number(assignedToUserId) : null),
+      assigned_to_user_id: isAgentContext
+        ? null
+        : (assignedToUserId ? Number(assignedToUserId) : (lead ? null : (user?.id ?? null))),
       next_action: nextAction.trim() || null,
       last_interaction: lastInteraction.trim() || null,
       last_interaction_at: lastInteractionAt || null,
@@ -784,6 +786,7 @@ export function AddLeadModal({
               <FieldError message={errors.priority} />
             </div>
 
+            {canManageLeads && (
             <div>
               <FormRow label="Assignee" labelClassName="w-28">
                 <InlineSelect
@@ -794,7 +797,7 @@ export function AddLeadModal({
                     clearError("assignedToUserId");
                   }}
                   options={[
-                    { value: "", label: loadingUsers ? "Loading users…" : "Unassigned" },
+                    ...(lead ? [{ value: "", label: loadingUsers ? "Loading users…" : "Unassigned" }] : []),
                     ...companyUsers.map((u) => ({ value: String(u.id), label: u.name })),
                   ]}
                   className="col-span-2"
@@ -802,6 +805,7 @@ export function AddLeadModal({
               </FormRow>
               <FieldError message={errors.assignedToUserId} />
             </div>
+            )}
           </div>
 
           <div className="space-y-4 mb-5">

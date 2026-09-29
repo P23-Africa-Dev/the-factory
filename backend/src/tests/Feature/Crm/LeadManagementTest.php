@@ -60,6 +60,36 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.lead.company_email', 'sales@acme.example');
     }
 
+    public function test_create_without_assignee_defaults_to_creator(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Unassigned Prospect',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'assigned_to_user_id' => null,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.lead.created_by_user_id', $admin->id)
+            ->assertJsonPath('data.lead.assigned_to_user_id', $admin->id);
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Explicit Assignee',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'assigned_to_user_id' => $agent->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.lead.assigned_to_user_id', $agent->id);
+    }
+
     public function test_admin_can_create_search_and_replace_ordered_lead_contacts(): void
     {
         [$company, $admin,, $pipelineId] = $this->seedCompanyUsers();

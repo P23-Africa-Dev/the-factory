@@ -104,9 +104,10 @@ class LeadService
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
-        $assignedToUserId = $role === 'agent'
+        $requestedAssignee = $data['assigned_to_user_id'] ?? null;
+        $assignedToUserId = $role === 'agent' || ! is_numeric($requestedAssignee) || (int) $requestedAssignee <= 0
             ? (int) $user->id
-            : (isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null);
+            : (int) $requestedAssignee;
         $pipelineId = (int) ($data['pipeline_id'] ?? 0);
         if ($pipelineId <= 0) {
             $pipelineId = $this->resolvePreferredPipelineId($user, $companyId);
@@ -266,16 +267,16 @@ class LeadService
             ->where(function (Builder $query) use ($field, $like, $phoneDigits, $strippedLeadPhoneSql, $strippedContactPhoneSql): void {
                 if ($field === 'name') {
                     $query->whereRaw('LOWER(leads.name) LIKE ?', [$like])
-                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
                             ->whereRaw('LOWER(lead_contacts.name) LIKE ?', [$like]));
                 } elseif ($field === 'email') {
                     $query->whereRaw('LOWER(leads.email) LIKE ?', [$like])
-                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
                             ->whereRaw('LOWER(lead_contacts.email) LIKE ?', [$like]));
                 } elseif ($field === 'phone') {
-                    $query->whereRaw("{$strippedLeadPhoneSql} LIKE ?", [$phoneDigits.'%'])
-                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
-                            ->whereRaw("{$strippedContactPhoneSql} LIKE ?", [$phoneDigits.'%']));
+                    $query->whereRaw("{$strippedLeadPhoneSql} LIKE ?", [$phoneDigits . '%'])
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
+                            ->whereRaw("{$strippedContactPhoneSql} LIKE ?", [$phoneDigits . '%']));
                 } elseif ($field === 'company_name') {
                     $query->whereRaw('LOWER(leads.company_name) LIKE ?', [$like]);
                 } else {
@@ -301,7 +302,7 @@ class LeadService
                     'can_merge' => $this->userCanMergeLead($user, $lead, $role),
                 ];
             })
-            ->sortBy(fn (array $row): int => $row['match_type'] === 'exact' ? 0 : 1)
+            ->sortBy(fn(array $row): int => $row['match_type'] === 'exact' ? 0 : 1)
             ->values()
             ->all();
     }
@@ -514,7 +515,7 @@ class LeadService
                 ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location']
                 : ['company_id', 'pipeline_id', 'status'];
             $forbiddenFields = collect(array_keys($data))
-                ->reject(static fn (string $field): bool => in_array($field, $allowedFields, true))
+                ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
                 ->values()
                 ->all();
 
@@ -732,7 +733,7 @@ class LeadService
             ->pluck('total', 'status')
             ->all();
 
-        $total = (int) array_sum(array_map(static fn ($value): int => (int) $value, $counts));
+        $total = (int) array_sum(array_map(static fn($value): int => (int) $value, $counts));
 
         return [
             'total' => $total,
@@ -1344,7 +1345,7 @@ class LeadService
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
-        $ids = collect($payload['ordered_label_ids'] ?? [])->map(static fn ($id): int => (int) $id)->values();
+        $ids = collect($payload['ordered_label_ids'] ?? [])->map(static fn($id): int => (int) $id)->values();
 
         DB::transaction(function () use ($companyId, $ids): void {
             foreach ($ids as $index => $id) {
@@ -1472,7 +1473,8 @@ class LeadService
             }
 
             if ($duplicate !== null && $duplicatePolicy === 'update') {
-                if ($role === 'agent'
+                if (
+                    $role === 'agent'
                     && (int) $duplicate->created_by_user_id !== (int) $user->id
                     && (int) ($duplicate->assigned_to_user_id ?? 0) !== (int) $user->id
                 ) {
@@ -1665,7 +1667,7 @@ class LeadService
                 'location' => $data['location'] ?? null,
             ]];
 
-        return array_map(static fn (array $contact): array => [
+        return array_map(static fn(array $contact): array => [
             'name' => trim((string) $contact['name']),
             'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
             'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
@@ -1680,7 +1682,7 @@ class LeadService
     {
         $lead->contacts()->delete();
         $lead->contacts()->createMany(array_map(
-            static fn (array $contact, int $index): array => [
+            static fn(array $contact, int $index): array => [
                 ...$contact,
                 'sort_order' => $index,
             ],
@@ -1721,9 +1723,9 @@ class LeadService
                 'creator:id,name,email',
                 'assignee:id,name,email',
                 'contacts:id,lead_id,name,email,phone,location,sort_order',
-                'notes' => fn ($query) => $query->latest('id')->limit(10),
+                'notes' => fn($query) => $query->latest('id')->limit(10),
                 'notes.creator:id,name,email',
-                'activities' => fn ($query) => $query->latest('id')->limit(20),
+                'activities' => fn($query) => $query->latest('id')->limit(20),
                 'activities.creator:id,name,email',
             ]);
     }
@@ -1817,24 +1819,24 @@ class LeadService
             if ($this->isAgentUploadSourceFilter($source)) {
                 $this->applyAgentUploadedSourceFilter($query);
             } else {
-                $query->where('source', 'like', '%'.$source.'%');
+                $query->where('source', 'like', '%' . $source . '%');
             }
         }
 
         if (! empty($filters['search'])) {
             $search = trim((string) $filters['search']);
             $query->where(function (Builder $builder) use ($search): void {
-                $builder->where('name', 'like', '%'.$search.'%')
-                    ->orWhere('email', 'like', '%'.$search.'%')
-                    ->orWhere('phone', 'like', '%'.$search.'%')
-                    ->orWhere('location', 'like', '%'.$search.'%')
-                    ->orWhere('company_name', 'like', '%'.$search.'%')
-                    ->orWhere('source', 'like', '%'.$search.'%')
+                $builder->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('email', 'like', '%' . $search . '%')
+                    ->orWhere('phone', 'like', '%' . $search . '%')
+                    ->orWhere('location', 'like', '%' . $search . '%')
+                    ->orWhere('company_name', 'like', '%' . $search . '%')
+                    ->orWhere('source', 'like', '%' . $search . '%')
                     ->orWhereHas('contacts', function (Builder $contactQuery) use ($search): void {
-                        $contactQuery->where('name', 'like', '%'.$search.'%')
-                            ->orWhere('email', 'like', '%'.$search.'%')
-                            ->orWhere('phone', 'like', '%'.$search.'%')
-                            ->orWhere('location', 'like', '%'.$search.'%');
+                        $contactQuery->where('name', 'like', '%' . $search . '%')
+                            ->orWhere('email', 'like', '%' . $search . '%')
+                            ->orWhere('phone', 'like', '%' . $search . '%')
+                            ->orWhere('location', 'like', '%' . $search . '%');
                     });
             });
         }
@@ -1895,10 +1897,10 @@ class LeadService
         while (LeadLabel::query()
             ->where('company_id', $companyId)
             ->where('slug', $slug)
-            ->when($ignoreLabelId !== null, fn ($query) => $query->where('id', '!=', $ignoreLabelId))
+            ->when($ignoreLabelId !== null, fn($query) => $query->where('id', '!=', $ignoreLabelId))
             ->exists()
         ) {
-            $slug = $baseSlug.'_'.$suffix;
+            $slug = $baseSlug . '_' . $suffix;
             $suffix++;
         }
 
@@ -1930,7 +1932,7 @@ class LeadService
             'uploaded by agents',
         ];
 
-        $quoted = implode(',', array_map(static fn (string $value): string => "'".str_replace("'", "''", $value)."'", $accepted));
+        $quoted = implode(',', array_map(static fn(string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
 
         $query->whereRaw(
             "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
@@ -2102,7 +2104,7 @@ class LeadService
         $data['contacts'] = $this->normalizedIncomingContacts($data);
         $incomingContacts = array_values(array_filter(
             $this->contactPayloads($data),
-            static fn (array $contact): bool => $contact['name'] !== '',
+            static fn(array $contact): bool => $contact['name'] !== '',
         ));
 
         $updates = [];
@@ -2144,8 +2146,18 @@ class LeadService
         }
 
         $resultAttributes = array_merge($lead->only([
-            'name', 'email', 'phone', 'location', 'company_name', 'company_email',
-            'website', 'position', 'source', 'next_action', 'budget_amount', 'budget_currency',
+            'name',
+            'email',
+            'phone',
+            'location',
+            'company_name',
+            'company_email',
+            'website',
+            'position',
+            'source',
+            'next_action',
+            'budget_amount',
+            'budget_currency',
         ]), $updates);
         $resultAttributes['profile_urls'] = $updates['profile_urls'] ?? $existingUrls;
         $resultAttributes['name'] = (string) $lead->name;
@@ -2153,7 +2165,7 @@ class LeadService
         $existingContacts = $this->contactSnapshots($lead);
         $resultContacts = [
             ...$existingContacts,
-            ...array_map(fn (array $contact, int $offset): array => [
+            ...array_map(fn(array $contact, int $offset): array => [
                 'name' => $contact['name'],
                 'email' => $contact['email'],
                 'phone' => $contact['phone'],
@@ -2263,7 +2275,7 @@ class LeadService
     private function contactSnapshots(Lead $lead): array
     {
         return $lead->contacts
-            ->map(static fn ($contact): array => [
+            ->map(static fn($contact): array => [
                 'name' => (string) $contact->name,
                 'email' => $contact->email,
                 'phone' => $contact->phone,
@@ -2286,7 +2298,7 @@ class LeadService
             $name = mb_strtolower($contact['name']);
 
             return mb_strtolower((string) $lead->name) === $name
-                || $lead->contacts->contains(fn ($existing): bool => mb_strtolower((string) $existing->name) === $name);
+                || $lead->contacts->contains(fn($existing): bool => mb_strtolower((string) $existing->name) === $name);
         }
 
         if ($email !== null && $this->emailsEqual($lead->email, $email)) {
@@ -2413,7 +2425,7 @@ class LeadService
 
     private function escapeLikePrefix(string $value): string
     {
-        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value).'%';
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value) . '%';
     }
 
     private function strippedPhoneSql(string $column): string
@@ -2444,7 +2456,7 @@ class LeadService
                 ->where('company_id', $companyId)
                 ->where(function (Builder $query) use ($normalizedEmail): void {
                     $query->whereRaw('LOWER(leads.email) = ?', [$normalizedEmail])
-                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
                             ->whereRaw('LOWER(lead_contacts.email) = ?', [$normalizedEmail]));
                 })
                 ->orderBy('id')
@@ -2467,7 +2479,7 @@ class LeadService
             ->where('company_id', $companyId)
             ->where(function (Builder $query) use ($strippedLeadPhoneSql, $strippedContactPhoneSql, $phoneDigits): void {
                 $query->whereRaw("$strippedLeadPhoneSql = ?", [$phoneDigits])
-                    ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                    ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
                         ->whereRaw("$strippedContactPhoneSql = ?", [$phoneDigits]));
             })
             ->orderBy('id')
@@ -2490,7 +2502,7 @@ class LeadService
     ): array {
         // "Target Pipeline" applies to both newly created and updated rows.
         $update = ['pipeline_id' => $targetPipelineId];
-        $provided = static fn (string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
+        $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
 
         foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
             if ($provided($field) && $normalized[$field] !== null) {
@@ -2647,7 +2659,7 @@ class LeadService
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
         if (! empty($filters['lead_ids'])) {
-            $leadIds = array_map(static fn ($id): int => (int) $id, (array) $filters['lead_ids']);
+            $leadIds = array_map(static fn($id): int => (int) $id, (array) $filters['lead_ids']);
             $query->whereIn('id', $leadIds);
         }
 
@@ -2721,7 +2733,7 @@ class LeadService
         $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
         $invalidProfileUrls = LeadFieldNormalizer::invalidProfileUrls($profileUrls);
         if ($invalidProfileUrls !== []) {
-            $errors[] = 'Profile URLs contain invalid entries: '.implode(', ', $invalidProfileUrls).'.';
+            $errors[] = 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '.';
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
@@ -2814,12 +2826,12 @@ class LeadService
                     ->where('company_id', $lead->company_id)
                     ->whereIn('role', ['owner', 'admin', 'supervisor'])
                     ->pluck('user_id')
-                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->map(static fn(mixed $id): int => (int) $id)
                     ->all(),
             )
-            ->filter(static fn (int $id): bool => $id > 0)
+            ->filter(static fn(int $id): bool => $id > 0)
             ->unique()
-            ->reject(static fn (int $id): bool => $id === (int) $actor->id)
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
             ->values()
             ->all();
 
@@ -2832,7 +2844,7 @@ class LeadService
                 'message' => $message,
                 'reference_type' => Lead::class,
                 'reference_id' => (int) $lead->id,
-                'action_url' => '/crm/leads/'.$lead->id,
+                'action_url' => '/crm/leads/' . $lead->id,
                 'action_route' => 'crm.leads.show',
                 'priority' => $priority,
                 'created_by_user_id' => (int) $actor->id,
@@ -2841,7 +2853,7 @@ class LeadService
                     'lead_status' => $lead->status,
                     'actor_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => $type.':'.$lead->id.':'.$recipientId,
+                'dedupe_key' => $type . ':' . $lead->id . ':' . $recipientId,
             ]);
         }
     }
