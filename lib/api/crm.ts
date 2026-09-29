@@ -444,6 +444,89 @@ export function createLead(
     });
 }
 
+export type LeadDuplicateField = "name" | "email" | "phone" | "company_name" | "company_email";
+
+export type LeadDuplicateMatch = {
+    id: number;
+    name: string;
+    email?: string | null;
+    phone?: string | null;
+    company_name?: string | null;
+    matched_on: string;
+    match_type: "partial" | "exact";
+    can_merge: boolean;
+};
+
+export type LeadMergeSnapshot = {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    company_name?: string | null;
+    company_email?: string | null;
+    website?: string | null;
+    position?: string | null;
+    profile_urls?: string[];
+    source?: string | null;
+    budget_amount?: number | null;
+    budget_currency?: string | null;
+    next_action?: string | null;
+    contacts?: LeadContact[];
+};
+
+export type LeadMergePreview = {
+    existing: LeadMergeSnapshot;
+    incoming: LeadMergeSnapshot;
+    result: LeadMergeSnapshot;
+    fields_changed: string[];
+};
+
+export function suggestLeadDuplicates(
+    params: { company_id: number | string; q: string; field: LeadDuplicateField },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin",
+): Promise<ApiEnvelope<{ matches: LeadDuplicateMatch[] }>> {
+    const query = buildQuery({
+        company_id: params.company_id,
+        q: params.q,
+        field: params.field,
+    });
+
+    return apiRequest<{ matches: LeadDuplicateMatch[] }>({
+        method: "GET",
+        path: withBase(basePath, `/crm/leads/suggest${query}`),
+        token,
+    });
+}
+
+export function previewLeadMerge(
+    leadId: number | string,
+    payload: CreateLeadPayload,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin",
+): Promise<ApiEnvelope<LeadMergePreview>> {
+    return apiRequest<LeadMergePreview>({
+        method: "POST",
+        path: withBase(basePath, `/crm/leads/${leadId}/merge-preview`),
+        body: payload,
+        token,
+    });
+}
+
+export function applyLeadMerge(
+    leadId: number | string,
+    payload: CreateLeadPayload,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin",
+): Promise<ApiEnvelope<LeadMergePreview & { lead: LeadApiItem }>> {
+    return apiRequest<LeadMergePreview & { lead: LeadApiItem }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/leads/${leadId}/merge-from-create`),
+        body: payload,
+        token,
+    });
+}
+
 export function updateLead(
     leadId: number | string,
     payload: UpdateLeadPayload,

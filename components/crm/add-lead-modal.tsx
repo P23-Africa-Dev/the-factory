@@ -8,13 +8,14 @@ import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
-import { useCreateLead, useUpdateLead, useCrmAssignees, useCrmLabels, useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
+import { useCreateLead, useUpdateLead, useApplyLeadMerge, useCrmAssignees, useCrmLabels, useLeadDuplicateSuggestions, usePreviewLeadMerge, useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, LeadApiItem, LeadContact } from "@/lib/api/crm";
+import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, CreateLeadPayload, LeadApiItem, LeadContact, LeadDuplicateField, LeadDuplicateMatch, LeadMergePreview } from "@/lib/api/crm";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
 import { LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
+import { LeadDuplicateNotice, LeadDuplicateSuggestions, LeadMergeDialog } from "@/components/crm/lead-duplicate-suggestions";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
@@ -37,6 +38,19 @@ type FormErrors = Partial<{
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
+}
+
+const IDENTITY_MATCHES = new Set([
+  "name",
+  "email",
+  "phone",
+  "contact_name",
+  "contact_email",
+  "contact_phone",
+]);
+
+function isMergeMatch(match: LeadDuplicateMatch): boolean {
+  return match.match_type === "exact" && IDENTITY_MATCHES.has(match.matched_on);
 }
 
 function SearchableCurrencySelect({
@@ -269,6 +283,12 @@ export function AddLeadModal({
   const [lastInteractionAt, setLastInteractionAt] = useState(initialDate);
 
   const [errors, setErrors] = useState<FormErrors>({});
+  const [suggestField, setSuggestField] = useState<LeadDuplicateField | null>(null);
+  const [suggestQuery, setSuggestQuery] = useState("");
+  const [debouncedSuggestQuery, setDebouncedSuggestQuery] = useState("");
+  const [duplicateMatch, setDuplicateMatch] = useState<LeadDuplicateMatch | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergePreview, setMergePreview] = useState<LeadMergePreview | null>(null);
 
   const effectiveStatus: ApiLeadStatus =
     labels.length > 0 && !labels.some((label) => label.slug === status)
@@ -304,6 +324,50 @@ export function AddLeadModal({
     },
     apiBasePath
   );
+
+  const suggestionQuery = useLeadDuplicateSuggestions(
+    {
+      company_id: companyId ?? undefined,
+      q: debouncedSuggestQuery,
+      field: suggestField,
+      enabled: !lead,
+    },
+    apiBasePath,
+  );
+
+  const previewMerge = usePreviewLeadMerge(apiBasePath);
+  const applyMerge = useApplyLeadMerge(
+    {
+      onSuccess: () => {
+        toast.success("Lead merged successfully.");
+        onClose();
+      },
+    },
+    apiBasePath,
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSuggestQuery(suggestQuery), 250);
+    return () => window.clearTimeout(timer);
+  }, [suggestQuery]);
+
+  const suggestionsReady = debouncedSuggestQuery.trim() === suggestQuery.trim();
+  const suggestionMatches = !lead && suggestionsReady ? (suggestionQuery.data ?? []) : [];
+
+  useEffect(() => {
+    if (lead || !suggestionsReady) {
+      setDuplicateMatch(null);
+      return;
+    }
+    const next = (suggestionQuery.data ?? []).find(isMergeMatch) ?? null;
+    setDuplicateMatch((current) => (
+      current?.id === next?.id
+        && current?.match_type === next?.match_type
+        && current?.matched_on === next?.matched_on
+        ? current
+        : next
+    ));
+  }, [lead, suggestionsReady, suggestionQuery.data]);
 
   const clearError = (field: keyof FormErrors) =>
     setErrors((prev) => ({ ...prev, [field]: undefined }));
@@ -391,8 +455,7 @@ export function AddLeadModal({
     }
   };
 
-  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const buildPayload = (): CreateLeadPayload | null => {
     const validation = validate();
     const firstContactError = validation.contacts.findIndex(
       (contactError) => Object.keys(contactError).length > 0,
@@ -401,12 +464,12 @@ export function AddLeadModal({
       setErrors(validation.fields);
       setContactErrors(validation.contacts);
       if (firstContactError >= 0) setActiveContactIndex(firstContactError);
-      return;
+      return null;
     }
 
     if (!companyId) {
       toast.error("No active company found. Please refresh and try again.");
-      return;
+      return null;
     }
 
     const cleanedProfileUrls = parseProfileUrls(profileUrls);
@@ -419,7 +482,7 @@ export function AddLeadModal({
     }));
     const primaryContact = normalizedContacts[0];
 
-    const payload = {
+    return {
       company_id: companyId,
       pipeline_id: Number(effectivePipelineId),
       name: primaryContact.name,
@@ -442,6 +505,47 @@ export function AddLeadModal({
       last_interaction: lastInteraction.trim() || null,
       last_interaction_at: lastInteractionAt || null,
     };
+  };
+
+  const trackSuggest = (field: LeadDuplicateField, value: string) => {
+    if (lead) return;
+    setSuggestField(field);
+    setSuggestQuery(value);
+  };
+
+  const selectSuggestion = (match: LeadDuplicateMatch) => {
+    if (isMergeMatch(match)) setDuplicateMatch(match);
+  };
+
+  const openMerge = () => {
+    if (!duplicateMatch) return;
+    const payload = buildPayload();
+    if (!payload) return;
+    setMergePreview(null);
+    setMergeOpen(true);
+    previewMerge.mutate(
+      { leadId: duplicateMatch.id, payload },
+      {
+        onSuccess: (res) => setMergePreview(res.data),
+        onError: handleError,
+      },
+    );
+  };
+
+  const confirmMerge = () => {
+    if (!duplicateMatch) return;
+    const payload = buildPayload();
+    if (!payload) return;
+    applyMerge.mutate(
+      { leadId: duplicateMatch.id, payload },
+      { onError: handleError },
+    );
+  };
+
+  const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const payload = buildPayload();
+    if (!payload) return;
 
     if (lead) {
       updateMutation.mutate({
@@ -457,7 +561,7 @@ export function AddLeadModal({
     }
   };
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || updateMutation.isPending || applyMerge.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
@@ -513,11 +617,22 @@ export function AddLeadModal({
             contacts={contacts}
             activeIndex={activeContactIndex}
             errors={contactErrors}
+            suggestions={lead ? undefined : { field: suggestField, matches: suggestionMatches }}
             onActiveIndexChange={setActiveContactIndex}
             onChange={updateContact}
             onAdd={addContact}
             onRemove={removeContact}
+            onIdentityInput={trackSuggest}
+            onSelectSuggestion={selectSuggestion}
           />
+
+          {!lead && duplicateMatch && (
+            <LeadDuplicateNotice
+              match={duplicateMatch}
+              onMerge={openMerge}
+              onSaveAsNew={() => undefined}
+            />
+          )}
 
           <div className="space-y-4 mb-5">
             <SectionDivider
@@ -529,12 +644,19 @@ export function AddLeadModal({
               <FormRow label="Company Name" labelClassName="w-28">
                 <InlineInput
                   value={companyName}
-                  onChange={(e) => { setCompanyName(e.target.value); clearError("companyName"); }}
+                  onChange={(e) => {
+                    setCompanyName(e.target.value);
+                    clearError("companyName");
+                    trackSuggest("company_name", e.target.value);
+                  }}
                   placeholder="E.g Acme Ltd"
                   className="col-span-2"
                 />
               </FormRow>
               <FieldError message={errors.companyName} />
+              {!lead && suggestField === "company_name" && (
+                <LeadDuplicateSuggestions matches={suggestionMatches} onSelect={selectSuggestion} />
+              )}
             </div>
 
             <div>
@@ -542,12 +664,19 @@ export function AddLeadModal({
                 <InlineInput
                   type="email"
                   value={companyEmail}
-                  onChange={(e) => { setCompanyEmail(e.target.value); clearError("companyEmail"); }}
+                  onChange={(e) => {
+                    setCompanyEmail(e.target.value);
+                    clearError("companyEmail");
+                    trackSuggest("company_email", e.target.value);
+                  }}
                   placeholder="E.g hello@company.com"
                   className="col-span-2"
                 />
               </FormRow>
               <FieldError message={errors.companyEmail} />
+              {!lead && suggestField === "company_email" && (
+                <LeadDuplicateSuggestions matches={suggestionMatches} onSelect={selectSuggestion} />
+              )}
             </div>
 
             <div>
@@ -726,6 +855,15 @@ export function AddLeadModal({
           </div>
         </form>
       </div>
+      {mergeOpen && duplicateMatch && (
+        <LeadMergeDialog
+          preview={mergePreview}
+          isLoading={previewMerge.isPending}
+          isSaving={applyMerge.isPending}
+          onClose={() => setMergeOpen(false)}
+          onConfirm={confirmMerge}
+        />
+      )}
     </div>
   );
 }

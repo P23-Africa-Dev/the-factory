@@ -229,6 +229,145 @@ class LeadService
     }
 
     /**
+     * Prefix matches for the Add Lead form. Company-wide, including secondary contacts.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<array{id:int,name:string,email:?string,phone:?string,company_name:?string,matched_on:string,match_type:string,can_merge:bool}>
+     */
+    public function suggestDuplicates(User $user, array $filters): array
+    {
+        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+
+        $field = (string) ($filters['field'] ?? 'name');
+        $allowedFields = ['name', 'email', 'phone', 'company_name', 'company_email'];
+        if (! in_array($field, $allowedFields, true)) {
+            $field = 'name';
+        }
+
+        $raw = trim((string) ($filters['q'] ?? ''));
+        $phoneDigits = $this->normalizePhoneDigits($raw) ?? '';
+        $needle = $field === 'phone' ? $phoneDigits : mb_strtolower($raw);
+        $minimum = $field === 'phone' ? 4 : 2;
+
+        if (mb_strlen($needle) < $minimum) {
+            return [];
+        }
+
+        $like = $this->escapeLikePrefix($needle);
+        $strippedLeadPhoneSql = $this->strippedPhoneSql('leads.phone');
+        $strippedContactPhoneSql = $this->strippedPhoneSql('lead_contacts.phone');
+
+        $leads = Lead::query()
+            ->where('company_id', $companyId)
+            ->with(['contacts:id,lead_id,name,email,phone,location,sort_order'])
+            ->where(function (Builder $query) use ($field, $like, $phoneDigits, $strippedLeadPhoneSql, $strippedContactPhoneSql): void {
+                if ($field === 'name') {
+                    $query->whereRaw('LOWER(leads.name) LIKE ?', [$like])
+                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                            ->whereRaw('LOWER(lead_contacts.name) LIKE ?', [$like]));
+                } elseif ($field === 'email') {
+                    $query->whereRaw('LOWER(leads.email) LIKE ?', [$like])
+                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                            ->whereRaw('LOWER(lead_contacts.email) LIKE ?', [$like]));
+                } elseif ($field === 'phone') {
+                    $query->whereRaw("{$strippedLeadPhoneSql} LIKE ?", [$phoneDigits.'%'])
+                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                            ->whereRaw("{$strippedContactPhoneSql} LIKE ?", [$phoneDigits.'%']));
+                } elseif ($field === 'company_name') {
+                    $query->whereRaw('LOWER(leads.company_name) LIKE ?', [$like]);
+                } else {
+                    $query->whereRaw('LOWER(leads.company_email) LIKE ?', [$like]);
+                }
+            })
+            ->orderBy('name')
+            ->limit(8)
+            ->get();
+
+        return $leads
+            ->map(function (Lead $lead) use ($user, $role, $field, $needle, $phoneDigits): array {
+                $match = $this->classifySuggestion($lead, $field, $needle, $phoneDigits);
+
+                return [
+                    'id' => (int) $lead->id,
+                    'name' => (string) $lead->name,
+                    'email' => $lead->email,
+                    'phone' => $lead->phone,
+                    'company_name' => $lead->company_name,
+                    'matched_on' => $match['matched_on'],
+                    'match_type' => $match['match_type'],
+                    'can_merge' => $this->userCanMergeLead($user, $lead, $role),
+                ];
+            })
+            ->sortBy(fn (array $row): int => $row['match_type'] === 'exact' ? 0 : 1)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Preview a gap-fill merge of a new lead form into an existing lead. Does not write.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{existing: array<string, mixed>, incoming: array<string, mixed>, result: array<string, mixed>, fields_changed: list<string>}
+     */
+    public function previewMergeFromCreate(User $user, Lead $lead, array $data): array
+    {
+        return $this->planMergeFromCreate($user, $lead, $data);
+    }
+
+    /**
+     * Apply a gap-fill merge. Existing filled values and the lead name are kept.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{existing: array<string, mixed>, incoming: array<string, mixed>, result: array<string, mixed>, fields_changed: list<string>, lead: Lead}
+     */
+    public function applyMergeFromCreate(User $user, Lead $lead, array $data): array
+    {
+        $plan = $this->planMergeFromCreate($user, $lead, $data);
+
+        DB::transaction(function () use ($lead, $plan): void {
+            if ($plan['updates'] !== []) {
+                $lead->update($plan['updates']);
+            }
+
+            $primary = $lead->contacts()->where('sort_order', 0)->first();
+            if ($primary !== null) {
+                $contactUpdates = [];
+                foreach (['email', 'phone', 'location'] as $field) {
+                    if (array_key_exists($field, $plan['updates']) && $this->isBlankMergeValue($primary->{$field})) {
+                        $contactUpdates[$field] = $plan['updates'][$field];
+                    }
+                }
+                if ($contactUpdates !== []) {
+                    $primary->update($contactUpdates);
+                }
+            }
+
+            $nextSort = $lead->contacts()->max('sort_order');
+            $sortOrder = $nextSort === null ? 0 : ((int) $nextSort + 1);
+            foreach ($plan['contacts_to_add'] as $contact) {
+                $lead->contacts()->create([
+                    ...$contact,
+                    'sort_order' => $sortOrder,
+                ]);
+                $sortOrder++;
+            }
+        });
+
+        $companyId = (int) $lead->company_id;
+
+        return [
+            'existing' => $plan['existing'],
+            'incoming' => $plan['incoming'],
+            'result' => $plan['result'],
+            'fields_changed' => $plan['fields_changed'],
+            'lead' => $this->findForUser($user, $lead->fresh(), $companyId),
+        ];
+    }
+
+    /**
      * Merge richer Sales Engine fields into an existing CRM lead without wiping filled values.
      *
      * @param  array<string, mixed>  $data
@@ -1488,6 +1627,31 @@ class LeadService
 
     /**
      * @param  array<string, mixed>  $data
+     * @return list<array<string, mixed>>
+     */
+    private function normalizedIncomingContacts(array $data): array
+    {
+        $contacts = isset($data['contacts']) && is_array($data['contacts']) ? $data['contacts'] : [];
+
+        if ($contacts === []) {
+            return [[
+                'name' => $data['name'] ?? '',
+                'email' => $data['email'] ?? null,
+                'phone' => $data['phone'] ?? null,
+                'location' => $data['location'] ?? null,
+            ]];
+        }
+
+        return array_map(static function (mixed $contact): array {
+            $contact = is_array($contact) ? $contact : [];
+            $contact['name'] ??= '';
+
+            return $contact;
+        }, array_values($contacts));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
      * @return array<int, array{name:string,email:?string,phone:?string,location:?string}>
      */
     private function contactPayloads(array $data): array
@@ -1912,6 +2076,349 @@ class LeadService
         }
 
         return ($bestKey !== null && $bestDistance <= 4) ? $labelLookup[$bestKey] : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     existing: array<string, mixed>,
+     *     incoming: array<string, mixed>,
+     *     result: array<string, mixed>,
+     *     fields_changed: list<string>,
+     *     updates: array<string, mixed>,
+     *     contacts_to_add: list<array{name:string,email:?string,phone:?string,location:?string}>
+     * }
+     */
+    private function planMergeFromCreate(User $user, Lead $lead, array $data): array
+    {
+        $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+        $this->assertLeadInCompany($lead, $companyId);
+        $this->assertCanMergeLead($user, $lead, $role);
+
+        $lead->loadMissing('contacts');
+        $data['contacts'] = $this->normalizedIncomingContacts($data);
+        $incomingContacts = array_values(array_filter(
+            $this->contactPayloads($data),
+            static fn (array $contact): bool => $contact['name'] !== '',
+        ));
+
+        $updates = [];
+        foreach (['email', 'phone', 'location', 'company_name', 'company_email', 'position', 'source', 'next_action'] as $field) {
+            $incoming = $this->nullableTrimmed($data[$field] ?? null);
+            if ($this->isBlankMergeValue($lead->{$field}) && $incoming !== null) {
+                $updates[$field] = $incoming;
+            }
+        }
+
+        $website = LeadFieldNormalizer::normalizeWebsite($this->nullableTrimmed($data['website'] ?? null));
+        if ($this->isBlankMergeValue($lead->website) && $website !== null) {
+            $updates['website'] = $website;
+        }
+
+        $existingUrls = is_array($lead->profile_urls) ? array_values($lead->profile_urls) : [];
+        $incomingUrls = LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls'] ?? []);
+        $mergedUrls = array_values(array_unique([...$existingUrls, ...$incomingUrls]));
+        if (count($mergedUrls) > count($existingUrls)) {
+            $updates['profile_urls'] = $mergedUrls;
+        }
+
+        if ($lead->budget_amount === null && isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null) {
+            $updates['budget_amount'] = $data['budget_amount'];
+            $updates['budget_currency'] = $this->nullableTrimmed($data['budget_currency'] ?? null) ?? $lead->budget_currency ?? 'USD';
+        }
+
+        $contactsToAdd = [];
+        foreach ($incomingContacts as $contact) {
+            if ($this->contactAlreadyOnLead($lead, $contact)) {
+                continue;
+            }
+            $contactsToAdd[] = $contact;
+        }
+
+        $fieldsChanged = array_keys($updates);
+        if ($contactsToAdd !== []) {
+            $fieldsChanged[] = 'contacts';
+        }
+
+        $resultAttributes = array_merge($lead->only([
+            'name', 'email', 'phone', 'location', 'company_name', 'company_email',
+            'website', 'position', 'source', 'next_action', 'budget_amount', 'budget_currency',
+        ]), $updates);
+        $resultAttributes['profile_urls'] = $updates['profile_urls'] ?? $existingUrls;
+        $resultAttributes['name'] = (string) $lead->name;
+
+        $existingContacts = $this->contactSnapshots($lead);
+        $resultContacts = [
+            ...$existingContacts,
+            ...array_map(fn (array $contact, int $offset): array => [
+                'name' => $contact['name'],
+                'email' => $contact['email'],
+                'phone' => $contact['phone'],
+                'location' => $contact['location'],
+                'sort_order' => count($existingContacts) + $offset,
+            ], $contactsToAdd, array_keys($contactsToAdd)),
+        ];
+
+        return [
+            'existing' => $this->mergeSnapshot($lead, $existingContacts, $existingUrls),
+            'incoming' => $this->incomingMergeSnapshot($data, $incomingContacts, $incomingUrls),
+            'result' => $this->mergeSnapshotFromValues($resultAttributes, $resultContacts),
+            'fields_changed' => $fieldsChanged,
+            'updates' => $updates,
+            'contacts_to_add' => $contactsToAdd,
+        ];
+    }
+
+    /**
+     * @param  list<array{name:string,email:?string,phone:?string,location:?string,sort_order?:int}>  $contacts
+     * @param  list<string>  $profileUrls
+     * @return array<string, mixed>
+     */
+    private function mergeSnapshot(Lead $lead, array $contacts, array $profileUrls): array
+    {
+        return $this->mergeSnapshotFromValues([
+            'name' => $lead->name,
+            'email' => $lead->email,
+            'phone' => $lead->phone,
+            'location' => $lead->location,
+            'company_name' => $lead->company_name,
+            'company_email' => $lead->company_email,
+            'website' => $lead->website,
+            'position' => $lead->position,
+            'source' => $lead->source,
+            'next_action' => $lead->next_action,
+            'budget_amount' => $lead->budget_amount,
+            'budget_currency' => $lead->budget_currency,
+            'profile_urls' => $profileUrls,
+        ], $contacts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     * @param  list<array<string, mixed>>  $contacts
+     * @return array<string, mixed>
+     */
+    private function mergeSnapshotFromValues(array $values, array $contacts): array
+    {
+        return [
+            'name' => $values['name'] ?? null,
+            'email' => $values['email'] ?? null,
+            'phone' => $values['phone'] ?? null,
+            'location' => $values['location'] ?? null,
+            'company_name' => $values['company_name'] ?? null,
+            'company_email' => $values['company_email'] ?? null,
+            'website' => $values['website'] ?? null,
+            'position' => $values['position'] ?? null,
+            'profile_urls' => array_values($values['profile_urls'] ?? []),
+            'source' => $values['source'] ?? null,
+            'budget_amount' => isset($values['budget_amount']) && $values['budget_amount'] !== null
+                ? (float) $values['budget_amount']
+                : null,
+            'budget_currency' => $values['budget_currency'] ?? null,
+            'next_action' => $values['next_action'] ?? null,
+            'contacts' => $contacts,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<array{name:string,email:?string,phone:?string,location:?string}>  $contacts
+     * @param  list<string>  $profileUrls
+     * @return array<string, mixed>
+     */
+    private function incomingMergeSnapshot(array $data, array $contacts, array $profileUrls): array
+    {
+        $primary = $contacts[0] ?? [
+            'name' => $this->nullableTrimmed($data['name'] ?? null) ?? '',
+            'email' => $this->nullableTrimmed($data['email'] ?? null),
+            'phone' => $this->nullableTrimmed($data['phone'] ?? null),
+            'location' => $this->nullableTrimmed($data['location'] ?? null),
+        ];
+
+        return $this->mergeSnapshotFromValues([
+            'name' => $primary['name'] !== '' ? $primary['name'] : $this->nullableTrimmed($data['name'] ?? null),
+            'email' => $primary['email'] ?? $this->nullableTrimmed($data['email'] ?? null),
+            'phone' => $primary['phone'] ?? $this->nullableTrimmed($data['phone'] ?? null),
+            'location' => $primary['location'] ?? $this->nullableTrimmed($data['location'] ?? null),
+            'company_name' => $this->nullableTrimmed($data['company_name'] ?? null),
+            'company_email' => $this->nullableTrimmed($data['company_email'] ?? null),
+            'website' => LeadFieldNormalizer::normalizeWebsite($this->nullableTrimmed($data['website'] ?? null)),
+            'position' => $this->nullableTrimmed($data['position'] ?? null),
+            'source' => $this->nullableTrimmed($data['source'] ?? null),
+            'next_action' => $this->nullableTrimmed($data['next_action'] ?? null),
+            'budget_amount' => isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null
+                ? $data['budget_amount']
+                : null,
+            'budget_currency' => $this->nullableTrimmed($data['budget_currency'] ?? null),
+            'profile_urls' => $profileUrls,
+        ], array_values($contacts));
+    }
+
+    /**
+     * @return list<array{name:string,email:?string,phone:?string,location:?string,sort_order:int}>
+     */
+    private function contactSnapshots(Lead $lead): array
+    {
+        return $lead->contacts
+            ->map(static fn ($contact): array => [
+                'name' => (string) $contact->name,
+                'email' => $contact->email,
+                'phone' => $contact->phone,
+                'location' => $contact->location,
+                'sort_order' => (int) $contact->sort_order,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{name:string,email:?string,phone:?string,location:?string}  $contact
+     */
+    private function contactAlreadyOnLead(Lead $lead, array $contact): bool
+    {
+        $email = $contact['email'] !== null ? mb_strtolower($contact['email']) : null;
+        $phone = $this->normalizePhoneDigits($contact['phone']);
+
+        if ($email === null && $phone === null) {
+            $name = mb_strtolower($contact['name']);
+
+            return mb_strtolower((string) $lead->name) === $name
+                || $lead->contacts->contains(fn ($existing): bool => mb_strtolower((string) $existing->name) === $name);
+        }
+
+        if ($email !== null && $this->emailsEqual($lead->email, $email)) {
+            return true;
+        }
+
+        if ($phone !== null && $this->normalizePhoneDigits($lead->phone) === $phone) {
+            return true;
+        }
+
+        return $lead->contacts->contains(function ($existing) use ($email, $phone): bool {
+            if ($email !== null && $this->emailsEqual($existing->email, $email)) {
+                return true;
+            }
+
+            return $phone !== null && $this->normalizePhoneDigits($existing->phone) === $phone;
+        });
+    }
+
+    /**
+     * @return array{matched_on: string, match_type: string}
+     */
+    private function classifySuggestion(Lead $lead, string $field, string $needle, string $phoneDigits): array
+    {
+        if ($field === 'email') {
+            if ($this->emailsEqual($lead->email, $needle)) {
+                return ['matched_on' => 'email', 'match_type' => 'exact'];
+            }
+
+            foreach ($lead->contacts as $contact) {
+                if ($this->emailsEqual($contact->email, $needle)) {
+                    return ['matched_on' => 'contact_email', 'match_type' => 'exact'];
+                }
+            }
+
+            return ['matched_on' => 'email', 'match_type' => 'partial'];
+        }
+
+        if ($field === 'phone') {
+            if ($this->normalizePhoneDigits($lead->phone) === $phoneDigits) {
+                return ['matched_on' => 'phone', 'match_type' => 'exact'];
+            }
+
+            foreach ($lead->contacts as $contact) {
+                if ($this->normalizePhoneDigits($contact->phone) === $phoneDigits) {
+                    return ['matched_on' => 'contact_phone', 'match_type' => 'exact'];
+                }
+            }
+
+            return ['matched_on' => 'phone', 'match_type' => 'partial'];
+        }
+
+        if ($field === 'name') {
+            if (mb_strtolower((string) $lead->name) === $needle) {
+                return ['matched_on' => 'name', 'match_type' => 'exact'];
+            }
+
+            foreach ($lead->contacts as $contact) {
+                if (mb_strtolower((string) $contact->name) === $needle) {
+                    return ['matched_on' => 'contact_name', 'match_type' => 'exact'];
+                }
+            }
+
+            return ['matched_on' => 'name', 'match_type' => 'partial'];
+        }
+
+        if ($field === 'company_email') {
+            return [
+                'matched_on' => 'company_email',
+                'match_type' => $this->emailsEqual($lead->company_email, $needle) ? 'exact' : 'partial',
+            ];
+        }
+
+        return [
+            'matched_on' => 'company_name',
+            'match_type' => mb_strtolower((string) $lead->company_name) === $needle ? 'exact' : 'partial',
+        ];
+    }
+
+    private function userCanMergeLead(User $user, Lead $lead, string $role): bool
+    {
+        if (in_array($role, ['owner', 'admin', 'supervisor'], true)) {
+            return true;
+        }
+
+        return $role === 'agent' && (int) $lead->created_by_user_id === (int) $user->id;
+    }
+
+    private function assertCanMergeLead(User $user, Lead $lead, string $role): void
+    {
+        if ($this->userCanMergeLead($user, $lead, $role)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['You can view this matching lead, but you can only merge leads you are allowed to edit.'],
+        ]);
+    }
+
+    private function emailsEqual(mixed $existing, string $needle): bool
+    {
+        if (! is_string($existing) || trim($existing) === '') {
+            return false;
+        }
+
+        return mb_strtolower(trim($existing)) === mb_strtolower(trim($needle));
+    }
+
+    private function isBlankMergeValue(mixed $value): bool
+    {
+        return $value === null || $value === '' || $value === [];
+    }
+
+    private function nullableTrimmed(mixed $value): ?string
+    {
+        if (! is_string($value) && ! is_numeric($value)) {
+            return null;
+        }
+
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    private function escapeLikePrefix(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value).'%';
+    }
+
+    private function strippedPhoneSql(string $column): string
+    {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({$column}, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')";
     }
 
     private function normalizePhoneDigits(?string $phone): ?string

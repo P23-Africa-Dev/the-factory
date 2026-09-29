@@ -597,6 +597,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
                 Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
+                Route::get('/leads/suggest', [LeadController::class, 'suggest'])->name('leads.suggest');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -649,6 +650,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
                     ->middleware('throttle:api')
                     ->name('leads.merge');
+                Route::post('/leads/{lead}/merge-preview', [LeadController::class, 'mergePreview'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-preview');
+                Route::post('/leads/{lead}/merge-from-create', [LeadController::class, 'mergeFromCreate'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-from-create');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
                     ->middleware('throttle:api')
                     ->name('leads.destroy');
@@ -825,6 +832,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
+                Route::get('/leads/suggest', [LeadController::class, 'suggest'])->name('leads.suggest');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -853,6 +861,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
                     ->middleware('throttle:api')
                     ->name('leads.merge');
+                Route::post('/leads/{lead}/merge-preview', [LeadController::class, 'mergePreview'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-preview');
+                Route::post('/leads/{lead}/merge-from-create', [LeadController::class, 'mergeFromCreate'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-from-create');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
                     ->middleware('throttle:api')
                     ->name('leads.destroy');
@@ -1246,6 +1260,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
         Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
         Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
+        Route::get('/leads/suggest', [LeadController::class, 'suggest'])->name('leads.suggest');
         Route::post('/leads', [LeadController::class, 'store'])
             ->middleware('throttle:api')
             ->name('leads.store');
@@ -1298,6 +1313,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
             ->middleware('throttle:api')
             ->name('leads.merge');
+        Route::post('/leads/{lead}/merge-preview', [LeadController::class, 'mergePreview'])
+            ->middleware('throttle:api')
+            ->name('leads.merge-preview');
+        Route::post('/leads/{lead}/merge-from-create', [LeadController::class, 'mergeFromCreate'])
+            ->middleware('throttle:api')
+            ->name('leads.merge-from-create');
         Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
             ->middleware('throttle:api')
             ->name('leads.destroy');

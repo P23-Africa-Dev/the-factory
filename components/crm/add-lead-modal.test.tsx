@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
@@ -12,6 +12,42 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-crm", () => ({
   useCreateLead: () => ({ mutate: mocks.createLead, isPending: false }),
   useUpdateLead: () => ({ mutate: mocks.updateLead, isPending: false }),
+  useLeadDuplicateSuggestions: (params: { q?: string; field?: string; enabled?: boolean }) => {
+    if (!params.enabled) return { data: [], isFetching: false };
+    if (params.field === "name" && params.q === "Ada Lovelace") {
+      return {
+        data: [{
+          id: 4,
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          phone: null,
+          company_name: "Analytical Engines",
+          matched_on: "name",
+          match_type: "exact",
+          can_merge: true,
+        }],
+        isFetching: false,
+      };
+    }
+    if (params.field === "name" && params.q === "Ada") {
+      return {
+        data: [{
+          id: 4,
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          phone: null,
+          company_name: "Analytical Engines",
+          matched_on: "name",
+          match_type: "partial",
+          can_merge: true,
+        }],
+        isFetching: false,
+      };
+    }
+    return { data: [], isFetching: false };
+  },
+  usePreviewLeadMerge: () => ({ mutate: vi.fn(), isPending: false }),
+  useApplyLeadMerge: () => ({ mutate: vi.fn(), isPending: false }),
   useCrmAssignees: () => ({
     data: [
       { id: 7, name: "Owner User", email: "owner@example.com", role: "owner" },
@@ -119,5 +155,31 @@ describe("AddLeadModal", () => {
     );
 
     expect((screen.getByRole("combobox", { name: "Assignee" }) as HTMLSelectElement).value).toBe("");
+  });
+
+  it("shows existing leads while typing and offers merge only for an exact match", async () => {
+    render(<AddLeadModal onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText("E.g John Doe"), {
+      target: { value: "Ada" },
+    });
+
+    expect(await screen.findByRole("option", { name: /Ada Lovelace/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("E.g John Doe"), {
+      target: { value: "Ada Lovelace" },
+    });
+
+    expect(await screen.findByRole("button", { name: "Merge" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save as new lead" }));
+
+    await waitFor(() => {
+      expect(mocks.createLead).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Ada Lovelace" }),
+        expect.any(Object),
+      );
+    });
   });
 });

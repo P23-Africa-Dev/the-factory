@@ -95,6 +95,26 @@ class LeadController extends Controller
         );
     }
 
+    public function suggest(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'q' => ['nullable', 'string', 'max:255'],
+            'field' => ['nullable', 'string', 'in:name,email,phone,company_name,company_email'],
+        ]);
+
+        $matches = $this->leadService->suggestDuplicates($request->user(), [
+            'company_id' => $this->resolveCompanyContextId($data['company_id'] ?? null),
+            'q' => $data['q'] ?? '',
+            'field' => $data['field'] ?? 'name',
+        ]);
+
+        return $this->success(
+            message: 'Lead suggestions fetched successfully.',
+            data: ['matches' => $matches],
+        );
+    }
+
     public function merge(Request $request, Lead $lead): JsonResponse
     {
         $data = $request->validate([
@@ -128,6 +148,80 @@ class LeadController extends Controller
                 'lead' => new LeadResource($result['lead']),
             ],
         );
+    }
+
+    public function mergePreview(Request $request, Lead $lead): JsonResponse
+    {
+        $plan = $this->leadService->previewMergeFromCreate(
+            $request->user(),
+            $lead,
+            $this->validatedCreateMergePayload($request),
+        );
+
+        return $this->success(
+            message: 'Lead merge preview ready.',
+            data: [
+                'existing' => $plan['existing'],
+                'incoming' => $plan['incoming'],
+                'result' => $plan['result'],
+                'fields_changed' => $plan['fields_changed'],
+            ],
+        );
+    }
+
+    public function mergeFromCreate(Request $request, Lead $lead): JsonResponse
+    {
+        $result = $this->leadService->applyMergeFromCreate(
+            $request->user(),
+            $lead,
+            $this->validatedCreateMergePayload($request),
+        );
+
+        return $this->success(
+            message: $result['fields_changed'] === []
+                ? 'CRM lead already up to date.'
+                : 'CRM lead merged with the new details.',
+            data: [
+                'existing' => $result['existing'],
+                'incoming' => $result['incoming'],
+                'result' => $result['result'],
+                'fields_changed' => $result['fields_changed'],
+                'lead' => new LeadResource($result['lead']),
+            ],
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedCreateMergePayload(Request $request): array
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'contacts' => ['nullable', 'array'],
+            'contacts.*.name' => ['nullable', 'string', 'max:255'],
+            'contacts.*.email' => ['nullable', 'email', 'max:255'],
+            'contacts.*.phone' => ['nullable', 'string', 'max:40'],
+            'contacts.*.location' => ['nullable', 'string', 'max:255'],
+            'company_name' => ['nullable', 'string', 'max:255'],
+            'company_email' => ['nullable', 'email', 'max:255'],
+            'website' => ['nullable', 'string', 'max:255'],
+            'position' => ['nullable', 'string', 'max:120'],
+            'profile_urls' => ['nullable', 'array'],
+            'profile_urls.*' => ['nullable', 'string', 'max:2048'],
+            'source' => ['nullable', 'string', 'max:255'],
+            'budget_amount' => ['nullable', 'numeric', 'min:0'],
+            'budget_currency' => ['nullable', 'string', 'size:3'],
+            'next_action' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $data['company_id'] = $this->resolveCompanyContextId($data['company_id'] ?? null);
+
+        return $data;
     }
 
     public function assignees(Request $request): JsonResponse
