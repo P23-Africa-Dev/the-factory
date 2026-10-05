@@ -740,6 +740,27 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                   )}
 
                   <section className="rounded-[16px] border border-[#ececec] p-4">
+                    <p className="text-[13px] font-semibold">SMS</p>
+                    <p className="mt-1 text-[10px] leading-[14px] text-[#616263]">
+                      SMS uses the platform Infobip sender. Pick Email or SMS when you send — one
+                      channel per outreach.
+                    </p>
+                    {senderSettings?.sms?.configured ? (
+                      <p className="mt-2 text-[11px] font-medium text-[#087652]">
+                        Ready from {senderSettings.sms.from || "the platform sender"}.
+                        {senderSettings.sms.quota
+                          ? ` ${senderSettings.sms.quota.used}/${senderSettings.sms.quota.limit} SMS today.`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-[#b45309]">
+                        SMS is not configured yet. Platform keys still need an Infobip base URL,
+                        API key, and approved sender.
+                      </p>
+                    )}
+                  </section>
+
+                  <section className="rounded-[16px] border border-[#ececec] p-4">
                     <p className="text-[13px] font-semibold">Need help?</p>
                     <p className="mt-1 text-[10px] leading-[14px] text-[#616263]">
                       Ask Sales Engine support to finish DNS or inbox setup for you.

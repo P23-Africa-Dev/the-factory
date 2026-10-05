@@ -1086,7 +1086,14 @@ export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
 
 export function sendOutreachActivity(
   activityId: number,
-  payload: { to_email: string; subject?: string; body: string; inbox_id?: number }
+  payload: {
+    channel?: "email" | "sms";
+    to_email?: string;
+    to_phone?: string;
+    subject?: string;
+    body: string;
+    inbox_id?: number;
+  }
 ): Promise<{
   message_id: string | null;
   sent: boolean;
@@ -1122,7 +1129,7 @@ export function fetchOutreachActivity(
 
 export function regenerateOutreachActivity(
   id: number,
-  payload?: { instructions?: string; channel?: "email" | "whatsapp" }
+  payload?: { instructions?: string; channel?: "email" | "whatsapp" | "sms" }
 ): Promise<OutreachDraft & { activity_id: number; regeneration_count?: number }> {
   return withSessionRetry(async () =>
     seRequest<OutreachDraft & { activity_id: number; regeneration_count?: number }>({
@@ -1426,6 +1433,11 @@ export type OutreachSenderSettings = {
   setup?: OutreachSetupStatus | null;
   support_request?: { id: number; status: string; domain?: string | null; created_at?: string | null } | null;
   quota?: OutreachQuotaSnapshot | null;
+  sms?: {
+    configured: boolean;
+    from?: string | null;
+    quota?: OutreachQuotaSnapshot | null;
+  } | null;
 };
 
 export type OutreachDnsRecord = {
@@ -1450,11 +1462,12 @@ export type OutreachDomainAuthentication = {
 } | null;
 
 export type OutreachDraft = {
-  channel: "email" | "whatsapp";
+  channel: "email" | "whatsapp" | "sms";
   subject?: string | null;
   body: string;
   sent: boolean;
   to_email?: string | null;
+  to_phone?: string | null;
   activity_id?: number | null;
   target_lead_ids?: number[];
   activity_ids?: number[];

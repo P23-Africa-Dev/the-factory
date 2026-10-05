@@ -169,10 +169,11 @@ type ChatMessage = {
 
 type OutreachPreviewState = {
   activityId: number | null;
-  channel: "email" | "whatsapp";
+  channel: "email" | "whatsapp" | "sms";
   subject?: string | null;
   body: string;
   toEmail?: string;
+  toPhone?: string;
   contextLabel?: string;
   alignmentNote?: string;
   /** Chat message id — used to mark the transcript draft as sent. */
@@ -1191,10 +1192,11 @@ function buildChatOutreachPreview(
 
   return {
     activityId,
-    channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+    channel: draft.channel === "whatsapp" ? "whatsapp" : draft.channel === "sms" ? "sms" : "email",
     subject: normalized.subject,
     body: normalized.body,
     toEmail: draft.to_email ?? lead?.email ?? "",
+    toPhone: draft.to_phone ?? lead?.phone ?? "",
     contextLabel: leadNames ? `For ${leadNames}` : undefined,
     alignmentNote: draft.icp_alignment_note,
     messageId,
@@ -2293,6 +2295,7 @@ function ChatWorkspace({
       initialSubject={outreachPreview?.subject}
       initialBody={outreachPreview?.body ?? ""}
       initialToEmail={outreachPreview?.toEmail}
+      initialToPhone={outreachPreview?.toPhone}
       contextLabel={outreachPreview?.contextLabel}
       alignmentNote={outreachPreview?.alignmentNote}
       onConfigureSender={onOpenOutreachSettings}
@@ -2502,7 +2505,7 @@ function OutreachCard({
               {name}
             </p>
             <p className="mt-1 line-clamp-2 break-words text-[8px] font-light leading-[10px]">
-              {channel}: {preview}
+              {channel.replace(/\s*draft$/i, "")}: {preview}
             </p>
           </div>
         </div>
@@ -2542,10 +2545,11 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
       const normalized = normalizeOutreachSubjectBody(draft.body || item.preview, draft.subject);
       setPreview({
         activityId: draft.activity_id ?? item.id,
-        channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+        channel: draft.channel === "whatsapp" ? "whatsapp" : draft.channel === "sms" ? "sms" : "email",
         subject: normalized.subject,
         body: normalized.body,
         toEmail: draft.to_email ?? "",
+        toPhone: draft.to_phone ?? draft.leads?.[0]?.phone ?? "",
         contextLabel: item.name,
       });
     } catch (error) {
@@ -2646,6 +2650,7 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         initialSubject={preview?.subject}
         initialBody={preview?.body ?? ""}
         initialToEmail={preview?.toEmail}
+        initialToPhone={preview?.toPhone}
         contextLabel={preview?.contextLabel}
         onSent={() => {
           setPreview(null);
@@ -4718,6 +4723,7 @@ function SocialListeningTab({
         initialSubject={outreachPreview?.subject}
         initialBody={outreachPreview?.body ?? ""}
         initialToEmail={outreachPreview?.toEmail}
+      initialToPhone={outreachPreview?.toPhone}
         contextLabel={outreachPreview?.contextLabel}
         alignmentNote={outreachPreview?.alignmentNote}
         onConfigureSender={onOpenOutreachSettings}

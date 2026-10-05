@@ -70,7 +70,9 @@ export function useSendOutreachActivity() {
       ...payload
     }: {
       activityId: number;
-      to_email: string;
+      channel?: "email" | "sms";
+      to_email?: string;
+      to_phone?: string;
       subject?: string;
       body: string;
       inbox_id?: number;
@@ -96,7 +98,7 @@ export function useRegenerateOutreach() {
     }: {
       activityId: number;
       instructions?: string;
-      channel?: "email" | "whatsapp";
+      channel?: "email" | "whatsapp" | "sms";
     }) => regenerateOutreachActivity(activityId, { instructions, channel }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: SALES_ENGINE_OUTREACH_KEYS.all });

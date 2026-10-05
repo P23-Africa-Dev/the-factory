@@ -46,10 +46,11 @@ import { OutreachSettingsModal } from "./outreach-settings-modal";
 
 type OutreachPreviewState = {
   activityId: number | null;
-  channel: "email" | "whatsapp";
+  channel: "email" | "whatsapp" | "sms";
   subject?: string | null;
   body: string;
   toEmail?: string;
+  toPhone?: string;
   contextLabel?: string;
 };
 
@@ -246,10 +247,12 @@ export function SalesEngineOutreachView() {
       const normalized = normalizeOutreachSubjectBody(draft.body || item.preview, draft.subject);
       setPreview({
         activityId: draft.activity_id ?? item.id,
-        channel: draft.channel === "whatsapp" ? "whatsapp" : "email",
+        channel:
+          draft.channel === "whatsapp" ? "whatsapp" : draft.channel === "sms" ? "sms" : "email",
         subject: normalized.subject,
         body: normalized.body,
         toEmail: draft.to_email ?? "",
+        toPhone: draft.to_phone ?? draft.leads?.[0]?.phone ?? "",
         contextLabel: item.name,
       });
     } catch (error) {
@@ -716,7 +719,7 @@ export function SalesEngineOutreachView() {
                             {item.name}
                           </h2>
                           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                            <span className="font-medium text-slate-500 capitalize">{item.channel}</span>
+                            <span className="font-medium text-slate-500 capitalize">{item.channel.replace(/\s*draft$/i, "")}</span>
                             <span>•</span>
                             <span className="flex items-center gap-1">
                               <Clock size={11} className="text-slate-400" />
@@ -856,7 +859,7 @@ export function SalesEngineOutreachView() {
                             ) : (
                               <MessageCircle size={11} className="text-emerald-600" />
                             )}
-                            <span className="capitalize">{item.channel}</span>
+                            <span className="capitalize">{item.channel.replace(/\s*draft$/i, "")}</span>
                           </span>
                         </td>
                         <td className="px-4 py-3.5">
@@ -1025,6 +1028,7 @@ export function SalesEngineOutreachView() {
         initialSubject={preview?.subject}
         initialBody={preview?.body ?? ""}
         initialToEmail={preview?.toEmail}
+        initialToPhone={preview?.toPhone}
         contextLabel={preview?.contextLabel}
         onSent={() => {
           setPreview(null);
