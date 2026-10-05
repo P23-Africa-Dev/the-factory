@@ -6,7 +6,7 @@
 # Without PDBs, a node drain could evict ALL replicas simultaneously.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 1. Backend API (2–10 replicas via HPA) — keep at least 1 running during drains ─
+# 1. Backend API (1 replica) — allow the single node to drain for upgrades ─
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/name: factory23
     app.kubernetes.io/component: pdb
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: backend
@@ -71,8 +71,8 @@ spec:
       app: realtime
 
 ---
-# 5. Redis (1 replica) — disallow eviction unless alternative is ready ───────
-# Redis carries sessions and queue data; eviction must be manual/planned.
+# 5. Redis (1 replica) — allow eviction so the single node can drain ────────
+# Redis carries sessions and queue data. A drain reattaches the same volume.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -82,7 +82,7 @@ metadata:
     app.kubernetes.io/name: factory23
     app.kubernetes.io/component: pdb
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: redis

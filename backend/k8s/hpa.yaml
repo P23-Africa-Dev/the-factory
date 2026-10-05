@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Horizontal Pod Autoscaler — backend Deployment
-# Scales: 1 → 4 replicas
-# NOTE: maxReplicas is capped at 4 because the single 2-CPU node sits at ~94%
-# memory requests with 4 backend pods. A 5th replica squeezed out the
-# ingress-nginx controller on 2026-07-26 and caused a full API outage.
-# Raise this only after adding node capacity.
+# Scales: stays at 1 replica
+# NOTE: maxReplicas is 1. The cluster runs a single 2 vCPU / 4 GB node shared
+# with sales-engine, ajoflow, and base23. Four backend pods previously filled
+# that node and a fifth evicted ingress-nginx on 2026-07-26. Raise this only
+# after adding node capacity.
 # Triggers:
 #   CPU average utilization >= 70%
 #   Memory average utilization >= 80%
@@ -27,7 +27,7 @@ spec:
     kind: Deployment
     name: backend
   minReplicas: 1
-  maxReplicas: 4
+  maxReplicas: 1
   metrics:
     - type: Resource
       resource:
