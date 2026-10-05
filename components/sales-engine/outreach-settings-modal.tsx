@@ -265,7 +265,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
     }
     try {
       await updateSender.mutateAsync({ sender_mode: "organization" });
-      setSenderMode("organization");
+    setSenderMode("organization");
       toast.success("Using your organization domain.");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Could not switch to organization sending."));
@@ -486,20 +486,20 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                     senderMode === "organization" ||
                     connectionStatus !== "not_connected") && (
                     <div className="space-y-4">
-                  <section className="rounded-[16px] border border-[#ececec] p-4">
-                    <div className="flex items-center justify-between gap-2">
+                    <section className="rounded-[16px] border border-[#ececec] p-4">
+                      <div className="flex items-center justify-between gap-2">
                       <p className="text-[13px] font-semibold">1. Organization domain</p>
-                      {domainAuth && (
-                        <button
-                          type="button"
-                          onClick={handleReset}
-                          disabled={reset.isPending}
-                          className="text-[10px] font-medium text-[#616263] underline underline-offset-2 hover:text-[#09232d] disabled:opacity-50"
-                        >
-                          Use a different domain
-                        </button>
-                      )}
-                    </div>
+                        {domainAuth && (
+                          <button
+                            type="button"
+                            onClick={handleReset}
+                            disabled={reset.isPending}
+                            className="text-[10px] font-medium text-[#616263] underline underline-offset-2 hover:text-[#09232d] disabled:opacity-50"
+                          >
+                            Use a different domain
+                          </button>
+                        )}
+                      </div>
                     <p className="mt-1 text-[10px] leading-[14px] text-[#616263]">
                       Add only the SendGrid CNAME records we show, plus a DMARC TXT. Leave your MX
                       and your mail provider&apos;s SPF/DKIM unchanged so replies stay in your
@@ -526,43 +526,43 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                           rechecking={recheck.isPending}
                         />
                       </>
-                    ) : !domainAuth ? (
-                      <div className="mt-3 space-y-2">
-                        <input
-                          type="text"
-                          value={domain}
-                          onChange={(e) => setDomain(e.target.value)}
-                          placeholder="yourcompany.com"
-                          className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] outline-none focus:border-[#09232d]/50"
-                        />
-                        <input
-                          type="email"
-                          value={fromEmail}
-                          onChange={(e) => setFromEmail(e.target.value)}
-                          placeholder="sales@yourcompany.com"
-                          className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] outline-none focus:border-[#09232d]/50"
-                        />
-                        <button
-                          type="button"
-                          disabled={
-                            authenticate.isPending || !domain.trim() || !fromEmail.trim()
-                          }
-                          onClick={handleAuthenticate}
-                          className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
-                        >
-                          {authenticate.isPending ? "Generating…" : "Generate DNS records"}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-[11px] font-medium text-[#09232d]">{domainAuth.domain}</p>
-                        <p className="text-[10px] leading-[14px] text-[#616263]">
+                      ) : !domainAuth ? (
+                        <div className="mt-3 space-y-2">
+                          <input
+                            type="text"
+                            value={domain}
+                            onChange={(e) => setDomain(e.target.value)}
+                            placeholder="yourcompany.com"
+                            className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] outline-none focus:border-[#09232d]/50"
+                          />
+                          <input
+                            type="email"
+                            value={fromEmail}
+                            onChange={(e) => setFromEmail(e.target.value)}
+                            placeholder="sales@yourcompany.com"
+                            className="h-9 w-full rounded-[10px] border border-[#d1d1d1] bg-white px-3 text-[12px] outline-none focus:border-[#09232d]/50"
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              authenticate.isPending || !domain.trim() || !fromEmail.trim()
+                            }
+                            onClick={handleAuthenticate}
+                            className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
+                          >
+                            {authenticate.isPending ? "Generating…" : "Generate DNS records"}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-[11px] font-medium text-[#09232d]">{domainAuth.domain}</p>
+                          <p className="text-[10px] leading-[14px] text-[#616263]">
                           Add these DNS records at your domain host, then verify. Also add a DMARC
                           TXT at _dmarc.{domainAuth.domain}.
-                        </p>
-                        {(domainAuth.dns_records ?? []).map((record) => (
-                          <DnsRecordRow key={record.label} record={record} />
-                        ))}
+                          </p>
+                          {(domainAuth.dns_records ?? []).map((record) => (
+                            <DnsRecordRow key={record.label} record={record} />
+                          ))}
                         <IntegrityChecklist
                           status={integrityStatus}
                           checks={integrityChecks}
@@ -576,17 +576,17 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
                           }
                           rechecking={recheck.isPending}
                         />
-                        <button
-                          type="button"
-                          disabled={verify.isPending}
-                          onClick={handleVerify}
-                          className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
-                        >
-                          {verify.isPending ? "Checking…" : "I've added these records. Verify!"}
-                        </button>
-                      </div>
-                    )}
-                  </section>
+                          <button
+                            type="button"
+                            disabled={verify.isPending}
+                            onClick={handleVerify}
+                            className="h-9 w-full rounded-[10px] bg-[#09232d] text-[11px] font-semibold text-white transition hover:bg-[#0f3340] disabled:opacity-50"
+                          >
+                            {verify.isPending ? "Checking…" : "I've added these records. Verify!"}
+                          </button>
+                        </div>
+                      )}
+                    </section>
 
                   <section className="rounded-[16px] border border-[#ececec] p-4">
                     <p className="text-[13px] font-semibold">2. Inboxes</p>

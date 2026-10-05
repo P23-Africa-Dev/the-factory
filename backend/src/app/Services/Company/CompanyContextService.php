@@ -6,6 +6,7 @@ namespace App\Services\Company;
 
 use App\Models\Company;
 use App\Models\User;
+use App\Support\MobileAgentSession;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -73,11 +74,17 @@ class CompanyContextService
             ]);
         }
 
+        $role = (string) $membership->role;
+
+        if (! is_numeric($supportCompanyId) && MobileAgentSession::isCurrent($user)) {
+            $role = 'agent';
+        }
+
         return [
             'company' => $company,
             'role' => is_numeric($supportCompanyId)
                 ? (string) (request()?->attributes->get('support_effective_role') ?? 'owner')
-                : (string) $membership->role,
+                : $role,
         ];
     }
 }

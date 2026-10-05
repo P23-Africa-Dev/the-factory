@@ -150,7 +150,7 @@ export default function ProfilePage() {
                       variant="primary"
                     />
                   )}
-                  {internalRole && internalRole !== accessRole && (
+                  {internalRole && internalRole !== accessRole && accessRole !== 'agent' && (
                     <RoleBadge
                       label={internalRole.charAt(0).toUpperCase() + internalRole.slice(1)}
                       variant="secondary"
