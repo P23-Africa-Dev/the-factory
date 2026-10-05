@@ -191,7 +191,7 @@
     @php
         $activeStackLabel = match ($activeAiStack) {
             'nvidia' => 'NVIDIA NIM',
-            'glm' => 'GLM (Zhipu)',
+            'glm' => 'GLM (Z.AI)',
             default => 'OpenAI + Claude',
         };
         $activeStackShortLabel = match ($activeAiStack) {
@@ -292,7 +292,7 @@
                         <input type="radio" class="btn-check" name="stack" id="ai-stack-glm" value="glm"
                             {{ $activeAiStack === 'glm' ? 'checked' : '' }}>
                         <label class="btn btn-outline-secondary w-100 text-start p-3 h-100" for="ai-stack-glm">
-                            <div class="fw-bold mb-1">GLM (Zhipu)</div>
+                            <div class="fw-bold mb-1">GLM (Z.AI)</div>
                             <div style="font-size:.78rem;color:var(--text-secondary)">
                                 Routing: {{ $aiStackSnapshot['glm_models']['routing'] ?? '—' }}<br>
                                 Chat: {{ $aiStackSnapshot['glm_models']['exec'] ?? '—' }}<br>
@@ -436,7 +436,7 @@
             'openai' => ['label' => 'OpenAI', 'health' => $openaiHealth],
             'claude' => ['label' => 'Claude (Anthropic)', 'health' => $claudeHealth],
             'nvidia' => ['label' => 'NVIDIA NIM', 'health' => $nvidiaHealth],
-            'glm' => ['label' => 'GLM (Zhipu)', 'health' => $glmHealth],
+            'glm' => ['label' => 'GLM (Z.AI)', 'health' => $glmHealth],
         ] as $key => $item)
                 @php
                     $health = $item['health'];

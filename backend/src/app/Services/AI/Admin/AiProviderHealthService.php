@@ -568,14 +568,18 @@ class AiProviderHealthService
 
         $start = microtime(true);
         try {
-            $baseUrl = rtrim((string) config('services.ai.glm.base_url', 'https://open.bigmodel.cn/api/paas/v4'), '/');
-            $response = Http::timeout(25)->withToken($apiKey)->post($baseUrl . '/chat/completions', [
-                'model' => $model,
-                'max_tokens' => 1,
-                'messages' => [
-                    ['role' => 'user', 'content' => 'ping'],
-                ],
-            ]);
+            $baseUrl = rtrim((string) config('services.ai.glm.base_url', 'https://api.z.ai/api/paas/v4'), '/');
+            $response = Http::timeout(25)
+                ->withHeaders(['Accept-Language' => 'en-US,en'])
+                ->withToken($apiKey)
+                ->post($baseUrl . '/chat/completions', [
+                    'model' => $model,
+                    'max_tokens' => 16,
+                    'thinking' => ['type' => 'disabled'],
+                    'messages' => [
+                        ['role' => 'user', 'content' => 'ping'],
+                    ],
+                ]);
             $latency = (int) round((microtime(true) - $start) * 1000);
             $errorMessage = (string) $response->json('error.message', '');
 

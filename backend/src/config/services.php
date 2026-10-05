@@ -52,7 +52,7 @@ return [
         'client_secret' => env('GOOGLE_CALENDAR_CLIENT_SECRET'),
         'redirect_uri' => env(
             'GOOGLE_CALENDAR_REDIRECT_URI',
-            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/calendar/integration/callback',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/') . '/api/v1/calendar/integration/callback',
         ),
         // Calendar meetings only — Gmail/CRM mailbox uses google_mail scopes via Email Accounts.
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
@@ -68,7 +68,7 @@ return [
         'client_secret' => env('GOOGLE_MAIL_CLIENT_SECRET', env('GOOGLE_CALENDAR_CLIENT_SECRET')),
         'redirect_uri' => env(
             'GOOGLE_MAIL_REDIRECT_URI',
-            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/google/callback',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/') . '/api/v1/email-accounts/oauth/google/callback',
         ),
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'GOOGLE_MAIL_SCOPES',
@@ -82,7 +82,7 @@ return [
         'tenant' => env('MICROSOFT_MAIL_TENANT', 'common'),
         'redirect_uri' => env(
             'MICROSOFT_MAIL_REDIRECT_URI',
-            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/microsoft/callback',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/') . '/api/v1/email-accounts/oauth/microsoft/callback',
         ),
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'MICROSOFT_MAIL_SCOPES',
@@ -96,7 +96,7 @@ return [
         'datacenter' => env('ZOHO_MAIL_DATACENTER', 'com'),
         'redirect_uri' => env(
             'ZOHO_MAIL_REDIRECT_URI',
-            rtrim((string) env('APP_URL', 'http://localhost'), '/').'/api/v1/email-accounts/oauth/zoho/callback',
+            rtrim((string) env('APP_URL', 'http://localhost'), '/') . '/api/v1/email-accounts/oauth/zoho/callback',
         ),
         'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env(
             'ZOHO_MAIL_SCOPES',
@@ -121,7 +121,7 @@ return [
 
     'ai' => [
         // Env default only — runtime stack is overridden by platform_settings.ai.stack when set.
-        'stack' => env('AI_STACK', 'openai_claude'),
+        'stack' => env('AI_STACK', 'glm'),
         'provider' => env('AI_PROVIDER', 'openai'),
         'fallback_provider' => env('AI_FALLBACK_PROVIDER', 'claude'),
         'default_model' => env('AI_DEFAULT_MODEL', 'auto'),
@@ -178,15 +178,15 @@ return [
         ],
         'glm' => [
             'api_key' => env('GLM_API_KEY'),
-            'base_url' => env('GLM_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4'),
+            'base_url' => env('GLM_BASE_URL', 'https://api.z.ai/api/paas/v4'),
             'request_timeout_ms' => (int) env('GLM_REQUEST_TIMEOUT_MS', 120000),
             'routing_timeout_ms' => (int) env('GLM_ROUTING_TIMEOUT_MS', 15000),
-            'operational_timeout_ms' => (int) env('GLM_OPERATIONAL_TIMEOUT_MS', 60000),
+            'operational_timeout_ms' => (int) env('GLM_OPERATIONAL_TIMEOUT_MS', 90000),
             'analyst_timeout_ms' => (int) env('GLM_ANALYST_TIMEOUT_MS', (int) env('GLM_REQUEST_TIMEOUT_MS', 120000)),
-            'operational_max_tokens' => (int) env('GLM_OPERATIONAL_MAX_TOKENS', 1000),
-            'routing_model' => env('GLM_ROUTING_MODEL', 'glm-4-flash'),
-            'exec_model' => env('GLM_EXEC_MODEL', 'glm-4-air'),
-            'analyst_model' => env('GLM_ANALYST_MODEL', 'glm-4-plus'),
+            'operational_max_tokens' => (int) env('GLM_OPERATIONAL_MAX_TOKENS', 4000),
+            'routing_model' => env('GLM_ROUTING_MODEL', 'glm-5'),
+            'exec_model' => env('GLM_EXEC_MODEL', 'glm-5.2'),
+            'analyst_model' => env('GLM_ANALYST_MODEL', 'glm-5.2'),
         ],
         // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
         'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),

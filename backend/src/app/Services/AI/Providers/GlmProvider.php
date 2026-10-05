@@ -34,7 +34,7 @@ class GlmProvider implements AiProviderContract
         $purpose = (string) ($options['purpose'] ?? 'default');
         $purposeKey = strtolower(trim($purpose));
         $timeoutMs = $this->resolveTimeoutMs($purposeKey, $options);
-        $baseUrl = rtrim((string) config('services.ai.glm.base_url', 'https://open.bigmodel.cn/api/paas/v4'), '/');
+        $baseUrl = rtrim((string) config('services.ai.glm.base_url', 'https://api.z.ai/api/paas/v4'), '/');
 
         $configuredMaxTokens = max(64, (int) config('services.ai.max_tokens', 4000));
         $requestedMaxTokens = (int) ($options['max_tokens'] ?? $configuredMaxTokens);
@@ -44,7 +44,7 @@ class GlmProvider implements AiProviderContract
             in_array($purposeKey, ['operational', 'routing', 'default'], true)
             && empty($options['allow_high_max_tokens'])
         ) {
-            $operationalCap = max(64, (int) config('services.ai.glm.operational_max_tokens', 1000));
+            $operationalCap = max(64, (int) config('services.ai.glm.operational_max_tokens', 4000));
             $effectiveMaxTokens = min($effectiveMaxTokens, $operationalCap);
         }
 
@@ -53,20 +53,28 @@ class GlmProvider implements AiProviderContract
             isset($options['model']) ? (string) $options['model'] : null,
         );
 
+        $reasons = in_array($purposeKey, ['operational', 'analyst', 'report', 'default'], true);
+        $payload = [
+            'model' => $model,
+            'max_tokens' => $effectiveMaxTokens,
+            'temperature' => (float) ($options['temperature'] ?? ($reasons ? 0.6 : 0.2)),
+            'thinking' => ['type' => $reasons ? 'enabled' : 'disabled'],
+            'messages' => [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ['role' => 'user', 'content' => $userPrompt],
+            ],
+        ];
+        if ($reasons && str_starts_with($model, 'glm-5.2')) {
+            $payload['reasoning_effort'] = 'high';
+        }
+
         try {
             $response = $this->http
                 ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
                 ->connectTimeout(15)
+                ->withHeaders(['Accept-Language' => 'en-US,en'])
                 ->withToken((string) config('services.ai.glm.api_key'))
-                ->post($baseUrl . '/chat/completions', [
-                    'model' => $model,
-                    'max_tokens' => $effectiveMaxTokens,
-                    'temperature' => (float) ($options['temperature'] ?? 0.2),
-                    'messages' => [
-                        ['role' => 'system', 'content' => $systemPrompt],
-                        ['role' => 'user', 'content' => $userPrompt],
-                    ],
-                ]);
+                ->post($baseUrl . '/chat/completions', $payload);
         } catch (\Throwable $e) {
             return AiGenerationResult::failure(
                 provider: 'glm',
