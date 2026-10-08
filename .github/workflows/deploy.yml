@@ -20,8 +20,8 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "backend/src/**"
-      - "backend/Dockerfile"
+      - 'backend/src/**'
+      - 'backend/Dockerfile'
 
 env:
   REGISTRY: registry.digitalocean.com/con-reg
@@ -46,7 +46,7 @@ jobs:
           MYSQL_DATABASE: factory_api_test
           MYSQL_USER: factory_test
           MYSQL_PASSWORD: factory_test_pass
-        ports: ["3306:3306"]
+        ports: ['3306:3306']
         options: >-
           --health-cmd="mysqladmin ping -uroot -ptest_root_pass --silent"
           --health-interval=10s
@@ -54,7 +54,7 @@ jobs:
           --health-retries=10
       redis:
         image: redis:7.2-alpine
-        ports: ["6379:6379"]
+        ports: ['6379:6379']
         options: >-
           --health-cmd="redis-cli ping"
           --health-interval=5s
@@ -68,7 +68,7 @@ jobs:
       - name: Setup PHP 8.3
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          php-version: '8.3'
           extensions: pdo_mysql, mbstring, bcmath, gd, zip, pcntl, exif
           coverage: none
 
@@ -313,7 +313,7 @@ jobs:
         if: always()
         run: |
           kubectl patch hpa backend-hpa -n ${{ env.K8S_NAMESPACE }} --type merge \
-            -p '{"spec":{"minReplicas":1,"maxReplicas":1}}' || true
+            -p '{"spec":{"minReplicas":1,"maxReplicas":10}}' || true
           kubectl scale deployment/backend -n ${{ env.K8S_NAMESPACE }} --replicas=1 || true
 
       - name: Smoke test — health endpoint
