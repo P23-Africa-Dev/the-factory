@@ -2,7 +2,7 @@
 # Backend Deployment — PHP-FPM + Nginx (sidecar pattern)
 # Image: registry.digitalocean.com/con-reg/backend:v2
 # Replicas: 3 (HPA scales 3–10 based on CPU)
-# Health: GET /api/v1/health is served by nginx (no PHP worker required).
+# Health: GET /api/v1/health  (HealthController exists, returns 200)
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
@@ -145,28 +145,23 @@ spec:
               mountPath: /usr/local/etc/php/conf.d/99-custom.ini
               subPath: 99-custom.ini
               readOnly: true
-            - name: php-custom-ini
-              mountPath: /usr/local/etc/php-fpm.d/zzz-pool.conf
-              subPath: zzz-pool.conf
-              readOnly: true
 
-          # Do not TCP-probe port 9000. php-fpm accepts that connection and
-          # holds a worker forever when the probe sends no FastCGI request.
+          # PHP-FPM liveness: TCP check on port 9000
           livenessProbe:
-            exec:
-              command: ["sh", "-c", "kill -0 1"]
-            initialDelaySeconds: 20
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 30
             periodSeconds: 15
-            timeoutSeconds: 3
+            timeoutSeconds: 5
             failureThreshold: 3
 
           readinessProbe:
-            exec:
-              command: ["sh", "-c", "kill -0 1"]
+            tcpSocket:
+              port: 9000
             initialDelaySeconds: 10
-            periodSeconds: 10
+            periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 3
+            failureThreshold: 5
 
           securityContext:
             allowPrivilegeEscalation: false
