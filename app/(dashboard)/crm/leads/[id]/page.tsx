@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useRef, useState, useEffect } from "react";
-import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmAssignees } from "@/hooks/use-crm";
+import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmAssignees, useLeadFields } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -38,13 +38,17 @@ import {
   LeadActivity,
   LeadContact,
   UpdateLeadPayload,
+  LeadCustomFields,
 } from "@/lib/api/crm";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
+import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from "@/lib/crm/custom-fields";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
 import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
+import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
+import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -497,6 +501,7 @@ type EditLeadForm = {
   priority: ApiLeadPriority;
   assigned_to_user_id: string;
   next_action: string;
+  customFields: LeadCustomFields;
 };
 
 /* --- Page Component -------------------------------------- */
@@ -510,6 +515,8 @@ export default function LeadDetailsPage() {
 
   // Real data fetching
   const { data: leadData, isLoading } = useLead(leadId, companyId, "/admin");
+  const { data: leadFields = [] } = useLeadFields(companyId, "/admin");
+  const [showFieldDialog, setShowFieldDialog] = useState(false);
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
       toast.success("Lead updated successfully");
@@ -533,6 +540,7 @@ export default function LeadDetailsPage() {
     priority: "medium",
     assigned_to_user_id: "",
     next_action: "",
+    customFields: {},
   });
   const [activeContactIndex, setActiveContactIndex] = useState(0);
   const [contactErrors, setContactErrors] = useState<LeadContactErrors[]>([]);
@@ -556,6 +564,7 @@ export default function LeadDetailsPage() {
     priority: lead.priority || "medium",
     assigned_to_user_id: lead.assigned_to_user_id ? String(lead.assigned_to_user_id) : "",
     next_action: lead.next_action || "",
+    customFields: formValuesFromLead(leadFields, lead.custom_fields),
   });
 
   const startEditing = () => {
@@ -626,6 +635,11 @@ export default function LeadDetailsPage() {
       toast.error("One or more profile URLs are invalid.");
       return;
     }
+    const customErrors = validateCustomFieldValues(leadFields, editForm.customFields);
+    if (Object.keys(customErrors).length > 0) {
+      toast.error(Object.values(customErrors)[0]);
+      return;
+    }
 
     const contacts = editForm.contacts.map((contact, index) => ({
       name: contact.name.trim(),
@@ -652,6 +666,7 @@ export default function LeadDetailsPage() {
       assigned_to_user_id: editForm.assigned_to_user_id
         ? Number(editForm.assigned_to_user_id)
         : null,
+      custom_fields: serializeCustomFields(leadFields, editForm.customFields),
     };
     updateLead({ leadId, payload });
   };
@@ -1110,6 +1125,18 @@ export default function LeadDetailsPage() {
                   </div>
                 ) : null}
               </div>
+              <div className="mt-8 border-t border-gray-100 pt-6">
+                <h3 className="mb-4 text-[14px] font-semibold text-[#0B1215]">Custom fields</h3>
+                <LeadCustomFieldsEditor
+                  fields={leadFields}
+                  values={isEditing ? editForm.customFields : formValuesFromLead(leadFields, leadData.custom_fields)}
+                  disabled={!isEditing}
+                  showAdd={isEditing}
+                  onAddField={() => setShowFieldDialog(true)}
+                  onChange={(key, value) => updateField("customFields", { ...editForm.customFields, [key]: value })}
+                  visibility="all"
+                />
+              </div>
             </div>
           </div>
 
@@ -1125,6 +1152,14 @@ export default function LeadDetailsPage() {
           />
         </div>
       </div>
+      {showFieldDialog && companyId && (
+        <LeadFieldDialog
+          companyId={companyId}
+          apiBasePath="/admin"
+          onClose={() => setShowFieldDialog(false)}
+          onCreated={() => setShowFieldDialog(false)}
+        />
+      )}
     </div>
   );
 }

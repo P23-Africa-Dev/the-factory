@@ -12,6 +12,9 @@ export type {
   LeadFilters,
   LeadsResult,
   PaginationData,
+  LeadFieldDefinition,
+  CreateLeadFieldPayload,
+  LeadCustomFields,
 } from './types';
 
 export { crmKeys } from './queryKeys';
@@ -25,6 +28,8 @@ export {
   useAgentUploadsOverview,
   useCreateLead,
   useUpdateLead,
+  useLeadFields,
+  useCreateLeadField,
 } from './queries';
 
 export { useCrmNavigation } from './navigation';

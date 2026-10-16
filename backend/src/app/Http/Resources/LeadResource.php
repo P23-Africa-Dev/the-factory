@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Models\LeadFieldDefinition;
 use App\Support\AvatarUrlResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -42,6 +43,7 @@ class LeadResource extends JsonResource
             'last_interaction' => $this->last_interaction,
             'last_interaction_at' => $this->last_interaction_at?->toIso8601String(),
             'meta' => $this->meta,
+            'custom_fields' => $this->visibleCustomFields($request),
             'converted_at' => $this->converted_at?->toIso8601String(),
             'creator' => $this->whenLoaded('creator', fn (): ?array => $this->creator ? [
                 'id' => $this->creator->id,
@@ -65,5 +67,36 @@ class LeadResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Declined and archived field values stay in storage but are omitted here.
+     */
+    private function visibleCustomFields(Request $request): object
+    {
+        $companyId = (int) $this->company_id;
+        $cacheKey = 'visible_lead_field_keys_'.$companyId;
+        $keys = $request->attributes->get($cacheKey);
+
+        if (! is_array($keys)) {
+            $keys = LeadFieldDefinition::query()
+                ->where('company_id', $companyId)
+                ->whereIn('status', ['active', 'pending'])
+                ->pluck('key')
+                ->all();
+            $request->attributes->set($cacheKey, $keys);
+        }
+
+        $stored = is_array($this->custom_fields) ? $this->custom_fields : [];
+        $allowed = array_flip($keys);
+        $filtered = [];
+
+        foreach ($stored as $key => $value) {
+            if (is_string($key) && isset($allowed[$key])) {
+                $filtered[$key] = $value;
+            }
+        }
+
+        return (object) $filtered;
     }
 }

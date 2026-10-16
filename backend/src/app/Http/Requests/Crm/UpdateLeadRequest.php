@@ -115,6 +115,7 @@ class UpdateLeadRequest extends FormRequest
             'last_interaction_at' => ['sometimes', 'nullable', 'date'],
             'assigned_to_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
             'meta' => ['sometimes', 'nullable', 'array'],
+            'custom_fields' => ['sometimes', 'nullable', 'array'],
             'converted_at' => ['sometimes', 'nullable', 'date'],
         ];
     }

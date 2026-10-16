@@ -84,6 +84,7 @@ export type LeadApiItem = {
     last_interaction?: string | null;
     last_interaction_at?: string | null;
     meta?: Record<string, unknown> | null;
+    custom_fields?: LeadCustomFields | null;
     converted_at?: string | null;
     creator?: LeadActor | null;
     assignee?: LeadActor | null;
@@ -164,6 +165,7 @@ export type CreateLeadPayload = {
     last_interaction_at?: string | null;
     assigned_to_user_id?: number | null;
     meta?: Record<string, unknown> | null;
+    custom_fields?: LeadCustomFields | null;
 };
 
 export type UpdateLeadPayload = {
@@ -190,6 +192,7 @@ export type UpdateLeadPayload = {
     assigned_to_user_id?: number | null;
     converted_at?: string | null;
     meta?: Record<string, unknown> | null;
+    custom_fields?: LeadCustomFields | null;
 };
 
 export type AddLeadNotePayload = {
@@ -225,6 +228,70 @@ export type CrmLabel = {
     is_default: boolean;
 };
 
+export type LeadFieldType =
+    | "text"
+    | "textarea"
+    | "number"
+    | "date"
+    | "select"
+    | "multi_select"
+    | "checkbox"
+    | "url"
+    | "phone";
+
+export type LeadFieldStatus = "active" | "pending" | "declined" | "archived";
+
+export type LeadFieldOption = {
+    value: string;
+    label: string;
+};
+
+export type LeadCustomFieldValue = string | number | boolean | string[] | null;
+
+export type LeadCustomFields = Record<string, LeadCustomFieldValue>;
+
+export type LeadFieldDefinition = {
+    id: number;
+    company_id: number;
+    key: string;
+    label: string;
+    description?: string | null;
+    type: LeadFieldType;
+    options: LeadFieldOption[];
+    is_required: boolean;
+    show_on_create: boolean;
+    show_in_list: boolean;
+    status: LeadFieldStatus;
+    sort_order: number;
+    created_by_user_id?: number | null;
+    reviewed_by_user_id?: number | null;
+    reviewed_at?: string | null;
+    decline_reason?: string | null;
+    created_at?: string;
+    updated_at?: string;
+};
+
+export type CreateLeadFieldPayload = {
+    company_id: number | string;
+    label: string;
+    type: LeadFieldType;
+    description?: string | null;
+    options?: Array<string | LeadFieldOption>;
+    is_required?: boolean;
+    show_on_create?: boolean;
+    show_in_list?: boolean;
+};
+
+export type UpdateLeadFieldPayload = {
+    company_id?: number | string;
+    label?: string;
+    description?: string | null;
+    options?: Array<string | LeadFieldOption>;
+    is_required?: boolean;
+    show_on_create?: boolean;
+    show_in_list?: boolean;
+};
+
 export type ImportLeadRow = {
     name?: string;
     email?: string;
@@ -239,6 +306,7 @@ export type ImportLeadRow = {
     priority?: ApiLeadPriority;
     budget_amount?: number | string;
     budget_currency?: string;
+    custom_fields?: Record<string, string>;
 };
 
 /** Resolve display amount from lead budget fields (falls back to legacy meta.value). */
@@ -757,6 +825,61 @@ export function deleteCrmLabel(
     return apiRequest<{ deleted_label_id: number; deleted_leads_count: number; reassigned_to_label_slug?: string | null; reassigned_to_label_name?: string | null }>({
         method: "POST",
         path: withBase(basePath, `/crm/labels/${labelId}/delete`),
+        body: payload,
+        token,
+    });
+}
+
+export function listLeadFields(
+    params: Pick<ListLeadsParams, "company_id">,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ items: LeadFieldDefinition[] }>> {
+    const query = buildQuery({ company_id: params.company_id });
+    return apiRequest<{ items: LeadFieldDefinition[] }>({
+        method: "GET",
+        path: withBase(basePath, `/crm/lead-fields${query}`),
+        token,
+    });
+}
+
+export function createLeadField(
+    payload: CreateLeadFieldPayload,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ field: LeadFieldDefinition }>> {
+    return apiRequest<{ field: LeadFieldDefinition }>({
+        method: "POST",
+        path: withBase(basePath, "/crm/lead-fields"),
+        body: payload,
+        token,
+    });
+}
+
+export function updateLeadField(
+    fieldId: number | string,
+    payload: UpdateLeadFieldPayload,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ field: LeadFieldDefinition }>> {
+    return apiRequest<{ field: LeadFieldDefinition }>({
+        method: "PATCH",
+        path: withBase(basePath, `/crm/lead-fields/${fieldId}`),
+        body: payload,
+        token,
+    });
+}
+
+export function reviewLeadField(
+    fieldId: number | string,
+    action: "approve" | "decline" | "archive" | "restore",
+    payload: { company_id?: number | string; reason?: string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ field: LeadFieldDefinition }>> {
+    return apiRequest<{ field: LeadFieldDefinition }>({
+        method: "POST",
+        path: withBase(basePath, `/crm/lead-fields/${fieldId}/${action}`),
         body: payload,
         token,
     });

@@ -8,6 +8,7 @@ use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Models\Lead;
 use App\Models\LeadActivity;
+use App\Models\LeadFieldDefinition;
 use App\Models\LeadLabel;
 use App\Models\LeadNote;
 use App\Models\LeadPipeline;
@@ -16,6 +17,7 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Security\SecurityAuditLogger;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\LeadCustomFieldValues;
 use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\Paginator;
@@ -154,6 +156,7 @@ class LeadService
                 'last_interaction' => $data['last_interaction'] ?? null,
                 'last_interaction_at' => $data['last_interaction_at'] ?? null,
                 'meta' => $data['meta'] ?? null,
+                'custom_fields' => $this->resolvedCustomFields($companyId, $data, [], 'create') ?? [],
             ]);
 
             $this->replaceContacts($lead, $this->contactPayloads($data));
@@ -514,8 +517,8 @@ class LeadService
             }
 
             $allowedFields = $editsContacts
-                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location']
-                : ['company_id', 'pipeline_id', 'status'];
+                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location', 'custom_fields']
+                : ['company_id', 'pipeline_id', 'status', 'custom_fields'];
             $forbiddenFields = collect(array_keys($data))
                 ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
                 ->values()
@@ -536,7 +539,14 @@ class LeadService
                 $this->assertLabelExists($companyId, (string) $data['status']);
             }
 
-            $lead = DB::transaction(function () use ($lead, $data, $editsContacts): Lead {
+            $customFields = $this->resolvedCustomFields(
+                $companyId,
+                $data,
+                is_array($lead->custom_fields) ? $lead->custom_fields : [],
+                'update',
+            );
+
+            $lead = DB::transaction(function () use ($lead, $data, $editsContacts, $customFields): Lead {
                 $lead->update([
                     'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
                     'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
@@ -544,6 +554,7 @@ class LeadService
                     'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
                     'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
                     'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+                    'custom_fields' => $customFields ?? $lead->custom_fields,
                 ]);
 
                 if ($editsContacts) {
@@ -574,7 +585,14 @@ class LeadService
             $this->assertLabelExists($companyId, (string) $data['status']);
         }
 
-        $lead = DB::transaction(function () use ($lead, $data): Lead {
+        $customFields = $this->resolvedCustomFields(
+            $companyId,
+            $data,
+            is_array($lead->custom_fields) ? $lead->custom_fields : [],
+            'update',
+        );
+
+        $lead = DB::transaction(function () use ($lead, $data, $customFields): Lead {
             $lead->update([
                 'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
                 'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
@@ -604,6 +622,7 @@ class LeadService
                 'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
                 'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
                 'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
+                'custom_fields' => $customFields ?? $lead->custom_fields,
                 'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
             ]);
 
@@ -1438,6 +1457,7 @@ class LeadService
 
         $duplicatePolicy = (string) ($payload['duplicate_policy'] ?? 'create');
         $labelLookup = $this->buildLabelLookup($companyId);
+        $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
         $importedCount = 0;
@@ -1446,7 +1466,7 @@ class LeadService
         $skippedRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
 
             if ($validation['errors'] !== []) {
                 $failedRows[] = [
@@ -1519,6 +1539,8 @@ class LeadService
                 'priority' => $data['priority'],
                 'budget_amount' => $data['budget_amount'] ?? null,
                 'budget_currency' => $data['budget_currency'] ?? null,
+                'custom_fields' => $data['custom_fields'] ?? [],
+                'custom_fields_mode' => 'import',
                 'assigned_to_user_id' => $role === 'agent' ? (int) $user->id : null,
             ]);
             $importedCount++;
@@ -1551,6 +1573,7 @@ class LeadService
         $this->assertPipelineInCompany($companyId, $pipelineId);
 
         $labelLookup = $this->buildLabelLookup($companyId);
+        $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
         $validCount = 0;
@@ -1558,7 +1581,7 @@ class LeadService
         $duplicateRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
 
             if ($validation['errors'] !== []) {
                 $errorRows[] = [
@@ -1840,6 +1863,7 @@ class LeadService
                     ->orWhere('location', 'like', '%' . $search . '%')
                     ->orWhere('company_name', 'like', '%' . $search . '%')
                     ->orWhere('source', 'like', '%' . $search . '%')
+                    ->orWhere('custom_fields', 'like', '%' . $search . '%')
                     ->orWhereHas('contacts', function (Builder $contactQuery) use ($search): void {
                         $contactQuery->where('name', 'like', '%' . $search . '%')
                             ->orWhere('email', 'like', '%' . $search . '%')
@@ -2537,6 +2561,11 @@ class LeadService
             $update['budget_currency'] = $normalized['budget_currency'] ?? $existing->budget_currency;
         }
 
+        if (! empty($normalized['custom_fields']) && is_array($normalized['custom_fields'])) {
+            $existingValues = is_array($existing->custom_fields) ? $existing->custom_fields : [];
+            $update['custom_fields'] = array_replace($existingValues, $normalized['custom_fields']);
+        }
+
         return $update;
     }
 
@@ -2550,10 +2579,11 @@ class LeadService
             return;
         }
 
+        $exportFields = $this->visibleExportFields($companyId);
         fwrite($out, "\xEF\xBB\xBF");
-        fputcsv($out, self::LEAD_EXPORT_HEADERS);
+        fputcsv($out, $this->exportHeaders($exportFields));
 
-        $this->streamLeadExportRows($companyId, $user, $role, $filters, static function (array $row) use ($out): void {
+        $this->streamLeadExportRows($companyId, $user, $role, $filters, $exportFields, static function (array $row) use ($out): void {
             fputcsv($out, $row);
         });
 
@@ -2604,15 +2634,17 @@ class LeadService
             $sheet = $writer->getCurrentSheet();
             $sheet->setName('Leads Export');
 
+            $exportFields = $this->visibleExportFields($companyId);
+            $headers = $this->exportHeaders($exportFields);
             $headerStyle = (new Style)->setFontBold();
             $columnStyles = [];
-            foreach (array_keys(self::LEAD_EXPORT_HEADERS) as $index) {
+            foreach (array_keys($headers) as $index) {
                 $columnStyles[$index] = $headerStyle;
             }
 
-            $writer->addRow(Row::fromValuesWithStyles(self::LEAD_EXPORT_HEADERS, null, $columnStyles));
+            $writer->addRow(Row::fromValuesWithStyles($headers, null, $columnStyles));
 
-            $this->streamLeadExportRows($companyId, $user, $role, $filters, static function (array $row) use ($writer): void {
+            $this->streamLeadExportRows($companyId, $user, $role, $filters, $exportFields, static function (array $row) use ($writer): void {
                 $writer->addRow(Row::fromValues($row));
             });
 
@@ -2651,9 +2683,10 @@ class LeadService
 
     /**
      * @param  array<string, mixed>  $filters
+     * @param  Collection<int, LeadFieldDefinition>  $exportFields
      * @param  callable(array<int, mixed>): void  $emit
      */
-    private function streamLeadExportRows(int $companyId, User $user, string $role, array $filters, callable $emit): void
+    private function streamLeadExportRows(int $companyId, User $user, string $role, array $filters, Collection $exportFields, callable $emit): void
     {
         $labelNames = LeadLabel::query()
             ->where('company_id', $companyId)
@@ -2671,9 +2704,10 @@ class LeadService
             $query->whereIn('id', $leadIds);
         }
 
-        $query->orderBy('id')->chunkById(250, static function (Collection $leads) use ($labelNames, $emit): void {
+        $query->orderBy('id')->chunkById(250, function (Collection $leads) use ($labelNames, $emit, $exportFields): void {
             foreach ($leads as $lead) {
-                $emit([
+                $storedCustomFields = is_array($lead->custom_fields) ? $lead->custom_fields : [];
+                $row = [
                     (string) $lead->name,
                     (string) ($lead->email ?? ''),
                     (string) ($lead->phone ?? ''),
@@ -2691,16 +2725,69 @@ class LeadService
                     (string) ($lead->assignee?->name ?? $lead->assignee?->email ?? ''),
                     $lead->created_at?->toIso8601String() ?? '',
                     $lead->updated_at?->toIso8601String() ?? '',
-                ]);
+                ];
+
+                foreach ($exportFields as $field) {
+                    $row[] = LeadCustomFieldValues::exportValue($field, $storedCustomFields[$field->key] ?? null);
+                }
+
+                $emit($row);
             }
         });
     }
 
     /**
+     * @return Collection<int, LeadFieldDefinition>
+     */
+    private function visibleExportFields(int $companyId): Collection
+    {
+        return LeadCustomFieldValues::visibleDefinitions($companyId)->values();
+    }
+
+    /**
+     * @param  Collection<int, LeadFieldDefinition>  $exportFields
+     * @return list<string>
+     */
+    private function exportHeaders(Collection $exportFields): array
+    {
+        return array_merge(
+            self::LEAD_EXPORT_HEADERS,
+            $exportFields->map(static fn (LeadFieldDefinition $field): string => $field->label)->all(),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $existing
+     * @return array<string, mixed>|null
+     */
+    private function resolvedCustomFields(int $companyId, array $data, array $existing, string $defaultMode): ?array
+    {
+        if ($defaultMode === 'update' && ! array_key_exists('custom_fields', $data)) {
+            return null;
+        }
+
+        $mode = (string) ($data['custom_fields_mode'] ?? $defaultMode);
+        if (! in_array($mode, ['create', 'update', 'import'], true)) {
+            $mode = $defaultMode;
+        }
+
+        $input = is_array($data['custom_fields'] ?? null) ? $data['custom_fields'] : [];
+
+        return LeadCustomFieldValues::normalize(
+            LeadCustomFieldValues::visibleDefinitions($companyId),
+            $input,
+            $existing,
+            $mode,
+        );
+    }
+
+    /**
      * @param  array<string, string>  $labelLookup
+     * @param  Collection<string, LeadFieldDefinition>  $fieldDefinitions
      * @return array{normalized:array<string,mixed>,errors:array<int,string>}
      */
-    private function validateImportRow(array $labelLookup, mixed $row, int $rowIndex): array
+    private function validateImportRow(array $labelLookup, Collection $fieldDefinitions, mixed $row, int $rowIndex): array
     {
         if (! is_array($row)) {
             return [
@@ -2772,6 +2859,23 @@ class LeadService
                 : "Status/label '{$status}' is not recognized.";
         }
 
+        $customFields = [];
+        if (array_key_exists('custom_fields', $row)) {
+            if (! is_array($row['custom_fields'])) {
+                $errors[] = 'Custom fields must be an object.';
+            } else {
+                try {
+                    $customFields = LeadCustomFieldValues::normalize($fieldDefinitions, $row['custom_fields'], [], 'import');
+                } catch (ValidationException $exception) {
+                    foreach ($exception->errors() as $messages) {
+                        foreach ($messages as $message) {
+                            $errors[] = (string) $message;
+                        }
+                    }
+                }
+            }
+        }
+
         return [
             'normalized' => [
                 'name' => $name,
@@ -2787,6 +2891,7 @@ class LeadService
                 'priority' => $priority,
                 'budget_amount' => $budgetAmount,
                 'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'USD' : null),
+                'custom_fields' => $customFields,
                 'row_index' => $rowIndex,
             ],
             'errors' => $errors,

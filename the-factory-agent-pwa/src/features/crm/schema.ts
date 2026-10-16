@@ -40,6 +40,43 @@ export const leadActivitySchema = z.object({
   updated_at: z.string().optional(),
 });
 
+export const leadCustomFieldValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.string()),
+  z.null(),
+]);
+
+export const leadCustomFieldsSchema = z.record(z.string(), leadCustomFieldValueSchema);
+
+export const leadFieldTypeSchema = z.enum([
+  'text',
+  'textarea',
+  'number',
+  'date',
+  'select',
+  'multi_select',
+  'checkbox',
+  'url',
+  'phone',
+]);
+
+export const leadFieldDefinitionSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(v => Number(v)),
+  company_id: z.union([z.string(), z.number()]).transform(v => Number(v)),
+  key: z.string(),
+  label: z.string(),
+  description: z.string().nullable().optional(),
+  type: leadFieldTypeSchema,
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional().default([]),
+  is_required: z.boolean(),
+  show_on_create: z.boolean(),
+  show_in_list: z.boolean(),
+  status: z.enum(['active', 'pending', 'declined', 'archived']),
+  sort_order: z.number().optional().default(0),
+});
+
 const rawLeadSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(v => Number(v)),
   company_id: z.union([z.string(), z.number()]).transform(v => Number(v)),
@@ -63,6 +100,10 @@ const rawLeadSchema = z.object({
   last_interaction: z.string().nullable().optional(),
   last_interaction_at: z.string().nullable().optional(),
   meta: z.record(z.string(), z.unknown()).nullable().optional(),
+  custom_fields: z.preprocess(
+    value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {}),
+    leadCustomFieldsSchema,
+  ).optional(),
   converted_at: z.string().nullable().optional(),
   creator: leadActorSchema.nullable().optional(),
   assignee: leadActorSchema.nullable().optional(),
@@ -100,6 +141,7 @@ export const leadSchema = rawLeadSchema.transform(data => ({
   lastInteraction: data.last_interaction ?? null,
   lastInteractionAt: data.last_interaction_at ?? null,
   meta: data.meta ?? null,
+  customFields: data.custom_fields ?? {},
   convertedAt: data.converted_at ?? null,
   creator: data.creator ?? null,
   assignee: data.assignee ?? null,
@@ -180,6 +222,7 @@ export const createLeadPayloadSchema = z.object({
   assigned_to_user_id: z.number().nullable().optional(),
   contacts: z.array(leadContactSchema).nullable().optional(),
   meta: z.record(z.string(), z.unknown()).nullable().optional(),
+  custom_fields: leadCustomFieldsSchema.optional(),
 });
 
 export const updateLeadPayloadSchema = z.object({
@@ -203,6 +246,18 @@ export const updateLeadPayloadSchema = z.object({
   contacts: z.array(leadContactSchema).nullable().optional(),
   converted_at: z.string().nullable().optional(),
   meta: z.record(z.string(), z.unknown()).nullable().optional(),
+  custom_fields: leadCustomFieldsSchema.optional(),
+});
+
+export const createLeadFieldPayloadSchema = z.object({
+  company_id: z.union([z.number(), z.string()]),
+  label: z.string().min(1).max(80),
+  description: z.string().max(255).nullable().optional(),
+  type: leadFieldTypeSchema,
+  options: z.array(z.string()).max(100).optional(),
+  is_required: z.boolean().optional(),
+  show_on_create: z.boolean().optional(),
+  show_in_list: z.boolean().optional(),
 });
 
 export const leadFiltersSchema = z

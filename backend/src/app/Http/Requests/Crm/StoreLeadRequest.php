@@ -111,6 +111,7 @@ class StoreLeadRequest extends FormRequest
             'last_interaction_at' => ['nullable', 'date'],
             'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'meta' => ['nullable', 'array'],
+            'custom_fields' => ['nullable', 'array'],
         ];
     }
 }

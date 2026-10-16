@@ -8,15 +8,18 @@ import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
-import { useCreateLead, useUpdateLead, useApplyLeadMerge, useCrmAssignees, useCrmLabels, useLeadDuplicateSuggestions, usePreviewLeadMerge, useCrmPipelines, useCrmPreferences } from "@/hooks/use-crm";
+import { useCreateLead, useUpdateLead, useApplyLeadMerge, useCrmAssignees, useCrmLabels, useLeadDuplicateSuggestions, usePreviewLeadMerge, useCrmPipelines, useCrmPreferences, useLeadFields } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, CreateLeadPayload, LeadApiItem, LeadContact, LeadDuplicateField, LeadDuplicateMatch, LeadMergePreview } from "@/lib/api/crm";
+import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, CreateLeadPayload, LeadApiItem, LeadContact, LeadCustomFields, LeadDuplicateField, LeadDuplicateMatch, LeadMergePreview } from "@/lib/api/crm";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
 import { LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadDuplicateNotice, LeadDuplicateSuggestions, LeadMergeDialog } from "@/components/crm/lead-duplicate-suggestions";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
+import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from "@/lib/crm/custom-fields";
+import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
+import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
 type FormErrors = Partial<{
@@ -33,6 +36,7 @@ type FormErrors = Partial<{
   nextAction: string;
   lastInteraction: string;
   lastInteractionAt: string;
+  customFields: string;
 }>;
 
 function FieldError({ message }: { message?: string }) {
@@ -237,6 +241,7 @@ export function AddLeadModal({
   const [source, setSource] = useState(lead?.source ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
+  const { data: leadFields = [] } = useLeadFields(companyId ?? undefined, apiBasePath);
   const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
 
   const resolvedCreatePipelineId = resolveCrmPipelineId(
@@ -281,6 +286,10 @@ export function AddLeadModal({
   // Format lead?.last_interaction_at as YYYY-MM-DD for the HTML date input
   const initialDate = lead?.last_interaction_at ? lead.last_interaction_at.split("T")[0] : "";
   const [lastInteractionAt, setLastInteractionAt] = useState(initialDate);
+  const [customFields, setCustomFields] = useState<LeadCustomFields>({});
+  const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
+  const [showFieldDialog, setShowFieldDialog] = useState(false);
+  const customFieldsSeeded = useRef(false);
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [suggestField, setSuggestField] = useState<LeadDuplicateField | null>(null);
@@ -345,6 +354,22 @@ export function AddLeadModal({
     },
     apiBasePath,
   );
+
+  useEffect(() => {
+    if (leadFields.length === 0) return;
+    setCustomFields((current) => {
+      const base = formValuesFromLead(leadFields, lead?.custom_fields);
+      if (!customFieldsSeeded.current) {
+        customFieldsSeeded.current = true;
+        return base;
+      }
+      const next = { ...base };
+      Object.entries(current).forEach(([key, value]) => {
+        if (key in next) next[key] = value;
+      });
+      return next;
+    });
+  }, [lead, leadFields]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSuggestQuery(suggestQuery), 250);
@@ -413,6 +438,11 @@ export function AddLeadModal({
     const cleanedProfileUrls = parseProfileUrls(profileUrls);
     if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
       e.profileUrls = "One or more profile URLs are invalid.";
+    }
+    const nextCustomErrors = validateCustomFieldValues(leadFields, customFields);
+    setCustomFieldErrors(nextCustomErrors);
+    if (Object.keys(nextCustomErrors).length > 0) {
+      e.customFields = "Check the custom fields.";
     }
     return { fields: e, contacts: contactValidation };
   };
@@ -506,6 +536,7 @@ export function AddLeadModal({
       next_action: nextAction.trim() || null,
       last_interaction: lastInteraction.trim() || null,
       last_interaction_at: lastInteractionAt || null,
+      custom_fields: serializeCustomFields(leadFields, customFields),
     };
   };
 
@@ -848,6 +879,21 @@ export function AddLeadModal({
             </div>
           </div>
 
+          <div className="space-y-4 mb-5">
+            <SectionDivider label="Custom fields" subtitle="Add a column when a lead has details this form does not list yet." />
+            <LeadCustomFieldsEditor
+              fields={leadFields}
+              values={customFields}
+              errors={customFieldErrors}
+              agentNotice={isAgentContext}
+              onChange={(key, value) => {
+                setCustomFields((current) => ({ ...current, [key]: value }));
+                setCustomFieldErrors((current) => ({ ...current, [key]: "" }));
+              }}
+              onAddField={() => setShowFieldDialog(true)}
+            />
+          </div>
+
           <div className="flex items-center justify-start mt-6">
             <button
               type="submit"
@@ -859,6 +905,14 @@ export function AddLeadModal({
           </div>
         </form>
       </div>
+      {showFieldDialog && companyId && (
+        <LeadFieldDialog
+          companyId={companyId}
+          apiBasePath={apiBasePath}
+          onClose={() => setShowFieldDialog(false)}
+          onCreated={() => setShowFieldDialog(false)}
+        />
+      )}
       {mergeOpen && duplicateMatch && (
         <LeadMergeDialog
           preview={mergePreview}

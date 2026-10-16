@@ -11,6 +11,9 @@ import type {
   createLeadPayloadSchema,
   updateLeadPayloadSchema,
   leadFiltersSchema,
+  leadFieldDefinitionSchema,
+  createLeadFieldPayloadSchema,
+  leadCustomFieldsSchema,
 } from './schema';
 
 export type LeadActor = z.infer<typeof leadActorSchema>;
@@ -24,6 +27,9 @@ export type AgentUploadOverview = z.infer<typeof agentUploadOverviewSchema>;
 export type CreateLeadPayload = z.infer<typeof createLeadPayloadSchema>;
 export type UpdateLeadPayload = z.infer<typeof updateLeadPayloadSchema>;
 export type LeadFilters = z.infer<typeof leadFiltersSchema>;
+export type LeadFieldDefinition = z.infer<typeof leadFieldDefinitionSchema>;
+export type CreateLeadFieldPayload = z.infer<typeof createLeadFieldPayloadSchema>;
+export type LeadCustomFields = z.infer<typeof leadCustomFieldsSchema>;
 
 export type PaginationData = {
   nextPageUrl: string | null;

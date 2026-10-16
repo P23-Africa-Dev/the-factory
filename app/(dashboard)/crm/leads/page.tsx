@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
@@ -24,8 +24,11 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { LeadPagination } from "@/components/crm/lead-pagination";
-import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
+import type { ApiLeadStatus, LeadApiItem, LeadCustomFields } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
+import { readCustomFields } from "@/lib/crm/custom-fields";
+import { LeadColumnMenu, LeadCustomColumnCells, LeadCustomColumnHeaders, leadListGridTemplate, useHiddenLeadColumns } from "@/components/crm/lead-list-columns";
+import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import { toast } from "sonner";
 
 interface Lead {
@@ -37,6 +40,7 @@ interface Lead {
   value: number;
   assignedTo: string;
   source: string;
+  customFields: LeadCustomFields;
 }
 
 function getStatusColor(status: string | null | undefined, labels: Array<{ slug: string; color: string }>): string {
@@ -109,6 +113,7 @@ export default function AllLeadsPage() {
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddColumn, setShowAddColumn] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
@@ -149,6 +154,8 @@ export default function AllLeadsPage() {
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/admin");
   const { data: preferences } = useCrmPreferences(companyId ?? undefined, "/admin");
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, "/admin");
+  const { data: leadFields = [] } = useLeadFields(companyId ?? undefined, "/admin");
+  const leadColumns = useHiddenLeadColumns(companyId ?? undefined);
 
   const defaultPipelineId = useMemo(
     () =>
@@ -211,9 +218,16 @@ export default function AllLeadsPage() {
     value: resolveLeadBudgetAmount(l),
     assignedTo: l.assignee?.name ?? "Unassigned",
     source: l.source ?? "—",
+    customFields: readCustomFields(l.custom_fields),
   }));
 
   const allChecked = leads.length > 0 && selected.size === leads.length;
+  const visibleCustomFields = leadFields.filter((field) =>
+    (field.status === "active" || field.status === "pending")
+    && field.show_in_list
+    && leadColumns.visible(`custom:${field.key}`),
+  );
+  const listGridStyle = { gridTemplateColumns: leadListGridTemplate(leadColumns.visible, visibleCustomFields.length) };
 
   const resetPageSelection = () => {
     setPage(1);
@@ -452,6 +466,13 @@ export default function AllLeadsPage() {
             </label>
 
             <div className="flex items-center gap-1">
+              <LeadColumnMenu
+                hidden={leadColumns.hidden}
+                customFields={leadFields.filter((field) => field.status === "active" || field.status === "pending")}
+                onHide={leadColumns.hide}
+                onShow={leadColumns.show}
+                onAdd={() => setShowAddColumn(true)}
+              />
               <button
                 onClick={() => router.push(boardUrl)}
                 className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 transition-colors"
@@ -475,27 +496,48 @@ export default function AllLeadsPage() {
             </div>
           </div>
 
+          <div className="overflow-x-auto">
           {/* Column headers */}
-          <div className="grid grid-cols-[40px_1fr_1.4fr_1.1fr_0.9fr_1fr_0.9fr_100px] gap-3 px-6 pb-4 shrink-0">
+          <div className="grid min-w-max gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
             <div />
+            {leadColumns.visible("name") && (
             <div className="bg-[#3B82F6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Leads
             </div>
+            )}
+            {leadColumns.visible("company") && (
             <div className="bg-[#D946EF] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Company
             </div>
+            )}
+            {leadColumns.visible("status") && (
             <div className="bg-[#F59E0B] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Status
             </div>
+            )}
+            {leadColumns.visible("value") && (
             <div className="bg-[#06B6D4] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Value
             </div>
+            )}
+            {leadColumns.visible("assigned") && (
             <div className="bg-[#8B5CF6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Assigned to
             </div>
+            )}
+            {leadColumns.visible("source") && (
             <div className="bg-[#65A30D] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Source
             </div>
+            )}
+            <LeadCustomColumnHeaders fields={visibleCustomFields} onHide={leadColumns.hide} />
+            <button
+              type="button"
+              onClick={() => setShowAddColumn(true)}
+              className="rounded-full border border-dashed border-gray-300 px-2 py-2 text-[11px] font-semibold text-gray-500"
+            >
+              Add
+            </button>
             <div className="text-[12px] font-semibold text-gray-500 px-4 py-2 text-center">
               Actions
             </div>
@@ -509,10 +551,11 @@ export default function AllLeadsPage() {
                 <div
                   key={lead.id}
                   onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                  className={`grid grid-cols-[40px_1fr_1.4fr_1.1fr_0.9fr_1fr_0.9fr_100px] gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
+                  className={`grid min-w-max gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
                       ? "bg-[#0B1215]"
                       : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
                     }`}
+                  style={listGridStyle}
                 >
                   {/* Checkbox */}
                   <div className="flex items-center justify-center">
@@ -538,22 +581,25 @@ export default function AllLeadsPage() {
                   </div>
 
                   {/* Name */}
+                  {leadColumns.visible("name") && (
                   <span
                     className={`text-[13px] font-semibold truncate ${isSelected ? "text-white" : "text-[#0B1215]"
                       }`}
                   >
                     {lead.name}
                   </span>
+                  )}
 
-                  {/* Company */}
+                  {leadColumns.visible("company") && (
                   <span
                     className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
                       }`}
                   >
                     {lead.company}
                   </span>
+                  )}
 
-                  {/* Status */}
+                  {leadColumns.visible("status") && (
                   <div onClick={(e) => e.stopPropagation()}>
                     <StatusDropdown
                       value={lead.status}
@@ -562,30 +608,37 @@ export default function AllLeadsPage() {
                       onChange={(s) => updateStatus(lead.id, s)}
                     />
                   </div>
+                  )}
 
-                  {/* Value */}
+                  {leadColumns.visible("value") && (
                   <span
                     className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"
                       }`}
                   >
                     $ {lead.value.toLocaleString()}
                   </span>
+                  )}
 
-                  {/* Assigned to */}
+                  {leadColumns.visible("assigned") && (
                   <span
                     className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
                       }`}
                   >
                     {lead.assignedTo}
                   </span>
+                  )}
 
-                  {/* Source */}
+                  {leadColumns.visible("source") && (
                   <span
                     className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
                       }`}
                   >
                     {lead.source}
                   </span>
+                  )}
+
+                  <LeadCustomColumnCells fields={visibleCustomFields} values={lead.customFields} selected={isSelected} />
+                  <span />
 
                   {/* Actions */}
                   <div
@@ -629,6 +682,7 @@ export default function AllLeadsPage() {
                 </div>
               );
             })}
+          </div>
           </div>
 
           {/* Footer */}
@@ -679,6 +733,16 @@ export default function AllLeadsPage() {
           apiBasePath="/admin"
           labels={labels}
           onClose={() => setShowLabelModal(false)}
+        />
+      )}
+
+      {showAddColumn && companyId && (
+        <LeadFieldDialog
+          companyId={companyId}
+          apiBasePath="/admin"
+          title="Add a lead column"
+          onClose={() => setShowAddColumn(false)}
+          onCreated={() => setShowAddColumn(false)}
         />
       )}
 

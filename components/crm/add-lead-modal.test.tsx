@@ -7,6 +7,16 @@ import { useAuthStore, type AuthUser } from "@/store/auth";
 const mocks = vi.hoisted(() => ({
   createLead: vi.fn(),
   updateLead: vi.fn(),
+  leadFields: [] as Array<{
+    id: number;
+    key: string;
+    label: string;
+    type: string;
+    options: Array<{ value: string; label: string }>;
+    is_required: boolean;
+    show_on_create: boolean;
+    status: string;
+  }>,
 }));
 
 vi.mock("@/hooks/use-crm", () => ({
@@ -58,6 +68,7 @@ vi.mock("@/hooks/use-crm", () => ({
   useCrmPipelines: () => ({ data: [{ id: 3, name: "Sales", is_default: true }] }),
   useCrmLabels: () => ({ data: [{ slug: "newly_lead", name: "New Lead" }] }),
   useCrmPreferences: () => ({ data: { preferred_pipeline_id: 3, company_default_pipeline_id: 3 } }),
+  useLeadFields: () => ({ data: mocks.leadFields }),
 }));
 
 vi.mock("@/components/payroll/payroll/inline-select", () => ({
@@ -96,6 +107,7 @@ describe("AddLeadModal", () => {
   beforeEach(() => {
     mocks.createLead.mockReset();
     mocks.updateLead.mockReset();
+    mocks.leadFields = [];
     useAuthStore.setState({
       user: {
         id: 7,
@@ -181,5 +193,41 @@ describe("AddLeadModal", () => {
         expect.any(Object),
       );
     });
+  });
+
+  it("requires an active custom field and sends its value", () => {
+    mocks.leadFields = [{
+      id: 1,
+      key: "industry",
+      label: "Industry",
+      type: "text",
+      options: [],
+      is_required: true,
+      show_on_create: true,
+      status: "active",
+    }];
+
+    render(<AddLeadModal onClose={vi.fn()} />);
+
+    expect(screen.getByRole("textbox", { name: /Industry/ })).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("E.g John Doe"), {
+      target: { value: "Primary Person" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(mocks.createLead).not.toHaveBeenCalled();
+    expect(screen.getByText("Industry is required.")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: /Industry/ }), {
+      target: { value: "SaaS" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    expect(mocks.createLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Primary Person",
+        custom_fields: { industry: "SaaS" },
+      }),
+      expect.any(Object),
+    );
   });
 });

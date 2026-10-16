@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
-import { useCreateLead, useCrmPipelines, useCrmLabels, type LeadContact } from '@/features/crm';
+import { useCreateLead, useCrmPipelines, useCrmLabels, useLeadFields, type LeadContact } from '@/features/crm';
+import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from '@/features/crm/customFields';
+import { PwaAddLeadFieldSheet, PwaCustomFields } from './PwaCustomFields';
+import type { LeadCustomFields } from '@/features/crm';
 import { PwaProfileUrlInputs, isValidUrl, normalizeWebsite, parseProfileUrls } from './PwaProfileUrlInputs';
 import PhoneNumberInput from '@/components/ui/PhoneNumberInput';
 
@@ -45,9 +48,17 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   ]);
   const [activeContactIndex, setActiveContactIndex] = useState(0);
   const [contactErrors, setContactErrors] = useState<Array<Partial<Record<'name' | 'email' | 'phone' | 'location', string>>>>([{}]);
+  const [customFields, setCustomFields] = useState<LeadCustomFields>({});
+  const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
+  const [showFieldDialog, setShowFieldDialog] = useState(false);
 
   const { data: pipelines = [] } = useCrmPipelines();
   const { data: labels = [] } = useCrmLabels();
+  const { data: leadFields = [] } = useLeadFields();
+
+  useEffect(() => {
+    setCustomFields((current) => ({ ...formValuesFromLead(leadFields, {}), ...current }));
+  }, [leadFields]);
   
   const { mutate: createLead, isPending } = useCreateLead({
     onSuccess: () => {
@@ -65,6 +76,9 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     setContacts([{ name: '', email: '', phone: '', location: '' }]);
     setActiveContactIndex(0);
     setContactErrors([{}]);
+    setCustomFields({});
+    setCustomFieldErrors({});
+    setShowFieldDialog(false);
   };
 
   const validate = (): boolean => {
@@ -88,12 +102,15 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     if (parseProfileUrls(profileUrls).some((url) => !isValidUrl(url))) {
       newErrors.profileUrls = 'One or more profile URLs are invalid';
     }
+    const nextCustomErrors = validateCustomFieldValues(leadFields, customFields);
 
     setContactErrors(newContactErrors);
     setErrors(newErrors);
+    setCustomFieldErrors(nextCustomErrors);
 
     const hasContactErrors = newContactErrors.some((e) => Object.keys(e).length > 0);
     const hasFieldErrors = Object.keys(newErrors).length > 0;
+    const hasCustomErrors = Object.keys(nextCustomErrors).length > 0;
 
     if (hasContactErrors) {
       const errorIndex = newContactErrors.findIndex((e) => Object.keys(e).length > 0);
@@ -102,7 +119,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       }
     }
 
-    return !hasContactErrors && !hasFieldErrors;
+    return !hasContactErrors && !hasFieldErrors && !hasCustomErrors;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -150,6 +167,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       source: form.source.trim() || 'agent upload',
       status: form.status || defaultStatus,
+      custom_fields: serializeCustomFields(leadFields, customFields),
     });
   };
 
@@ -438,6 +456,19 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                 </div>
               )}
 
+              <div className="h-px bg-white/10 my-2" />
+              <p className="text-[10px] text-white/45 -mt-1">Custom fields apply to every lead in this company.</p>
+              <PwaCustomFields
+                fields={leadFields}
+                values={customFields}
+                errors={customFieldErrors}
+                onChange={(key, value) => {
+                  setCustomFields((current) => ({ ...current, [key]: value }));
+                  setCustomFieldErrors((current) => ({ ...current, [key]: '' }));
+                }}
+                onAddField={() => setShowFieldDialog(true)}
+              />
+
               {/* Modal Actions */}
               <div className="flex gap-3 mt-4">
                 <button
@@ -462,6 +493,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
               </div>
             </form>
           </motion.div>
+          <PwaAddLeadFieldSheet visible={showFieldDialog} onClose={() => setShowFieldDialog(false)} />
         </div>
       )}
     </AnimatePresence>

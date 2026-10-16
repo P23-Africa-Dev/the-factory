@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\V1\Company\CompanySettingsController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
+use App\Http\Controllers\Api\V1\Crm\LeadFieldController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Drive\DriveController;
@@ -643,6 +644,25 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
                     ->middleware('throttle:api')
                     ->name('labels.reorder');
+                Route::get('/lead-fields', [LeadFieldController::class, 'index'])->name('lead-fields.index');
+                Route::post('/lead-fields', [LeadFieldController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.store');
+                Route::patch('/lead-fields/{leadField}', [LeadFieldController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.update');
+                Route::post('/lead-fields/{leadField}/approve', [LeadFieldController::class, 'approve'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.approve');
+                Route::post('/lead-fields/{leadField}/decline', [LeadFieldController::class, 'decline'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.decline');
+                Route::post('/lead-fields/{leadField}/archive', [LeadFieldController::class, 'archive'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.archive');
+                Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.restore');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
@@ -854,6 +874,25 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('preferences.preferred-pipeline');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+                Route::get('/lead-fields', [LeadFieldController::class, 'index'])->name('lead-fields.index');
+                Route::post('/lead-fields', [LeadFieldController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.store');
+                Route::patch('/lead-fields/{leadField}', [LeadFieldController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.update');
+                Route::post('/lead-fields/{leadField}/approve', [LeadFieldController::class, 'approve'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.approve');
+                Route::post('/lead-fields/{leadField}/decline', [LeadFieldController::class, 'decline'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.decline');
+                Route::post('/lead-fields/{leadField}/archive', [LeadFieldController::class, 'archive'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.archive');
+                Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.restore');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
@@ -1306,6 +1345,25 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
             ->middleware('throttle:api')
             ->name('labels.reorder');
+        Route::get('/lead-fields', [LeadFieldController::class, 'index'])->name('lead-fields.index');
+        Route::post('/lead-fields', [LeadFieldController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.store');
+        Route::patch('/lead-fields/{leadField}', [LeadFieldController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.update');
+        Route::post('/lead-fields/{leadField}/approve', [LeadFieldController::class, 'approve'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.approve');
+        Route::post('/lead-fields/{leadField}/decline', [LeadFieldController::class, 'decline'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.decline');
+        Route::post('/lead-fields/{leadField}/archive', [LeadFieldController::class, 'archive'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.archive');
+        Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.restore');
         Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:api')

@@ -21,6 +21,10 @@ import {
     getLeadPipeline,
     importCrmLeads,
     listCrmLabels,
+    listLeadFields,
+    createLeadField,
+    updateLeadField,
+    reviewLeadField,
     listCrmAssignees,
     listCrmPipelines,
     listLeads,
@@ -33,6 +37,9 @@ import {
     setPreferredCrmPipeline,
     type CrmLabel,
     type CrmPipeline,
+    type LeadFieldDefinition,
+    type CreateLeadFieldPayload,
+    type UpdateLeadFieldPayload,
     type CrmPreferences,
     type CrmAssignee,
     type ExportLeadsParams,
@@ -76,6 +83,8 @@ export const CRM_KEYS = {
         ["crm", "pipelines", basePath, companyId] as const,
     labels: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm", "labels", basePath, companyId] as const,
+    leadFields: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
+        ["crm", "lead-fields", basePath, companyId] as const,
     agentUploadsOverview: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm", "agent-uploads-overview", basePath, companyId] as const,
     leadsAnalytics: (params: CrmLeadsAnalyticsParams, basePath: ApiRoleBasePath) =>
@@ -373,6 +382,80 @@ export function useCrmLabels(
         },
         enabled: hasActiveApiSession(token) && !!companyId,
         staleTime: 1000 * 60 * 2,
+    });
+}
+
+export function useLeadFields(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useQuery({
+        queryKey: CRM_KEYS.leadFields(companyId, basePath),
+        queryFn: async (): Promise<LeadFieldDefinition[]> => {
+            const res = await listLeadFields({ company_id: companyId }, token, basePath);
+            return res.data.items;
+        },
+        enabled: hasActiveApiSession(token) && !!companyId,
+        staleTime: 1000 * 60,
+    });
+}
+
+export function useCreateLeadField(
+    options?: { onSuccess?: (field: LeadFieldDefinition) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: (payload: CreateLeadFieldPayload) => createLeadField(payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.field);
+        },
+    });
+}
+
+export function useUpdateLeadField(
+    options?: { onSuccess?: (field: LeadFieldDefinition) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ fieldId, payload }: { fieldId: number | string; payload: UpdateLeadFieldPayload }) =>
+            updateLeadField(fieldId, payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.field);
+        },
+    });
+}
+
+export function useReviewLeadField(
+    options?: { onSuccess?: (field: LeadFieldDefinition) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            fieldId,
+            action,
+            payload,
+        }: {
+            fieldId: number | string;
+            action: "approve" | "decline" | "archive" | "restore";
+            payload: { company_id?: number | string; reason?: string };
+        }) => reviewLeadField(fieldId, action, payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.field);
+        },
     });
 }
 
