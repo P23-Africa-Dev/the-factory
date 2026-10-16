@@ -33,7 +33,7 @@ export default function HeroSection({ onDownloadAgentApp }: HeroSectionProps) {
 
           {/* Subheading / Description */}
           <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed mb-8 sm:mb-10 max-w-lg">
-            An all-in-one field management and CRM platform built for real-world operations. Track teams, manage tasks, and capture customer interactions seamlessly, even offline.
+            An all in one field management and CRM platform built for real world operations. Track teams, manage tasks, and capture customer interactions seamlessly, even offline.
           </p>
 
           {/* Action Buttons */}

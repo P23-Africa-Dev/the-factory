@@ -9,6 +9,7 @@ import {
   crmLabelSchema,
   crmPipelineSchema,
   agentUploadOverviewSchema,
+  leadFieldDefinitionSchema,
 } from './schema';
 import type {
   Lead,
@@ -20,6 +21,8 @@ import type {
   UpdateLeadPayload,
   LeadFilters,
   PaginationData,
+  LeadFieldDefinition,
+  CreateLeadFieldPayload,
 } from './types';
 import {
   buildOptimisticLead,
@@ -161,6 +164,7 @@ export const crmApi = {
           next_action: payload.next_action,
           assigned_to_user_id: payload.assigned_to_user_id,
           meta: payload.meta,
+          custom_fields: payload.custom_fields,
         },
       });
       await putCachedLeadDetail(companyId, optimistic, 1);
@@ -196,6 +200,9 @@ export const crmApi = {
             status: payload.status ?? cached.status,
             priority: payload.priority ?? cached.priority,
             nextAction: payload.next_action !== undefined ? payload.next_action : cached.nextAction,
+            customFields: payload.custom_fields
+              ? { ...cached.customFields, ...payload.custom_fields }
+              : cached.customFields,
             updatedAt: new Date().toISOString(),
           }
         : null;
@@ -304,5 +311,27 @@ export const crmApi = {
     const w = response.data as Record<string, unknown>;
     const data = (w?.data as Record<string, unknown>) ?? w;
     return agentUploadOverviewSchema.parse(data);
+  },
+
+  listLeadFields: async (): Promise<LeadFieldDefinition[]> => {
+    const companyId = getActiveCompanyId();
+    if (isOffline()) return [];
+
+    const response = await client.get('/agent/crm/lead-fields', {
+      params: { company_id: companyId ?? undefined },
+    });
+    const w = response.data as Record<string, unknown>;
+    const data = (w?.data as Record<string, unknown>) ?? w;
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.map((item: unknown) => leadFieldDefinitionSchema.parse(item));
+  },
+
+  createLeadField: async (payload: CreateLeadFieldPayload): Promise<LeadFieldDefinition> => {
+    if (isOffline()) {
+      throw new Error('Connect to the internet to add a lead field.');
+    }
+    const response = await client.post('/agent/crm/lead-fields', payload);
+    const item = unwrapItem(response.data, 'field');
+    return leadFieldDefinitionSchema.parse(item);
   },
 };

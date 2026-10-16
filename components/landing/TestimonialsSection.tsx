@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 const testimonials = [
   {
     quote:
-      "Factory 23 completely eliminated our visibility blind spots. Being able to track field agents and sync visit reports even in remote zero-connectivity areas transformed our distribution efficiency across 12 regions.",
+      "Factory 23 completely eliminated our visibility blind spots. Being able to track field agents and sync visit reports even in remote zero connectivity areas transformed our distribution efficiency across 12 regions.",
     name: "John D.",
     role: "VP of Field Operations, OmniDistribution",
     avatar: "/avatars/john_avatar.png",
@@ -35,7 +35,7 @@ const testimonials = [
   },
   {
     quote:
-      "Implementing Factory 23's field tracking matrix transformed our dispatch operations. Real-time task assignments and location-verified check-ins keep our entire field force in sync.",
+      "Implementing Factory 23's field tracking matrix transformed our dispatch operations. Real time task assignments and location verified check ins keep our entire field force in sync.",
     name: "Sarah M.",
     role: "Operations Director, Summit Field Services",
     avatar: "/avatars/female-avatar.png",
@@ -54,7 +54,7 @@ const testimonials = [
   },
   {
     quote:
-      "The seamless integration with our customer database and reliable GPS-backed attendance verification allowed us to scale rapidly while maintaining strict operational quality.",
+      "The seamless integration with our customer database and reliable GPS backed attendance verification allowed us to scale rapidly while maintaining strict operational quality.",
     name: "Elena R.",
     role: "Head of Product, Nexa Infrastructure",
     avatar: "/avatars/female-avatar-old.png",

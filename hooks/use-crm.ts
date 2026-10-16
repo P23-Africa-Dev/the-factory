@@ -21,15 +21,25 @@ import {
     getLeadPipeline,
     importCrmLeads,
     listCrmLabels,
+    listLeadFields,
+    createLeadField,
+    updateLeadField,
+    reviewLeadField,
     listCrmAssignees,
     listCrmPipelines,
     listLeads,
     previewImportCrmLeads,
+    previewLeadMerge,
+    applyLeadMerge,
+    suggestLeadDuplicates,
     reorderCrmLabels,
     setCompanyDefaultCrmPipeline,
     setPreferredCrmPipeline,
     type CrmLabel,
     type CrmPipeline,
+    type LeadFieldDefinition,
+    type CreateLeadFieldPayload,
+    type UpdateLeadFieldPayload,
     type CrmPreferences,
     type CrmAssignee,
     type ExportLeadsParams,
@@ -45,6 +55,8 @@ import {
     type CrmLeadsAnalytics,
     type CrmLeadsAnalyticsParams,
     type CreateLeadPayload,
+    type LeadDuplicateField,
+    type LeadDuplicateMatch,
     type LeadActivity,
     type LeadApiItem,
     type LeadNote,
@@ -71,6 +83,8 @@ export const CRM_KEYS = {
         ["crm", "pipelines", basePath, companyId] as const,
     labels: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm", "labels", basePath, companyId] as const,
+    leadFields: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
+        ["crm", "lead-fields", basePath, companyId] as const,
     agentUploadsOverview: (companyId: number | string | undefined, basePath: ApiRoleBasePath) =>
         ["crm", "agent-uploads-overview", basePath, companyId] as const,
     leadsAnalytics: (params: CrmLeadsAnalyticsParams, basePath: ApiRoleBasePath) =>
@@ -371,6 +385,80 @@ export function useCrmLabels(
     });
 }
 
+export function useLeadFields(
+    companyId: number | string | undefined,
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useQuery({
+        queryKey: CRM_KEYS.leadFields(companyId, basePath),
+        queryFn: async (): Promise<LeadFieldDefinition[]> => {
+            const res = await listLeadFields({ company_id: companyId }, token, basePath);
+            return res.data.items;
+        },
+        enabled: hasActiveApiSession(token) && !!companyId,
+        staleTime: 1000 * 60,
+    });
+}
+
+export function useCreateLeadField(
+    options?: { onSuccess?: (field: LeadFieldDefinition) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: (payload: CreateLeadFieldPayload) => createLeadField(payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.field);
+        },
+    });
+}
+
+export function useUpdateLeadField(
+    options?: { onSuccess?: (field: LeadFieldDefinition) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ fieldId, payload }: { fieldId: number | string; payload: UpdateLeadFieldPayload }) =>
+            updateLeadField(fieldId, payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.field);
+        },
+    });
+}
+
+export function useReviewLeadField(
+    options?: { onSuccess?: (field: LeadFieldDefinition) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            fieldId,
+            action,
+            payload,
+        }: {
+            fieldId: number | string;
+            action: "approve" | "decline" | "archive" | "restore";
+            payload: { company_id?: number | string; reason?: string };
+        }) => reviewLeadField(fieldId, action, payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.field);
+        },
+    });
+}
+
 export function useAgentUploadsOverview(
     companyId: number | string | undefined,
     basePath: ApiRoleBasePath = "/admin"
@@ -414,6 +502,61 @@ export function useCreateLead(
 
     return useMutation({
         mutationFn: (payload: CreateLeadPayload) => createLead(payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.lead);
+        },
+    });
+}
+
+export function useLeadDuplicateSuggestions(
+    params: { company_id?: number | string; q: string; field: LeadDuplicateField | null; enabled?: boolean },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+    const minimum = params.field === "phone"
+        ? params.q.replace(/\D/g, "").length >= 4
+        : params.q.trim().length >= 2;
+    const enabled = (params.enabled ?? true)
+        && hasActiveApiSession(token)
+        && !!params.company_id
+        && !!params.field
+        && minimum;
+
+    return useQuery({
+        queryKey: ["crm", "lead-suggest", basePath, params.company_id, params.field, params.q.trim()] as const,
+        queryFn: async (): Promise<LeadDuplicateMatch[]> => {
+            const res = await suggestLeadDuplicates({
+                company_id: params.company_id as number | string,
+                q: params.q.trim(),
+                field: params.field as LeadDuplicateField,
+            }, token, basePath);
+            return res.data.matches;
+        },
+        enabled,
+        staleTime: 10_000,
+    });
+}
+
+export function usePreviewLeadMerge(basePath: ApiRoleBasePath = "/admin") {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ leadId, payload }: { leadId: number; payload: CreateLeadPayload }) =>
+            previewLeadMerge(leadId, payload, token, basePath),
+    });
+}
+
+export function useApplyLeadMerge(
+    options?: { onSuccess?: (lead: LeadApiItem) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ leadId, payload }: { leadId: number; payload: CreateLeadPayload }) =>
+            applyLeadMerge(leadId, payload, token, basePath),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
             options?.onSuccess?.(res.data.lead);

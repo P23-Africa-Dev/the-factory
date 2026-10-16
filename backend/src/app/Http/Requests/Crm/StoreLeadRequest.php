@@ -21,6 +21,11 @@ class StoreLeadRequest extends FormRequest
     {
         $budget = $this->normalizeBudgetInput();
 
+        // Accept common aliases so integrations don't fail on naming drift.
+        if (! $this->filled('phone') && $this->filled('mobile')) {
+            $this->merge(['phone' => $this->input('mobile')]);
+        }
+
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             'status' => $this->input('status', 'newly_lead'),
@@ -106,6 +111,7 @@ class StoreLeadRequest extends FormRequest
             'last_interaction_at' => ['nullable', 'date'],
             'assigned_to_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'meta' => ['nullable', 'array'],
+            'custom_fields' => ['nullable', 'array'],
         ];
     }
 }

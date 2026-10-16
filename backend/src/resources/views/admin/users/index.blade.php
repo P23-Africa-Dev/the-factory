@@ -72,7 +72,7 @@
             <label class="form-label small fw-semibold mb-1" style="color:var(--text-secondary);font-size:.75rem">Account Type</label>
             <select id="usersAccountTypeSelect" name="account_type" class="form-select">
                 <option value="">All types</option>
-                <option value="self_serve" @selected(($filters['account_type'] ?? '') === 'self_serve')>Self-Serve</option>
+                <option value="self_serve" @selected(($filters['account_type'] ?? '') === 'self_serve')>Self serve</option>
                 <option value="enterprise" @selected(($filters['account_type'] ?? '') === 'enterprise')>Enterprise</option>
             </select>
         </div>
@@ -180,7 +180,7 @@
                 <div class="modal-body">
                     <p style="font-size:.85rem;color:var(--text-secondary)" class="mb-0">
                         Are you sure you want to delete <strong id="deleteUserName"></strong>?
-                        This will soft-delete the account.
+                        This will soft delete the account.
                     </p>
                 </div>
                 <div class="modal-footer">

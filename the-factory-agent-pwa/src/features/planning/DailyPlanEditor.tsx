@@ -36,7 +36,7 @@ function typeLabel(type: string): string {
       return 'Task';
     case 'overdue_follow_up':
     case 'follow_up':
-      return 'Follow-up';
+      return 'Follow up';
     case 'meeting_attend':
     case 'meeting_prep':
     case 'meeting':

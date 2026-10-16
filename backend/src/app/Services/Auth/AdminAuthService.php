@@ -6,10 +6,15 @@ namespace App\Services\Auth;
 
 use App\Exceptions\AccountAccessDeniedException;
 use App\Models\User;
+use App\Services\Security\SecurityAuditLogger;
 use App\Support\UserAccountStatus;
 
 class AdminAuthService
 {
+    public function __construct(
+        private readonly SecurityAuditLogger $securityAudit,
+    ) {}
+
     /**
      * Authenticate a user allowed on the shared admin endpoint.
      *
@@ -27,11 +32,15 @@ class AdminAuthService
         $user = User::where('email', strtolower($email))->first();
 
         if (! $user) {
+            $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_ADMIN_API, null, $email, 'user_not_found');
+
             return null;
         }
 
         $block = UserAccountStatus::resolveBlock($user);
         if ($block !== null) {
+            $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_ADMIN_API, $user, $email, 'account_blocked');
+
             throw new AccountAccessDeniedException(
                 message: $block['message'],
                 accountStatus: $block['code'],
@@ -46,14 +55,20 @@ class AdminAuthService
         $hasEnterpriseOnboarding = ! $user->internal_role && $user->hasCompletedEnterpriseOnboarding();
 
         if (! $isSupervisor && ! $isInternalAdmin && ! $hasSelfServeOnboarding && ! $hasEnterpriseOnboarding) {
+            $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_ADMIN_API, $user, $email, 'role_not_permitted');
+
             return null;
         }
 
         if (! $this->hasActiveCompanyMembership($user, $isSupervisor || $isInternalAdmin)) {
+            $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_ADMIN_API, $user, $email, 'no_company');
+
             return null;
         }
 
         if (! password_verify($password, (string) $user->password)) {
+            $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_ADMIN_API, $user, $email, 'invalid_password');
+
             return null;
         }
 
@@ -68,6 +83,10 @@ class AdminAuthService
             : ($isInternalAdmin
                 ? 'admin'
                 : ($hasSelfServeOnboarding ? 'self-serve' : 'enterprise'));
+
+        $this->securityAudit->loginSucceeded(SecurityAuditLogger::CHANNEL_ADMIN_API, $user, [
+            'user_type' => $userType,
+        ]);
 
         return [
             'user' => $user,

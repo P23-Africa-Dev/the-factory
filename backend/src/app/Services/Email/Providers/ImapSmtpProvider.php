@@ -521,7 +521,7 @@ class ImapSmtpProvider implements EmailProviderInterface
                 'ok' => false,
                 'code' => 'auth_failed',
                 'message' => 'Email login failed.',
-                'fix' => 'Check your email and password. If your provider uses two-factor authentication, use an app password instead of your normal password.',
+                'fix' => 'Check your email and password. If your provider uses two factor authentication, use an app password instead of your normal password.',
             ];
         }
 
@@ -550,7 +550,7 @@ class ImapSmtpProvider implements EmailProviderInterface
                 'ok' => false,
                 'code' => 'unreachable',
                 'message' => 'We could not reach your mail server.',
-                'fix' => 'Please double-check the host name and port, then try again. If everything looks right, contact support.',
+                'fix' => 'Please double check the host name and port, then try again. If everything looks right, contact support.',
             ];
         }
 

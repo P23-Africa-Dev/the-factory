@@ -75,7 +75,7 @@ export function PayrollSettingsPanel() {
         <div className="space-y-4">
           {!canEdit && (
             <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              You have read-only access to payroll defaults.
+              You have read only access to payroll defaults.
             </p>
           )}
           <div className="grid sm:grid-cols-2 gap-4">

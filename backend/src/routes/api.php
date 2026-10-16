@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Auth\SupportAccessController;
 use App\Http\Controllers\Api\V1\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\V1\AvatarController;
+use App\Http\Controllers\Api\V1\Billing\BillingChangePlanController;
 use App\Http\Controllers\Api\V1\Billing\BillingCheckoutController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDefaultController;
 use App\Http\Controllers\Api\V1\Billing\BillingPaymentMethodDetachController;
@@ -35,10 +36,12 @@ use App\Http\Controllers\Api\V1\Company\CompanySettingsController;
 use App\Http\Controllers\Api\V1\CountryController;
 use App\Http\Controllers\Api\V1\Crm\CrmEmailController;
 use App\Http\Controllers\Api\V1\Crm\LeadController;
+use App\Http\Controllers\Api\V1\Crm\LeadFieldController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Drive\DriveController;
 use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAssertionController;
+use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAccessRequestController;
 use App\Http\Controllers\Api\V1\EmailAccountController;
 use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -217,6 +220,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::get('/status', BillingStatusController::class)->name('status');
         Route::get('/plans', BillingPlansController::class)->name('plans');
         Route::post('/checkout', BillingCheckoutController::class)->name('checkout');
+        Route::post('/change-plan', BillingChangePlanController::class)->name('change-plan');
         Route::post('/portal', BillingPortalController::class)->name('portal');
         Route::get('/payment-methods', [BillingPaymentMethodsController::class, 'index'])->name('payment-methods.index');
         Route::post('/payment-methods/setup', BillingPaymentMethodSetupController::class)->name('payment-methods.setup');
@@ -593,6 +597,8 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
                 Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
+                Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
+                Route::get('/leads/suggest', [LeadController::class, 'suggest'])->name('leads.suggest');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -638,10 +644,38 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
                     ->middleware('throttle:api')
                     ->name('labels.reorder');
+                Route::get('/lead-fields', [LeadFieldController::class, 'index'])->name('lead-fields.index');
+                Route::post('/lead-fields', [LeadFieldController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.store');
+                Route::patch('/lead-fields/{leadField}', [LeadFieldController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.update');
+                Route::post('/lead-fields/{leadField}/approve', [LeadFieldController::class, 'approve'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.approve');
+                Route::post('/lead-fields/{leadField}/decline', [LeadFieldController::class, 'decline'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.decline');
+                Route::post('/lead-fields/{leadField}/archive', [LeadFieldController::class, 'archive'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.archive');
+                Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.restore');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
                     ->name('leads.update');
+                Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge');
+                Route::post('/leads/{lead}/merge-preview', [LeadController::class, 'mergePreview'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-preview');
+                Route::post('/leads/{lead}/merge-from-create', [LeadController::class, 'mergeFromCreate'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-from-create');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
                     ->middleware('throttle:api')
                     ->name('leads.destroy');
@@ -751,6 +785,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::post('/sales-engine/assertion', [SalesEngineAssertionController::class, 'store'])
                 ->middleware('throttle:api')
                 ->name('sales-engine.assertion');
+            Route::get('/sales-engine/access-requests/status', [SalesEngineAccessRequestController::class, 'status'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.status');
+            Route::post('/sales-engine/access-requests', [SalesEngineAccessRequestController::class, 'store'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.store');
         });
 
     // Canonical agent endpoints.
@@ -761,6 +801,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::post('/sales-engine/assertion', [SalesEngineAssertionController::class, 'store'])
                 ->middleware('throttle:api')
                 ->name('sales-engine.assertion');
+            Route::get('/sales-engine/access-requests/status', [SalesEngineAccessRequestController::class, 'status'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.status');
+            Route::post('/sales-engine/access-requests', [SalesEngineAccessRequestController::class, 'store'])
+                ->middleware('throttle:api')
+                ->name('sales-engine.access-requests.store');
 
             Route::prefix('projects')->name('projects.')->group(function (): void {
                 Route::get('/', [ProjectController::class, 'agentIndex'])->name('index');
@@ -805,6 +851,8 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
             Route::prefix('crm')->name('crm.')->group(function (): void {
                 Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+                Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
+                Route::get('/leads/suggest', [LeadController::class, 'suggest'])->name('leads.suggest');
                 Route::post('/leads', [LeadController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('leads.store');
@@ -826,10 +874,38 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('preferences.preferred-pipeline');
                 Route::get('/labels', [LeadController::class, 'labels'])->name('labels.index');
+                Route::get('/lead-fields', [LeadFieldController::class, 'index'])->name('lead-fields.index');
+                Route::post('/lead-fields', [LeadFieldController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.store');
+                Route::patch('/lead-fields/{leadField}', [LeadFieldController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.update');
+                Route::post('/lead-fields/{leadField}/approve', [LeadFieldController::class, 'approve'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.approve');
+                Route::post('/lead-fields/{leadField}/decline', [LeadFieldController::class, 'decline'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.decline');
+                Route::post('/lead-fields/{leadField}/archive', [LeadFieldController::class, 'archive'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.archive');
+                Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.restore');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
                     ->name('leads.update');
+                Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge');
+                Route::post('/leads/{lead}/merge-preview', [LeadController::class, 'mergePreview'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-preview');
+                Route::post('/leads/{lead}/merge-from-create', [LeadController::class, 'mergeFromCreate'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-from-create');
                 Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
                     ->middleware('throttle:api')
                     ->name('leads.destroy');
@@ -1222,6 +1298,8 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
     Route::prefix('crm')->name('crm.')->group(function (): void {
         Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
         Route::get('/assignees', [LeadController::class, 'assignees'])->name('assignees.index');
+        Route::get('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])->name('leads.check-duplicate');
+        Route::get('/leads/suggest', [LeadController::class, 'suggest'])->name('leads.suggest');
         Route::post('/leads', [LeadController::class, 'store'])
             ->middleware('throttle:api')
             ->name('leads.store');
@@ -1267,10 +1345,38 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/labels/reorder', [LeadController::class, 'reorderLabels'])
             ->middleware('throttle:api')
             ->name('labels.reorder');
+        Route::get('/lead-fields', [LeadFieldController::class, 'index'])->name('lead-fields.index');
+        Route::post('/lead-fields', [LeadFieldController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.store');
+        Route::patch('/lead-fields/{leadField}', [LeadFieldController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.update');
+        Route::post('/lead-fields/{leadField}/approve', [LeadFieldController::class, 'approve'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.approve');
+        Route::post('/lead-fields/{leadField}/decline', [LeadFieldController::class, 'decline'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.decline');
+        Route::post('/lead-fields/{leadField}/archive', [LeadFieldController::class, 'archive'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.archive');
+        Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.restore');
         Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:api')
             ->name('leads.update');
+        Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
+            ->middleware('throttle:api')
+            ->name('leads.merge');
+        Route::post('/leads/{lead}/merge-preview', [LeadController::class, 'mergePreview'])
+            ->middleware('throttle:api')
+            ->name('leads.merge-preview');
+        Route::post('/leads/{lead}/merge-from-create', [LeadController::class, 'mergeFromCreate'])
+            ->middleware('throttle:api')
+            ->name('leads.merge-from-create');
         Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])
             ->middleware('throttle:api')
             ->name('leads.destroy');

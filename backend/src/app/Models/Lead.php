@@ -41,6 +41,7 @@ class Lead extends Model
         'last_interaction',
         'last_interaction_at',
         'meta',
+        'custom_fields',
         'converted_at',
     ];
 
@@ -51,6 +52,7 @@ class Lead extends Model
             'priority' => LeadPriority::class,
             'budget_amount' => 'decimal:2',
             'meta' => 'array',
+            'custom_fields' => 'array',
             'profile_urls' => 'array',
             'last_interaction_at' => 'datetime',
             'converted_at' => 'datetime',

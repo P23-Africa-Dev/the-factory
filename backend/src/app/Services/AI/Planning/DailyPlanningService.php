@@ -392,9 +392,9 @@ class DailyPlanningService
             }
 
             $reason = match (true) {
-                $nextActionDue => 'Follow-up action is overdue',
+                $nextActionDue => 'Follow up action is overdue',
                 $isStale => sprintf('No contact in %d days%s', $daysSince, $this->priorityLabel($lead->priority)),
-                default => 'Follow-up action pending',
+                default => 'Follow up action pending',
             };
 
             $location = $lead->companyLocation;
@@ -662,7 +662,7 @@ class DailyPlanningService
                 'dedupe_key' => $dedupeKey,
                 'title' => 'Follow up: ' . $leadName,
                 'type' => TaskType::SALES_VISIT->value,
-                'description' => 'Planned follow-up for ' . $leadName . '. ' . $action . ' [plan:' . $dedupeKey . ']',
+                'description' => 'Planned follow up for ' . $leadName . '. ' . $action . ' [plan:' . $dedupeKey . ']',
                 'due_date' => $endOfDay,
                 'priority' => 'medium',
                 'location' => $this->nullableLocation($candidate['location_text'] ?? null),

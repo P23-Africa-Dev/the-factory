@@ -48,7 +48,7 @@ data:
   # ── Frontend / CORS ───────────────────────────────────────────────────────────
   FRONTEND_URL: "https://thefactory23.com"
   AGENT_PWA_URL: "https://app.thefactory23.com"
-  CORS_ALLOWED_ORIGINS: "https://thefactory23.com,https://www.thefactory23.com,https://app.thefactory23.com,https://the-factory-frontend-git-space-p23-africa.vercel.app,https://the-factory-frontend-git-dev-work-p23-africa.vercel.app,http://localhost:3000,http://localhost:3001"
+  CORS_ALLOWED_ORIGINS: "https://thefactory23.com,https://www.thefactory23.com,https://app.thefactory23.com,https://the-factory-frontend-git-space-p23-africa.vercel.app,https://the-factory-frontend-git-dev-work-p23-africa.vercel.app,http://localhost:3000,http://localhost:3001,https://the-factory-frontend-git-demo-p23-africa.vercel.app,https://the-factory-frontend-git-master-p23-africa.vercel.app"
   SANCTUM_STATEFUL_DOMAINS: "thefactory23.com,www.thefactory23.com,app.thefactory23.com,api.thefactory23.com"
   BILLING_ENFORCE: "false"
   ENTERPRISE_ONBOARDING_SETUP_PATH: "/enterprise/setup"
@@ -73,7 +73,7 @@ data:
   INTERNAL_DEFAULT_AVATAR_PATH: "avatar/default/ghost.svg"
 
   # ── AI Providers (non-sensitive config) ───────────────────────────────────────
-  AI_STACK: "openai_claude"
+  AI_STACK: "glm"
   AI_INTENT_ROUTING_MODE: "rules_first"
   AI_PROVIDER: "openai"
   AI_FALLBACK_PROVIDER: "claude"
@@ -97,14 +97,15 @@ data:
   NVIDIA_EXEC_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
   NVIDIA_ANALYST_MODEL: "nvidia/llama-3.3-nemotron-super-49b-v1.5"
 
-  GLM_BASE_URL: "https://open.bigmodel.cn/api/paas/v4"
-  GLM_ROUTING_MODEL: "glm-4-flash"
-  GLM_EXEC_MODEL: "glm-4-air"
-  GLM_ANALYST_MODEL: "glm-4-plus"
+  # Z.AI international. Routing stays on a faster GLM-5; answers use GLM-5.2.
+  GLM_BASE_URL: "https://api.z.ai/api/paas/v4"
+  GLM_ROUTING_MODEL: "glm-5"
+  GLM_EXEC_MODEL: "glm-5.2"
+  GLM_ANALYST_MODEL: "glm-5.2"
   GLM_REQUEST_TIMEOUT_MS: "120000"
   GLM_ROUTING_TIMEOUT_MS: "15000"
-  GLM_OPERATIONAL_TIMEOUT_MS: "60000"
-  GLM_OPERATIONAL_MAX_TOKENS: "1000"
+  GLM_OPERATIONAL_TIMEOUT_MS: "90000"
+  GLM_OPERATIONAL_MAX_TOKENS: "4000"
 
   # ── Task Tracking ─────────────────────────────────────────────────────────────
   TASK_TRACKING_ARRIVAL_RADIUS_METERS: "75"
@@ -184,4 +185,8 @@ data:
 
   # ── Sales Engine (Continue-with-Factory23) ───────────────────────────────────
   # JWT secret lives in factory23-secret as SALES_ENGINE_JWT_SECRET (must match SE FACTORY23_JWT_SECRET).
+  # Internal provision token lives in factory23-secret as SALES_ENGINE_INTERNAL_TOKEN
+  # (must match SE FACTORY23_INTERNAL_TOKEN). operation@thefactory23.com is the default email for the sales engine.
   SALES_ENGINE_API_URL: "https://api.salesengine.thefactory23.com"
+  SALES_ENGINE_ACCESS_REQUEST_NOTIFY_EMAIL: "nurudeen@p23africa.com"
+  ENTERPRISE_DEMO_NOTIFICATION_EMAIL: "nurudeen@p23africa.com"

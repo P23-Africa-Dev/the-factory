@@ -99,7 +99,7 @@ PROMPT;
             'crm.top_leads' => 'List or count CRM leads / pipeline',
             'crm.leads_analytics' => 'Leads added today, who added them, conversion rate',
             'crm.stale_leads' => 'Leads not contacted recently',
-            'crm.follow_up_summary' => 'Follow-up recommendations',
+            'crm.follow_up_summary' => 'Follow up recommendations',
             'crm.calls_count' => 'CRM calls logged and top caller',
             'tasks.overdue' => 'Overdue or due-today tasks',
             'tasks.list' => 'List or query existing tasks (by assignee, creator, or status)',

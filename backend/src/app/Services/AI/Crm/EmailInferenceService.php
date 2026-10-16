@@ -739,10 +739,10 @@ class EmailInferenceService
         }
 
         if (is_string($leadName) && trim($leadName) !== '') {
-            return 'Follow-up: ' . trim($leadName);
+            return 'Follow up: ' . trim($leadName);
         }
 
-        return 'Follow-up';
+        return 'Follow up';
     }
 
     /**

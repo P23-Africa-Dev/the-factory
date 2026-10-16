@@ -28,7 +28,7 @@ class AiManagementPageTest extends TestCase
             ->assertOk()
             ->assertSee('AI Operations Center')
             ->assertSee('Hosted NVIDIA NIM')
-            ->assertSee('GLM (Zhipu)')
+            ->assertSee('GLM (Z.AI)')
             ->assertSee('ELY Intent Routing');
     }
 

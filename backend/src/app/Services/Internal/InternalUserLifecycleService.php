@@ -77,6 +77,10 @@ class InternalUserLifecycleService
 
         DB::transaction(function () use ($actor, $target, $company): void {
             $target->tokens()->delete();
+
+            // Free the seat immediately so soft-deleted users do not consume plan capacity.
+            $company->users()->detach($target->id);
+
             $target->delete();
 
             $this->auditLogger->log(

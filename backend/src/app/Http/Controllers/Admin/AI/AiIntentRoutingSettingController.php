@@ -26,8 +26,8 @@ class AiIntentRoutingSettingController extends Controller
         $this->intentRoutingSettingService->setMode($mode, $admin);
 
         $label = $mode === AiIntentRoutingSettingService::AI_FIRST
-            ? 'Semantic routing (AI-first)'
-            : 'Keyword routing (Rules-first)';
+            ? 'Semantic routing (AI first)'
+            : 'Keyword routing (Rules first)';
 
         return redirect()
             ->route('admin.ai.index')

@@ -41,7 +41,7 @@
         </div>
         <div class="col-6 col-lg-3">
             <div class="stat-card p-3">
-                <div class="stat-label mb-1">Top-up credits</div>
+                <div class="stat-label mb-1">Top up credits</div>
                 <div class="stat-value">{{ number_format($snapshot['topup_credits'], 0) }}</div>
                 <div style="font-size:.75rem;color:var(--text-muted)">Rolls over</div>
             </div>

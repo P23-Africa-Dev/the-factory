@@ -373,7 +373,7 @@ class LeadInferenceService
         ]);
 
         if ($parts === []) {
-            return 'Initial follow-up from ELY lead capture';
+            return 'Initial follow up from ELY lead capture';
         }
 
         return Str::limit(implode(' | ', $parts), 255, '');

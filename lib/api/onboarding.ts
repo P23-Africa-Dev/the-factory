@@ -113,7 +113,7 @@ export async function apiRequest<TData>({
 
   if (supportLevel === "read_only" && method !== "GET") {
     throw new ApiRequestError(
-      "This support session is read-only. End it and create an operational session to make changes.",
+      "This support session is read only. End it and create an operational session to make changes.",
       403,
       null,
     );

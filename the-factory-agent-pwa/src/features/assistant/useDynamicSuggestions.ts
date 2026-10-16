@@ -55,9 +55,9 @@ export function useDynamicSuggestions(): AssistantSuggestion[] {
     if (totalLeads > 0) {
       items.push({
         id: 'draft-followup',
-        label: 'Draft a follow-up email',
+        label: 'Draft a follow up email',
         prompt:
-          'Draft a personalised follow-up outreach email for my leads that have gone quiet.',
+          'Draft a personalised follow up outreach email for my leads that have gone quiet.',
       });
       items.push({
         id: 'top-leads',

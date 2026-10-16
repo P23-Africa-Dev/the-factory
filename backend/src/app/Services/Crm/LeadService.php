@@ -8,13 +8,16 @@ use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
 use App\Models\Lead;
 use App\Models\LeadActivity;
+use App\Models\LeadFieldDefinition;
 use App\Models\LeadLabel;
 use App\Models\LeadNote;
 use App\Models\LeadPipeline;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Services\Security\SecurityAuditLogger;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\LeadCustomFieldValues;
 use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\Paginator;
@@ -54,6 +57,7 @@ class LeadService
         private readonly CompanyContextService $companyContextService,
         private readonly NotificationService $notificationService,
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
+        private readonly SecurityAuditLogger $securityAudit,
     ) {}
 
     public function listForUser(User $user, array $filters): Paginator
@@ -104,9 +108,10 @@ class LeadService
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
-        $assignedToUserId = $role === 'agent'
+        $requestedAssignee = $data['assigned_to_user_id'] ?? null;
+        $assignedToUserId = $role === 'agent' || ! is_numeric($requestedAssignee) || (int) $requestedAssignee <= 0
             ? (int) $user->id
-            : (isset($data['assigned_to_user_id']) ? (int) $data['assigned_to_user_id'] : null);
+            : (int) $requestedAssignee;
         $pipelineId = (int) ($data['pipeline_id'] ?? 0);
         if ($pipelineId <= 0) {
             $pipelineId = $this->resolvePreferredPipelineId($user, $companyId);
@@ -151,6 +156,7 @@ class LeadService
                 'last_interaction' => $data['last_interaction'] ?? null,
                 'last_interaction_at' => $data['last_interaction_at'] ?? null,
                 'meta' => $data['meta'] ?? null,
+                'custom_fields' => $this->resolvedCustomFields($companyId, $data, [], 'create') ?? [],
             ]);
 
             $this->replaceContacts($lead, $this->contactPayloads($data));
@@ -168,6 +174,310 @@ class LeadService
         );
 
         return $this->findForUser($user, $lead, $companyId);
+    }
+
+    /**
+     * Find an existing CRM lead that matches email (preferred) or name+company.
+     *
+     * @return array{exists: bool, lead: ?Lead, match_reason: ?string}
+     */
+    public function checkDuplicate(User $user, array $filters): array
+    {
+        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+
+        $email = strtolower(trim((string) ($filters['email'] ?? '')));
+        $name = trim((string) ($filters['name'] ?? ''));
+        $companyName = trim((string) ($filters['company_name'] ?? ''));
+
+        if ($email !== '') {
+            $byEmail = $this->baseQuery($companyId)
+                ->whereRaw('LOWER(email) = ?', [$email])
+                ->first();
+
+            if ($byEmail) {
+                return [
+                    'exists' => true,
+                    'lead' => $byEmail,
+                    'match_reason' => 'email',
+                ];
+            }
+        }
+
+        if ($name !== '') {
+            $query = $this->baseQuery($companyId)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+
+            if ($companyName !== '') {
+                $query->where(function (Builder $builder) use ($companyName): void {
+                    $builder->whereRaw('LOWER(company_name) = ?', [mb_strtolower($companyName)])
+                        ->orWhereNull('company_name')
+                        ->orWhere('company_name', '');
+                });
+            }
+
+            $byName = $query->first();
+            if ($byName) {
+                return [
+                    'exists' => true,
+                    'lead' => $byName,
+                    'match_reason' => $companyName !== '' ? 'name_company' : 'name',
+                ];
+            }
+        }
+
+        return [
+            'exists' => false,
+            'lead' => null,
+            'match_reason' => null,
+        ];
+    }
+
+    /**
+     * Prefix matches for the Add Lead form. Company-wide, including secondary contacts.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<array{id:int,name:string,email:?string,phone:?string,company_name:?string,matched_on:string,match_type:string,can_merge:bool}>
+     */
+    public function suggestDuplicates(User $user, array $filters): array
+    {
+        $context = $this->companyContextService->resolve($user, $filters['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+
+        $field = (string) ($filters['field'] ?? 'name');
+        $allowedFields = ['name', 'email', 'phone', 'company_name', 'company_email'];
+        if (! in_array($field, $allowedFields, true)) {
+            $field = 'name';
+        }
+
+        $raw = trim((string) ($filters['q'] ?? ''));
+        $phoneDigits = $this->normalizePhoneDigits($raw) ?? '';
+        $needle = $field === 'phone' ? $phoneDigits : mb_strtolower($raw);
+        $minimum = $field === 'phone' ? 4 : 2;
+
+        if (mb_strlen($needle) < $minimum) {
+            return [];
+        }
+
+        $like = $this->escapeLikePrefix($needle);
+        $strippedLeadPhoneSql = $this->strippedPhoneSql('leads.phone');
+        $strippedContactPhoneSql = $this->strippedPhoneSql('lead_contacts.phone');
+
+        $leads = Lead::query()
+            ->where('company_id', $companyId)
+            ->with(['contacts:id,lead_id,name,email,phone,location,sort_order'])
+            ->where(function (Builder $query) use ($field, $like, $phoneDigits, $strippedLeadPhoneSql, $strippedContactPhoneSql): void {
+                if ($field === 'name') {
+                    $query->whereRaw('LOWER(leads.name) LIKE ?', [$like])
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
+                            ->whereRaw('LOWER(lead_contacts.name) LIKE ?', [$like]));
+                } elseif ($field === 'email') {
+                    $query->whereRaw('LOWER(leads.email) LIKE ?', [$like])
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
+                            ->whereRaw('LOWER(lead_contacts.email) LIKE ?', [$like]));
+                } elseif ($field === 'phone') {
+                    $query->whereRaw("{$strippedLeadPhoneSql} LIKE ?", [$phoneDigits . '%'])
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
+                            ->whereRaw("{$strippedContactPhoneSql} LIKE ?", [$phoneDigits . '%']));
+                } elseif ($field === 'company_name') {
+                    $query->whereRaw('LOWER(leads.company_name) LIKE ?', [$like]);
+                } else {
+                    $query->whereRaw('LOWER(leads.company_email) LIKE ?', [$like]);
+                }
+            })
+            ->orderBy('name')
+            ->limit(8)
+            ->get();
+
+        return $leads
+            ->map(function (Lead $lead) use ($user, $role, $field, $needle, $phoneDigits): array {
+                $match = $this->classifySuggestion($lead, $field, $needle, $phoneDigits);
+
+                return [
+                    'id' => (int) $lead->id,
+                    'name' => (string) $lead->name,
+                    'email' => $lead->email,
+                    'phone' => $lead->phone,
+                    'company_name' => $lead->company_name,
+                    'matched_on' => $match['matched_on'],
+                    'match_type' => $match['match_type'],
+                    'can_merge' => $this->userCanMergeLead($user, $lead, $role),
+                ];
+            })
+            ->sortBy(fn(array $row): int => $row['match_type'] === 'exact' ? 0 : 1)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Preview a gap-fill merge of a new lead form into an existing lead. Does not write.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{existing: array<string, mixed>, incoming: array<string, mixed>, result: array<string, mixed>, fields_changed: list<string>}
+     */
+    public function previewMergeFromCreate(User $user, Lead $lead, array $data): array
+    {
+        return $this->planMergeFromCreate($user, $lead, $data);
+    }
+
+    /**
+     * Apply a gap-fill merge. Existing filled values and the lead name are kept.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{existing: array<string, mixed>, incoming: array<string, mixed>, result: array<string, mixed>, fields_changed: list<string>, lead: Lead}
+     */
+    public function applyMergeFromCreate(User $user, Lead $lead, array $data): array
+    {
+        $plan = $this->planMergeFromCreate($user, $lead, $data);
+
+        DB::transaction(function () use ($lead, $plan): void {
+            if ($plan['updates'] !== []) {
+                $lead->update($plan['updates']);
+            }
+
+            $primary = $lead->contacts()->where('sort_order', 0)->first();
+            if ($primary !== null) {
+                $contactUpdates = [];
+                foreach (['email', 'phone', 'location'] as $field) {
+                    if (array_key_exists($field, $plan['updates']) && $this->isBlankMergeValue($primary->{$field})) {
+                        $contactUpdates[$field] = $plan['updates'][$field];
+                    }
+                }
+                if ($contactUpdates !== []) {
+                    $primary->update($contactUpdates);
+                }
+            }
+
+            $nextSort = $lead->contacts()->max('sort_order');
+            $sortOrder = $nextSort === null ? 0 : ((int) $nextSort + 1);
+            foreach ($plan['contacts_to_add'] as $contact) {
+                $lead->contacts()->create([
+                    ...$contact,
+                    'sort_order' => $sortOrder,
+                ]);
+                $sortOrder++;
+            }
+        });
+
+        $companyId = (int) $lead->company_id;
+
+        return [
+            'existing' => $plan['existing'],
+            'incoming' => $plan['incoming'],
+            'result' => $plan['result'],
+            'fields_changed' => $plan['fields_changed'],
+            'lead' => $this->findForUser($user, $lead->fresh(), $companyId),
+        ];
+    }
+
+    /**
+     * Merge richer Sales Engine fields into an existing CRM lead without wiping filled values.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{lead: Lead, updated: bool, fields_changed: list<string>}
+     */
+    public function merge(User $user, Lead $lead, array $data, string $strategy = 'better_quality'): array
+    {
+        $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $this->ensureDefaultCrmSetup($companyId);
+        $this->assertLeadInCompany($lead, $companyId);
+        $this->ensureCanCreateLeads((string) $context['role']);
+
+        $mergeable = [
+            'email',
+            'phone',
+            'location',
+            'company_name',
+            'company_email',
+            'website',
+            'position',
+            'profile_urls',
+            'next_action',
+        ];
+
+        $changed = [];
+        $updates = [];
+
+        foreach ($mergeable as $field) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            $incoming = $data[$field];
+            if ($incoming === null || $incoming === '' || $incoming === []) {
+                continue;
+            }
+
+            if ($field === 'website' && is_string($incoming)) {
+                $incoming = LeadFieldNormalizer::normalizeWebsite($incoming);
+                if ($incoming === null) {
+                    continue;
+                }
+            }
+
+            if ($field === 'profile_urls') {
+                $incoming = LeadFieldNormalizer::normalizeProfileUrls($incoming);
+                if ($incoming === []) {
+                    continue;
+                }
+            }
+
+            $existing = $lead->{$field};
+
+            $shouldUpdate = match ($strategy) {
+                'always_update' => true,
+                'only_new_fields' => $existing === null || $existing === '' || $existing === [],
+                default => $this->isBetterFieldValue($existing, $incoming, $field),
+            };
+
+            if (! $shouldUpdate) {
+                continue;
+            }
+
+            $updates[$field] = $incoming;
+            $changed[] = $field;
+        }
+
+        if ($updates !== []) {
+            $lead->update($updates);
+        }
+
+        return [
+            'lead' => $this->findForUser($user, $lead->fresh(), $companyId),
+            'updated' => $changed !== [],
+            'fields_changed' => $changed,
+        ];
+    }
+
+    private function isBetterFieldValue(mixed $existing, mixed $incoming, string $field): bool
+    {
+        if ($existing === null || $existing === '' || $existing === []) {
+            return true;
+        }
+
+        if ($field === 'email' && is_string($incoming) && filter_var($incoming, FILTER_VALIDATE_EMAIL)) {
+            return ! is_string($existing) || ! filter_var($existing, FILTER_VALIDATE_EMAIL);
+        }
+
+        if ($field === 'website' && is_string($incoming)) {
+            return ! is_string($existing) || LeadFieldNormalizer::normalizeWebsite((string) $existing) === null;
+        }
+
+        if ($field === 'profile_urls' && is_array($incoming)) {
+            $existingUrls = is_array($existing) ? $existing : [];
+
+            return count(array_diff($incoming, $existingUrls)) > 0;
+        }
+
+        if (is_string($incoming) && is_string($existing)) {
+            return mb_strlen(trim($incoming)) > mb_strlen(trim($existing));
+        }
+
+        return false;
     }
 
     public function findForUser(User $user, Lead $lead, ?int $companyId = null): Lead
@@ -207,10 +517,10 @@ class LeadService
             }
 
             $allowedFields = $editsContacts
-                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location']
-                : ['company_id', 'pipeline_id', 'status'];
+                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location', 'custom_fields']
+                : ['company_id', 'pipeline_id', 'status', 'custom_fields'];
             $forbiddenFields = collect(array_keys($data))
-                ->reject(static fn (string $field): bool => in_array($field, $allowedFields, true))
+                ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
                 ->values()
                 ->all();
 
@@ -229,7 +539,14 @@ class LeadService
                 $this->assertLabelExists($companyId, (string) $data['status']);
             }
 
-            $lead = DB::transaction(function () use ($lead, $data, $editsContacts): Lead {
+            $customFields = $this->resolvedCustomFields(
+                $companyId,
+                $data,
+                is_array($lead->custom_fields) ? $lead->custom_fields : [],
+                'update',
+            );
+
+            $lead = DB::transaction(function () use ($lead, $data, $editsContacts, $customFields): Lead {
                 $lead->update([
                     'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
                     'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
@@ -237,6 +554,7 @@ class LeadService
                     'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
                     'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
                     'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+                    'custom_fields' => $customFields ?? $lead->custom_fields,
                 ]);
 
                 if ($editsContacts) {
@@ -267,7 +585,14 @@ class LeadService
             $this->assertLabelExists($companyId, (string) $data['status']);
         }
 
-        $lead = DB::transaction(function () use ($lead, $data): Lead {
+        $customFields = $this->resolvedCustomFields(
+            $companyId,
+            $data,
+            is_array($lead->custom_fields) ? $lead->custom_fields : [],
+            'update',
+        );
+
+        $lead = DB::transaction(function () use ($lead, $data, $customFields): Lead {
             $lead->update([
                 'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
                 'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
@@ -297,6 +622,7 @@ class LeadService
                 'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
                 'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
                 'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
+                'custom_fields' => $customFields ?? $lead->custom_fields,
                 'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
             ]);
 
@@ -428,7 +754,7 @@ class LeadService
             ->pluck('total', 'status')
             ->all();
 
-        $total = (int) array_sum(array_map(static fn ($value): int => (int) $value, $counts));
+        $total = (int) array_sum(array_map(static fn($value): int => (int) $value, $counts));
 
         return [
             'total' => $total,
@@ -1040,7 +1366,7 @@ class LeadService
         $companyId = (int) $context['company']->id;
         $this->ensureDefaultCrmSetup($companyId);
 
-        $ids = collect($payload['ordered_label_ids'] ?? [])->map(static fn ($id): int => (int) $id)->values();
+        $ids = collect($payload['ordered_label_ids'] ?? [])->map(static fn($id): int => (int) $id)->values();
 
         DB::transaction(function () use ($companyId, $ids): void {
             foreach ($ids as $index => $id) {
@@ -1131,6 +1457,7 @@ class LeadService
 
         $duplicatePolicy = (string) ($payload['duplicate_policy'] ?? 'create');
         $labelLookup = $this->buildLabelLookup($companyId);
+        $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
         $importedCount = 0;
@@ -1139,7 +1466,7 @@ class LeadService
         $skippedRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
 
             if ($validation['errors'] !== []) {
                 $failedRows[] = [
@@ -1168,7 +1495,8 @@ class LeadService
             }
 
             if ($duplicate !== null && $duplicatePolicy === 'update') {
-                if ($role === 'agent'
+                if (
+                    $role === 'agent'
                     && (int) $duplicate->created_by_user_id !== (int) $user->id
                     && (int) ($duplicate->assigned_to_user_id ?? 0) !== (int) $user->id
                 ) {
@@ -1211,6 +1539,8 @@ class LeadService
                 'priority' => $data['priority'],
                 'budget_amount' => $data['budget_amount'] ?? null,
                 'budget_currency' => $data['budget_currency'] ?? null,
+                'custom_fields' => $data['custom_fields'] ?? [],
+                'custom_fields_mode' => 'import',
                 'assigned_to_user_id' => $role === 'agent' ? (int) $user->id : null,
             ]);
             $importedCount++;
@@ -1243,6 +1573,7 @@ class LeadService
         $this->assertPipelineInCompany($companyId, $pipelineId);
 
         $labelLookup = $this->buildLabelLookup($companyId);
+        $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
         $validCount = 0;
@@ -1250,7 +1581,7 @@ class LeadService
         $duplicateRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
 
             if ($validation['errors'] !== []) {
                 $errorRows[] = [
@@ -1306,7 +1637,10 @@ class LeadService
             return [
                 'filename' => $filename,
                 'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'stream' => function () use ($companyId, $user, $role, $filters): void {
+                'stream' => function () use ($companyId, $user, $role, $filters, $format): void {
+                    $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_LEADS, $user, $companyId, [
+                        'format' => $format,
+                    ]);
                     $this->streamLeadsXlsxExport($companyId, $user, $role, $filters);
                 },
             ];
@@ -1315,10 +1649,38 @@ class LeadService
         return [
             'filename' => $filename,
             'content_type' => 'text/csv; charset=UTF-8',
-            'stream' => function () use ($companyId, $user, $role, $filters): void {
+            'stream' => function () use ($companyId, $user, $role, $filters, $format): void {
+                $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_LEADS, $user, $companyId, [
+                    'format' => $format,
+                ]);
                 $this->streamLeadsCsvExport($companyId, $user, $role, $filters);
             },
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<array<string, mixed>>
+     */
+    private function normalizedIncomingContacts(array $data): array
+    {
+        $contacts = isset($data['contacts']) && is_array($data['contacts']) ? $data['contacts'] : [];
+
+        if ($contacts === []) {
+            return [[
+                'name' => $data['name'] ?? '',
+                'email' => $data['email'] ?? null,
+                'phone' => $data['phone'] ?? null,
+                'location' => $data['location'] ?? null,
+            ]];
+        }
+
+        return array_map(static function (mixed $contact): array {
+            $contact = is_array($contact) ? $contact : [];
+            $contact['name'] ??= '';
+
+            return $contact;
+        }, array_values($contacts));
     }
 
     /**
@@ -1336,7 +1698,7 @@ class LeadService
                 'location' => $data['location'] ?? null,
             ]];
 
-        return array_map(static fn (array $contact): array => [
+        return array_map(static fn(array $contact): array => [
             'name' => trim((string) $contact['name']),
             'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
             'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
@@ -1351,7 +1713,7 @@ class LeadService
     {
         $lead->contacts()->delete();
         $lead->contacts()->createMany(array_map(
-            static fn (array $contact, int $index): array => [
+            static fn(array $contact, int $index): array => [
                 ...$contact,
                 'sort_order' => $index,
             ],
@@ -1392,9 +1754,9 @@ class LeadService
                 'creator:id,name,email',
                 'assignee:id,name,email',
                 'contacts:id,lead_id,name,email,phone,location,sort_order',
-                'notes' => fn ($query) => $query->latest('id')->limit(10),
+                'notes' => fn($query) => $query->latest('id')->limit(10),
                 'notes.creator:id,name,email',
-                'activities' => fn ($query) => $query->latest('id')->limit(20),
+                'activities' => fn($query) => $query->latest('id')->limit(20),
                 'activities.creator:id,name,email',
             ]);
     }
@@ -1488,24 +1850,25 @@ class LeadService
             if ($this->isAgentUploadSourceFilter($source)) {
                 $this->applyAgentUploadedSourceFilter($query);
             } else {
-                $query->where('source', 'like', '%'.$source.'%');
+                $query->where('source', 'like', '%' . $source . '%');
             }
         }
 
         if (! empty($filters['search'])) {
             $search = trim((string) $filters['search']);
             $query->where(function (Builder $builder) use ($search): void {
-                $builder->where('name', 'like', '%'.$search.'%')
-                    ->orWhere('email', 'like', '%'.$search.'%')
-                    ->orWhere('phone', 'like', '%'.$search.'%')
-                    ->orWhere('location', 'like', '%'.$search.'%')
-                    ->orWhere('company_name', 'like', '%'.$search.'%')
-                    ->orWhere('source', 'like', '%'.$search.'%')
+                $builder->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('email', 'like', '%' . $search . '%')
+                    ->orWhere('phone', 'like', '%' . $search . '%')
+                    ->orWhere('location', 'like', '%' . $search . '%')
+                    ->orWhere('company_name', 'like', '%' . $search . '%')
+                    ->orWhere('source', 'like', '%' . $search . '%')
+                    ->orWhere('custom_fields', 'like', '%' . $search . '%')
                     ->orWhereHas('contacts', function (Builder $contactQuery) use ($search): void {
-                        $contactQuery->where('name', 'like', '%'.$search.'%')
-                            ->orWhere('email', 'like', '%'.$search.'%')
-                            ->orWhere('phone', 'like', '%'.$search.'%')
-                            ->orWhere('location', 'like', '%'.$search.'%');
+                        $contactQuery->where('name', 'like', '%' . $search . '%')
+                            ->orWhere('email', 'like', '%' . $search . '%')
+                            ->orWhere('phone', 'like', '%' . $search . '%')
+                            ->orWhere('location', 'like', '%' . $search . '%');
                     });
             });
         }
@@ -1566,10 +1929,10 @@ class LeadService
         while (LeadLabel::query()
             ->where('company_id', $companyId)
             ->where('slug', $slug)
-            ->when($ignoreLabelId !== null, fn ($query) => $query->where('id', '!=', $ignoreLabelId))
+            ->when($ignoreLabelId !== null, fn($query) => $query->where('id', '!=', $ignoreLabelId))
             ->exists()
         ) {
-            $slug = $baseSlug.'_'.$suffix;
+            $slug = $baseSlug . '_' . $suffix;
             $suffix++;
         }
 
@@ -1601,7 +1964,7 @@ class LeadService
             'uploaded by agents',
         ];
 
-        $quoted = implode(',', array_map(static fn (string $value): string => "'".str_replace("'", "''", $value)."'", $accepted));
+        $quoted = implode(',', array_map(static fn(string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
 
         $query->whereRaw(
             "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
@@ -1749,6 +2112,359 @@ class LeadService
         return ($bestKey !== null && $bestDistance <= 4) ? $labelLookup[$bestKey] : null;
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{
+     *     existing: array<string, mixed>,
+     *     incoming: array<string, mixed>,
+     *     result: array<string, mixed>,
+     *     fields_changed: list<string>,
+     *     updates: array<string, mixed>,
+     *     contacts_to_add: list<array{name:string,email:?string,phone:?string,location:?string}>
+     * }
+     */
+    private function planMergeFromCreate(User $user, Lead $lead, array $data): array
+    {
+        $context = $this->companyContextService->resolve($user, $data['company_id'] ?? null);
+        $companyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+        $this->assertLeadInCompany($lead, $companyId);
+        $this->assertCanMergeLead($user, $lead, $role);
+
+        $lead->loadMissing('contacts');
+        $data['contacts'] = $this->normalizedIncomingContacts($data);
+        $incomingContacts = array_values(array_filter(
+            $this->contactPayloads($data),
+            static fn(array $contact): bool => $contact['name'] !== '',
+        ));
+
+        $updates = [];
+        foreach (['email', 'phone', 'location', 'company_name', 'company_email', 'position', 'source', 'next_action'] as $field) {
+            $incoming = $this->nullableTrimmed($data[$field] ?? null);
+            if ($this->isBlankMergeValue($lead->{$field}) && $incoming !== null) {
+                $updates[$field] = $incoming;
+            }
+        }
+
+        $website = LeadFieldNormalizer::normalizeWebsite($this->nullableTrimmed($data['website'] ?? null));
+        if ($this->isBlankMergeValue($lead->website) && $website !== null) {
+            $updates['website'] = $website;
+        }
+
+        $existingUrls = is_array($lead->profile_urls) ? array_values($lead->profile_urls) : [];
+        $incomingUrls = LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls'] ?? []);
+        $mergedUrls = array_values(array_unique([...$existingUrls, ...$incomingUrls]));
+        if (count($mergedUrls) > count($existingUrls)) {
+            $updates['profile_urls'] = $mergedUrls;
+        }
+
+        if ($lead->budget_amount === null && isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null) {
+            $updates['budget_amount'] = $data['budget_amount'];
+            $updates['budget_currency'] = $this->nullableTrimmed($data['budget_currency'] ?? null) ?? $lead->budget_currency ?? 'USD';
+        }
+
+        $contactsToAdd = [];
+        foreach ($incomingContacts as $contact) {
+            if ($this->contactAlreadyOnLead($lead, $contact)) {
+                continue;
+            }
+            $contactsToAdd[] = $contact;
+        }
+
+        $fieldsChanged = array_keys($updates);
+        if ($contactsToAdd !== []) {
+            $fieldsChanged[] = 'contacts';
+        }
+
+        $resultAttributes = array_merge($lead->only([
+            'name',
+            'email',
+            'phone',
+            'location',
+            'company_name',
+            'company_email',
+            'website',
+            'position',
+            'source',
+            'next_action',
+            'budget_amount',
+            'budget_currency',
+        ]), $updates);
+        $resultAttributes['profile_urls'] = $updates['profile_urls'] ?? $existingUrls;
+        $resultAttributes['name'] = (string) $lead->name;
+
+        $existingContacts = $this->contactSnapshots($lead);
+        $resultContacts = [
+            ...$existingContacts,
+            ...array_map(fn(array $contact, int $offset): array => [
+                'name' => $contact['name'],
+                'email' => $contact['email'],
+                'phone' => $contact['phone'],
+                'location' => $contact['location'],
+                'sort_order' => count($existingContacts) + $offset,
+            ], $contactsToAdd, array_keys($contactsToAdd)),
+        ];
+
+        return [
+            'existing' => $this->mergeSnapshot($lead, $existingContacts, $existingUrls),
+            'incoming' => $this->incomingMergeSnapshot($data, $incomingContacts, $incomingUrls),
+            'result' => $this->mergeSnapshotFromValues($resultAttributes, $resultContacts),
+            'fields_changed' => $fieldsChanged,
+            'updates' => $updates,
+            'contacts_to_add' => $contactsToAdd,
+        ];
+    }
+
+    /**
+     * @param  list<array{name:string,email:?string,phone:?string,location:?string,sort_order?:int}>  $contacts
+     * @param  list<string>  $profileUrls
+     * @return array<string, mixed>
+     */
+    private function mergeSnapshot(Lead $lead, array $contacts, array $profileUrls): array
+    {
+        return $this->mergeSnapshotFromValues([
+            'name' => $lead->name,
+            'email' => $lead->email,
+            'phone' => $lead->phone,
+            'location' => $lead->location,
+            'company_name' => $lead->company_name,
+            'company_email' => $lead->company_email,
+            'website' => $lead->website,
+            'position' => $lead->position,
+            'source' => $lead->source,
+            'next_action' => $lead->next_action,
+            'budget_amount' => $lead->budget_amount,
+            'budget_currency' => $lead->budget_currency,
+            'profile_urls' => $profileUrls,
+        ], $contacts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     * @param  list<array<string, mixed>>  $contacts
+     * @return array<string, mixed>
+     */
+    private function mergeSnapshotFromValues(array $values, array $contacts): array
+    {
+        return [
+            'name' => $values['name'] ?? null,
+            'email' => $values['email'] ?? null,
+            'phone' => $values['phone'] ?? null,
+            'location' => $values['location'] ?? null,
+            'company_name' => $values['company_name'] ?? null,
+            'company_email' => $values['company_email'] ?? null,
+            'website' => $values['website'] ?? null,
+            'position' => $values['position'] ?? null,
+            'profile_urls' => array_values($values['profile_urls'] ?? []),
+            'source' => $values['source'] ?? null,
+            'budget_amount' => isset($values['budget_amount']) && $values['budget_amount'] !== null
+                ? (float) $values['budget_amount']
+                : null,
+            'budget_currency' => $values['budget_currency'] ?? null,
+            'next_action' => $values['next_action'] ?? null,
+            'contacts' => $contacts,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<array{name:string,email:?string,phone:?string,location:?string}>  $contacts
+     * @param  list<string>  $profileUrls
+     * @return array<string, mixed>
+     */
+    private function incomingMergeSnapshot(array $data, array $contacts, array $profileUrls): array
+    {
+        $primary = $contacts[0] ?? [
+            'name' => $this->nullableTrimmed($data['name'] ?? null) ?? '',
+            'email' => $this->nullableTrimmed($data['email'] ?? null),
+            'phone' => $this->nullableTrimmed($data['phone'] ?? null),
+            'location' => $this->nullableTrimmed($data['location'] ?? null),
+        ];
+
+        return $this->mergeSnapshotFromValues([
+            'name' => $primary['name'] !== '' ? $primary['name'] : $this->nullableTrimmed($data['name'] ?? null),
+            'email' => $primary['email'] ?? $this->nullableTrimmed($data['email'] ?? null),
+            'phone' => $primary['phone'] ?? $this->nullableTrimmed($data['phone'] ?? null),
+            'location' => $primary['location'] ?? $this->nullableTrimmed($data['location'] ?? null),
+            'company_name' => $this->nullableTrimmed($data['company_name'] ?? null),
+            'company_email' => $this->nullableTrimmed($data['company_email'] ?? null),
+            'website' => LeadFieldNormalizer::normalizeWebsite($this->nullableTrimmed($data['website'] ?? null)),
+            'position' => $this->nullableTrimmed($data['position'] ?? null),
+            'source' => $this->nullableTrimmed($data['source'] ?? null),
+            'next_action' => $this->nullableTrimmed($data['next_action'] ?? null),
+            'budget_amount' => isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null
+                ? $data['budget_amount']
+                : null,
+            'budget_currency' => $this->nullableTrimmed($data['budget_currency'] ?? null),
+            'profile_urls' => $profileUrls,
+        ], array_values($contacts));
+    }
+
+    /**
+     * @return list<array{name:string,email:?string,phone:?string,location:?string,sort_order:int}>
+     */
+    private function contactSnapshots(Lead $lead): array
+    {
+        return $lead->contacts
+            ->map(static fn($contact): array => [
+                'name' => (string) $contact->name,
+                'email' => $contact->email,
+                'phone' => $contact->phone,
+                'location' => $contact->location,
+                'sort_order' => (int) $contact->sort_order,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array{name:string,email:?string,phone:?string,location:?string}  $contact
+     */
+    private function contactAlreadyOnLead(Lead $lead, array $contact): bool
+    {
+        $email = $contact['email'] !== null ? mb_strtolower($contact['email']) : null;
+        $phone = $this->normalizePhoneDigits($contact['phone']);
+
+        if ($email === null && $phone === null) {
+            $name = mb_strtolower($contact['name']);
+
+            return mb_strtolower((string) $lead->name) === $name
+                || $lead->contacts->contains(fn($existing): bool => mb_strtolower((string) $existing->name) === $name);
+        }
+
+        if ($email !== null && $this->emailsEqual($lead->email, $email)) {
+            return true;
+        }
+
+        if ($phone !== null && $this->normalizePhoneDigits($lead->phone) === $phone) {
+            return true;
+        }
+
+        return $lead->contacts->contains(function ($existing) use ($email, $phone): bool {
+            if ($email !== null && $this->emailsEqual($existing->email, $email)) {
+                return true;
+            }
+
+            return $phone !== null && $this->normalizePhoneDigits($existing->phone) === $phone;
+        });
+    }
+
+    /**
+     * @return array{matched_on: string, match_type: string}
+     */
+    private function classifySuggestion(Lead $lead, string $field, string $needle, string $phoneDigits): array
+    {
+        if ($field === 'email') {
+            if ($this->emailsEqual($lead->email, $needle)) {
+                return ['matched_on' => 'email', 'match_type' => 'exact'];
+            }
+
+            foreach ($lead->contacts as $contact) {
+                if ($this->emailsEqual($contact->email, $needle)) {
+                    return ['matched_on' => 'contact_email', 'match_type' => 'exact'];
+                }
+            }
+
+            return ['matched_on' => 'email', 'match_type' => 'partial'];
+        }
+
+        if ($field === 'phone') {
+            if ($this->normalizePhoneDigits($lead->phone) === $phoneDigits) {
+                return ['matched_on' => 'phone', 'match_type' => 'exact'];
+            }
+
+            foreach ($lead->contacts as $contact) {
+                if ($this->normalizePhoneDigits($contact->phone) === $phoneDigits) {
+                    return ['matched_on' => 'contact_phone', 'match_type' => 'exact'];
+                }
+            }
+
+            return ['matched_on' => 'phone', 'match_type' => 'partial'];
+        }
+
+        if ($field === 'name') {
+            if (mb_strtolower((string) $lead->name) === $needle) {
+                return ['matched_on' => 'name', 'match_type' => 'exact'];
+            }
+
+            foreach ($lead->contacts as $contact) {
+                if (mb_strtolower((string) $contact->name) === $needle) {
+                    return ['matched_on' => 'contact_name', 'match_type' => 'exact'];
+                }
+            }
+
+            return ['matched_on' => 'name', 'match_type' => 'partial'];
+        }
+
+        if ($field === 'company_email') {
+            return [
+                'matched_on' => 'company_email',
+                'match_type' => $this->emailsEqual($lead->company_email, $needle) ? 'exact' : 'partial',
+            ];
+        }
+
+        return [
+            'matched_on' => 'company_name',
+            'match_type' => mb_strtolower((string) $lead->company_name) === $needle ? 'exact' : 'partial',
+        ];
+    }
+
+    private function userCanMergeLead(User $user, Lead $lead, string $role): bool
+    {
+        if (in_array($role, ['owner', 'admin', 'supervisor'], true)) {
+            return true;
+        }
+
+        return $role === 'agent' && (int) $lead->created_by_user_id === (int) $user->id;
+    }
+
+    private function assertCanMergeLead(User $user, Lead $lead, string $role): void
+    {
+        if ($this->userCanMergeLead($user, $lead, $role)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'authorization' => ['You can view this matching lead, but you can only merge leads you are allowed to edit.'],
+        ]);
+    }
+
+    private function emailsEqual(mixed $existing, string $needle): bool
+    {
+        if (! is_string($existing) || trim($existing) === '') {
+            return false;
+        }
+
+        return mb_strtolower(trim($existing)) === mb_strtolower(trim($needle));
+    }
+
+    private function isBlankMergeValue(mixed $value): bool
+    {
+        return $value === null || $value === '' || $value === [];
+    }
+
+    private function nullableTrimmed(mixed $value): ?string
+    {
+        if (! is_string($value) && ! is_numeric($value)) {
+            return null;
+        }
+
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    private function escapeLikePrefix(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value) . '%';
+    }
+
+    private function strippedPhoneSql(string $column): string
+    {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE({$column}, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', '')";
+    }
+
     private function normalizePhoneDigits(?string $phone): ?string
     {
         if ($phone === null) {
@@ -1772,7 +2488,7 @@ class LeadService
                 ->where('company_id', $companyId)
                 ->where(function (Builder $query) use ($normalizedEmail): void {
                     $query->whereRaw('LOWER(leads.email) = ?', [$normalizedEmail])
-                        ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                        ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
                             ->whereRaw('LOWER(lead_contacts.email) = ?', [$normalizedEmail]));
                 })
                 ->orderBy('id')
@@ -1795,7 +2511,7 @@ class LeadService
             ->where('company_id', $companyId)
             ->where(function (Builder $query) use ($strippedLeadPhoneSql, $strippedContactPhoneSql, $phoneDigits): void {
                 $query->whereRaw("$strippedLeadPhoneSql = ?", [$phoneDigits])
-                    ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery
+                    ->orWhereHas('contacts', fn(Builder $contactQuery) => $contactQuery
                         ->whereRaw("$strippedContactPhoneSql = ?", [$phoneDigits]));
             })
             ->orderBy('id')
@@ -1818,7 +2534,7 @@ class LeadService
     ): array {
         // "Target Pipeline" applies to both newly created and updated rows.
         $update = ['pipeline_id' => $targetPipelineId];
-        $provided = static fn (string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
+        $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
 
         foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
             if ($provided($field) && $normalized[$field] !== null) {
@@ -1845,6 +2561,11 @@ class LeadService
             $update['budget_currency'] = $normalized['budget_currency'] ?? $existing->budget_currency;
         }
 
+        if (! empty($normalized['custom_fields']) && is_array($normalized['custom_fields'])) {
+            $existingValues = is_array($existing->custom_fields) ? $existing->custom_fields : [];
+            $update['custom_fields'] = array_replace($existingValues, $normalized['custom_fields']);
+        }
+
         return $update;
     }
 
@@ -1858,10 +2579,11 @@ class LeadService
             return;
         }
 
+        $exportFields = $this->visibleExportFields($companyId);
         fwrite($out, "\xEF\xBB\xBF");
-        fputcsv($out, self::LEAD_EXPORT_HEADERS);
+        fputcsv($out, $this->exportHeaders($exportFields));
 
-        $this->streamLeadExportRows($companyId, $user, $role, $filters, static function (array $row) use ($out): void {
+        $this->streamLeadExportRows($companyId, $user, $role, $filters, $exportFields, static function (array $row) use ($out): void {
             fputcsv($out, $row);
         });
 
@@ -1912,15 +2634,17 @@ class LeadService
             $sheet = $writer->getCurrentSheet();
             $sheet->setName('Leads Export');
 
+            $exportFields = $this->visibleExportFields($companyId);
+            $headers = $this->exportHeaders($exportFields);
             $headerStyle = (new Style)->setFontBold();
             $columnStyles = [];
-            foreach (array_keys(self::LEAD_EXPORT_HEADERS) as $index) {
+            foreach (array_keys($headers) as $index) {
                 $columnStyles[$index] = $headerStyle;
             }
 
-            $writer->addRow(Row::fromValuesWithStyles(self::LEAD_EXPORT_HEADERS, null, $columnStyles));
+            $writer->addRow(Row::fromValuesWithStyles($headers, null, $columnStyles));
 
-            $this->streamLeadExportRows($companyId, $user, $role, $filters, static function (array $row) use ($writer): void {
+            $this->streamLeadExportRows($companyId, $user, $role, $filters, $exportFields, static function (array $row) use ($writer): void {
                 $writer->addRow(Row::fromValues($row));
             });
 
@@ -1959,9 +2683,10 @@ class LeadService
 
     /**
      * @param  array<string, mixed>  $filters
+     * @param  Collection<int, LeadFieldDefinition>  $exportFields
      * @param  callable(array<int, mixed>): void  $emit
      */
-    private function streamLeadExportRows(int $companyId, User $user, string $role, array $filters, callable $emit): void
+    private function streamLeadExportRows(int $companyId, User $user, string $role, array $filters, Collection $exportFields, callable $emit): void
     {
         $labelNames = LeadLabel::query()
             ->where('company_id', $companyId)
@@ -1975,13 +2700,14 @@ class LeadService
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
         if (! empty($filters['lead_ids'])) {
-            $leadIds = array_map(static fn ($id): int => (int) $id, (array) $filters['lead_ids']);
+            $leadIds = array_map(static fn($id): int => (int) $id, (array) $filters['lead_ids']);
             $query->whereIn('id', $leadIds);
         }
 
-        $query->orderBy('id')->chunkById(250, static function (Collection $leads) use ($labelNames, $emit): void {
+        $query->orderBy('id')->chunkById(250, function (Collection $leads) use ($labelNames, $emit, $exportFields): void {
             foreach ($leads as $lead) {
-                $emit([
+                $storedCustomFields = is_array($lead->custom_fields) ? $lead->custom_fields : [];
+                $row = [
                     (string) $lead->name,
                     (string) ($lead->email ?? ''),
                     (string) ($lead->phone ?? ''),
@@ -1999,16 +2725,69 @@ class LeadService
                     (string) ($lead->assignee?->name ?? $lead->assignee?->email ?? ''),
                     $lead->created_at?->toIso8601String() ?? '',
                     $lead->updated_at?->toIso8601String() ?? '',
-                ]);
+                ];
+
+                foreach ($exportFields as $field) {
+                    $row[] = LeadCustomFieldValues::exportValue($field, $storedCustomFields[$field->key] ?? null);
+                }
+
+                $emit($row);
             }
         });
     }
 
     /**
+     * @return Collection<int, LeadFieldDefinition>
+     */
+    private function visibleExportFields(int $companyId): Collection
+    {
+        return LeadCustomFieldValues::visibleDefinitions($companyId)->values();
+    }
+
+    /**
+     * @param  Collection<int, LeadFieldDefinition>  $exportFields
+     * @return list<string>
+     */
+    private function exportHeaders(Collection $exportFields): array
+    {
+        return array_merge(
+            self::LEAD_EXPORT_HEADERS,
+            $exportFields->map(static fn (LeadFieldDefinition $field): string => $field->label)->all(),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $existing
+     * @return array<string, mixed>|null
+     */
+    private function resolvedCustomFields(int $companyId, array $data, array $existing, string $defaultMode): ?array
+    {
+        if ($defaultMode === 'update' && ! array_key_exists('custom_fields', $data)) {
+            return null;
+        }
+
+        $mode = (string) ($data['custom_fields_mode'] ?? $defaultMode);
+        if (! in_array($mode, ['create', 'update', 'import'], true)) {
+            $mode = $defaultMode;
+        }
+
+        $input = is_array($data['custom_fields'] ?? null) ? $data['custom_fields'] : [];
+
+        return LeadCustomFieldValues::normalize(
+            LeadCustomFieldValues::visibleDefinitions($companyId),
+            $input,
+            $existing,
+            $mode,
+        );
+    }
+
+    /**
      * @param  array<string, string>  $labelLookup
+     * @param  Collection<string, LeadFieldDefinition>  $fieldDefinitions
      * @return array{normalized:array<string,mixed>,errors:array<int,string>}
      */
-    private function validateImportRow(array $labelLookup, mixed $row, int $rowIndex): array
+    private function validateImportRow(array $labelLookup, Collection $fieldDefinitions, mixed $row, int $rowIndex): array
     {
         if (! is_array($row)) {
             return [
@@ -2049,7 +2828,7 @@ class LeadService
         $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
         $invalidProfileUrls = LeadFieldNormalizer::invalidProfileUrls($profileUrls);
         if ($invalidProfileUrls !== []) {
-            $errors[] = 'Profile URLs contain invalid entries: '.implode(', ', $invalidProfileUrls).'.';
+            $errors[] = 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '.';
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
@@ -2080,6 +2859,23 @@ class LeadService
                 : "Status/label '{$status}' is not recognized.";
         }
 
+        $customFields = [];
+        if (array_key_exists('custom_fields', $row)) {
+            if (! is_array($row['custom_fields'])) {
+                $errors[] = 'Custom fields must be an object.';
+            } else {
+                try {
+                    $customFields = LeadCustomFieldValues::normalize($fieldDefinitions, $row['custom_fields'], [], 'import');
+                } catch (ValidationException $exception) {
+                    foreach ($exception->errors() as $messages) {
+                        foreach ($messages as $message) {
+                            $errors[] = (string) $message;
+                        }
+                    }
+                }
+            }
+        }
+
         return [
             'normalized' => [
                 'name' => $name,
@@ -2095,6 +2891,7 @@ class LeadService
                 'priority' => $priority,
                 'budget_amount' => $budgetAmount,
                 'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'USD' : null),
+                'custom_fields' => $customFields,
                 'row_index' => $rowIndex,
             ],
             'errors' => $errors,
@@ -2142,12 +2939,12 @@ class LeadService
                     ->where('company_id', $lead->company_id)
                     ->whereIn('role', ['owner', 'admin', 'supervisor'])
                     ->pluck('user_id')
-                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->map(static fn(mixed $id): int => (int) $id)
                     ->all(),
             )
-            ->filter(static fn (int $id): bool => $id > 0)
+            ->filter(static fn(int $id): bool => $id > 0)
             ->unique()
-            ->reject(static fn (int $id): bool => $id === (int) $actor->id)
+            ->reject(static fn(int $id): bool => $id === (int) $actor->id)
             ->values()
             ->all();
 
@@ -2160,7 +2957,7 @@ class LeadService
                 'message' => $message,
                 'reference_type' => Lead::class,
                 'reference_id' => (int) $lead->id,
-                'action_url' => '/crm/leads/'.$lead->id,
+                'action_url' => '/crm/leads/' . $lead->id,
                 'action_route' => 'crm.leads.show',
                 'priority' => $priority,
                 'created_by_user_id' => (int) $actor->id,
@@ -2169,7 +2966,7 @@ class LeadService
                     'lead_status' => $lead->status,
                     'actor_user_id' => (int) $actor->id,
                 ],
-                'dedupe_key' => $type.':'.$lead->id.':'.$recipientId,
+                'dedupe_key' => $type . ':' . $lead->id . ':' . $recipientId,
             ]);
         }
     }

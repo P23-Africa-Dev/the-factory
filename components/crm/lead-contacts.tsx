@@ -6,7 +6,8 @@ import { useState } from "react";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
-import type { LeadContact } from "@/lib/api/crm";
+import { LeadDuplicateSuggestions } from "@/components/crm/lead-duplicate-suggestions";
+import type { LeadContact, LeadDuplicateField, LeadDuplicateMatch } from "@/lib/api/crm";
 
 export type LeadContactErrors = Partial<Record<"name" | "email" | "phone" | "location", string>>;
 
@@ -19,18 +20,24 @@ export function LeadContactsSlider({
   contacts,
   activeIndex,
   errors = [],
+  suggestions,
   onActiveIndexChange,
   onChange,
   onAdd,
   onRemove,
+  onIdentityInput,
+  onSelectSuggestion,
 }: {
   contacts: LeadContact[];
   activeIndex: number;
   errors?: LeadContactErrors[];
+  suggestions?: { field: LeadDuplicateField | null; matches: LeadDuplicateMatch[] };
   onActiveIndexChange: (index: number) => void;
   onChange: (index: number, contact: LeadContact) => void;
   onAdd: () => void;
   onRemove: (index: number) => void;
+  onIdentityInput?: (field: LeadDuplicateField, value: string) => void;
+  onSelectSuggestion?: (match: LeadDuplicateMatch) => void;
 }) {
   const contact = contacts[activeIndex] ?? contacts[0];
   const contactErrors = errors[activeIndex] ?? {};
@@ -41,7 +48,14 @@ export function LeadContactsSlider({
 
   const setField = (field: keyof Pick<LeadContact, "name" | "email" | "phone" | "location">, value: string) => {
     onChange(activeIndex, { ...contact, [field]: value });
+    if (field === "name" || field === "email" || field === "phone") {
+      onIdentityInput?.(field, value);
+    }
   };
+
+  const suggestionList = onSelectSuggestion && suggestions ? (
+    <LeadDuplicateSuggestions matches={suggestions.matches} onSelect={onSelectSuggestion} />
+  ) : null;
 
   return (
     <section className="mb-5 space-y-4" aria-label="Lead contact details">
@@ -112,6 +126,7 @@ export function LeadContactsSlider({
             />
           </FormRow>
           <FieldError message={contactErrors.name} />
+          {suggestions?.field === "name" ? suggestionList : null}
         </div>
 
         <div>
@@ -125,6 +140,7 @@ export function LeadContactsSlider({
             />
           </FormRow>
           <FieldError message={contactErrors.email} />
+          {suggestions?.field === "email" ? suggestionList : null}
         </div>
 
         <div>
@@ -140,6 +156,7 @@ export function LeadContactsSlider({
             </div>
           </FormRow>
           <FieldError message={contactErrors.phone} />
+          {suggestions?.field === "phone" ? suggestionList : null}
         </div>
 
         <div>

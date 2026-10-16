@@ -134,7 +134,7 @@ class CopilotService
             $routing = $this->aiProviderRouter->routingMetadata('operational');
 
             if ($intentType === 'action' && ! (bool) config('services.ai.enable_actions', true)) {
-                $assistantText = 'ELY write actions are currently disabled by configuration. Read-only answers are still available.';
+                $assistantText = 'ELY write actions are currently disabled by configuration. Read only answers are still available.';
                 $resolvedTool = $candidateTool;
                 $toolResult = [
                     'summary' => $assistantText,
@@ -639,7 +639,7 @@ class CopilotService
             && in_array($errorClass, ['timeout', 'unreachable'], true);
 
         if ($isNvidiaTimeout) {
-            return 'NVIDIA NIM took too long to respond — the hosted API catalog can be slow under load. Try again in a moment, or switch the AI stack to OpenAI + Claude in Admin → AI for faster day-to-day chat. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
+            return 'NVIDIA NIM took too long to respond. The hosted API catalog can be slow under load. Try again in a moment, or switch the AI stack to OpenAI + Claude in Admin → AI for faster day to day chat. I can still run dashboard queries if you ask specifically, for example: "show overdue tasks", "plan my day", or "list my CRM leads".';
         }
 
         if ($isGlmTimeout) {

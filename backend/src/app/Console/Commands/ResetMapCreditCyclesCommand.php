@@ -12,7 +12,7 @@ class ResetMapCreditCyclesCommand extends Command
 {
     protected $signature = 'credits:reset-cycles';
 
-    protected $description = 'Reset plan-allocated map credits for organizations whose monthly credit cycle has ended (top-up credits are preserved).';
+    protected $description = 'Reset plan allocated map credits for organizations whose monthly credit cycle has ended (top up credits are preserved).';
 
     public function __construct(private readonly MapCreditService $mapCredits)
     {

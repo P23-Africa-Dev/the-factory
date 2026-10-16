@@ -6,6 +6,7 @@ enum DemoRequestStatus: string
 {
     case DRAFT = 'draft';
     case PENDING = 'pending';
+    case PROVISIONED = 'provisioned';
     case APPROVED = 'approved';
     case ACTIVATED = 'activated';
     case REJECTED = 'rejected';

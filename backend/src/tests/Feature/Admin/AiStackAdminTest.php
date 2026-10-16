@@ -38,8 +38,8 @@ final class AiStackAdminTest extends TestCase
             'services.ai.nvidia.request_timeout_ms' => 120000,
             'services.ai.nvidia.operational_max_tokens' => 1000,
             'services.ai.glm.api_key' => 'glm-test-key',
-            'services.ai.glm.base_url' => 'https://open.bigmodel.cn/api/paas/v4',
-            'services.ai.glm.exec_model' => 'glm-4-air',
+            'services.ai.glm.base_url' => 'https://api.z.ai/api/paas/v4',
+            'services.ai.glm.exec_model' => 'glm-4.5-air',
             'services.ai.glm.request_timeout_ms' => 120000,
             'services.ai.glm.operational_max_tokens' => 1000,
             'services.ai.openai.base_url' => 'https://api.openai.com/v1',
@@ -120,8 +120,8 @@ final class AiStackAdminTest extends TestCase
             return ($data['model'] ?? null) === 'nvidia/llama-3.3-nemotron-super-49b-v1.5'
                 && (int) ($data['max_tokens'] ?? 0) === 1000;
         });
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.openai.com'));
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.anthropic.com'));
+        Http::assertNotSent(fn($request) => str_contains($request->url(), 'api.openai.com'));
+        Http::assertNotSent(fn($request) => str_contains($request->url(), 'api.anthropic.com'));
     }
 
     public function test_super_admin_can_switch_to_glm_stack(): void
@@ -151,11 +151,11 @@ final class AiStackAdminTest extends TestCase
         [$company, $user] = $this->seedCompanyUser();
 
         Http::fake([
-            'open.bigmodel.cn/*' => Http::response([
+            'api.z.ai/*' => Http::response([
                 'choices' => [
                     ['message' => ['content' => 'Hello from GLM ELY.']],
                 ],
-                'model' => 'glm-4-air',
+                'model' => 'glm-4.5-air',
                 'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5],
             ], 200),
             'integrate.api.nvidia.com/*' => Http::response(['error' => ['message' => 'should not be called']], 500),
@@ -173,18 +173,18 @@ final class AiStackAdminTest extends TestCase
         $response->assertOk();
 
         Http::assertSent(function ($request) {
-            if (! str_contains($request->url(), 'open.bigmodel.cn')) {
+            if (! str_contains($request->url(), 'api.z.ai')) {
                 return false;
             }
 
             $data = $request->data();
 
-            return ($data['model'] ?? null) === 'glm-4-air'
+            return ($data['model'] ?? null) === 'glm-4.5-air'
                 && (int) ($data['max_tokens'] ?? 0) === 1000;
         });
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.openai.com'));
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.anthropic.com'));
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'integrate.api.nvidia.com'));
+        Http::assertNotSent(fn($request) => str_contains($request->url(), 'api.openai.com'));
+        Http::assertNotSent(fn($request) => str_contains($request->url(), 'api.anthropic.com'));
+        Http::assertNotSent(fn($request) => str_contains($request->url(), 'integrate.api.nvidia.com'));
     }
 
     public function test_admin_ai_page_notes_hosted_nim_latency(): void

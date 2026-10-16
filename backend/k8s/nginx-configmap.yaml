@@ -31,6 +31,14 @@ data:
 
         client_max_body_size 64M;
 
+        # Answer probes and the deploy smoke test without a PHP-FPM worker.
+        # A busy pool was timing these out, and the liveness probe then killed nginx.
+        location = /api/v1/health {
+            default_type application/json;
+            access_log off;
+            return 200 '{"success":true,"message":"API is healthy V1","data":{"service":"Factory23","environment":"production"},"errors":null}';
+        }
+
         # Security headers
         add_header X-Frame-Options      "SAMEORIGIN"                    always;
         add_header X-Content-Type-Options "nosniff"                     always;
@@ -113,3 +121,16 @@ data:
     opcache.max_accelerated_files = 20000
     realpath_cache_size      = 4096K
     realpath_cache_ttl       = 600
+  # Loaded after www.conf and docker.conf, so these pool values win.
+  # listen stays on loopback: a TCP probe against :9000 accepts a FastCGI
+  # connection and pins a worker until request_terminate_timeout.
+  zzz-pool.conf: |
+    [www]
+    listen = 127.0.0.1:9000
+    pm = dynamic
+    pm.max_children = 12
+    pm.start_servers = 3
+    pm.min_spare_servers = 2
+    pm.max_spare_servers = 6
+    pm.max_requests = 500
+    request_terminate_timeout = 120s

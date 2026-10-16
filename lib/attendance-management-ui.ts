@@ -40,12 +40,12 @@ export function mapManagementAttendanceRecord(
     zone: record.zone ?? "—",
     checkIn: record.clock_in_at
       ? format(parseISO(record.clock_in_at), "h:mma")
-      : "No check-in record",
+      : "No check in record",
     checkOut: record.clock_out_at
       ? format(parseISO(record.clock_out_at), "h:mma")
       : status !== "absent"
         ? "Still Active"
-        : "No check-out record",
+        : "No check out record",
     role: record.role ?? "Field Agent",
     status:
       status === "present" || status === "late" || status === "auto_clocked_out"

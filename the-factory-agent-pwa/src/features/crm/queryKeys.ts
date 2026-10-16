@@ -12,4 +12,6 @@ export const crmKeys = {
     [...crmKeys.all, 'pipelines', companyId ?? 'unknown'] as const,
   agentOverview: (companyId?: number | string | null) =>
     [...crmKeys.all, 'agent-overview', companyId ?? 'unknown'] as const,
+  leadFields: (companyId?: number | string | null) =>
+    [...crmKeys.all, 'lead-fields', companyId ?? 'unknown'] as const,
 };

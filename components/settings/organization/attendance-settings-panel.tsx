@@ -86,7 +86,7 @@ export function AttendanceSettingsPanel() {
   return (
     <SettingsSectionCard
       title="Workforce & Attendance"
-      description="Working hours and clock-in rules for your team"
+      description="Working hours and clock in rules for your team"
       scope="organization"
     >
       {isLoading ? (
@@ -144,7 +144,7 @@ export function AttendanceSettingsPanel() {
 
           <div>
             <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-              Clock-in window (minutes)
+              Clock in window (minutes)
             </label>
             <input
               type="number"
@@ -168,7 +168,7 @@ export function AttendanceSettingsPanel() {
 
           <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100">
             <div>
-              <p className="text-[13px] font-bold text-dash-dark">Auto clock-out</p>
+              <p className="text-[13px] font-bold text-dash-dark">Auto clock out</p>
               <p className="text-[11px] text-gray-400">Clock out agents at closing time</p>
             </div>
             <button

@@ -238,6 +238,7 @@ export function buildOptimisticLead(params: {
     assigned_to_user_id?: number | null;
     meta?: Record<string, unknown> | null;
     contacts?: LeadContact[];
+    custom_fields?: Lead['customFields'];
   };
 }): Lead {
   const userId = getAuthUserId() ?? 0;
@@ -265,6 +266,7 @@ export function buildOptimisticLead(params: {
     lastInteraction: null,
     lastInteractionAt: null,
     meta: params.payload.meta ?? null,
+    customFields: params.payload.custom_fields ?? {},
     convertedAt: null,
     creator: null,
     assignee: null,

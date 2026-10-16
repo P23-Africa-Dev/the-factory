@@ -9,12 +9,17 @@ use App\Http\Requests\Admin\Billing\SaveBillingPlanRequest;
 use App\Models\BillingPlan;
 use App\Models\Company;
 use App\Models\CompanyDemoRequest;
+use App\Services\Admin\AdminActionLogger;
 use App\Support\Billing\BillingPlanCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
 class BillingPlanController extends Controller
 {
+    public function __construct(
+        private readonly AdminActionLogger $actionLogger,
+    ) {}
+
     public function index(): View
     {
         return view('admin.billing.plans.index', [
@@ -32,8 +37,11 @@ class BillingPlanController extends Controller
 
     public function store(SaveBillingPlanRequest $request): RedirectResponse
     {
-        BillingPlan::query()->create($this->payload($request));
+        $plan = BillingPlan::query()->create($this->payload($request));
         BillingPlanCatalog::clearCache();
+        $this->actionLogger->log('billing.plan.created', 'billing_plan', (string) $plan->id, [
+            'plan_key' => $plan->plan_key,
+        ]);
 
         return redirect()
             ->route('admin.billing.plans.index')
@@ -51,6 +59,9 @@ class BillingPlanController extends Controller
     {
         $plan->update($this->payload($request));
         BillingPlanCatalog::clearCache();
+        $this->actionLogger->log('billing.plan.updated', 'billing_plan', (string) $plan->id, [
+            'plan_key' => $plan->plan_key,
+        ]);
 
         return redirect()
             ->route('admin.billing.plans.index')
@@ -72,8 +83,13 @@ class BillingPlanController extends Controller
             return back()->with('error', 'This plan is currently assigned to one or more accounts and cannot be deleted.');
         }
 
+        $planKey = $plan->plan_key;
+        $planId = (string) $plan->id;
         $plan->delete();
         BillingPlanCatalog::clearCache();
+        $this->actionLogger->log('billing.plan.deleted', 'billing_plan', $planId, [
+            'plan_key' => $planKey,
+        ]);
 
         return redirect()
             ->route('admin.billing.plans.index')

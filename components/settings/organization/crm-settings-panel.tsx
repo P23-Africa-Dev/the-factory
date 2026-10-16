@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, Settings2 } from "lucide-react";
 import { SettingsSectionCard } from "@/components/settings/settings-section-card";
 import { useSettingsAccess } from "@/hooks/use-settings-access";
+import { LeadFieldsManager } from "@/components/crm/lead-fields-manager";
 import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { useCrmLabels, useCrmPipelines } from "@/hooks/use-crm";
 
@@ -28,7 +29,7 @@ export function CrmSettingsPanel() {
     <>
       <SettingsSectionCard
         title="CRM"
-        description="Configure pipelines, stages, and lead labels"
+        description="Configure pipelines, stages, lead labels, and custom lead fields"
         scope="organization"
       >
         {loadingPipelines || loadingLabels ? (
@@ -68,6 +69,15 @@ export function CrmSettingsPanel() {
                   <Settings2 size={14} />
                   Manage labels
                 </button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-100 p-4">
+              <p className="text-[13px] font-bold text-dash-dark">Lead fields</p>
+              <p className="mt-1 text-[12px] text-gray-500">
+                Custom columns shared across lead create, import, and the leads list. Agent proposals stay pending until approved.
+              </p>
+              <div className="mt-4">
+                <LeadFieldsManager companyId={companyId} />
               </div>
             </div>
           </div>

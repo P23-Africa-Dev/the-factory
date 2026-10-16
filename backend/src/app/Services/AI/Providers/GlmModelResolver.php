@@ -16,15 +16,15 @@ final class GlmModelResolver
         return match (strtolower(trim($purpose))) {
             'routing' => $this->configuredOrDefault(
                 'services.ai.glm.routing_model',
-                'glm-4-flash',
+                'glm-5',
             ),
             'analyst', 'report' => $this->configuredOrDefault(
                 'services.ai.glm.analyst_model',
-                'glm-4-plus',
+                'glm-5.2',
             ),
             default => $this->configuredOrDefault(
                 'services.ai.glm.exec_model',
-                'glm-4-air',
+                'glm-5.2',
             ),
         };
     }

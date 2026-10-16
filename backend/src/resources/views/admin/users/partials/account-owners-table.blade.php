@@ -60,7 +60,7 @@
                                 </span>
                             @elseif ($isSelfServe)
                                 <span class="badge-status" style="background:rgba(16,185,129,.1);color:#059669;font-size:.72rem">
-                                    <i class="bi bi-person-fill"></i>Self-Serve
+                                    <i class="bi bi-person-fill"></i>Self serve
                                 </span>
                             @else
                                 <span class="badge-status" style="background:rgba(100,116,139,.1);color:var(--text-muted);font-size:.72rem">

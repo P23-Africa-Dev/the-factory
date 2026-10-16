@@ -505,7 +505,7 @@ export function ScheduleMeetingModal({
                         return;
                     }
 
-                    toast.info("Complete Google sign-in in the popup. Connection status will update automatically.");
+                    toast.info("Complete Google sign in in the popup. Connection status will update automatically.");
                 },
                 onError: (error: unknown) => {
                     const apiError = error as { message?: string };
@@ -522,7 +522,7 @@ export function ScheduleMeetingModal({
             return;
         }
 
-        toast.info("Complete Google sign-in in the popup. Connection status will update automatically.");
+        toast.info("Complete Google sign in in the popup. Connection status will update automatically.");
     };
 
     const handleDisconnectGoogleCalendar = () => {
@@ -916,7 +916,7 @@ export function ScheduleMeetingModal({
                                 "w-full rounded-xl border bg-gray-50 py-2.5 px-3 text-sm outline-none transition-colors focus:border-[#094B5C]",
                                 errors.title ? "border-red-400" : "border-gray-200",
                             ].join(" ")}
-                            placeholder="e.g. Sprint planning, Client check-in…"
+                            placeholder="e.g. Sprint planning, Client check in…"
                         />
                         {errors.title && (
                             <p className="mt-1 text-[11px] text-red-500">{errors.title}</p>

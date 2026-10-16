@@ -7,4 +7,6 @@ return [
     'frontend_url' => env('FRONTEND_URL', 'https://thefactory23.com'),
     'onboarding_setup_path' => env('ENTERPRISE_ONBOARDING_SETUP_PATH', '/enterprise/setup'),
     'onboarding_setup_url' => env('ENTERPRISE_ONBOARDING_SETUP_URL'),
+    // Shared temporary password for Control team QA before the customer invitation is sent.
+    'control_temp_password' => env('ENTERPRISE_CONTROL_TEMP_PASSWORD', 'Factory23Temp1'),
 ];

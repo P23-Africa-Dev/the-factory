@@ -11,6 +11,8 @@ import type {
   CreateLeadPayload,
   UpdateLeadPayload,
   LeadsResult,
+  CreateLeadFieldPayload,
+  LeadFieldDefinition,
 } from './types';
 
 export function useLeads(filters?: LeadFilters) {
@@ -101,6 +103,9 @@ export function useUpdateLead(options?: { onSuccess?: (lead: Lead) => void }) {
               email: payload.email !== undefined ? payload.email : old.email,
               phone: payload.phone !== undefined ? payload.phone : old.phone,
               location: payload.location !== undefined ? payload.location : old.location,
+              customFields: payload.custom_fields
+                ? { ...old.customFields, ...payload.custom_fields }
+                : old.customFields,
             }
           : old,
       );
@@ -126,6 +131,38 @@ export function useUpdateLead(options?: { onSuccess?: (lead: Lead) => void }) {
         toast.info('Offline queue', 'Lead update will sync automatically.');
       }
       options?.onSuccess?.(lead);
+    },
+  });
+}
+
+export function useLeadFields() {
+  const companyId = getActiveCompanyId();
+  return useQuery<LeadFieldDefinition[]>({
+    queryKey: crmKeys.leadFields(companyId),
+    queryFn: () => crmApi.listLeadFields(),
+    enabled: companyId != null,
+    staleTime: 1000 * 60,
+  });
+}
+
+export function useCreateLeadField(options?: { onSuccess?: (field: LeadFieldDefinition) => void }) {
+  const queryClient = useQueryClient();
+  const companyId = getActiveCompanyId();
+
+  return useMutation({
+    mutationFn: (payload: CreateLeadFieldPayload) => crmApi.createLeadField(payload),
+    onSuccess: (field) => {
+      queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
+      if (field.status === 'pending') {
+        toast.info('Pending approval', 'This field is visible now and waits for a manager to approve it.');
+      } else {
+        toast.success('Lead field added');
+      }
+      options?.onSuccess?.(field);
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Could not add the lead field.';
+      toast.error('Field not added', message);
     },
   });
 }

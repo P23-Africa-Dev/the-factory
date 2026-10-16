@@ -228,7 +228,7 @@ PROMPT;
             'summary' => [
                 'key_points' => $keyPoints,
                 'action_items' => $actionItems,
-                'recommended_follow_up' => 'Convert action items into tasks and schedule follow-up meeting reminders.',
+                'recommended_follow_up' => 'Convert action items into tasks and schedule follow up meeting reminders.',
                 'provider_summary' => $providerSummaryResult?->text,
             ],
         ];
@@ -450,7 +450,7 @@ PROMPT;
             $recommendations[] = $this->forecastRecommendation(
                 'medium',
                 'crm',
-                'Lead creation is active but no leads were won in this period. Review follow-up cadence and conversion blockers.',
+                'Lead creation is active but no leads were won in this period. Review follow up cadence and conversion blockers.',
             );
         }
 

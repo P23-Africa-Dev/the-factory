@@ -63,7 +63,7 @@ class TaskReassignmentRequestedNotification extends Notification
         ])->render());
 
         return $this->factory23Mail()
-            ->subject('Task reassignment request — Factory23')
+            ->subject('Task reassignment request, Factory23')
             ->greeting("Hello {$notifiable->name},")
             ->line('You have received a task reassignment request.')
             ->line($this->factory23DetailTable($rows))

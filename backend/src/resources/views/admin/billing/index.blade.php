@@ -66,7 +66,7 @@
             <div class="stat-card p-3">
                 <div class="stat-label mb-1">Assigned Plans</div>
                 <div class="stat-value">{{ $stats['assigned_plan_companies'] }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">Company-level assignments</div>
+                <div style="font-size:.75rem;color:var(--text-muted)">Company level assignments</div>
             </div>
         </div>
     </div>
@@ -90,7 +90,7 @@
 
                 <p style="font-size:.82rem;color:var(--text-secondary)">
                     When enabled, only companies with an <strong>active</strong> subscription can access the dashboard.
-                    Grace, past-due, and suspended orgs are blocked until they renew. When disabled, all accounts under every org work freely regardless of subscription state.
+                    Grace, past due, and suspended orgs are blocked until they renew. When disabled, all accounts under every org work freely regardless of subscription state.
                 </p>
 
                 @if (!empty($enforcementSnapshot['updated_at']))

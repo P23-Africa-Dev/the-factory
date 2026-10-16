@@ -98,7 +98,7 @@ function JourneyEntry({
                   )}
                 </div>
               ) : (
-                <span className="text-[11px] text-gray-400 italic">No clock-in recorded</span>
+                <span className="text-[11px] text-gray-400 italic">No clock in recorded</span>
               )}
             </div>
             <span

@@ -9,6 +9,7 @@ use App\Enums\NotificationPriority;
 use App\Models\User;
 use App\Notifications\PasswordResetLinkNotification;
 use App\Services\Notification\NotificationService;
+use App\Services\Security\SecurityAuditLogger;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -18,6 +19,7 @@ class PasswordResetService
 {
     public function __construct(
         private readonly NotificationService $notificationService,
+        private readonly SecurityAuditLogger $securityAudit,
     ) {}
 
     /**
@@ -38,6 +40,14 @@ class PasswordResetService
                     'ip' => $ipAddress,
                 ]);
             }
+
+            $this->securityAudit->passwordReset(
+                SecurityAuditLogger::PASSWORD_RESET_REQUESTED,
+                SecurityAuditLogger::FAILURE,
+                $user,
+                $normalizedEmail,
+                ['reason' => $user === null ? 'user_not_found' : 'ineligible'],
+            );
 
             return true;
         }
@@ -96,8 +106,24 @@ class PasswordResetService
                 'message' => $e->getMessage(),
             ]);
 
+            $this->securityAudit->passwordReset(
+                SecurityAuditLogger::PASSWORD_RESET_REQUESTED,
+                SecurityAuditLogger::FAILURE,
+                $user,
+                $normalizedEmail,
+                ['reason' => 'delivery_failed', 'portal' => $effectivePortal],
+            );
+
             return false;
         }
+
+        $this->securityAudit->passwordReset(
+            SecurityAuditLogger::PASSWORD_RESET_REQUESTED,
+            SecurityAuditLogger::SUCCESS,
+            $user,
+            $normalizedEmail,
+            ['portal' => $effectivePortal],
+        );
 
         return true;
     }
@@ -130,6 +156,14 @@ class PasswordResetService
         $user = User::query()->where('email', $normalizedEmail)->first();
 
         if (! $user || ! $user->canAuthenticate()) {
+            $this->securityAudit->passwordReset(
+                SecurityAuditLogger::PASSWORD_RESET_COMPLETED,
+                SecurityAuditLogger::FAILURE,
+                $user,
+                $normalizedEmail,
+                ['reason' => $user === null ? 'user_not_found' : 'ineligible'],
+            );
+
             return null;
         }
 
@@ -151,10 +185,26 @@ class PasswordResetService
         });
 
         if ($status !== Password::PASSWORD_RESET) {
+            $this->securityAudit->passwordReset(
+                SecurityAuditLogger::PASSWORD_RESET_COMPLETED,
+                SecurityAuditLogger::FAILURE,
+                $user,
+                $normalizedEmail,
+                ['reason' => 'invalid_token'],
+            );
+
             return null;
         }
 
         $effectivePortal = $this->resolveRequestedPortal($portal, $user);
+
+        $this->securityAudit->passwordReset(
+            SecurityAuditLogger::PASSWORD_RESET_COMPLETED,
+            SecurityAuditLogger::SUCCESS,
+            $user,
+            $normalizedEmail,
+            ['portal' => $effectivePortal],
+        );
 
         $this->notificationService->notifyUser((int) $user->id, [
             'type' => 'auth.password_reset_completed',

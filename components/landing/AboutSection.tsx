@@ -17,7 +17,7 @@ export default function AboutSection() {
         <p className="text-sm sm:text-base text-[#4A5F64] leading-relaxed max-w-3xl">
           Factory 23 can optionally connect to your Google account. With your
           permission, it uses Google Calendar to schedule and sync your meetings, and
-          Gmail to send and manage follow-up emails to your customers directly from
+          Gmail to send and manage follow up emails to your customers directly from
           the platform. Your Google data is only used to provide these features and is
           never sold or shared. You can disconnect your Google account at any time.
           Learn more in our{" "}

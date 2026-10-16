@@ -6,13 +6,17 @@ namespace App\Http\Controllers\Admin\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
+use App\Services\Admin\AdminActionLogger;
 use App\Services\Billing\BillingEnforcementSettingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 class BillingEnforcementController extends Controller
 {
-    public function __construct(private readonly BillingEnforcementSettingService $billingEnforcement) {}
+    public function __construct(
+        private readonly BillingEnforcementSettingService $billingEnforcement,
+        private readonly AdminActionLogger $actionLogger,
+    ) {}
 
     public function update(Request $request): RedirectResponse
     {
@@ -25,6 +29,9 @@ class BillingEnforcementController extends Controller
         $enabled = (bool) $request->boolean('enabled');
 
         $this->billingEnforcement->setEnabled($enabled, $admin);
+        $this->actionLogger->log('billing.enforcement.updated', 'platform_setting', 'billing_enforcement', [
+            'enabled' => $enabled,
+        ]);
 
         return redirect()
             ->route('admin.billing.index')

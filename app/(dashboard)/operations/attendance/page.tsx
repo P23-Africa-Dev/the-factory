@@ -96,7 +96,7 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
                 <p className="text-[13px] text-gray-400">{record.role}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check-In</p>
+                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
                 <p className="text-[13px] text-gray-400">{record.checkIn}</p>
               </div>
             </div>
@@ -122,11 +122,11 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
       {/* <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
         <div className="flex items-start gap-4 mb-5">
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-In Time</p>
+            <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check In Time</p>
             <p className="text-[15px] font-bold text-white">{record.checkIn}</p>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check-Out Time</p>
+            <p className="text-[11px] text-gray-400 font-bold mb-0.5">Check Out Time</p>
             <p className="text-[13px] font-medium text-white/70">{record.checkOut}</p>
           </div>
           <div className={`px-3 py-1.5 rounded-full text-[10px] font-bold shrink-0 self-start ${record.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-gray-700 text-gray-300'
@@ -136,7 +136,7 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
         </div>
 
         <div className="mb-4">
-          <p className="text-[15px] font-bold text-white mb-0.5">Location (Check-In)</p>
+          <p className="text-[15px] font-bold text-white mb-0.5">Location (Check In)</p>
           <p className="text-[12px] text-gray-400">{record.address}</p>
         </div>
 
@@ -183,8 +183,8 @@ function AttendanceRow({ item, isSelected, onClick }: { item: AttendanceItem; is
   return (
     <OpsTableRow isSelected={isSelected} onClick={onClick} avatar={item.avatar} avatarAlt={item.name}>
       <OpsTableNameCol name={item.name} subText={item.address} isSelected={isSelected} />
-      <OpsTableCol label="Check-In" value={item.checkIn} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
-      <OpsTableCol label="Check-Out" value={item.checkOut} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
+      <OpsTableCol label="Check In" value={item.checkIn} isSelected={isSelected} className="hidden sm:block w-28 sm:w-32" />
+      <OpsTableCol label="Check Out" value={item.checkOut} isSelected={isSelected} className="hidden md:block w-36 sm:w-40" />
       <OpsTableCol label="Zone" value={item.zone} isSelected={isSelected} className="hidden lg:block w-28 sm:w-32" />
       <OpsTableStatus
         label={item.status}

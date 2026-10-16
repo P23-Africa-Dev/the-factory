@@ -11,13 +11,38 @@ type ChatMessageBodyProps = {
 
 /** GLM sometimes returns numbered lists without line breaks — fix before markdown parse. */
 function normalizeAssistantMarkdown(content: string): string {
-  return content
+  const withBreaks = content
     .replace(/\r\n/g, "\n")
     .replace(/([.!?])\s+(\d+\.\s+)/g, "$1\n\n$2")
     .replace(/(\S)\s+(\d+\.\s+\*\*)/g, "$1\n\n$2")
     .replace(/(\S)\s+(-\s+\*\*)/g, "$1\n$2")
-    .replace(/(\S)\s+(-\s+[A-Za-z])/g, "$1\n$2")
-    .trim();
+    .replace(/(\S)\s+(-\s+[A-Za-z])/g, "$1\n$2");
+
+  // Fix "1. 1. 1." runs and preserve start numbers across blank-separated list blocks
+  // so <ol start> renders correctly.
+  const lines = withBreaks.split("\n");
+  let counter = 0;
+  let inRun = false;
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (match) {
+      const ordinal = Number(match[2]);
+      if (!inRun) {
+        counter = ordinal > 0 ? ordinal : 1;
+        inRun = true;
+      } else {
+        counter += 1;
+      }
+      lines[i] = `${match[1]}${counter}. ${match[3]}`;
+    } else if (lines[i].trim() === "") {
+      continue;
+    } else {
+      inRun = false;
+      counter = 0;
+    }
+  }
+
+  return lines.join("\n").trim();
 }
 
 const assistantComponents = {
@@ -42,8 +67,19 @@ const assistantComponents = {
   ul: ({ children }: { children?: ReactNode }) => (
     <ul className="mb-3 list-disc space-y-1.5 pl-5 last:mb-0">{children}</ul>
   ),
-  ol: ({ children }: { children?: ReactNode }) => (
-    <ol className="mb-3 list-decimal space-y-1.5 pl-5 last:mb-0">{children}</ol>
+  ol: ({
+    children,
+    start,
+  }: {
+    children?: ReactNode;
+    start?: number;
+  }) => (
+    <ol
+      start={start}
+      className="mb-3 list-decimal space-y-1.5 pl-5 last:mb-0"
+    >
+      {children}
+    </ol>
   ),
   li: ({ children }: { children?: ReactNode }) => (
     <li className="leading-[16px] pl-0.5">{children}</li>

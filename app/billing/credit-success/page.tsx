@@ -9,7 +9,7 @@ import Button from "@/components/ui/button";
 function CreditSuccessInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [message, setMessage] = useState("Confirming your top-up...");
+  const [message, setMessage] = useState("Confirming your top up...");
   const [balance, setBalance] = useState<number | null>(null);
   const [done, setDone] = useState(false);
   const baselineRef = useRef<number | null>(null);
@@ -30,7 +30,7 @@ function CreditSuccessInner() {
         if (baselineRef.current === null) {
           baselineRef.current = current;
         } else if (current > baselineRef.current) {
-          setMessage("Top-up confirmed! Your credits have been added.");
+          setMessage("Top up confirmed! Your credits have been added.");
           setDone(true);
           window.setTimeout(() => router.replace("/settings/map-credits"), 1800);
           return;
@@ -80,7 +80,7 @@ function CreditSuccessInner() {
           )}
         </div>
         <h1 className="text-2xl font-black text-dash-dark">
-          {done ? "All set" : "Processing top-up"}
+          {done ? "All set" : "Processing top up"}
         </h1>
         <p className="text-[14px] text-gray-500">{message}</p>
         {balance !== null && (

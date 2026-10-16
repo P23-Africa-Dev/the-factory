@@ -103,7 +103,7 @@ class SupportAccessTest extends TestCase
         $this->withToken($token)
             ->postJson('/api/v1/tasks', [])
             ->assertForbidden()
-            ->assertJsonPath('message', 'This support session is read-only.');
+            ->assertJsonPath('message', 'This support session is read only.');
 
         $this->assertDatabaseHas('admin_action_logs', [
             'admin_id' => $admin->id,
@@ -128,7 +128,7 @@ class SupportAccessTest extends TestCase
             ->assertForbidden()
             ->assertJsonPath(
                 'message',
-                'This security-sensitive action is blocked during support access.'
+                'This security sensitive action is blocked during support access.'
             );
     }
 

@@ -67,7 +67,7 @@
                                 </span>
                             @elseif ($isSelfServe)
                                 <span class="badge-status" style="background:rgba(16,185,129,.1);color:#059669">
-                                    <i class="bi bi-person-fill"></i>Self-Serve
+                                    <i class="bi bi-person-fill"></i>Self serve
                                 </span>
                             @else
                                 <span class="badge-status" style="background:rgba(100,116,139,.1);color:var(--text-muted)">
@@ -218,8 +218,8 @@
                         <i class="bi bi-headset"></i>Support Access
                     </div>
                     <p style="font-size:.8rem;color:var(--text-secondary)" class="mb-3">
-                        Passwords are one-way hashed and cannot be viewed. Start a short-lived, audited
-                        support session instead. Read-only access is the default.
+                        Passwords are one way hashed and cannot be viewed. Start a short lived, audited
+                        support session instead. Read only access is the default.
                     </p>
 
                     @if ($supportEligible)
@@ -342,6 +342,36 @@
                         </button>
                     </form>
 
+                    <div class="mt-3 p-2 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+                        <div class="small fw-semibold mb-1" style="font-size:.78rem">Update plan (offline)</div>
+                        <p style="font-size:.72rem;color:var(--text-muted)" class="mb-2">
+                            Use for locked or offline paid accounts that cannot self upgrade. Sets subscription active with seat limit from the plan.
+                        </p>
+                        <form method="POST" action="{{ route('admin.billing.companies.offline-plan.update', $company) }}" class="d-grid gap-2">
+                            @csrf
+                            <select name="plan_key" class="form-select form-select-sm" required>
+                                @foreach ($billingPlans as $planKey => $plan)
+                                    <option value="{{ $planKey }}" @selected(old('plan_key', $company->subscription_plan_key ?? $company->assigned_plan_key) === $planKey)>
+                                        {{ $plan['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <select name="interval" class="form-select form-select-sm" required>
+                                @foreach (App\Enums\BillingInterval::cases() as $interval)
+                                    <option value="{{ $interval->value }}" @selected(old('interval', $company->subscription_billing_interval ?? $company->assigned_billing_interval ?? 'monthly') === $interval->value)>
+                                        {{ ucfirst($interval->value) }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <input type="date" name="payment_start_date" class="form-control form-control-sm" required
+                                   value="{{ old('payment_start_date', $company->subscription_current_period_start?->format('Y-m-d') ?? now()->format('Y-m-d')) }}">
+                            <button type="submit" class="btn btn-sm"
+                                style="background:rgba(245,158,11,.1);color:#d97706;border:1px solid rgba(245,158,11,.25)">
+                                <i class="bi bi-arrow-up-circle me-1"></i>Update offline plan
+                            </button>
+                        </form>
+                    </div>
+
                     @if (session('payment_link_url'))
                         <div class="alert alert-success mt-3 mb-0" style="font-size:.82rem">
                             Payment link generated:
@@ -376,6 +406,9 @@
                             <i class="bi bi-link-45deg me-1"></i>Generate Payment Link
                         </button>
                     </form>
+                    <p style="font-size:.72rem;color:var(--text-muted)" class="mt-2 mb-0">
+                        Locked plans (assigned by admin) cannot self upgrade in the app. Use Update offline plan or a payment link above.
+                    </p>
                 </div>
             @endif
 
@@ -384,7 +417,7 @@
                 <div class="section-label" style="color:var(--danger)"><i class="bi bi-exclamation-triangle"></i>Danger
                     Zone</div>
                 <p style="font-size:.8rem;color:var(--text-secondary)" class="mb-3">
-                    Deleting this user is a soft-delete. The record is retained but removed from all active views.
+                    Deleting this user is a soft delete. The record is retained but removed from all active views.
                 </p>
                 <div class="d-grid">
                     <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteModal">
@@ -431,7 +464,7 @@
                             <div class="mb-3">
                                 <label class="form-label small fw-semibold">Access level</label>
                                 <select name="access_level" class="form-select form-select-sm" required>
-                                    <option value="read_only" selected>Read-only (recommended)</option>
+                                    <option value="read_only" selected>Read only (recommended)</option>
                                     <option value="operational_full">Operational full access</option>
                                 </select>
                                 <div class="form-text">
@@ -534,7 +567,7 @@
                     @csrf @method('DELETE')
                     <div class="modal-body">
                         <p style="font-size:.85rem;color:var(--text-secondary)" class="mb-0">
-                            Delete <strong>{{ $user->name }}</strong>? This will soft-delete the account.
+                            Delete <strong>{{ $user->name }}</strong>? This will soft delete the account.
                         </p>
                     </div>
                     <div class="modal-footer">

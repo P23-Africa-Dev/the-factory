@@ -25,9 +25,9 @@ class SubscriptionSuspendedNotification extends Notification
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
         return $this->factory23Mail()
-            ->subject("Account suspended — {$this->companyName}")
+            ->subject("Account suspended, {$this->companyName}")
             ->greeting("Hello {$notifiable->name},")
-            ->line("Your Factory23 subscription for {$this->companyName} has been suspended due to non-payment.")
+            ->line("Your Factory23 subscription for {$this->companyName} has been suspended due to non payment.")
             ->line('Your team data has been preserved. Renew your subscription to restore dashboard access.')
             ->action('Renew subscription', $this->factory23FrontendUrl('subscribe?reason=expired'))
             ->salutation($this->factory23Salutation());

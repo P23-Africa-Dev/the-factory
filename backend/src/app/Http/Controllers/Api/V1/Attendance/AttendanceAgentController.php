@@ -54,7 +54,7 @@ class AttendanceAgentController extends Controller
         );
 
         return $this->success(
-            message: 'Clock-in recorded successfully.',
+            message: 'Clock in recorded successfully.',
             data: ['record' => new AttendanceRecordResource($record)],
             status: 201,
         );
@@ -68,7 +68,7 @@ class AttendanceAgentController extends Controller
         );
 
         return $this->success(
-            message: 'Clock-out recorded successfully.',
+            message: 'Clock out recorded successfully.',
             data: ['record' => new AttendanceRecordResource($record)],
         );
     }

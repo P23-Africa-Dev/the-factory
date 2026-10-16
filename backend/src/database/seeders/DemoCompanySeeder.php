@@ -814,7 +814,7 @@ class DemoCompanySeeder extends Seeder
 
         $labels = [
             ['Hot', '#DC2626'], ['Warm', '#F59E0B'], ['Cold', '#64748B'], ['VIP', '#7C3AED'],
-            ['Follow-up', '#2563EB'], ['New Build', '#0891B2'], ['Renewal', '#16A34A'],
+            ['Follow up', '#2563EB'], ['New Build', '#0891B2'], ['Renewal', '#16A34A'],
             ['Upsell', '#DB2777'], ['Contract', '#4F46E5'], ['Partner', '#059669'],
         ];
         foreach ($labels as $i => [$name, $color]) {

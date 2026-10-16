@@ -315,14 +315,14 @@ class MicrosoftMailOAuthService
             str_contains($normalizedDescription, 'code has been redeemed')
             || str_contains($normalizedDescription, 'authorization code was already redeemed')
         ) {
-            return 'This Microsoft sign-in code was already used. Close extra tabs/popups and start Connect Microsoft again.';
+            return 'This Microsoft sign in code was already used. Close extra tabs/popups and start Connect Microsoft again.';
         }
 
         if ($azureDescription !== '') {
             // Keep client-facing text short; strip Trace/Correlation footer Azure appends.
             $short = preg_split('/\s+Trace ID:/i', $azureDescription)[0] ?? $azureDescription;
 
-            return 'Microsoft sign-in failed: '.trim($short);
+            return 'Microsoft sign in failed: '.trim($short);
         }
 
         return 'Microsoft token exchange failed. Please retry the connection process.';

@@ -90,7 +90,7 @@ class EnforceSupportAccessSession
         if ($session->access_level === SupportAccessSession::ACCESS_READ_ONLY
             && ! $request->isMethodSafe()) {
             $this->logDenied($session, $request, 'read_only');
-            throw new AuthorizationException('This support session is read-only.');
+            throw new AuthorizationException('This support session is read only.');
         }
 
         if ($session->access_level === SupportAccessSession::ACCESS_OPERATIONAL_FULL
@@ -98,7 +98,7 @@ class EnforceSupportAccessSession
             && $this->isProtectedMutation($request)) {
             $this->logDenied($session, $request, 'protected_operation');
             throw new AuthorizationException(
-                'This security-sensitive action is blocked during support access.'
+                'This security sensitive action is blocked during support access.'
             );
         }
 

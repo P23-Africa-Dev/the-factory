@@ -24,7 +24,7 @@ class SmtpConnectionTestNotification extends Notification implements ShouldQueue
     public function toMail(object $notifiable): \Illuminate\Notifications\Messages\MailMessage
     {
         return $this->factory23Mail()
-            ->subject('Mail delivery test — Factory23')
+            ->subject('Mail delivery test, Factory23')
             ->greeting('Mail configuration test')
             ->line('This confirms your Factory23 mail configuration can send through the configured production transport.')
             ->line($this->factory23DetailTable([

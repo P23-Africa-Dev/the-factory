@@ -10,8 +10,11 @@ import {
   deleteIcpProfile,
   duplicateIcpProfile,
   fetchIcpProfiles,
+  suggestIcpSearchBrief,
   updateIcpProfile,
   type IcpProfilePayload,
+  type IcpSearchBriefSuggestMode,
+  type IcpSearchBriefSuggestResult,
 } from "@/lib/api/sales-engine";
 import type { IcpProfile } from "@/components/sales-engine/icp-builder-modal";
 
@@ -98,4 +101,29 @@ export function useActivateIcpProfile(options?: MutationOptions<IcpProfile>) {
 
 export function useDuplicateIcpProfile(options?: MutationOptions<IcpProfile>) {
   return useIcpMutation<string, IcpProfile>((id) => duplicateIcpProfile(id), options);
+}
+
+export function useSuggestIcpSearchBrief(
+  options?: MutationOptions<IcpSearchBriefSuggestResult>
+) {
+  const resetAuth = useResetSalesEngineAuth();
+
+  return useMutation({
+    mutationFn: (payload: {
+      mode?: IcpSearchBriefSuggestMode;
+      profileName?: string;
+      customPrompt?: string;
+      description?: string;
+      industries?: string[];
+      territories?: string[];
+      decisionMakers?: string[];
+      companySizes?: string[];
+      minMatchScore?: number;
+    }) => suggestIcpSearchBrief(payload),
+    onSuccess: (data) => options?.onSuccess?.(data),
+    onError: (error) => {
+      if (isUnauthorized(error)) resetAuth();
+      options?.onError?.(error);
+    },
+  });
 }

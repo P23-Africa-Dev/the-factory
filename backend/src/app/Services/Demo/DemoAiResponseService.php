@@ -19,7 +19,7 @@ class DemoAiResponseService
         }
 
         if (preg_match('/\b(lead|crm|follow[\s-]?up)/i', $normalized) === 1) {
-            return 'Your CRM pipeline has active leads that need follow-up. I recommend prioritizing high-value prospects and scheduling visits for stale accounts.';
+            return 'Your CRM pipeline has active leads that need follow up. I recommend prioritizing high value prospects and scheduling visits for stale accounts.';
         }
 
         if (preg_match('/\b(meeting|calendar)/i', $normalized) === 1) {

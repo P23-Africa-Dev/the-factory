@@ -371,12 +371,12 @@ class ActionToolRegistry
 
         $lead->update([
             'last_interaction_at' => now(),
-            'last_interaction' => 'Follow-up email sent: ' . Str::limit((string) $validated['subject'], 120),
+            'last_interaction' => 'Follow up email sent: ' . Str::limit((string) $validated['subject'], 120),
         ]);
 
         $this->leadService->addActivity($user, $lead, [
             'type' => 'email',
-            'title' => 'Follow-up email sent',
+            'title' => 'Follow up email sent',
             'description' => Str::limit((string) $validated['subject'], 255),
             'happened_at' => now()->toIso8601String(),
             'meta' => [

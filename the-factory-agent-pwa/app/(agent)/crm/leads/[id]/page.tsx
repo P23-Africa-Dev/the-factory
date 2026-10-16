@@ -5,12 +5,16 @@ import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import {
   useLead,
   useCrmLabels,
+  useLeadFields,
   useUpdateLead,
   useCrmNavigation,
   type CrmLabel,
   LeadContactsStack,
   type LeadContact,
+  type LeadCustomFields,
 } from '@/features/crm';
+import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from '@/features/crm/customFields';
+import { PwaAddLeadFieldSheet, PwaCustomFields } from '@/features/crm/components/PwaCustomFields';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { showApiErrorToast } from '@/lib/api/errors';
@@ -103,6 +107,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
 
   const { data: lead, isLoading, isError } = useLead(id);
   const { data: labels = [] } = useCrmLabels();
+  const { data: leadFields = [] } = useLeadFields();
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
       toast.success('Lead updated successfully');
@@ -115,7 +120,8 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   const [editPhonePart, setEditPhonePart] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editLocation, setEditLocation] = useState('');
-  const [editSource, setEditSource] = useState('');
+  const [editCustomFields, setEditCustomFields] = useState<LeadCustomFields>({});
+  const [showFieldDialog, setShowFieldDialog] = useState(false);
 
   // Populate edit fields when lead loads
   useEffect(() => {
@@ -127,10 +133,10 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
         setEditPhonePart(parsed.phonePart);
         setEditEmail(lead.email ?? '');
         setEditLocation(lead.location ?? '');
-        setEditSource(lead.source ?? '');
+        setEditCustomFields(formValuesFromLead(leadFields, lead.customFields));
       }, 0);
     }
-  }, [lead]);
+  }, [lead, leadFields]);
 
   const handleStatusChange = (slug: string) => {
     if (!lead) return;
@@ -162,6 +168,24 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
       toast.error('Lead name cannot be empty');
       return;
     }
+    const customErrors = validateCustomFieldValues(leadFields, editCustomFields);
+    const firstCustomError = Object.values(customErrors)[0];
+    if (firstCustomError) {
+      toast.error(firstCustomError);
+      return;
+    }
+
+    const phone = formatPhoneNumber(editCountryCode, editPhonePart);
+    const existingContacts = lead.contacts.length > 0
+      ? lead.contacts
+      : [{ name: lead.name, email: lead.email, phone: lead.phone, location: lead.location }];
+    const contacts = existingContacts.map((contact, index) => ({
+      name: index === 0 ? editName.trim() : contact.name,
+      email: index === 0 ? (editEmail.trim() || null) : (contact.email ?? null),
+      phone: index === 0 ? phone : (contact.phone ?? null),
+      location: index === 0 ? (editLocation.trim() || null) : (contact.location ?? null),
+      sort_order: index,
+    }));
 
     updateLead(
       {
@@ -169,10 +193,11 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
         payload: {
           company_id: companyId,
           name: editName.trim(),
-          phone: formatPhoneNumber(editCountryCode, editPhonePart),
+          phone,
           email: editEmail.trim() || null,
           location: editLocation.trim() || null,
-          source: editSource.trim() || null,
+          contacts,
+          custom_fields: serializeCustomFields(leadFields, editCustomFields),
         },
       },
       {
@@ -190,7 +215,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
       setEditPhonePart(parsed.phonePart);
       setEditEmail(lead.email ?? '');
       setEditLocation(lead.location ?? '');
-      setEditSource(lead.source ?? '');
+      setEditCustomFields(formValuesFromLead(leadFields, lead.customFields));
     }
     setEditMode(false);
   };
@@ -363,13 +388,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                       <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5">
                         Source
                       </label>
-                      <input
-                        type="text"
-                        value={editSource}
-                        onChange={(e) => setEditSource(e.target.value)}
-                        placeholder="Source"
-                        className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
-                      />
+                      <p className="text-sm text-white/80">{lead.source || '—'}</p>
                     </div>
 
                     {/* Save Button */}
@@ -409,6 +428,18 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                 })()}
               </div>
 
+              <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-5 shadow-lg">
+                <h4 className="font-bold text-sm text-white mb-4">Custom fields</h4>
+                <PwaCustomFields
+                  fields={leadFields}
+                  values={editMode ? editCustomFields : formValuesFromLead(leadFields, lead.customFields)}
+                  disabled={!editMode}
+                  visibility="all"
+                  onChange={(key, value) => setEditCustomFields((current) => ({ ...current, [key]: value }))}
+                  onAddField={editMode ? () => setShowFieldDialog(true) : undefined}
+                />
+              </div>
+
               {/* Assignment Section */}
               {(lead.creator || lead.assignee || lead.pipeline) && !editMode && (
                 <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-5 shadow-lg flex flex-col mb-10">
@@ -422,6 +453,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
           )}
         </div>
       </div>
+      <PwaAddLeadFieldSheet visible={showFieldDialog} onClose={() => setShowFieldDialog(false)} />
     </ScreenErrorBoundary>
   );
 }

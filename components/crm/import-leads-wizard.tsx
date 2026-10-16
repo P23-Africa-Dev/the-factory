@@ -8,6 +8,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ModalShell } from "@/components/crm/crm-toolbar-modals";
 import { downloadCsvFile, parseCsvContent, toCsvContent } from "@/lib/crm/csv";
 import { parseProfileUrls } from "@/lib/crm/lead-fields";
+import { customFieldKeyFromMapping, customFieldMappingKey, inferLeadFieldType } from "@/lib/crm/custom-fields";
+import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import type {
     ApiLeadPriority,
     ApiRoleBasePath,
@@ -18,13 +20,15 @@ import type {
     ImportLeadRow,
     ImportLeadsResult,
     ImportPreviewResult,
+    LeadFieldDefinition,
 } from "@/lib/api/crm";
-import { useCrmPreferences, useImportCrmLeads, usePreviewImportCrmLeads } from "@/hooks/use-crm";
+import { useCrmPreferences, useImportCrmLeads, useLeadFields, usePreviewImportCrmLeads } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
 const MAX_IMPORT_ROWS = 500;
 
 type FieldKey = keyof ImportLeadRow;
+type MappingValue = FieldKey | `custom:${string}` | "";
 
 const FIELD_OPTIONS: Array<{ value: FieldKey; label: string }> = [
     { value: "name", label: "Name (required)" },
@@ -122,8 +126,10 @@ export function ImportLeadsWizard({
     const [fileName, setFileName] = useState<string>("");
     const [headers, setHeaders] = useState<string[]>([]);
     const [rawRows, setRawRows] = useState<string[][]>([]);
-    const [mapping, setMapping] = useState<Record<number, FieldKey | "">>({});
+    const [mapping, setMapping] = useState<Record<number, MappingValue>>({});
+    const [createColumn, setCreateColumn] = useState<number | null>(null);
     const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
+    const { data: leadFields = [] } = useLeadFields(companyId, apiBasePath);
     const resolvedPipelineId = resolveCrmPipelineId(
         pipelines,
         preferences?.preferred_pipeline_id,
@@ -203,19 +209,28 @@ export function ImportLeadsWizard({
         setHeaders(parsed.headers);
         setRawRows(parsed.rows);
 
-        const autoMapping: Record<number, FieldKey | ""> = {};
-        const used = new Set<FieldKey>();
+        const autoMapping: Record<number, MappingValue> = {};
+        const used = new Set<string>();
         parsed.headers.forEach((header, idx) => {
             const field = autoMapHeader(header);
+            const normalized = header.trim().toLowerCase().replace(/[\s-]+/g, "_");
+            const custom = leadFields.find((item) =>
+                (item.status === "active" || item.status === "pending")
+                && (item.key === normalized || item.label.toLowerCase().replace(/[\s-]+/g, "_") === normalized),
+            );
+            const customKey = custom ? customFieldMappingKey(custom.key) : "";
             if (field && !used.has(field)) {
                 autoMapping[idx] = field;
                 used.add(field);
+            } else if (customKey && !used.has(customKey)) {
+                autoMapping[idx] = customKey as MappingValue;
+                used.add(customKey);
             } else {
                 autoMapping[idx] = "";
             }
         });
         setMapping(autoMapping);
-    }, []);
+    }, [leadFields]);
 
     const onFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -264,6 +279,11 @@ export function ImportLeadsWizard({
                 const field = mapping[idx];
                 if (!field) return;
                 const val = (values[idx] ?? "").trim();
+                const customKey = customFieldKeyFromMapping(field);
+                if (customKey) {
+                    row.custom_fields = { ...(row.custom_fields ?? {}), [customKey]: val };
+                    return;
+                }
                 if (!val) return;
                 if (field === "priority") {
                     row.priority = val.toLowerCase() as ApiLeadPriority;
@@ -274,8 +294,8 @@ export function ImportLeadsWizard({
                     if (urls.length > 0) {
                         row.profile_urls = urls;
                     }
-                } else {
-                    row[field] = val;
+                } else if (field !== "custom_fields") {
+                    row[field as Exclude<FieldKey, "custom_fields" | "priority" | "profile_urls">] = val;
                 }
             });
             return row;
@@ -373,6 +393,7 @@ export function ImportLeadsWizard({
     const stepIndex = STEP_LABELS.findIndex((s) => s.key === step);
 
     return (
+        <>
         <ModalShell title="Import Leads" onClose={onClose}>
             <div className="space-y-4">
                 {/* Step indicator */}
@@ -486,7 +507,7 @@ export function ImportLeadsWizard({
                 {step === "map" && (
                     <>
                         <p className="text-[12px] text-gray-500">
-                            Match each column from your file to a lead field. Columns set to &quot;Don&apos;t import&quot; are ignored.
+                            Match each column from your file to a lead field. Unmapped columns are left out until you map them or create a field.
                         </p>
 
                         <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -506,7 +527,13 @@ export function ImportLeadsWizard({
                                             <td className="px-3 py-2">
                                                 <select
                                                     value={mapping[idx] ?? ""}
-                                                    onChange={(e) => setMapping((prev) => ({ ...prev, [idx]: e.target.value as FieldKey | "" }))}
+                                                    onChange={(e) => {
+                                                        if (e.target.value === "__create__") {
+                                                            setCreateColumn(idx);
+                                                            return;
+                                                        }
+                                                        setMapping((prev) => ({ ...prev, [idx]: e.target.value as MappingValue }));
+                                                    }}
                                                     className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-[12px] bg-white"
                                                 >
                                                     <option value="">Don&apos;t import</option>
@@ -519,6 +546,21 @@ export function ImportLeadsWizard({
                                                             {option.label}
                                                         </option>
                                                     ))}
+                                                    {leadFields
+                                                        .filter((field) => field.status === "active" || field.status === "pending")
+                                                        .map((field) => {
+                                                            const value = customFieldMappingKey(field.key);
+                                                            return (
+                                                                <option
+                                                                    key={field.key}
+                                                                    value={value}
+                                                                    disabled={Object.entries(mapping).some(([mappedIdx, mappedField]) => mappedField === value && Number(mappedIdx) !== idx)}
+                                                                >
+                                                                    {field.label}{field.status === "pending" ? " (pending)" : ""}
+                                                                </option>
+                                                            );
+                                                        })}
+                                                    <option value="__create__">Create new field…</option>
                                                 </select>
                                             </td>
                                         </tr>
@@ -761,5 +803,24 @@ export function ImportLeadsWizard({
                 )}
             </div>
         </ModalShell>
+        {createColumn != null && (
+            <LeadFieldDialog
+                companyId={companyId}
+                apiBasePath={apiBasePath}
+                initialLabel={headers[createColumn] ?? ""}
+                initialType={inferLeadFieldType(rawRows.map((row) => row[createColumn] ?? ""))}
+                title="Create field from column"
+                submitLabel="Create field"
+                onClose={() => setCreateColumn(null)}
+                onCreated={(field: LeadFieldDefinition) => {
+                    setMapping((prev) => ({
+                        ...prev,
+                        [createColumn]: customFieldMappingKey(field.key) as MappingValue,
+                    }));
+                    setCreateColumn(null);
+                }}
+            />
+        )}
+        </>
     );
 }

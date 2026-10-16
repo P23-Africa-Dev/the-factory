@@ -108,7 +108,7 @@ class MapCreditController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Top-up checkout session created.',
+            'message' => 'Top up checkout session created.',
             'data' => [
                 'checkout_url' => $checkout->asStripeCheckoutSession()->url,
             ],

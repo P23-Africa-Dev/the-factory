@@ -21,6 +21,10 @@ class UpdateLeadRequest extends FormRequest
     {
         $budget = $this->normalizeBudgetInput();
 
+        if (! $this->filled('phone') && $this->filled('mobile')) {
+            $this->merge(['phone' => $this->input('mobile')]);
+        }
+
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
             ...$budget,
@@ -111,6 +115,7 @@ class UpdateLeadRequest extends FormRequest
             'last_interaction_at' => ['sometimes', 'nullable', 'date'],
             'assigned_to_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
             'meta' => ['sometimes', 'nullable', 'array'],
+            'custom_fields' => ['sometimes', 'nullable', 'array'],
             'converted_at' => ['sometimes', 'nullable', 'date'],
         ];
     }

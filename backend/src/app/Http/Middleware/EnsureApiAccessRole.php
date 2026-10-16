@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
+use App\Support\MobileAgentSession;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
@@ -23,7 +25,7 @@ class EnsureApiAccessRole
     {
         $user = $request->user();
 
-        if (! $user) {
+        if (! $user instanceof User) {
             throw new AuthorizationException('Unauthenticated request context.');
         }
 
@@ -49,6 +51,18 @@ class EnsureApiAccessRole
 
         $hasAgentMembership = in_array('agent', $activeRoles, true);
         $hasManagementMembership = count(array_intersect($activeRoles, ['owner', 'admin', 'supervisor'])) > 0;
+
+        if (MobileAgentSession::isCurrent($user)) {
+            if ($scope === 'management') {
+                throw new AuthorizationException('Agents cannot access management endpoints.');
+            }
+
+            if ($scope === 'agent' && ! $hasAgentMembership && ! $hasManagementMembership) {
+                throw new AuthorizationException('Only agents can access agent endpoints.');
+            }
+
+            return $next($request);
+        }
 
         $isAgent = $user->internal_role === 'agent'
             || ($user->internal_role === null && $hasAgentMembership && ! $hasManagementMembership);

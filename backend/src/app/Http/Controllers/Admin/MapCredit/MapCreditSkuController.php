@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Admin\MapCredit;
 
 use App\Http\Controllers\Controller;
 use App\Models\MapCreditSku;
+use App\Services\Admin\AdminActionLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -13,6 +14,10 @@ use Illuminate\View\View;
 
 class MapCreditSkuController extends Controller
 {
+    public function __construct(
+        private readonly AdminActionLogger $actionLogger,
+    ) {}
+
     public function create(): View
     {
         return view('admin.map-credits.skus.create');
@@ -20,7 +25,10 @@ class MapCreditSkuController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        MapCreditSku::query()->create($this->validated($request, null));
+        $sku = MapCreditSku::query()->create($this->validated($request, null));
+        $this->actionLogger->log('map_credits.sku.created', 'map_credit_sku', (string) $sku->id, [
+            'sku' => $sku->sku,
+        ]);
 
         return redirect()
             ->route('admin.map-credits.index')
@@ -35,6 +43,9 @@ class MapCreditSkuController extends Controller
     public function update(Request $request, MapCreditSku $sku): RedirectResponse
     {
         $sku->update($this->validated($request, $sku));
+        $this->actionLogger->log('map_credits.sku.updated', 'map_credit_sku', (string) $sku->id, [
+            'sku' => $sku->sku,
+        ]);
 
         return redirect()
             ->route('admin.map-credits.index')
@@ -43,7 +54,12 @@ class MapCreditSkuController extends Controller
 
     public function destroy(MapCreditSku $sku): RedirectResponse
     {
+        $skuKey = $sku->sku;
+        $skuId = (string) $sku->id;
         $sku->delete();
+        $this->actionLogger->log('map_credits.sku.deleted', 'map_credit_sku', $skuId, [
+            'sku' => $skuKey,
+        ]);
 
         return redirect()
             ->route('admin.map-credits.index')

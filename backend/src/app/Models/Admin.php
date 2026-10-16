@@ -48,6 +48,7 @@ class Admin extends Authenticatable
             'manage_billing' => $this->role === 'super_admin',
             'manage_database' => $this->role === 'super_admin',
             'manage_ai' => $this->role === 'super_admin',
+            'view_records' => $this->role === 'super_admin',
             default => false,
         };
     }

@@ -256,7 +256,7 @@ class MeetingInferenceService
         } elseif (str_contains($lower, 'standup') || str_contains($lower, 'stand-up')) {
             $title = 'Team Standup Meeting';
         } elseif (str_contains($lower, 'follow-up') || str_contains($lower, 'follow up')) {
-            $title = 'Follow-up Meeting';
+            $title = 'Follow up Meeting';
         } elseif (preg_match('/\bschedule\s+(?:a\s+|an\s+)?(.{8,80}?)(?:\s+(?:with|for|on|at|tomorrow|today|next)\b)/i', $normalized, $m) === 1) {
             $title = Str::title(trim((string) $m[1])) . ' Meeting';
         }

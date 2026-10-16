@@ -833,7 +833,7 @@ class AfricanDemoCompanySeeder extends Seeder
             ['Warm', '#F59E0B'],
             ['Cold', '#64748B'],
             ['VIP', '#7C3AED'],
-            ['Follow-up', '#2563EB'],
+            ['Follow up', '#2563EB'],
             ['New Build', '#0891B2'],
             ['Renewal', '#16A34A'],
             ['Upsell', '#DB2777'],

@@ -965,7 +965,7 @@ export function ProfilePage() {
                       <div className="flex flex-col gap-2">
                         {[
                           {
-                            label: "Self-serve",
+                            label: "Self serve",
                             done: onboarding.self_serve_completed,
                             at: onboarding.self_serve_completed_at,
                           },

@@ -29,7 +29,7 @@ class VisitAssistantService
         if ($notes === '') {
             return [
                 'tool' => 'crm.visit_extract',
-                'summary' => 'Please paste your visit notes so I can extract outcomes, opportunities, objections, and follow-up actions.',
+                'summary' => 'Please paste your visit notes so I can extract outcomes, opportunities, objections, and follow up actions.',
                 'payload' => ['error' => true, 'reason' => 'missing_notes'],
                 'sources' => ['crm.visit_extract'],
             ];

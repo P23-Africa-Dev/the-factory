@@ -66,7 +66,7 @@ export default function PrivacyPolicyPage() {
           </p>
           <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#4A5F64] sm:text-base">
             <li>Sync meetings and calendar events for scheduling inside Factory 23.</li>
-            <li>Send CRM follow-up emails from your connected mailbox.</li>
+            <li>Send CRM follow up emails from your connected mailbox.</li>
             <li>Read and sync CRM-related email threads linked to leads and customers.</li>
             <li>Mark messages as read or move messages to trash when you take those actions in Factory 23.</li>
           </ul>
@@ -89,7 +89,7 @@ export default function PrivacyPolicyPage() {
             used to:
           </p>
           <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#4A5F64] sm:text-base">
-            <li>Send CRM follow-up emails from your connected mailbox.</li>
+            <li>Send CRM follow up emails from your connected mailbox.</li>
             <li>Read and sync CRM-related email threads linked to leads and customers.</li>
             <li>Mark messages as read or move messages to trash when you take those actions in Factory 23.</li>
             <li>Read your basic Microsoft profile so we can identify and display the connected mailbox.</li>

@@ -32,7 +32,7 @@
                 </div>
 
                 <p style="font-size:.78rem;color:var(--text-muted)" class="mb-3">
-                    This is the platform-wide default for every organization. Individual organizations can be
+                    This is the platform wide default for every organization. Individual organizations can be
                     overridden below (for example, keep pins on for a specific customer while off everywhere else).
                 </p>
 
@@ -59,7 +59,7 @@
                 <div class="section-label"><i class="bi bi-info-circle"></i>How it works</div>
                 <ul style="font-size:.8rem;color:var(--text-secondary);padding-left:1.1rem" class="mb-0 d-flex flex-column gap-2">
                     <li>Effective setting for an organization = its override (if set) otherwise the master toggle.</li>
-                    <li>When off, the map still loads and users can still search for a specific place — only the
+                    <li>When off, the map still loads and users can still search for a specific place. Only the
                         automatic business pins are hidden and their Google calls are skipped.</li>
                     <li>Changes take effect on clients within about a minute (no reload required).</li>
                 </ul>
@@ -69,7 +69,7 @@
 
     <div class="metric-card p-0 overflow-hidden">
         <div class="d-flex align-items-center justify-content-between px-4 py-3 gap-2 flex-wrap" style="border-bottom:1px solid var(--border)">
-            <div class="section-label mb-0"><i class="bi bi-building"></i>Per-organization Override</div>
+            <div class="section-label mb-0"><i class="bi bi-building"></i>Per organization Override</div>
             <form action="{{ route('admin.map-display.index') }}" method="GET" class="d-flex gap-2">
                 <input type="search" name="q" value="{{ $search }}" class="form-control form-control-sm"
                     placeholder="Search organizations..." style="max-width:220px">
