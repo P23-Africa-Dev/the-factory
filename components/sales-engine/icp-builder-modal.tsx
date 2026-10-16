@@ -219,8 +219,8 @@ export function IcpBuilderModal({
   const [geoSearchLoading, setGeoSearchLoading] = useState(false);
   const geoSearchTimer = useRef<number | null>(null);
   const autoBriefRef = useRef("");
-  const [briefKeywords, setBriefKeywords] = useState<string[]>([]);
   const [keywordPool, setKeywordPool] = useState<string[]>([]);
+  const briefKeywords = nextVisibleKeywords(keywordPool, formConfig.customPrompt ?? "");
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
   const [isStrengthening, setIsStrengthening] = useState(false);
@@ -292,18 +292,14 @@ export function IcpBuilderModal({
       profileName: formConfig.profileName,
     });
     const pool = local.keywords ?? [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Seed the editable pool once without wiping later AI suggestions or user edits.
     setKeywordPool(pool);
-    setBriefKeywords(nextVisibleKeywords(pool, formConfig.customPrompt ?? ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed once when empty
   }, [formConfig.industries, formConfig.description, formConfig.profileName]);
 
   useEffect(() => {
-    if (keywordPool.length === 0) return;
-    setBriefKeywords(nextVisibleKeywords(keywordPool, formConfig.customPrompt ?? ""));
-  }, [formConfig.customPrompt, keywordPool]);
-
-  useEffect(() => {
     // Grow the pool when industries change without clearing AI suggestions.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Accumulate industry suggestions without replacing user edits or AI suggestions.
     setKeywordPool((prev) => {
       const next = expandKeywordPool({
         brief: formConfig.customPrompt,
@@ -350,6 +346,7 @@ export function IcpBuilderModal({
 
     tightenHandledRef.current = tightenProfileId;
     const normalized = normalizeIcpConfig(profile.config);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialize the editable form once when the requested profile finishes loading.
     setEditingProfileId(profile.id);
     setHasAttemptedSubmit(false);
     setTouchedFields({});
@@ -361,7 +358,6 @@ export function IcpBuilderModal({
       profileName: normalized.profileName,
     }).keywords;
     setKeywordPool(pool);
-    setBriefKeywords(nextVisibleKeywords(pool, normalized.customPrompt ?? ""));
     setActiveTab("criteria");
     setViewMode("form");
 
@@ -399,7 +395,6 @@ export function IcpBuilderModal({
           excludeInText: brief,
         });
         setKeywordPool(expanded);
-        setBriefKeywords(nextVisibleKeywords(expanded, brief));
         setFormConfig((prev) => ({ ...prev, customPrompt: brief }));
         toast.success("ICP strengthened. Review the brief, then save.");
       } catch (error) {
@@ -444,7 +439,6 @@ export function IcpBuilderModal({
       customPrompt: "",
     });
     autoBriefRef.current = "";
-    setBriefKeywords([]);
     setKeywordPool([]);
     setActiveTab("criteria");
     setViewMode("form");
@@ -463,7 +457,6 @@ export function IcpBuilderModal({
       profileName: normalized.profileName,
     }).keywords;
     setKeywordPool(pool);
-    setBriefKeywords(nextVisibleKeywords(pool, normalized.customPrompt ?? ""));
     setActiveTab("criteria");
     setViewMode("form");
   };
@@ -586,7 +579,6 @@ export function IcpBuilderModal({
       excludeInText: clamped,
     });
     setKeywordPool(pool);
-    setBriefKeywords(nextVisibleKeywords(pool, clamped));
     setFormConfig((prev) => ({ ...prev, customPrompt: clamped, searchKeywords: pool }));
   }
 
@@ -600,7 +592,6 @@ export function IcpBuilderModal({
       excludeInText: clamped,
     });
     setKeywordPool(pool);
-    setBriefKeywords(nextVisibleKeywords(pool, clamped));
     setFormConfig((prev) => ({
       ...prev,
       customPrompt: clamped,
@@ -631,7 +622,6 @@ export function IcpBuilderModal({
         excludeInText: next,
       });
       setKeywordPool(expanded);
-      setBriefKeywords(nextVisibleKeywords(expanded, next));
       return { ...prev, customPrompt: next };
     });
   }

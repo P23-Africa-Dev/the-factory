@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import "./sales-engine-workspace.css";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -316,8 +317,8 @@ const INTENT_MODE_CONFIG: Record<
 > = {
   quick_research: {
     label: "Quick Research",
-    tint: "bg-[#fffbdc]",
-    chipTint: "bg-[#fff4a8] text-[#09232d]",
+    tint: "bg-[#e6a5ee]",
+    chipTint: "bg-[#c860d2] text-[#09232d]",
     icon: <Globe2 size={12} className="shrink-0" />,
   },
   generate_leads: {
@@ -430,7 +431,7 @@ function MetricCard({
 
   const cardContent = (
     <section
-      className={`relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] transition-all ${
+      className={`se-stat-card relative h-[126px] overflow-hidden rounded-[15px] border border-[rgba(179,179,179,0.2)] px-5 py-3 shadow-[0_1px_3px_1px_rgba(0,0,0,0.15),0_1px_2px_rgba(0,0,0,0.3)] transition-all ${
         active ? "bg-[#0b242e] text-white" : "bg-white text-[#0b242e]"
       } ${isScanning ? "ring-1 ring-[#16b37d]/30" : ""} ${
         isInteractive
@@ -467,7 +468,7 @@ function MetricCard({
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
         <div
           className={`absolute size-[84px] rounded-full border-[7px] ${
-            active ? "border-[#3E7210]" : "border-[#ff604c]"
+            active ? "border-[#2ae9c9]" : "border-[#c974f4]"
           } border-l-transparent rotate-[-24deg] ${isScanning ? "sales-gauge-spin" : ""}`}
         />
         <div className={`absolute size-[49px] rounded-full ${active ? "bg-[#14343e]" : "bg-[#f9f9f9]"}`} />
@@ -503,37 +504,42 @@ function MetricCard({
 
 function TrendChart() {
   return (
-    <section className="relative h-[126px] min-w-[420px] flex-1 overflow-visible px-1 pt-1 max-lg:min-w-0">
-      <div className="grid grid-cols-6 text-[13px] font-medium text-[#09232d]/50">
+    <section className="se-chart relative flex h-[126px] min-w-[420px] flex-1 flex-col overflow-hidden rounded-[20px] !px-5 !pt-3.5 !pb-2.5 max-lg:min-w-0">
+      <div className="grid grid-cols-6 text-[12px] font-medium leading-none text-[#f8f8f8]">
         {weekDays.map((day) => (
           <span key={day} className="text-center">
             {day}
           </span>
         ))}
       </div>
-      <div className="relative mt-4 h-[92px]">
-        <div className="absolute inset-x-5 top-0 bottom-2 grid grid-cols-6">
+      <div className="relative mt-2 flex-1 w-full min-h-0">
+        <div className="absolute inset-0 grid grid-cols-6 pointer-events-none" aria-hidden="true">
           {weekDays.map((day, index) => (
-            <div key={day} className="relative">
+            <div key={day} className="relative h-full">
               <span
-                className={`absolute left-1/2 top-0 h-full border-l border-dashed ${
-                  index === 4 ? "border-[#fd6046]" : "border-[#6b9bb0]"
+                className={`absolute left-1/2 top-0 bottom-1.5 -translate-x-1/2 border-l border-dashed ${
+                  index === 4 ? "border-[#c974f4]" : "border-[#6b9bb0]"
                 }`}
               />
             </div>
           ))}
         </div>
-        <svg viewBox="0 0 430 112" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+        <svg
+          viewBox="0 0 430 112"
+          preserveAspectRatio="none"
+          className="absolute inset-0 h-full w-full overflow-hidden"
+          aria-hidden="true"
+        >
           <defs>
             <linearGradient id="sales-trend-fill" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#fd6046" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#fd6046" stopOpacity="0" />
+              <stop offset="0%" stopColor="#2ae9c9" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#2ae9c9" stopOpacity="0" />
             </linearGradient>
           </defs>
           <path
             d="M0 54 C8 42 18 42 27 53 C37 64 45 38 56 51 C69 64 79 34 92 47 C105 58 118 42 130 45 C145 49 154 23 167 34 C181 47 192 20 207 31 C221 42 226 68 239 76 C254 93 270 68 284 76 C297 84 309 67 323 73 C337 79 348 54 362 68 C379 84 394 77 410 83 C421 87 427 81 430 84"
             fill="none"
-            stroke="#fd6046"
+            stroke="#2ae9c9"
             strokeLinecap="round"
             strokeWidth="2"
           />
@@ -541,10 +547,10 @@ function TrendChart() {
             d="M0 54 C8 42 18 42 27 53 C37 64 45 38 56 51 C69 64 79 34 92 47 C105 58 118 42 130 45 C145 49 154 23 167 34 C181 47 192 20 207 31 C221 42 226 68 239 76 C254 93 270 68 284 76 C297 84 309 67 323 73 C337 79 348 54 362 68 C379 84 394 77 410 83 C421 87 427 81 430 84 L430 112 L0 112 Z"
             fill="url(#sales-trend-fill)"
           />
-          <path d="M318 83 H382" stroke="#fd6046" strokeDasharray="6 6" strokeLinecap="round" />
+          <path d="M318 83 H382" stroke="#2ae9c9" strokeDasharray="6 6" strokeLinecap="round" />
         </svg>
-        <div className="absolute right-4 top-[18px] flex h-5 items-center gap-1 rounded-[12px] border border-[#e4e4e9] bg-white px-2.5 shadow-[0_12px_17px_rgba(11,36,46,0.15)]">
-          <span className="text-[11px] font-medium text-[#fd6046]">+27%</span>
+        <div className="absolute right-2 top-1 flex h-5 items-center gap-1 rounded-[12px] border border-[#e4e4e9] bg-white px-2.5 shadow-[0_12px_17px_rgba(11,36,46,0.15)] whitespace-nowrap pointer-events-none">
+          <span className="text-[11px] font-medium text-[#022228]">+27%</span>
           <span className="text-[10px] text-[#09232d]/70">Performance higher this week</span>
         </div>
       </div>
@@ -833,7 +839,7 @@ function LeadInlineResults({
               disabled={syncBatch.isPending || syncLead.isPending || !canSyncToCrm}
               title={!canSyncToCrm ? crmBlockMessage : undefined}
               onClick={() => setCrmModalState({ mode: "batch", leadIds: unsavedIds })}
-              className="shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white transition-colors hover:bg-[#09232d]/90 disabled:opacity-60"
+              className="se-primary shrink-0 rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white transition-colors hover:bg-[#09232d]/90 disabled:opacity-60"
             >
               {syncBatch.isPending ? "Saving…" : "Save all"}
             </button>
@@ -1172,7 +1178,7 @@ function ChatOutreachReviewCard({
         <button
           type="button"
           onClick={onReview}
-          className="h-7 shrink-0 rounded-[8px] bg-[#09232d] px-3 text-[9px] font-semibold text-white transition hover:bg-[#0f3340]"
+          className="se-primary h-7 shrink-0 rounded-[8px] bg-[#09232d] px-3 text-[9px] font-semibold text-white transition hover:bg-[#0f3340]"
         >
           Review &amp; Send
         </button>
@@ -1405,7 +1411,7 @@ function IcpConfirmationCard({
           type="button"
           onClick={onConfirm}
           disabled={!activeIcp || isConfirming}
-          className="h-7 rounded-full bg-[#09232d] px-3 text-[9px] font-semibold text-white transition disabled:opacity-50"
+          className="se-primary h-7 rounded-full bg-[#09232d] px-3 text-[9px] font-semibold text-white transition disabled:opacity-50"
         >
           {isConfirming ? "Generating…" : "Confirm & Generate"}
         </button>
@@ -1822,7 +1828,7 @@ function ChatWorkspace({
   return (
     <>
     <section
-      className={`relative flex flex-col overflow-hidden rounded-[35px] bg-white shadow-[0_8px_6px_rgba(0,0,0,0.15),0_4px_2px_rgba(0,0,0,0.3)] transition-[height] duration-300 ${
+      className={`se-surface relative flex flex-col overflow-hidden rounded-[35px] bg-white shadow-[0_8px_6px_rgba(0,0,0,0.15),0_4px_2px_rgba(0,0,0,0.3)] transition-[height] duration-300 ${
         expanded ? "h-[calc(100vh-112px)] min-h-[720px]" : "h-[600px]"
       }`}
     >
@@ -2245,7 +2251,7 @@ function ChatWorkspace({
               event.preventDefault();
               if (draft.trim()) handleSend(draft, selectedIntent);
             }}
-            className="h-8 min-w-[120px] flex-1 bg-transparent text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
+            className="h-8 min-w-[120px] flex-1 bg-white text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
             placeholder={INTENT_PLACEHOLDERS[selectedIntent]}
           />
           <button
@@ -2253,7 +2259,7 @@ function ChatWorkspace({
             aria-label="Send message"
             onClick={() => handleSend(draft, selectedIntent)}
             disabled={isThinking || !draft.trim()}
-            className="grid size-[30px] shrink-0 place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
+            className="se-primary grid size-[30px] shrink-0 place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
           >
             <Send size={15} fill="currentColor" />
           </button>
@@ -2571,7 +2577,8 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   };
 
   return (
-    <aside className="ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
+    <div className="se-outreach-frame">
+    <aside className="se-dark-surface ticket-cutout relative h-[600px] overflow-hidden rounded-[20px] bg-[#09232d] px-[44px] py-[33px] text-white shadow-sm max-xl:h-[520px] max-sm:px-6">
       <header className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
           <h2 className="text-[13px] font-bold">Recent Outreach Activities</h2>
@@ -2658,6 +2665,7 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         onConfigureSender={onOpenSettings}
       />
     </aside>
+    </div>
   );
 }
 
@@ -2764,7 +2772,7 @@ function SalesEngineTabs({
           </button>
         ))}
       </div>
-      <p className="max-w-[560px] pl-1 text-[12px] leading-[16px] text-[#616263]">{TAB_TRUST_MODE_COPY[activeTab]}</p>
+      <p className="max-w-[560px] pl-1 text-[12px] leading-[16px] text-[#c8dadd]">{TAB_TRUST_MODE_COPY[activeTab]}</p>
     </div>
   );
 }
@@ -2821,12 +2829,12 @@ function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) 
     <div className="flex flex-col items-center gap-1">
       <div className="relative grid size-[43px] place-items-center">
         <span
-          className={`sales-gauge-spin absolute inset-0 rounded-full border-[4px] border-[#3E7210] border-l-transparent rotate-[-35deg] ${
+          className={`sales-gauge-spin absolute inset-0 rounded-full border-[4px] border-[#2ae9c9] border-l-transparent rotate-[-35deg] ${
             dark ? "bg-[#153841]" : "bg-white"
           }`}
         />
         <span
-          className={`absolute inset-[7px] rounded-full ${dark ? "bg-[#3E7210]" : "bg-white"}`}
+          className={`absolute inset-[7px] rounded-full ${dark ? "bg-[#14343e]" : "bg-white"}`}
         />
         <span className={`relative text-[9px] font-semibold ${dark ? "text-white" : "text-[#09232d]"}`}>{score}%</span>
       </div>
@@ -3050,14 +3058,14 @@ function SocialSignalRow({
           onSelect(signal);
         }
       }}
-      className={`group cursor-pointer outline-none transition-colors duration-150 ${
+      className={`se-table-row ${isActive ? "se-table-row-active" : ""} group cursor-pointer outline-none ${
         isActive
-          ? "bg-[#09232d] text-white"
-          : "bg-[#f4f4f4] text-[#616263] hover:bg-[#eaeaea] hover:text-[#09232d]"
+          ? "text-white"
+          : "text-[#616263]"
       }`}
     >
       {selectionMode && (
-        <td className="rounded-l-[20px] px-2 py-3">
+        <td className="w-9 rounded-l-[20px] px-2 py-2.5">
           <input
             type="checkbox"
             checked={selected}
@@ -3072,10 +3080,10 @@ function SocialSignalRow({
           />
         </td>
       )}
-      <td className={`px-4 py-3 ${selectionMode ? "" : "rounded-l-[20px]"}`}>
-        <div className="flex min-w-[230px] gap-3">
+      <td className={`px-3 py-2.5 ${selectionMode ? "" : "rounded-l-[20px]"}`}>
+        <div className="flex min-w-0 items-start gap-2.5">
           <SourceBadge sourceIcon={signal.sourceIcon} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="mb-1 flex flex-wrap items-center gap-1">
               {fresh && (
                 <span
@@ -3102,7 +3110,7 @@ function SocialSignalRow({
               )}
             </div>
             <p
-              className={`line-clamp-4 text-[9px] leading-[11px] transition-colors ${
+              className={`line-clamp-3 text-[9px] leading-[11px] transition-colors ${
                 isActive ? "text-white" : "text-[#616263]"
               }`}
             >
@@ -3111,21 +3119,21 @@ function SocialSignalRow({
           </div>
         </div>
       </td>
-      <td className="px-3 py-3 align-middle">
-        <p className="w-[64px] text-[8px] leading-[11px]">{signal.source}</p>
+      <td className="whitespace-nowrap px-2 py-2.5 align-middle">
+        <p className="text-[8px] leading-[11px]">{signal.source}</p>
         <p
-          className={`mt-1 text-[8px] transition-colors ${
+          className={`mt-0.5 text-[7.5px] leading-[10px] transition-colors ${
             isActive ? "text-white/70" : "text-[#616263]/70"
           }`}
         >
           {formatPostedDate(signal.posted_at) || formatRelativeTime(signal.posted_at) || "Date unknown"}
         </p>
       </td>
-      <td className="px-3 py-3 align-middle">
-        <p className="w-[68px] text-[8px] leading-[11px]">{signal.persona}</p>
+      <td className="px-2 py-2.5 align-middle">
+        <p className="max-w-[75px] text-[8px] leading-[11px] line-clamp-2">{signal.persona}</p>
       </td>
-      <td className="px-3 py-3 align-middle">
-        <div className="flex min-w-[150px] items-center gap-2">
+      <td className="px-2 py-2.5 align-middle">
+        <div className="flex min-w-0 max-w-[125px] items-center gap-1.5">
           {isIndividual ? (
             <User
               size={20}
@@ -3135,7 +3143,7 @@ function SocialSignalRow({
             />
           ) : (
             <CompanyBuildingIcon
-              className={`size-5 shrink-0 transition-colors ${
+              className={`size-4 shrink-0 transition-colors ${
                 isActive ? "text-white" : "text-[#616263]"
               }`}
             />
@@ -3143,26 +3151,26 @@ function SocialSignalRow({
           <div>
             <p className="text-[9px] font-semibold leading-[11px]">{signal.company}</p>
             {signal.location && (
-              <p className="whitespace-pre-line text-[8px] leading-[10px] opacity-80">{signal.location}</p>
+              <p className="truncate text-[7.5px] leading-[10px] opacity-80">{signal.location}</p>
             )}
           </div>
         </div>
       </td>
-      <td className="px-3 py-3 align-middle">
+      <td className="whitespace-nowrap px-2 py-2.5 align-middle">
         <div className="flex flex-col items-start gap-1">
           <span
-            className="inline-flex rounded-full px-3 py-1 text-[8px] font-semibold text-white"
+            className="inline-flex whitespace-nowrap rounded-full px-1.5 py-0.5 text-[7px] font-semibold text-white"
             style={{ backgroundColor: signal.intentColor }}
           >
             {primarySignalTypeLabel(signal)}
           </span>
         </div>
       </td>
-      <td className="px-3 py-3 align-middle">
+      <td className="px-1.5 py-2.5 align-middle">
         <ScoreGauge score={signal.score} dark={isActive} />
       </td>
-      <td className="rounded-r-[20px] px-4 py-3 align-middle">
-        <div className="flex items-center gap-3">
+      <td className="rounded-r-[20px] px-2.5 py-2.5 align-middle">
+        <div className="flex items-center justify-center gap-1.5">
           <button
             type="button"
             aria-label={`Message ${signal.profile || signal.company}`}
@@ -3285,7 +3293,7 @@ function SocialSignalsTable({
   };
 
   return (
-    <section className="flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
+    <section className="se-surface flex flex-1 min-h-0 flex-col rounded-[30px] bg-white p-2 shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)] overflow-hidden">
       {isScanning && scanPanel}
       {!isScanning && lastRunSummary}
       <div className="mb-2 flex items-center justify-end gap-2 px-2 pt-1">
@@ -3302,7 +3310,7 @@ function SocialSignalsTable({
                   type="button"
                   disabled={isBulkSyncing}
                   onClick={onBulkAddToCrm}
-                  className="rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
+                  className="se-primary rounded-full bg-[#09232d] px-3 py-1 text-[8px] font-semibold text-white disabled:opacity-60"
                 >
                   {isBulkSyncing ? "Adding…" : `Add ${selectedIds.length} to CRM`}
                 </button>
@@ -3310,7 +3318,7 @@ function SocialSignalsTable({
               <button
                 type="button"
                 onClick={exitSelectionMode}
-                className="inline-flex h-6 items-center gap-1 rounded-full border border-[#d1d1d1] bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#f3f3f3]"
+                className="se-control inline-flex h-6 items-center gap-1 rounded-full border border-[#d1d1d1] bg-white px-2.5 text-[8px] font-semibold text-[#09232d] transition hover:bg-[#f3f3f3]"
               >
                 <X size={10} />
                 Done
@@ -3322,19 +3330,19 @@ function SocialSignalsTable({
             type="button"
             onClick={() => setSelectionMode(true)}
             disabled={signals.length === 0}
-            className="inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[9px] font-medium text-[#34373c] transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="se-control inline-flex h-7 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[9px] font-medium text-[#34373c] transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ListChecks size={13} />
             Select
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto pr-1.5 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-button]:hidden [scrollbar-width:thin] [scrollbar-color:#e5e7eb_transparent]">
-        <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1.5 [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-button]:hidden [scrollbar-width:thin] [scrollbar-color:#e5e7eb_transparent]">
+        <table className="se-table w-full border-separate border-spacing-y-2">
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="text-[9px] font-semibold text-[#333333]">
               {selectionMode && (
-                <th className="bg-white px-2 py-1 text-left">
+                <th className="w-9 bg-white px-2 py-1 text-left">
                   <input
                     type="checkbox"
                     checked={allSelectableSelected}
@@ -3345,13 +3353,13 @@ function SocialSignalsTable({
                   />
                 </th>
               )}
-              <th className="bg-white px-4 py-1 text-left">Signal</th>
-              <th className="bg-white px-3 py-1 text-left">Source</th>
-              <th className="bg-white px-3 py-1 text-left">Persona</th>
-              <th className="bg-white px-3 py-1 text-left">Company</th>
-              <th className="bg-white px-3 py-1 text-left">Intent</th>
-              <th className="bg-white px-3 py-1 text-center">Score</th>
-              <th className="bg-white px-4 py-1 text-center">Action</th>
+              <th className="bg-white px-3 py-1 text-left">Signal</th>
+              <th className="whitespace-nowrap bg-white px-2 py-1 text-left">Source</th>
+              <th className="bg-white px-2 py-1 text-left">Persona</th>
+              <th className="bg-white px-2 py-1 text-left">Company</th>
+              <th className="whitespace-nowrap bg-white px-2 py-1 text-left">Intent</th>
+              <th className="whitespace-nowrap bg-white px-1.5 py-1 text-center">Score</th>
+              <th className="whitespace-nowrap bg-white px-2.5 py-1 text-center">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -3484,24 +3492,24 @@ function SocialListeningFilters({
         value={source}
         onChange={onSourceChange}
         options={sourceFilterOptions}
-        className="h-8 min-w-[96px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
+        className="se-control h-8 min-w-[96px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
         value={signalType}
         onChange={onSignalTypeChange}
         options={signalTypeOptions}
-        className="h-8 min-w-[110px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
+        className="se-control h-8 min-w-[110px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
         value={intent}
         onChange={onIntentChange}
         options={intentFilterOptions}
-        className="h-8 min-w-[90px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
+        className="se-control h-8 min-w-[90px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <button
         type="button"
         onClick={onOpenSettings}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c] transition-colors hover:bg-gray-100 cursor-pointer"
+        className="se-control flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c] transition-colors hover:bg-gray-100 cursor-pointer"
       >
         <SlidersHorizontal size={13} />
         Filter
@@ -3510,7 +3518,7 @@ function SocialListeningFilters({
         type="button"
         onClick={onRefresh}
         disabled={refreshBusy}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+        className="se-control flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] font-medium text-[#34373c] transition-colors hover:bg-gray-100 disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
       >
         {refreshBusy ? (
           <Loader2 size={13} className="animate-spin text-[#09232d]" />
@@ -3522,7 +3530,7 @@ function SocialListeningFilters({
       <button
         type="button"
         onClick={onOpenSettings}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340] cursor-pointer"
+        className="se-primary flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition-colors hover:bg-[#0f3340] cursor-pointer"
       >
         <Sparkles size={13} />
         Listen Settings
@@ -3586,7 +3594,7 @@ function SocialOpportunityDetail({
   const icpMatched = matchedIcpFieldLabels(signal.icpFilter);
 
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+    <aside className="se-surface flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
       <div className="relative min-h-[175px] shrink-0 bg-[#0b242e] px-7 pb-5 pt-8 text-white">
         <div className="absolute right-7 top-8">
           <ScoreGauge score={signal.score} dark />
@@ -3891,7 +3899,7 @@ function SocialOpportunityDetail({
           type="button"
           disabled={isCreatingOutreach}
           onClick={onCreateOutreach}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition hover:bg-[#0f3340] cursor-pointer disabled:opacity-60"
+          className="se-primary h-8 rounded-[10px] border border-[#d1d1d1] bg-[#09232d] px-3 text-[10px] font-medium text-white transition hover:bg-[#0f3340] cursor-pointer disabled:opacity-60"
         >
           {isCreatingOutreach ? "Creating…" : "Create Outreach"}
         </button>
@@ -3899,7 +3907,7 @@ function SocialOpportunityDetail({
           type="button"
           disabled={isSettingReminder}
           onClick={onSetReminder}
-          className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
+          className="se-control h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
         >
           {isSettingReminder ? "Saving…" : "Set Reminder"}
         </button>
@@ -3916,7 +3924,7 @@ function SocialOpportunityDetail({
             type="button"
             disabled={isSyncingToCrm}
             onClick={onSyncToCrm}
-            className="h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
+            className="se-control h-8 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-3 text-[10px] text-[#34373c] transition hover:bg-gray-100 cursor-pointer disabled:opacity-60"
           >
             {isSyncingToCrm ? "Adding…" : "Add to CRM"}
           </button>
@@ -4224,7 +4232,7 @@ function ListeningSettingsModal({
                 type="button"
                 disabled={updateSettings.isPending || triggerRun.isPending}
                 onClick={handleSave}
-                className="h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-60"
+                className="se-primary h-11 flex-1 rounded-[14px] bg-[#8dec66] text-[13px] font-semibold text-[#09232d] transition hover:bg-[#9bff73] disabled:opacity-60"
               >
                 {updateSettings.isPending ? "Saving…" : "Save Settings"}
               </button>
@@ -4326,6 +4334,7 @@ function SocialListeningTab({
     const finishedAt = latestRun?.finished_at ? new Date(latestRun.finished_at).getTime() : 0;
     const runJustFinished =
       latestRun?.status === "completed" && finishedAt > 0 && Date.now() - finishedAt < 120_000;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize polling with newly fetched enrichment results and scan completion.
     setPollEnrichment(pending && (isScanning || runJustFinished));
   }, [signals, isScanning, latestRun]);
 
@@ -4573,14 +4582,14 @@ function SocialListeningTab({
 
   if (!activeProfile) {
     return (
-      <div className="flex min-h-[645px] flex-col items-center justify-center rounded-[30px] bg-white px-8 py-16 text-center shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
+      <div className="se-surface flex min-h-[645px] flex-col items-center justify-center rounded-[30px] bg-white px-8 py-16 text-center shadow-[0_8px_12px_6px_rgba(0,0,0,0.15),0_4px_4px_rgba(0,0,0,0.3)]">
         <p className="max-w-md text-[14px] font-medium text-[#616263]">
           Activate an ICP profile to start social listening against your target market.
         </p>
         <button
           type="button"
           onClick={() => onOpenIcpBuilder()}
-          className="mt-5 h-11 rounded-[14px] bg-[#09232d] px-5 text-sm font-medium text-white transition-colors hover:bg-[#0c2e3b]"
+          className="se-primary mt-5 h-11 rounded-[14px] bg-[#09232d] px-5 text-sm font-medium text-white transition-colors hover:bg-[#0c2e3b]"
         >
           Open ICP Builder
         </button>
@@ -4623,7 +4632,7 @@ function SocialListeningTab({
             />
           </div>
           {signalsError && isMissingActiveIcp(signalsError) ? (
-            <div className="flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
+            <div className="se-surface flex flex-1 items-center justify-center rounded-[30px] bg-white p-8 text-[13px] text-[#616263]">
               Select an active ICP profile first. Open ICP Builder to create or activate one.
             </div>
           ) : (
@@ -4748,6 +4757,7 @@ export function SalesEngineView() {
   useLayoutEffect(() => {
     const stored = window.sessionStorage.getItem(SALES_ENGINE_TAB_STORAGE_KEY);
     if (isSalesEngineTab(stored)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore session-only browser state after hydration without an SSR mismatch.
       setActiveTab(stored);
     }
   }, []);
@@ -4790,7 +4800,7 @@ export function SalesEngineView() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
+    <div className="se-workspace min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
         {!chatExpanded && (
           <SalesEngineTabs
@@ -4807,7 +4817,7 @@ export function SalesEngineView() {
         ) : (
           <>
         {!chatExpanded && (
-          <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
+          <div className="grid grid-cols-[269px_269px_minmax(0,1fr)] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
             <MetricCard
               title="Lead Metrics"
               value={formatMetric(leadsInCrm)}
@@ -4826,11 +4836,11 @@ export function SalesEngineView() {
               actionLabel="Review leads &rarr;"
             />
             <TrendChart />
-            <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
-              <div className="flex items-center gap-3">
+            <div className="se-smart-actions flex flex-col gap-3 pt-2 col-span-full">
+              <div className="flex flex-wrap items-center gap-4">
                 <Link
                   href="/crm?source=sales_engine"
-                  className="flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
+                  className="se-control flex h-11 items-center gap-2.5 rounded-[14px] border border-[#d1d1d1] bg-white px-4 text-sm font-medium text-[#222222] shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-colors hover:border-[#bfbfbf] hover:bg-[#f8f8f8]"
                 >
                   <PipelineGaugeIcon className="h-5 w-5 text-[#8a8a8a]" />
                   View CRM Pipeline
@@ -4838,9 +4848,9 @@ export function SalesEngineView() {
                 <button
                   type="button"
                   onClick={() => handleOpenIcpBuilder()}
-                  className="flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b] cursor-pointer"
+                  className="se-primary flex h-11 items-center gap-2.5 rounded-[14px] bg-[#09232d] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0c2e3b] cursor-pointer"
                 >
-                  <IcpBuilderIcon className="h-5 w-5 text-white" />
+                  <IcpBuilderIcon className="h-5 w-5" />
                   ICP Builder
                 </button>
               </div>
@@ -4848,7 +4858,7 @@ export function SalesEngineView() {
                 <div className="flex items-center gap-1.5 px-1 text-[11px] text-gray-500">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span className="font-medium text-gray-400">Active ICP:</span>
-                  <span className="font-semibold text-[#09232d] truncate max-w-[240px]">
+                  <span className="font-semibold text-white truncate max-w-[240px]">
                     {activeProfile.name}
                   </span>
                 </div>

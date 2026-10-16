@@ -246,6 +246,7 @@ export function OutreachPreviewModal({
       confirmedInboxes.find((i) => i.is_default)?.id ??
       confirmedInboxes[0]?.id ??
       null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Select the preferred sender after confirmed inboxes load for the open preview.
     setSelectedInboxId(preferred);
   }, [open, dispatchChannel, senderSettings?.default_inbox?.id, confirmedInboxes]);
 

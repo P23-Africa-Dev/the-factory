@@ -20,6 +20,7 @@ export function useHiddenLeadColumns(companyId?: number | string) {
 
     useEffect(() => {
         if (companyId == null) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate company-scoped browser preferences after SSR and when the company changes.
         setHidden(readHiddenLeadColumns(companyId));
     }, [companyId]);
 

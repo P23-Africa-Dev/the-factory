@@ -206,12 +206,14 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate editable domain fields when the open dialog receives server settings.
     if (domainAuth?.domain) setDomain(domainAuth.domain);
     if (domainAuth?.from_email) setFromEmail(domainAuth.from_email);
   }, [open, domainAuth]);
 
   useEffect(() => {
     if (!open || !senderSettings) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialize the editable sender settings from the loaded server record.
     setSenderMode(senderSettings.sender_mode ?? "platform");
     setReplyToEmail(senderSettings.reply_to_email ?? "");
     setShowOrgSetup(
