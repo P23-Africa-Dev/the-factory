@@ -1,5 +1,7 @@
 "use client";
 
+import "@/components/sales-engine/sales-engine-workspace.css";
+
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
@@ -141,7 +143,7 @@ function LeadCard({
       {...attributes}
       {...listeners}
       onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-      className={`group bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200 overflow-hidden min-w-0
+      className={`se-lead-card group bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200 overflow-hidden min-w-0
         ${isDragging && !isDragOverlay ? "opacity-40 scale-95" : ""}
         ${isDragOverlay ? "shadow-2xl scale-105 cursor-grabbing" : "hover:shadow-md"}
       `}
@@ -410,7 +412,7 @@ function LeadListView({
                   <div
                     key={item.id}
                     onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-                    className={`relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${idx % 2 === 0 ? "" : "bg-gray-50/50"
+                    className={`se-list-row relative grid grid-cols-1 md:grid-cols-[2fr_2fr_1.2fr_1fr_1fr_1fr_auto] gap-2 md:gap-4 items-start md:items-center px-4 py-3 rounded-xl transition-colors cursor-pointer hover:bg-gray-50 group/row ${idx % 2 === 0 ? "" : "bg-gray-50/50"
                       }`}
                   >
                     {/* Lead name */}
@@ -604,19 +606,19 @@ function LeadBoard({
 
   if (isLoading) {
     return (
-      <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex items-center justify-center h-[calc(100vh-360px)] min-h-[70vh]">
+      <div className="se-surface bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex items-center justify-center h-[calc(100vh-360px)] min-h-[70vh]">
         <p className="text-[13px] text-gray-400">Loading CRM leads…</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
+    <div className="se-surface bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
       {/* Board toolbar */}
       <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
         <button
           onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
-          className="text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
+          className="se-primary text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
         >
           View All Leads
         </button>
@@ -741,13 +743,13 @@ function AgentUploadsCard({
   const router = useRouter();
 
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
+    <div className="se-stat-card bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
       {/* Avatar with gradient ring */}
       <div className="relative shrink-0">
         <div
           className="w-20 h-20 rounded-full p-0.75"
           style={{
-            background: "linear-gradient(135deg, #FD6046 0%, #FFBCAD 100%)",
+            background: "linear-gradient(135deg, #2ae9c9 0%, #c974f4 100%)",
           }}
         >
           <div className="w-full h-full rounded-full overflow-hidden bg-[#EEF3F8]">
@@ -778,7 +780,7 @@ function AgentUploadsCard({
             "your Agents"
           )}
         </p>
-        <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
+        <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="se-stat-link flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
           <ChevronRight size={14} />
         </button>
@@ -1010,7 +1012,7 @@ export default function CRMPage() {
   if (stageQuery.isLoading) return <CRMPageSkeleton />;
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="se-workspace min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-5">
         {/* Top bar */}
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
@@ -1024,12 +1026,12 @@ export default function CRMPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for Leads"
-              className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
+              className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowPipelineModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowPipelineModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               {selectedPipelineId
                 ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
                 : "All Pipeline"}
@@ -1040,11 +1042,11 @@ export default function CRMPage() {
               selectedPipelineId={selectedPipelineId}
               onPipelineChange={setSelectedPipelineId}
             />
-            <button onClick={() => setShowLabelModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowLabelModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
-            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button onClick={() => setShowFilter((prev) => !prev)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <SlidersHorizontal size={13} />
               Filter
             </button>
@@ -1069,7 +1071,7 @@ export default function CRMPage() {
             />
             <button
               onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all"
+              className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all"
             >
               Add New Leads
               <BookmarkPlus size={15} />
@@ -1078,7 +1080,7 @@ export default function CRMPage() {
         </div>
 
         {salesEngineScope && (
-          <div className="flex items-center justify-between rounded-2xl border border-[#09232d]/15 bg-[#09232d]/[0.03] px-4 py-2.5 text-xs text-[#09232d] shadow-xs">
+          <div className="se-surface flex items-center justify-between rounded-2xl border border-[#09232d]/15 bg-[#09232d]/[0.03] px-4 py-2.5 text-xs text-[#09232d] shadow-xs">
             <div className="flex items-center gap-2.5">
               <span className="flex size-2 rounded-full bg-emerald-500 animate-pulse" />
               <span className="font-semibold text-slate-900">Filtered by: Sales Engine</span>

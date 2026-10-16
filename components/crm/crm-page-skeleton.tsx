@@ -30,7 +30,7 @@ function TopBarSkeleton() {
 /* Summary cards --------------------------------------------- */
 function TotalLeadsCardSkeleton() {
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85 animate-pulse">
+    <div className="se-stat-card bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85 animate-pulse">
       <div className="flex justify-between items-start">
         <Bone className="h-4 w-40" />
         <Bone className="h-5 w-5 rounded-md" />
@@ -69,7 +69,7 @@ function LeadsChartSkeleton() {
 
 function AgentUploadsCardSkeleton() {
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70 animate-pulse">
+    <div className="se-stat-card bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70 animate-pulse">
       {/* Avatar ring */}
       <div className="relative shrink-0 w-20 h-20 rounded-full bg-gray-200" />
 
@@ -125,7 +125,7 @@ const SKELETON_COLUMNS = [
 
 function LeadBoardSkeleton() {
   return (
-    <div className="bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
+    <div className="se-surface bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
       {/* Board toolbar */}
       <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2 animate-pulse">
         <Bone className="h-7 w-28 rounded-lg" />
@@ -176,7 +176,7 @@ function LeadBoardSkeleton() {
 /* Full page skeleton ---------------------------------------- */
 export function CRMPageSkeleton() {
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="se-workspace min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-5">
         <TopBarSkeleton />
         <SummaryCardsSkeleton />
