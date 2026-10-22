@@ -1,22 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useAuth, useLogoutMutation, useAuthNavigation, useAgentIdentity } from '@/features/auth';
 import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
-import { AddLeadModal } from '@/features/crm/components/AddLeadModal';
 import { AttendanceCard } from '@/features/attendance';
+import { FieldActivitySummaryCard } from '@/features/field-activity/components/FieldActivitySummaryCard';
 import {
-  DayReviewSheet,
-  FieldActivitySummaryCard,
   PendingReviewSoftBanner,
   PileInboxBadge,
-  PileInboxSheet,
-} from '@/features/field-activity';
-import { NotificationPanel, useUnreadCount } from '@/features/notifications';
-import { MeetingWidget, CreateMeetingModal, ViewMeetingsModal, useMeetingList } from '@/features/meetings';
+} from '@/features/field-activity/components/PileInbox';
+import { useUnreadCount } from '@/features/notifications/queries';
+import { MeetingWidget } from '@/features/meetings/components/MeetingWidget';
+import { useMeetingList } from '@/features/meetings/queries';
 import { getRecentDestinations, saveRecentDestination, fetchRecentDestinations, rememberRecentDestination, type RecentDestination } from '@/lib/map/recentDestinations';
 import {
   createSearchSessionToken,
@@ -25,9 +24,39 @@ import {
 } from '@/lib/map/place-search';
 import { placeAttributionLabel, type PlaceSourceRef } from '@/lib/map/place-attribution';
 import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
-import { LocationPermissionGate, useLocationPermissionBootstrap } from '@/features/tracking';
+import { useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
 import { toast } from '@/lib/toast';
+
+const AddLeadModal = dynamic(
+  () => import('@/features/crm/components/AddLeadModal').then((m) => m.AddLeadModal),
+  { ssr: false },
+);
+const CreateMeetingModal = dynamic(
+  () => import('@/features/meetings/components/CreateMeetingModal').then((m) => m.CreateMeetingModal),
+  { ssr: false },
+);
+const ViewMeetingsModal = dynamic(
+  () => import('@/features/meetings/components/ViewMeetingsModal').then((m) => m.ViewMeetingsModal),
+  { ssr: false },
+);
+const DayReviewSheet = dynamic(
+  () => import('@/features/field-activity/components/DayReviewSheet').then((m) => m.DayReviewSheet),
+  { ssr: false },
+);
+const PileInboxSheet = dynamic(
+  () => import('@/features/field-activity/components/PileInbox').then((m) => m.PileInboxSheet),
+  { ssr: false },
+);
+const LocationPermissionGate = dynamic(
+  () => import('@/features/tracking/components/LocationPermissionGate').then((m) => m.LocationPermissionGate),
+  { ssr: false },
+);
+const NotificationPanel = dynamic(
+  () => import('@/features/notifications/components/NotificationPanel').then((m) => m.NotificationPanel),
+  { ssr: false },
+);
+
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -764,25 +793,31 @@ export default function AgentDashboardPage() {
         </div>
       </div>
 
-      {/* Notification Drawer */}
-      <NotificationPanel open={isNotificationOpen} onClose={() => setIsNotificationOpen(false)} />
+      {isNotificationOpen ? (
+        <NotificationPanel open onClose={() => setIsNotificationOpen(false)} />
+      ) : null}
 
-      {/* Add Lead Modal */}
-      <AddLeadModal visible={isAddLeadOpen} onClose={() => setIsAddLeadOpen(false)} />
+      {isAddLeadOpen ? (
+        <AddLeadModal visible onClose={() => setIsAddLeadOpen(false)} />
+      ) : null}
 
-      <CreateMeetingModal
-        open={isMeetingModalOpen}
-        onClose={() => setIsMeetingModalOpen(false)}
-        defaultDate={meetingModalDate}
-      />
+      {isMeetingModalOpen ? (
+        <CreateMeetingModal
+          open
+          onClose={() => setIsMeetingModalOpen(false)}
+          defaultDate={meetingModalDate}
+        />
+      ) : null}
 
-      <ViewMeetingsModal
-        open={isViewMeetingsOpen}
-        onClose={() => setIsViewMeetingsOpen(false)}
-        date={selectedDate}
-        meetings={selectedDayMeetings}
-        onScheduleNew={() => openMeetingModal(selectedDate)}
-      />
+      {isViewMeetingsOpen ? (
+        <ViewMeetingsModal
+          open
+          onClose={() => setIsViewMeetingsOpen(false)}
+          date={selectedDate}
+          meetings={selectedDayMeetings}
+          onScheduleNew={() => openMeetingModal(selectedDate)}
+        />
+      ) : null}
 
       {/* Logout modal */}
       {isLogoutModalOpen && (

@@ -14,15 +14,12 @@ import {
   useTaskRoute,
   hydrateLiveTaskFromRoute,
   trackingApi,
-  LocationPermissionGate,
-  CompleteRequirementsSheet,
   resolveCompletionRequirements,
 } from '@/features/tracking';
 import { useTaskListItems, useTask, taskKeys, taskHasMapLocation } from '@/features/tasks';
 import { useAuth, useAgentIdentity } from '@/features/auth';
 import { getSafeAvatarSrc } from '@/lib/avatar';
 import { buildTraveledSegment, sliceRemainingRoute } from '@/lib/map/route-geometry';
-import { NavigationRideSheet } from '@/features/tracking/components/NavigationRideSheet';
 import {
   formatTripSummaryToast,
   summarizeTaskRoute,
@@ -54,8 +51,6 @@ import { toast } from '@/lib/toast';
 import {
   useSavedLocations,
   useCreateSavedLocation,
-  SaveLocationSheet,
-  LocationDetailsSheet,
   type SavedLocation,
   type CreateSavedLocationInput,
 } from '@/features/locations';
@@ -87,6 +82,30 @@ const MapboxMap = dynamic(() => import('@/features/tracking/components/MapboxMap
     </div>
   ),
 });
+
+const NavigationRideSheet = dynamic(
+  () => import('@/features/tracking/components/NavigationRideSheet').then((m) => m.NavigationRideSheet),
+  { ssr: false },
+);
+const SaveLocationSheet = dynamic(
+  () => import('@/features/locations/components/SaveLocationSheet').then((m) => m.SaveLocationSheet),
+  { ssr: false },
+);
+const LocationDetailsSheet = dynamic(
+  () => import('@/features/locations/components/LocationDetailsSheet').then((m) => m.LocationDetailsSheet),
+  { ssr: false },
+);
+const CompleteRequirementsSheet = dynamic(
+  () =>
+    import('@/features/tracking/components/CompleteRequirementsSheet').then(
+      (m) => m.CompleteRequirementsSheet,
+    ),
+  { ssr: false },
+);
+const LocationPermissionGate = dynamic(
+  () => import('@/features/tracking/components/LocationPermissionGate').then((m) => m.LocationPermissionGate),
+  { ssr: false },
+);
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 

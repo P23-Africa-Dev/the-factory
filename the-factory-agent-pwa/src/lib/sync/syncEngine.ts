@@ -601,6 +601,18 @@ async function scheduleNextSyncIfNeeded(): Promise<void> {
   }
 }
 
+async function hasRunnableSyncWork(): Promise<boolean> {
+  const db = await getDb();
+  const [actions, proofs, locations] = await Promise.all([
+    getRunnableOfflineActions(),
+    db.getAllFromIndex('proofQueue', 'by-uploaded', 0),
+    db.getAllFromIndex('locationQueue', 'by-synced', 0),
+  ]);
+  if (actions.length > 0) return true;
+  if (proofs.some((item) => canRunNow(item.nextAttemptAt))) return true;
+  return locations.some((item) => canRunNow(item.nextAttemptAt) && item.inFlight !== 1);
+}
+
 async function syncAll(): Promise<void> {
   if (syncInFlight) return;
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -608,10 +620,13 @@ async function syncAll(): Promise<void> {
 
   setSyncInFlight(true);
   try {
+    const hadWork = await hasRunnableSyncWork();
     await syncProofQueue();
     await syncOfflineActionQueue();
     await syncLocationQueue();
-    await invalidateSyncedQueries();
+    if (hadWork) {
+      await invalidateSyncedQueries();
+    }
   } finally {
     setSyncInFlight(false);
     await scheduleNextSyncIfNeeded();

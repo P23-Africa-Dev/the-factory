@@ -44,7 +44,7 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps): Re
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useNotifications(filter === 'unread' ? { is_read: 0 } : undefined);
+  } = useNotifications(filter === 'unread' ? { is_read: 0 } : undefined, { enabled: open });
 
   const { count: unreadCount, refetch: refetchUnreadCount } = useUnreadCount();
   const { mutate: markRead } = useMarkRead();

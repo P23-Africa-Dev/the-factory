@@ -10,7 +10,7 @@ import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvid
 import { FieldActivityProvider } from '@/features/field-activity';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
-import { warmAgentRoutes } from '@/lib/pwa/routeWarming';
+import { scheduleWarmAgentRoutes } from '@/lib/pwa/routeWarming';
 import { useRouteRestoration } from '@/lib/pwa/routeRestoration';
 import { BottomNavBar } from '@/components/shared/BottomNavBar';
 import {
@@ -19,12 +19,26 @@ import {
 } from '@/components/shared/BottomNavVisibility';
 import { OfflineSyncBanner } from '@/components/shared/OfflineSyncBanner';
 
-function AgentShellContent({ children }: { children: React.ReactNode }) {
+function AgentShellContent({
+  children,
+  isRestoring,
+}: {
+  children: React.ReactNode;
+  isRestoring: boolean;
+}) {
   const { isHidden } = useBottomNavVisibility();
 
   return (
     <>
-      <div className={`flex flex-col flex-1 ${isHidden ? '' : 'pb-[100px]'}`}>{children}</div>
+      <div className={`flex flex-col flex-1 ${isHidden ? '' : 'pb-[100px]'}`}>
+        {isRestoring ? (
+          <div className="flex flex-1 items-center justify-center min-h-[50vh]">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
+          </div>
+        ) : (
+          children
+        )}
+      </div>
       {!isHidden && <BottomNavBar />}
       {!isHidden && <OfflineSyncBanner />}
     </>
@@ -39,19 +53,30 @@ function AgentShell({ children }: { children: React.ReactNode }) {
   const { isRestoring } = useRouteRestoration();
 
   useEffect(() => {
+    const SYNC_DEBOUNCE_MS = 8_000;
+    const INITIAL_SYNC_DELAY_MS = 4_000;
+    let timer: number | undefined;
+
+    const scheduleDebouncedSync = (delayMs: number) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void syncEngine.syncAll();
+      }, delayMs);
+    };
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        syncEngine.syncAll();
+        scheduleDebouncedSync(SYNC_DEBOUNCE_MS);
       }
     };
 
     const handleOnline = () => {
-      syncEngine.syncAll();
+      scheduleDebouncedSync(SYNC_DEBOUNCE_MS);
     };
 
     const handleServiceWorkerMessage = (event: MessageEvent) => {
       if (event?.data?.type === 'SYNC_REQUESTED') {
-        syncEngine.syncAll();
+        scheduleDebouncedSync(SYNC_DEBOUNCE_MS);
       }
     };
 
@@ -60,30 +85,23 @@ function AgentShell({ children }: { children: React.ReactNode }) {
     navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
 
     if (navigator.onLine) {
-      syncEngine.syncAll();
-      syncEngine.scheduleSync();
-      void warmAgentRoutes();
+      scheduleDebouncedSync(INITIAL_SYNC_DELAY_MS);
+      void syncEngine.scheduleSync();
+      scheduleWarmAgentRoutes();
     }
 
     return () => {
+      window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
       navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
     };
   }, []);
 
-  if (isRestoring) {
-    return (
-      <div className="flex flex-1 items-center justify-center min-h-screen bg-[#0A1D25]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
-      </div>
-    );
-  }
-
   return (
     <BottomNavVisibilityProvider>
       <div className="flex flex-col flex-1 min-h-screen bg-[#0A1D25] text-white">
-        <AgentShellContent>{children}</AgentShellContent>
+        <AgentShellContent isRestoring={isRestoring}>{children}</AgentShellContent>
       </div>
     </BottomNavVisibilityProvider>
   );

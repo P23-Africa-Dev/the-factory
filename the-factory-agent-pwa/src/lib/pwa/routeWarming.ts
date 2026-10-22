@@ -28,7 +28,25 @@ export async function warmAgentRoutes(routes: readonly string[] = CORE_AGENT_ROU
 
   await Promise.allSettled(
     routes.map((route) =>
-      fetch(route, { credentials: 'include', cache: 'reload' }).catch(() => undefined),
+      fetch(route, { credentials: 'include', cache: 'force-cache' }).catch(() => undefined),
     ),
   );
+}
+
+/** Warm routes after first paint so startup API calls are not competing for bandwidth. */
+export function scheduleWarmAgentRoutes(
+  routes: readonly string[] = CORE_AGENT_ROUTES,
+): void {
+  if (typeof window === 'undefined' || !navigator.onLine) return;
+
+  const run = () => {
+    void warmAgentRoutes(routes);
+  };
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 5_000 });
+    return;
+  }
+
+  window.setTimeout(run, 2_500);
 }

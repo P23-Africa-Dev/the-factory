@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 
 export type ActiveTab = 0 | 1 | 2 | 3;
@@ -20,6 +21,12 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
   const router = useRouter();
   const pathname = usePathname();
 
+  useEffect(() => {
+    for (const tab of TABS) {
+      router.prefetch(tab.path);
+    }
+  }, [router]);
+
   // Determine active tab based on activeTab prop or pathname fallback
   const getActiveTab = (): ActiveTab => {
     if (activeTab !== undefined) return activeTab;
@@ -37,10 +44,6 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
 
   const isMapRoute = pathname.startsWith('/map');
   const baseFillColor = isMapRoute ? '#F2F4F5' : '#FFFFFF';
-
-  const handleTabClick = (tabId: ActiveTab, path: string) => {
-    router.push(path);
-  };
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[9999] select-none pb-[safe-area-inset-bottom]">
@@ -96,9 +99,11 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
             const isActive = currentActive === tab.id;
             const leftPositions = ['28.56%', '42.88%', '57.20%', '71.52%'] as const;
             return (
-              <button
+              <Link
                 key={tab.id}
-                onClick={() => handleTabClick(tab.id, tab.path)}
+                href={tab.path}
+                prefetch
+                aria-label={tab.label}
                 className="absolute w-14 h-14 flex items-center justify-center outline-none focus:outline-none transition-transform active:scale-90 pointer-events-auto cursor-pointer"
                 style={{
                   left: leftPositions[tab.id],
@@ -108,10 +113,10 @@ export function BottomNavBar({ activeTab }: BottomNavBarProps): React.ReactEleme
               >
                 <img
                   src={isActive ? tab.activeIcon : tab.defaultIcon}
-                  alt={tab.label}
+                  alt=""
                   className="w-12 h-12 object-contain"
                 />
-              </button>
+              </Link>
             );
           })}
         </div>
