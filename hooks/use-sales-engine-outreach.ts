@@ -70,7 +70,7 @@ export function useSendOutreachActivity() {
       ...payload
     }: {
       activityId: number;
-      channel?: "email" | "sms";
+      channel?: "email" | "sms" | "whatsapp";
       to_email?: string;
       to_phone?: string;
       subject?: string;

@@ -61,7 +61,7 @@ import {
   useClearChatHistory,
   useSendChatMessage,
 } from "@/hooks/use-sales-engine-chat";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
 import { useSalesEngineOutreach, useDeleteOutreachActivity } from "@/hooks/use-sales-engine-outreach";
 import {
@@ -95,12 +95,21 @@ import {
 } from "@/lib/enriched-lead-card";
 import {
   cancelDiscoveryRun,
+  cancelReminder,
+  fetchMetricsTrend,
   fetchOutreachActivity,
+  fetchSocialFilters,
+  fetchUsage,
   formatRelativeTime,
   isFreshSignal,
+  listReminders,
   normalizeOutreachSubjectBody,
   normalizeRecommendedAction,
   outreachActivitySortTime,
+  submitChatFeedback,
+  submitLeadFeedback,
+  syncSocialSignalsBatch,
+  updateReminder,
   type ChatIntent,
   type ChatLead,
   type FreshnessWindowDays,
@@ -165,6 +174,7 @@ type ChatMessage = {
   searchCaption?: string;
   /** True when the outbound send for this user prompt failed and can be retried. */
   failed?: boolean;
+  feedback?: "up" | "down";
 };
 
 type OutreachPreviewState = {
@@ -182,10 +192,6 @@ type OutreachPreviewState = {
   signalId?: number;
 };
 
-type SearchUsage = { used: number; limit: number };
-
-const SEARCH_USAGE_STORAGE_KEY = "sales_engine_search_usage_v1";
-const DEFAULT_SEARCH_USAGE_LIMIT = 500;
 const MAX_PROSPECT_COUNT = 150;
 const LEADS_PER_PAGE = 20;
 const EXPLICIT_COUNT_PATTERN = /\b(\d{1,3})\b/;
@@ -232,30 +238,6 @@ function matchedIcpFieldLabels(filter?: SocialSignalIcpFilter | null): string[] 
   return Object.entries(filter.reasons)
     .filter(([, passed]) => passed)
     .map(([field]) => labels[field] ?? field);
-}
-
-function readSearchUsage(): SearchUsage {
-  if (typeof window === "undefined") return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
-  try {
-    const raw = window.localStorage.getItem(SEARCH_USAGE_STORAGE_KEY);
-    if (!raw) return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
-    const parsed = JSON.parse(raw) as Partial<SearchUsage>;
-    return {
-      used: typeof parsed.used === "number" ? parsed.used : 0,
-      limit: typeof parsed.limit === "number" ? parsed.limit : DEFAULT_SEARCH_USAGE_LIMIT,
-    };
-  } catch {
-    return { used: 0, limit: DEFAULT_SEARCH_USAGE_LIMIT };
-  }
-}
-
-function writeSearchUsage(usage: SearchUsage): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(SEARCH_USAGE_STORAGE_KEY, JSON.stringify(usage));
-  } catch {
-    // ignore quota errors
-  }
 }
 
 /** Resolves the outgoing generate_leads prompt. Only preserves an explicit user count — never injects a default. */
@@ -461,7 +443,7 @@ function MetricCard({
           </p>
         </div>
         <p className={`mt-[-4px] text-[8px] leading-[16px] ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
-          {isScanning ? "Scan in progress…" : `${percent}% increase this week`}
+          {isScanning ? "Scan in progress…" : metricChangeCopy(percent).caption}
         </p>
       </div>
       <div className="absolute right-[17px] top-[19px] grid size-[108px] place-items-center">
@@ -472,7 +454,7 @@ function MetricCard({
         />
         <div className={`absolute size-[49px] rounded-full ${active ? "bg-[#14343e]" : "bg-[#f9f9f9]"}`} />
         <p className={`relative text-[8px] font-semibold ${active ? "text-[#c8c8c8]" : "text-[#34373c]"}`}>
-          {isScanning ? "…" : `${percent}%`}
+          {isScanning ? "…" : metricChangeCopy(percent).badge}
         </p>
       </div>
     </section>
@@ -501,23 +483,91 @@ function MetricCard({
   return cardContent;
 }
 
-function TrendChart() {
+
+function scoreBand(score: number) {
+  if (score >= 80) return "High";
+  if (score >= 60) return "Medium";
+  return "Low";
+}
+
+function formatChange(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "—";
+  return String(value);
+}
+
+function metricChangeCopy(percent: string) {
+  if (percent === "—") return { caption: "—", badge: "—" };
+  const value = Number(percent);
+  if (Number.isNaN(value)) return { caption: percent, badge: percent };
+  if (value > 0) return { caption: `+${value}% increase this week`, badge: `+${value}%` };
+  if (value < 0) return { caption: `${value}% decrease this week`, badge: `${value}%` };
+  return { caption: "0% this week", badge: "0%" };
+}
+
+function buildTrendLine(points?: Array<{ value: number }>) {
+  const fallback = "M0 54 C8 42 18 42 27 53 C37 64 45 38 56 51 C69 64 79 34 92 47 C105 58 118 42 130 45 C145 49 154 23 167 34 C181 47 192 20 207 31 C221 42 226 68 239 76 C254 93 270 68 284 76 C297 84 309 67 323 73 C337 79 348 54 362 68 C379 84 394 77 410 83 C421 87 427 81 430 84";
+  if (!points || points.length < 2) return fallback;
+  const max = Math.max(...points.map((point) => point.value), 1);
+  return points
+    .map((point, index) => {
+      const x = (index / (points.length - 1)) * 430;
+      const y = 94 - (point.value / max) * 70;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function ReminderList() {
+  const queryClient = useQueryClient();
+  const reminders = useQuery({ queryKey: ["sales-engine", "reminders"], queryFn: () => listReminders("upcoming") });
+  const items = reminders.data ?? [];
+  if (!reminders.isLoading && items.length === 0) return null;
+  return (
+    <div className="shrink-0 rounded-[16px] border border-[#e6e6e6] bg-white px-3 py-2 text-[11px] text-[#09232d]">
+      <p className="font-semibold">Reminders</p>
+      {reminders.isLoading ? <p className="text-[#616263]">Loading reminders…</p> : items.map((item) => (
+        <div key={item.id} className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 truncate">{item.signal?.profile || item.signal?.company || "Signal"} · {new Date(item.remind_at).toLocaleString()}</span>
+          <input
+            type="datetime-local"
+            aria-label="Reschedule reminder"
+            defaultValue={new Date(new Date(item.remind_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+            onBlur={(event) => {
+              if (!event.target.value) return;
+              void updateReminder(item.id, { remind_at: new Date(event.target.value).toISOString() }).then(() => {
+                void queryClient.invalidateQueries({ queryKey: ["sales-engine", "reminders"] });
+              });
+            }}
+          />
+          <button type="button" className="underline" onClick={() => { void cancelReminder(item.id).then(() => { void queryClient.invalidateQueries({ queryKey: ["sales-engine", "reminders"] }); }); }}>Cancel</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TrendChart({ changePercent, direction, points }: { changePercent?: number | null; direction?: string; points?: Array<{ value: number; day?: string }> } = {}) {
+  const trendLine = buildTrendLine(points);
+  const labels = points?.length ? points.map((point, index) => point.day || String(index + 1)) : weekDays;
+  const peakIndex = points?.length
+    ? points.reduce((best, point, index, all) => (point.value > all[best].value ? index : best), 0)
+    : 4;
   return (
     <section className="relative h-[126px] min-w-[420px] flex-1 overflow-visible px-1 pt-1 max-lg:min-w-0">
-      <div className="grid grid-cols-6 text-[13px] font-medium text-[#09232d]/50">
-        {weekDays.map((day) => (
-          <span key={day} className="text-center">
+      <div className="grid text-[13px] font-medium text-[#09232d]/50" style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}>
+        {labels.map((day, index) => (
+          <span key={`${day}-${index}`} className="text-center">
             {day}
           </span>
         ))}
       </div>
       <div className="relative mt-4 h-[92px]">
-        <div className="absolute inset-x-5 top-0 bottom-2 grid grid-cols-6">
-          {weekDays.map((day, index) => (
-            <div key={day} className="relative">
+        <div className="absolute inset-x-5 top-0 bottom-2 grid" style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}>
+          {labels.map((day, index) => (
+            <div key={`${day}-${index}`} className="relative">
               <span
                 className={`absolute left-1/2 top-0 h-full border-l border-dashed ${
-                  index === 4 ? "border-[#fd6046]" : "border-[#6b9bb0]"
+                  index === peakIndex ? "border-[#fd6046]" : "border-[#6b9bb0]"
                 }`}
               />
             </div>
@@ -531,21 +581,21 @@ function TrendChart() {
             </linearGradient>
           </defs>
           <path
-            d="M0 54 C8 42 18 42 27 53 C37 64 45 38 56 51 C69 64 79 34 92 47 C105 58 118 42 130 45 C145 49 154 23 167 34 C181 47 192 20 207 31 C221 42 226 68 239 76 C254 93 270 68 284 76 C297 84 309 67 323 73 C337 79 348 54 362 68 C379 84 394 77 410 83 C421 87 427 81 430 84"
+            d={trendLine}
             fill="none"
             stroke="#fd6046"
             strokeLinecap="round"
             strokeWidth="2"
           />
           <path
-            d="M0 54 C8 42 18 42 27 53 C37 64 45 38 56 51 C69 64 79 34 92 47 C105 58 118 42 130 45 C145 49 154 23 167 34 C181 47 192 20 207 31 C221 42 226 68 239 76 C254 93 270 68 284 76 C297 84 309 67 323 73 C337 79 348 54 362 68 C379 84 394 77 410 83 C421 87 427 81 430 84 L430 112 L0 112 Z"
+            d={`${trendLine} L430 112 L0 112 Z`}
             fill="url(#sales-trend-fill)"
           />
           <path d="M318 83 H382" stroke="#fd6046" strokeDasharray="6 6" strokeLinecap="round" />
         </svg>
         <div className="absolute right-4 top-[18px] flex h-5 items-center gap-1 rounded-[12px] border border-[#e4e4e9] bg-white px-2.5 shadow-[0_12px_17px_rgba(11,36,46,0.15)]">
-          <span className="text-[11px] font-medium text-[#fd6046]">+27%</span>
-          <span className="text-[10px] text-[#09232d]/70">Performance higher this week</span>
+          <span className="text-[11px] font-medium text-[#fd6046]">{changePercent == null ? "—" : `${changePercent > 0 ? "+" : ""}${changePercent}%`}</span>
+          <span className="text-[10px] text-[#09232d]/70">{direction === "down" ? "Decrease this week" : direction === "up" ? "Increase this week" : "No change this week"}</span>
         </div>
       </div>
     </section>
@@ -1439,7 +1489,8 @@ function ChatWorkspace({
   const [draft, setDraft] = useState("");
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
-  const [usage, setUsage] = useState<SearchUsage>(() => readSearchUsage());
+  const usageQuery = useQuery({ queryKey: ["sales-engine", "usage"], queryFn: fetchUsage, staleTime: 30_000 });
+  const searchUsage = usageQuery.data?.searches ?? { used: 0, limit: 500 };
   const [pendingGenerateRequest, setPendingGenerateRequest] = useState<{ prompt: string } | null>(null);
   const [generateEntityMode, setGenerateEntityMode] = useState<GenerateEntityMode>("both");
   const [generateProspectCount, setGenerateProspectCount] = useState<GenerateProspectCount>(12);
@@ -1645,13 +1696,13 @@ function ChatWorkspace({
       setIsSyntheticThinking(true);
       const timer = window.setTimeout(() => {
         setIsSyntheticThinking(false);
-        const remaining = Math.max(usage.limit - usage.used, 0);
+        const remaining = Math.max(searchUsage.limit - searchUsage.used, 0);
         setMessages((current) => [
           ...current,
           {
             id: nextMessageId(),
             role: "assistant",
-            body: `You've used ${usage.used} of ${usage.limit} searches this billing cycle. ${remaining} remaining.`,
+            body: `You've used ${searchUsage.used} of ${searchUsage.limit} searches this billing cycle. ${remaining} remaining.`,
           },
         ]);
       }, 900);
@@ -1700,11 +1751,7 @@ function ChatWorkspace({
       ]);
       setDraft("");
       setSelectedIntent("freeform");
-      setUsage((current) => {
-        const next = { used: current.used + 1, limit: current.limit };
-        writeSearchUsage(next);
-        return next;
-      });
+      void queryClient.invalidateQueries({ queryKey: ["sales-engine", "usage"] });
       sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
       return;
     }
@@ -1787,11 +1834,7 @@ function ChatWorkspace({
     // Clear the intent chip so a follow-up reply (e.g. "yes") is treated as freeform
     // instead of re-triggering the ICP confirmation gate.
     setSelectedIntent("freeform");
-    setUsage((current) => {
-      const next = { used: current.used + 1, limit: current.limit };
-      writeSearchUsage(next);
-      return next;
-    });
+    void queryClient.invalidateQueries({ queryKey: ["sales-engine", "usage"] });
 
     sendMessage.mutate({ body: modeAwareBody, intent: "generate_leads" });
   }
@@ -2082,7 +2125,8 @@ function ChatWorkspace({
                           : item
                       )
                     );
-                    toast.message(`Hidden “${lead.name}”. Generate more already skips prior lead names.`);
+                    void submitLeadFeedback(lead.id).catch(() => undefined);
+                    toast.message(`Marked “${lead.name}” as not relevant.`);
                   }}
                 />
               )}
@@ -2196,11 +2240,11 @@ function ChatWorkspace({
                     }
                   />
                 )}
-              {showWelcomeMessage && index === 0 && (
+              {message.role === "assistant" && message.kind !== "confirm-icp" && (
                 <div className="mt-5 flex items-center gap-5 text-[#cfcfcf]">
-                  <ThumbsUp size={14} />
-                  <ThumbsDown size={14} />
-                  <Copy size={14} />
+                  <button type="button" aria-label="Helpful" className={message.feedback === "up" ? "text-[#09232d]" : ""} onClick={() => { setMessages((current) => current.map((item) => item.id === message.id ? { ...item, feedback: "up" } : item)); void submitChatFeedback(message.id, "up").catch(() => undefined); }}><ThumbsUp size={14} /></button>
+                  <button type="button" aria-label="Not helpful" className={message.feedback === "down" ? "text-[#09232d]" : ""} onClick={() => { setMessages((current) => current.map((item) => item.id === message.id ? { ...item, feedback: "down" } : item)); void submitChatFeedback(message.id, "down").catch(() => undefined); }}><ThumbsDown size={14} /></button>
+                  <button type="button" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(message.body); toast.success("Copied."); }}><Copy size={14} /></button>
                 </div>
               )}
             </div>
@@ -2830,7 +2874,7 @@ function ScoreGauge({ score, dark = false }: { score: number; dark?: boolean }) 
         />
         <span className={`relative text-[9px] font-semibold ${dark ? "text-white" : "text-[#09232d]"}`}>{score}%</span>
       </div>
-      <span className={`text-[9px] ${dark ? "text-white/80" : "text-[#616263]"}`}>High</span>
+      <span className={`text-[9px] ${dark ? "text-white/80" : "text-[#616263]"}`}>{scoreBand(score)}</span>
     </div>
   );
 }
@@ -3469,6 +3513,19 @@ function SocialListeningFilters({
   isScanPending?: boolean;
 }) {
   const refreshBusy = isScanning || isScanPending;
+  const socialFilters = useQuery({ queryKey: ["sales-engine", "social-filters"], queryFn: fetchSocialFilters, retry: false });
+  const sourceOptions = [
+    { value: "all", label: "All Sources" },
+    ...(socialFilters.data?.sources?.length
+      ? socialFilters.data.sources.map((item) => ({ value: item.value, label: `${item.label || item.value} (${item.count})` }))
+      : sourceFilterOptions.filter((item) => item.value !== "all")),
+  ];
+  const intentOptions = [
+    { value: "all", label: "All Intent" },
+    ...(socialFilters.data?.buying_stages?.length
+      ? socialFilters.data.buying_stages.map((item) => ({ value: item.value, label: `${item.value} (${item.count})` }))
+      : intentFilterOptions.filter((item) => item.value !== "all")),
+  ];
   return (
     <div className="flex flex-nowrap items-center gap-2 xl:gap-2.5 overflow-x-auto py-1">
       <label className="flex h-9 w-[150px] xl:w-[170px] shrink-0 items-center gap-2 rounded-full bg-white px-3.5 shadow-[0_1px_3px_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.18)]">
@@ -3483,7 +3540,7 @@ function SocialListeningFilters({
       <SearchableSelect
         value={source}
         onChange={onSourceChange}
-        options={sourceFilterOptions}
+        options={sourceOptions}
         className="h-8 min-w-[96px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <SearchableSelect
@@ -3495,7 +3552,7 @@ function SocialListeningFilters({
       <SearchableSelect
         value={intent}
         onChange={onIntentChange}
-        options={intentFilterOptions}
+        options={intentOptions}
         className="h-8 min-w-[90px] shrink-0 rounded-[10px] border border-[#d1d1d1] bg-[#f8f8f8] px-2.5 text-[10px] text-[#34373c]"
       />
       <button
@@ -4060,6 +4117,13 @@ function ListeningSettingsModal({
                     </label>
                   ))}
                 </div>
+                {(settings?.source_health ?? []).length > 0 && (
+                  <ul className="mt-3 space-y-1 text-[11px] text-white/70">
+                    {settings?.source_health?.map((item) => (
+                      <li key={item.key}>{item.label}: {item.status}{item.reason ? ` · ${item.reason}` : ""}</li>
+                    ))}
+                  </ul>
+                )}
                 {enabledSources.includes("meta_graph_pages") && (
                   <div className="mt-4">
                     <label
@@ -4257,6 +4321,7 @@ function SocialListeningTab({
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [pollEnrichment, setPollEnrichment] = useState(false);
+  const queryClient = useQueryClient();
   const perPage = 10;
 
   useEffect(() => {
@@ -4443,17 +4508,18 @@ function SocialListeningTab({
     );
   };
 
-  const executeSetReminder = (signal: SocialSignal) => {
+  const executeSetReminder = (signal: SocialSignal, remindAt?: string) => {
     const actionNote = normalizeRecommendedAction(signal.recommendedAction);
     setReminder.mutate(
       {
         id: signal.id,
         note: [actionNote.title, actionNote.detail].filter(Boolean).join(". ") || undefined,
+        remind_at: remindAt,
       },
       {
         onSuccess: () => {
           setPendingReminderSignal(null);
-          toast.success("Reminder set for 24 hours from now.");
+          toast.success("Reminder scheduled.");
         },
         onError: (error) =>
           toast.error(getApiErrorMessage(error, "Could not set reminder.")),
@@ -4511,17 +4577,15 @@ function SocialListeningTab({
     if (pending.length === 0) return;
 
     setIsBulkSyncing(true);
-    let successCount = 0;
-    let errorCount = 0;
     try {
-      for (const signal of pending) {
-        try {
-          await syncToCrm.mutateAsync({ id: signal.id });
-          successCount += 1;
-        } catch {
-          errorCount += 1;
-        }
+      const result = await syncSocialSignalsBatch(pending.map((signal) => signal.id));
+      const successCount = result.synced.length;
+      const errorCount = result.errors.length;
+      if (errorCount === 0) {
+        setSelectedSignalIds([]);
       }
+      void queryClient.invalidateQueries({ queryKey: ["sales-engine", "social-listening"] });
+      void queryClient.invalidateQueries({ queryKey: ["crm"] });
       if (successCount > 0) {
         toast.success(
           `Added ${successCount} poster${successCount === 1 ? "" : "s"} to CRM.`
@@ -4530,7 +4594,8 @@ function SocialListeningTab({
       if (errorCount > 0) {
         toast.error(`Could not sync ${errorCount} signal${errorCount === 1 ? "" : "s"}.`);
       }
-      setSelectedSignalIds([]);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Could not sync signals to CRM."));
     } finally {
       setIsBulkSyncing(false);
     }
@@ -4553,20 +4618,20 @@ function SocialListeningTab({
     {
       title: "Signals Detected",
       value: (metrics?.signals_detected ?? 0).toLocaleString(),
-      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      percent: formatChange(metrics?.signals_detected_change_percent ?? metrics?.percent_change),
       unit: "Signals",
       active: true,
     },
     {
       title: "High Opportunities",
       value: (metrics?.high_opportunities ?? 0).toLocaleString(),
-      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      percent: formatChange(metrics?.high_opportunities_change_percent),
       unit: "Opportunities",
     },
     {
       title: "Added to CRM",
       value: (metrics?.added_to_crm ?? 0).toLocaleString(),
-      percent: String(Math.max(0, metrics?.percent_change ?? 0)),
+      percent: formatChange(metrics?.added_to_crm_change_percent),
       unit: "Opportunities",
     },
   ];
@@ -4605,6 +4670,7 @@ function SocialListeningTab({
               />
             ))}
           </div>
+          <ReminderList />
           <div className="shrink-0">
             <SocialListeningFilters
               search={search}
@@ -4701,7 +4767,7 @@ function SocialListeningTab({
         remindAtLabel={reminderAtLabel}
         note={reminderNoteForPending}
         isConfirming={setReminder.isPending}
-        onConfirm={() => pendingReminderSignal && executeSetReminder(pendingReminderSignal)}
+        onConfirm={(remindAt) => pendingReminderSignal && executeSetReminder(pendingReminderSignal, remindAt)}
       />
       <AddToCrmPipelineModal
         key={pendingCrmSignal ? `crm-${pendingCrmSignal.id}` : "crm-modal"}
@@ -4765,6 +4831,7 @@ export function SalesEngineView() {
     isAuthLoading: isIcpAuthLoading,
   } = useIcpProfiles();
   const { data: metrics } = useSalesEngineMetrics();
+  const { data: trend } = useQuery({ queryKey: ["sales-engine", "metrics-trend"], queryFn: () => fetchMetricsTrend() });
 
   const leadsInCrm = metrics?.leads_in_crm ?? 0;
   const leadsPendingReview = metrics?.leads_pending_review ?? 0;
@@ -4811,7 +4878,7 @@ export function SalesEngineView() {
             <MetricCard
               title="Lead Metrics"
               value={formatMetric(leadsInCrm)}
-              percent="—"
+              percent={formatChange(metrics?.leads_in_crm_change_percent)}
               active
               unit="Leads"
               href="/crm?source=sales_engine"
@@ -4820,12 +4887,12 @@ export function SalesEngineView() {
             <MetricCard
               title="Pending Review"
               value={formatMetric(leadsPendingReview)}
-              percent="—"
+              percent={formatChange(metrics?.leads_pending_review_change_percent)}
               unit="Drafts"
               href={activeProfile?.id ? `/sales-engine/pending-review?icp_id=${activeProfile.id}` : "/sales-engine/pending-review"}
               actionLabel="Review leads &rarr;"
             />
-            <TrendChart />
+            <TrendChart changePercent={trend?.change_percent} direction={trend?.direction} points={trend?.points} />
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">
                 <Link

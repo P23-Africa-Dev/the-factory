@@ -163,12 +163,9 @@ export function SalesEngineOutreachView() {
     const openedCount = items.filter(
       (item) => item.delivery_status === "opened" || item.delivery_status === "clicked"
     ).length;
-    const emailCount = items.filter(
-      (item) => item.channel?.toLowerCase() === "email"
-    ).length;
-    const whatsappCount = items.filter(
-      (item) => item.channel?.toLowerCase() === "whatsapp"
-    ).length;
+    const emailCount = items.filter((item) => (item.channel ?? "").toLowerCase().startsWith("email")).length;
+    const smsCount = items.filter((item) => (item.channel ?? "").toLowerCase().startsWith("sms")).length;
+    const whatsappCount = items.filter((item) => (item.channel ?? "").toLowerCase().startsWith("whatsapp")).length;
 
     const deliveryRate = total > 0 ? Math.round((deliveredCount / total) * 100) : 0;
     const openRate = total > 0 ? Math.round((openedCount / total) * 100) : 0;
@@ -180,6 +177,7 @@ export function SalesEngineOutreachView() {
       openedCount,
       openRate,
       emailCount,
+      smsCount,
       whatsappCount,
     };
   }, [items]);
@@ -200,7 +198,7 @@ export function SalesEngineOutreachView() {
 
     if (channelFilter !== "all") {
       result = result.filter(
-        (item) => item.channel?.toLowerCase() === channelFilter.toLowerCase()
+        (item) => (item.channel ?? "").toLowerCase().startsWith(channelFilter.toLowerCase())
       );
     }
 
@@ -469,6 +467,10 @@ export function SalesEngineOutreachView() {
                 <span>{metrics.emailCount} Email</span>
               </div>
               <div className="flex flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700">
+                <MessageCircle size={13} className="text-orange-600" />
+                <span>{metrics.smsCount} SMS</span>
+              </div>
+              <div className="flex flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700">
                 <MessageCircle size={13} className="text-emerald-600" />
                 <span>{metrics.whatsappCount} WhatsApp</span>
               </div>
@@ -547,6 +549,24 @@ export function SalesEngineOutreachView() {
                   <span>Email</span>
                   <span className="rounded-md bg-slate-200/60 px-1 text-[10px] text-slate-700">
                     {metrics.emailCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChannelFilter("sms");
+                    setCurrentPage(1);
+                  }}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                    channelFilter === "sms"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <MessageCircle size={12} className="text-orange-600" />
+                  <span>SMS</span>
+                  <span className="rounded-md bg-slate-200/60 px-1 text-[10px] text-slate-700">
+                    {metrics.smsCount}
                   </span>
                 </button>
                 <button
