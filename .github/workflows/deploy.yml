@@ -197,6 +197,14 @@ jobs:
             HEALTH=$(docker exec factory-factory23-nginx-1 wget -qO- http://127.0.0.1/api/v1/health)
             echo "$HEALTH"
             echo "$HEALTH" | grep -q '"success":true'
-            AUTH=$(docker exec factory-factory23-nginx-1 wget -qO /dev/null --server-response http://127.0.0.1/api/v1/user/me 2>&1 | tr -d '\r' | awk '{for (i=1; i<=NF; i++) if ($i ~ /^HTTP\//) code=$(i+1)} END {print code}')
-            echo "Auth status: $AUTH"
+            # /api/v1/health is served by nginx before PHP-FPM listens. Retry /user/me until FPM is up.
+            AUTH=""
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+              AUTH=$(docker exec factory-factory23-nginx-1 wget -qO /dev/null --server-response http://127.0.0.1/api/v1/user/me 2>&1 | tr -d '\r' | awk '{for (i=1; i<=NF; i++) if ($i ~ /^HTTP\//) code=$(i+1)} END {print code}')
+              echo "Auth status attempt ${attempt}: ${AUTH}"
+              if [ "$AUTH" = "401" ]; then
+                break
+              fi
+              sleep 2
+            done
             test "$AUTH" = "401"
