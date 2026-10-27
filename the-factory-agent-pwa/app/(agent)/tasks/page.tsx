@@ -758,10 +758,22 @@ export default function TasksPage() {
             >
               <h3 className="mb-4 text-lg font-bold font-sans">Edit Task</h3>
               <div className="space-y-3">
-                <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} placeholder="Task title" />
-                <textarea className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm min-h-20" value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} placeholder="Description" />
-                <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.location} onChange={(e) => setEditForm((p) => ({ ...p, location: e.target.value }))} placeholder="Location" />
-                <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} placeholder="Address" />
+                <div>
+                  <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans block">Task Title</label>
+                  <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans block">Description</label>
+                  <textarea className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm min-h-20" value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans block">Location</label>
+                  <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.location} onChange={(e) => setEditForm((p) => ({ ...p, location: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans block">Address</label>
+                  <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} />
+                </div>
               </div>
               <div className="mt-5 flex gap-3">
                 <button className="flex-1 h-10 rounded-full border border-white/15 text-xs font-semibold" onClick={() => setTaskToEdit(null)}>Cancel</button>

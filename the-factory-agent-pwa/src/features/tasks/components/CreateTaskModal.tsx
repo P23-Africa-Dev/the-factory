@@ -230,7 +230,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             </label>
             <input
               type="text"
-              placeholder="e.g., Deliver items to client"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
@@ -261,7 +260,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
               Description
             </label>
             <textarea
-              placeholder="e.g., Review contract details and collect invoice."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
@@ -309,9 +307,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                   setCoords(null);
                 }}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder="e.g., Shoprite Mall"
+                placeholder=""
                 variant="dark"
-                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors placeholder:text-white/30"
+                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
               />
             </div>
 
@@ -341,9 +339,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                   setCoords(null);
                 }}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder="e.g., 24 Admiralty Way, Lekki Phase 1"
+                placeholder=""
                 variant="dark"
-                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors placeholder:text-white/30"
+                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
               />
               {coords ? (
                 <p className="text-[9px] text-green-400 mt-1 font-semibold flex items-center gap-1 font-sans">
@@ -380,7 +378,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="e.g., Take shopfront photo"
                 value={actionInput}
                 onChange={(e) => setActionInput(e.target.value)}
                 onKeyDown={(e) => {
