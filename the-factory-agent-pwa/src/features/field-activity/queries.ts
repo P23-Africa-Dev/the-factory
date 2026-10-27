@@ -10,12 +10,27 @@ export const FIELD_ACTIVITY_KEYS = {
   journey: (id: number | string) => ['field-activity', 'journey', id] as const,
 };
 
+function pollWhenVisible(activeMs: number, idleMs: number) {
+  return (query: { state: { data?: unknown } }) => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      return false as const;
+    }
+    const data = query.state.data as
+      | { enabled?: boolean; session?: { status?: string } | null }
+      | undefined;
+    if (data?.enabled && data.session?.status === 'active') return activeMs;
+    return idleMs;
+  };
+}
+
 export function useFieldActivityToday(enabled = true) {
   return useQuery({
     queryKey: FIELD_ACTIVITY_KEYS.today,
     queryFn: () => fieldActivityApi.today(),
     enabled,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchInterval: pollWhenVisible(120_000, 300_000),
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -42,7 +57,14 @@ export function useFieldActivityPendingReview(enabled = true) {
     queryKey: FIELD_ACTIVITY_KEYS.pendingReview,
     queryFn: () => fieldActivityApi.pendingReview(),
     enabled,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchInterval: () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return false;
+      }
+      return 300_000;
+    },
+    refetchIntervalInBackground: false,
   });
 }
 

@@ -25,7 +25,6 @@ import {
 export function useDeviceNotificationBridge(): void {
   const pending = useNotificationStore((s) => s.pendingNotification);
   const setPending = useNotificationStore((s) => s.setPendingNotification);
-  const liveTaskMap = useTrackingStore((s) => s.liveTaskMap);
   const lastStatusRef = useRef<Record<number, string>>({});
   const bootstrappedRef = useRef(false);
 
@@ -59,21 +58,27 @@ export function useDeviceNotificationBridge(): void {
   }, [pending, setPending]);
 
   useEffect(() => {
-    const entries = Object.values(liveTaskMap);
-    for (const task of entries) {
-      const prev = lastStatusRef.current[task.taskId];
-      const next = task.status;
-      if (prev === next) continue;
-      lastStatusRef.current[task.taskId] = next;
-      if (prev == null) continue;
-      if (next === 'arrived' && prev !== 'arrived') {
-        void notifyTrackingArrived(task.taskId);
-      }
-      // WS-driven completion when the agent isn't on the complete screen.
-      // Deduped by tag if CompleteRequirementsSheet already notified.
-      if (next === 'completed' && prev !== 'completed') {
-        void notifyTrackingCompleted(task.taskId, task.taskTitle);
-      }
+    const seed = useTrackingStore.getState().liveTaskMap;
+    for (const task of Object.values(seed)) {
+      lastStatusRef.current[task.taskId] = task.status;
     }
-  }, [liveTaskMap]);
+
+    return useTrackingStore.subscribe((state) => {
+      for (const task of Object.values(state.liveTaskMap)) {
+        const prev = lastStatusRef.current[task.taskId];
+        const next = task.status;
+        if (prev === next) continue;
+        lastStatusRef.current[task.taskId] = next;
+        if (prev == null) continue;
+        if (next === 'arrived' && prev !== 'arrived') {
+          void notifyTrackingArrived(task.taskId);
+        }
+        // WS-driven completion when the agent isn't on the complete screen.
+        // Deduped by tag if CompleteRequirementsSheet already notified.
+        if (next === 'completed' && prev !== 'completed') {
+          void notifyTrackingCompleted(task.taskId, task.taskTitle);
+        }
+      }
+    });
+  }, []);
 }

@@ -23,6 +23,7 @@ import { useRegenerateOutreach, useSendOutreachActivity } from "@/hooks/use-sale
 import { useOutreachInboxes } from "@/hooks/use-sales-engine-outreach-inbox";
 import { useOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { normalizeOutreachSubjectBody, SalesEngineApiError } from "@/lib/api/sales-engine";
+import PhoneNumberInput from "@/components/ui/phone-number-input";
 
 export type OutreachPreviewModalProps = {
   open: boolean;
@@ -60,6 +61,10 @@ function isValidEmail(value: string): boolean {
 function isValidPhone(value: string): boolean {
   const digits = value.replace(/\D/g, "");
   return digits.length >= 8 && digits.length <= 15;
+}
+
+function whatsappHref(phone: string, text: string): string {
+  return `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
 }
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
@@ -124,11 +129,12 @@ export function OutreachPreviewModal({
   const sendOutreach = useSendOutreachActivity();
   const regenerate = useRegenerateOutreach();
   const [dispatchChannel, setDispatchChannel] = useState<"email" | "whatsapp" | "sms">(channel);
-  const { data: senderSettings } = useOutreachSenderSettings(open && dispatchChannel !== "whatsapp");
+  const { data: senderSettings } = useOutreachSenderSettings(open);
   const { data: inboxes } = useOutreachInboxes(open && dispatchChannel === "email");
 
   const [toEmail, setToEmail] = useState(initialToEmail);
   const [toPhone, setToPhone] = useState(initialToPhone);
+  const [whatsappFallback, setWhatsappFallback] = useState(false);
   const [subject, setSubject] = useState(initialSubject ?? "");
   const [body, setBody] = useState(initialBody);
   const [instructions, setInstructions] = useState("");
@@ -199,6 +205,7 @@ export function OutreachPreviewModal({
     /* eslint-disable react-hooks/set-state-in-effect -- reset draft fields when modal opens */
     clearTypewriter();
     setDispatchChannel(channel);
+    setWhatsappFallback(false);
     setToEmail(initialToEmail);
     setToPhone(initialToPhone);
     setSubject(normalized.subject);
@@ -273,6 +280,12 @@ export function OutreachPreviewModal({
     body.trim().length <= 480 &&
     !isBusy &&
     smsReady;
+  const canSendWhatsapp =
+    dispatchChannel === "whatsapp" &&
+    Boolean(activityId) &&
+    phoneValid &&
+    bodyReady &&
+    !isBusy;
 
   useEffect(() => {
     if (!isAiRewriting) return;
@@ -357,6 +370,33 @@ export function OutreachPreviewModal({
       );
       return;
     }
+    if (dispatchChannel === "whatsapp") {
+      if (!canSendWhatsapp) return;
+      sendOutreach.mutate(
+        {
+          activityId,
+          channel: "whatsapp",
+          to_phone: toPhone.trim(),
+          body: body.trim(),
+        },
+        {
+          onSuccess: () => {
+            toast.success(`WhatsApp queued for ${toPhone.trim()}.`);
+            onSent();
+            onClose();
+          },
+          onError: (error) => {
+            if (error instanceof SalesEngineApiError && error.code === "whatsapp_not_configured") {
+              setWhatsappFallback(true);
+              toast.message("WhatsApp is not configured. Copy the message or open WhatsApp.");
+              return;
+            }
+            toast.error(getApiErrorMessage(error, "Could not send WhatsApp message."));
+          },
+        }
+      );
+      return;
+    }
     if (!canSendEmail) return;
     if (!usingPlatform && !selectedInboxId) return;
     sendOutreach.mutate(
@@ -382,6 +422,7 @@ export function OutreachPreviewModal({
     activityId,
     dispatchChannel,
     canSendSms,
+    canSendWhatsapp,
     canSendEmail,
     usingPlatform,
     selectedInboxId,
@@ -400,14 +441,14 @@ export function OutreachPreviewModal({
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
-        if (canSendEmail || canSendSms) {
+        if (canSendEmail || canSendSms || canSendWhatsapp) {
           handleSend();
         }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, canSendEmail, canSendSms, handleSend]);
+  }, [open, canSendEmail, canSendSms, canSendWhatsapp, handleSend]);
 
   return typeof document !== "undefined"
     ? createPortal(
@@ -474,24 +515,21 @@ export function OutreachPreviewModal({
                                 ? "SMS"
                                 : "Direct Email"}
                           </span>
-                          {dispatchChannel !== "whatsapp" && (
-                            <span className="inline-flex overflow-hidden rounded-full border border-slate-200 text-[10px] font-semibold">
+                          <span className="inline-flex overflow-hidden rounded-full border border-slate-200 text-[10px] font-semibold">
+                            {(["email", "sms", "whatsapp"] as const).map((option) => (
                               <button
+                                key={option}
                                 type="button"
-                                onClick={() => setDispatchChannel("email")}
-                                className={`px-2.5 py-0.5 ${dispatchChannel === "email" ? "bg-[#09232d] text-white" : "bg-white text-slate-600"}`}
+                                onClick={() => {
+                                  setDispatchChannel(option);
+                                  setWhatsappFallback(false);
+                                }}
+                                className={`px-2.5 py-0.5 ${dispatchChannel === option ? "bg-[#09232d] text-white" : "bg-white text-slate-600"}`}
                               >
-                                Email
+                                {option === "email" ? "Email" : option === "sms" ? "SMS" : "WhatsApp"}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setDispatchChannel("sms")}
-                                className={`px-2.5 py-0.5 ${dispatchChannel === "sms" ? "bg-[#09232d] text-white" : "bg-white text-slate-600"}`}
-                              >
-                                SMS
-                              </button>
-                            </span>
-                          )}
+                            ))}
+                          </span>
 
                           <span
                             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
@@ -603,22 +641,21 @@ export function OutreachPreviewModal({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="relative">
-                          {dispatchChannel === "sms" ? (
-                          <input
-                            type="tel"
-                            value={toPhone}
-                            onChange={(e) => setToPhone(e.target.value)}
-                            placeholder="+2348012345678"
-                            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#09232d] focus:ring-1 focus:ring-[#09232d]"
-                          />
-                        ) : (
+                          {dispatchChannel === "email" ? (
                           <input
                             type="email"
                             value={toEmail}
                             onChange={(e) => setToEmail(e.target.value)}
                             placeholder="recipient@company.com"
-                            disabled={dispatchChannel === "whatsapp"}
-                            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#09232d] focus:ring-1 focus:ring-[#09232d] disabled:bg-slate-100 disabled:text-slate-400"
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-900 outline-none transition focus:border-[#09232d] focus:ring-1 focus:ring-[#09232d]"
+                          />
+                        ) : (
+                          <PhoneNumberInput
+                            value={toPhone}
+                            onChange={setToPhone}
+                            placeholder="Phone number"
+                            defaultCountry="NG"
+                            variant="compact"
                           />
                         )}
                         </div>
@@ -630,7 +667,7 @@ export function OutreachPreviewModal({
                         Please enter a valid email address.
                       </p>
                     )}
-                    {dispatchChannel === "sms" && toPhone.trim() && !phoneValid && (
+                    {dispatchChannel !== "email" && toPhone.trim() && !phoneValid && (
                       <p className="pl-[68px] text-[10px] font-semibold text-rose-600">
                         Enter a phone number with country code.
                       </p>
@@ -907,12 +944,15 @@ export function OutreachPreviewModal({
                   </div>
 
                   {/* Channel Guidance (WhatsApp) */}
-                  {channel === "whatsapp" && (
-                    <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900 font-medium">
+                  {dispatchChannel === "whatsapp" && (whatsappFallback || senderSettings?.whatsapp?.configured === false) && (
+                    <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-900 font-medium">
                       <Radio size={14} className="text-emerald-600 shrink-0" />
-                      <span>
-                        WhatsApp direct dispatch is in beta. Use <strong>Copy Message</strong> to paste and send directly into WhatsApp Web or mobile.
-                      </span>
+                      <span>WhatsApp sending is not configured. Copy stays available.</span>
+                      {phoneValid && (
+                        <a href={whatsappHref(toPhone, body)} target="_blank" rel="noreferrer" className="underline">
+                          Open in WhatsApp
+                        </a>
+                      )}
                     </div>
                   )}
 
@@ -957,10 +997,10 @@ export function OutreachPreviewModal({
                       Cancel
                     </button>
 
-                    {dispatchChannel === "email" || dispatchChannel === "sms" ? (
+                    {dispatchChannel === "email" || dispatchChannel === "sms" || dispatchChannel === "whatsapp" ? (
                       <button
                         type="button"
-                        disabled={dispatchChannel === "sms" ? !canSendSms : !canSendEmail}
+                        disabled={dispatchChannel === "sms" ? !canSendSms : dispatchChannel === "whatsapp" ? !canSendWhatsapp : !canSendEmail}
                         onClick={handleSend}
                         className="inline-flex h-9.5 items-center gap-2 rounded-xl bg-[#09232d] px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#153e4e] active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                       >
@@ -972,7 +1012,7 @@ export function OutreachPreviewModal({
                         ) : (
                           <>
                             <Send size={13} />
-                            <span>{dispatchChannel === "sms" ? "Send SMS" : "Send Email"}</span>
+                            <span>{dispatchChannel === "sms" ? "Send SMS" : dispatchChannel === "whatsapp" ? "Send WhatsApp" : "Send Email"}</span>
                             <kbd className="hidden sm:inline-block text-[9px] bg-white/20 px-1.5 py-0.5 rounded text-white/90">
                               ⌘↵
                             </kbd>

@@ -2,7 +2,7 @@
 
 import React, { useLayoutEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { resolvePwaAccess, isInstallPath } from '@/lib/pwa/access';
+import { resolvePwaAccess, isInstallPath, isPwaOnlyModeEnabled } from '@/lib/pwa/access';
 import { isStandaloneMode } from '@/lib/pwa/standalone';
 import { getAppLaunchPath } from '@/lib/pwa/launch';
 
@@ -17,7 +17,11 @@ function InstallRedirectSpinner() {
 export function PwaAccessGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  // When install enforcement is off, allow immediately so cold start is not
+  // blocked on a layout effect. When it is on, stay null until the client check.
+  const [allowed, setAllowed] = useState<boolean | null>(() =>
+    isPwaOnlyModeEnabled() ? null : true,
+  );
 
   useLayoutEffect(() => {
     const result = resolvePwaAccess(pathname);
@@ -37,12 +41,13 @@ export function PwaAccessGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (result.redirect && result.redirect !== pathname) {
-      setAllowed(false);
+      setAllowed((prev) => (prev === false ? prev : false));
       router.replace(result.redirect);
       return;
     }
 
-    setAllowed(result.allowed);
+    const nextAllowed = result.allowed;
+    setAllowed((prev) => (prev === nextAllowed ? prev : nextAllowed));
   }, [pathname, router]);
 
   if (allowed === null || !allowed) {

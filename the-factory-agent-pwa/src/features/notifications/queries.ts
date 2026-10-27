@@ -2,13 +2,19 @@ import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { useNotificationStore } from '@/store/notifications';
+import { useTrackingStore } from '@/store/tracking';
 import { notificationsApi } from './api';
 import { notificationKeys } from './queryKeys';
 import type { AppNotification, NotificationFilters, UpdatePreferencesPayload } from './types';
 
 // ── Queries ─────────────────────────────────────────────────────────────────
 
-export function useNotifications(filters?: Omit<NotificationFilters, 'page'>) {
+export function useNotifications(
+  filters?: Omit<NotificationFilters, 'page'>,
+  options?: { enabled?: boolean },
+) {
+  const enabled = options?.enabled ?? true;
+
   return useInfiniteQuery({
     queryKey: notificationKeys.list(filters),
     queryFn: async ({ pageParam }) => {
@@ -19,8 +25,9 @@ export function useNotifications(filters?: Omit<NotificationFilters, 'page'>) {
     },
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.pagination.next_page_url ?? null,
-    refetchOnMount: 'always',
-    refetchInterval: 1000 * 60,
+    enabled,
+    refetchOnMount: enabled,
+    refetchInterval: enabled ? 1000 * 60 * 5 : false,
   });
 }
 
@@ -30,8 +37,14 @@ export function useUnreadCount() {
   const query = useQuery({
     queryKey: notificationKeys.unreadCount(),
     queryFn: notificationsApi.unreadCount,
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 30,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return false;
+      }
+      if (useTrackingStore.getState().wsStatus === 'connected') return false;
+      return 1000 * 60 * 2;
+    },
   });
 
   const apiCount = query.data ?? 0;

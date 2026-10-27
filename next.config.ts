@@ -16,6 +16,15 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'factory23-files-45822258.lon1.cdn.digitaloceanspaces.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'factory23-files-45822258.lon1.digitaloceanspaces.com',
+      },
+      // Legacy bucket kept during cutover; remove after old Spaces is deleted.
+      {
+        protocol: 'https',
         hostname: 'factory23-storage.lon1.cdn.digitaloceanspaces.com',
       },
       {

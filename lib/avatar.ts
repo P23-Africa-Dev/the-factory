@@ -2,7 +2,7 @@ import type { SyntheticEvent } from "react";
 
 const SPACES_ORIGIN =
   process.env.NEXT_PUBLIC_SPACES_ORIGIN_URL ??
-  "https://factory23-storage.lon1.digitaloceanspaces.com";
+  "https://factory23-files-45822258.lon1.digitaloceanspaces.com";
 
 export const DEFAULT_AVATAR =
   process.env.NEXT_PUBLIC_AVATAR_DEFAULT_URL ??
@@ -10,27 +10,14 @@ export const DEFAULT_AVATAR =
 
 /**
  * DigitalOcean CDN hostnames can 404 when CDN is disabled or not yet propagated.
- * Rewrite to the direct Spaces origin so stale API URLs still load.
+ * Keep the same bucket hostname and only strip the `.cdn.` segment.
+ * Never rewrite onto a different bucket (that broke avatars after the Spaces move).
  */
 export function normalizeSpacesAvatarUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-
-    if (!parsed.hostname.endsWith(".cdn.digitaloceanspaces.com")) {
-      return url;
-    }
-
-    const origin = new URL(SPACES_ORIGIN);
-    parsed.hostname = origin.hostname;
-    parsed.protocol = origin.protocol;
-
-    return parsed.toString();
-  } catch {
-    return url.replace(
-      /\.cdn\.digitaloceanspaces\.com/g,
-      ".digitaloceanspaces.com",
-    );
-  }
+  return url.replace(
+    /\.cdn\.digitaloceanspaces\.com/g,
+    ".digitaloceanspaces.com",
+  );
 }
 
 function apiOrigin(): string {

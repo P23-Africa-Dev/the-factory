@@ -4,7 +4,14 @@
  */
 'use client';
 
-import React, { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react';
 import { appStore, trackingStore, setActiveCompanyId } from '@/lib/storage/stores';
 import { clearSavedRoute } from '@/lib/pwa/routeRestoration';
 
@@ -45,8 +52,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (storedUser?.company_id && typeof storedUser.company_id === 'number') {
         setActiveCompanyId(storedUser.company_id);
       }
-      setTimeout(() => setToken(storedToken), 0);
-      setTimeout(() => setUser(storedUser), 0);
+      // Apply token and user in the same turn as isLoading so the agent
+      // shell never sees "loaded but signed out" and bounces to /login.
+      setToken(storedToken);
+      setUser(storedUser);
       if (storedToken) {
         void import('@/lib/offline/syncCredentials')
           .then((m) => m.writeSyncCredentials(storedToken))
@@ -59,7 +68,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const login = (newToken: string, newUser?: AuthUser) => {
+  const login = useCallback((newToken: string, newUser?: AuthUser) => {
     try {
       appStore.set('auth_token', newToken);
       if (newUser) {
@@ -78,7 +87,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error('[Auth] Login error:', err);
     }
-  };
+  }, []);
 
   const updateUser = useCallback((partial: Partial<AuthUser>) => {
     setUser((prev) => {
@@ -106,7 +115,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     try {
       // Best-effort: deactivate FCM / clear native push listeners before wiping auth.
       void import('@/features/tracking/native/nativePushNotifications')
@@ -188,13 +197,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error('[Auth] Logout error:', err);
     }
-  };
+  }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{ token, user, isSignedIn: !!token, isLoading, login, updateUser, logout }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      token,
+      user,
+      isSignedIn: !!token,
+      isLoading,
+      login,
+      updateUser,
+      logout,
+    }),
+    [token, user, isLoading, login, updateUser, logout],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

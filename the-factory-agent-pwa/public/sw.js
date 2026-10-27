@@ -2,9 +2,9 @@
  * Service Worker — offline-first caching strategies.
  *
  * Cache strategies:
- * - Cache First: static assets (CSS, JS, images, fonts)
- * - Network First: API calls (/api/v1/*)
- * - Stale While Revalidate: Mapbox tiles + RSC payloads
+ * - Network First: API calls, RSC / router payloads, and non-hashed /_next requests
+ * - Bypass: hashed /_next/static assets (browser cache; SW must not serve a stale body)
+ * - Stale While Revalidate: Mapbox tiles only
  * - Navigation fallback: cached pages, then /offline.html shell
  *
  * Background Sync limitations (pure PWA):
@@ -17,10 +17,10 @@
  *   installed PWA / browser tabs.
  */
 
-const CACHE_NAME = "factory-agent-pwa-v13";
-const STATIC_CACHE = "factory-static-v13";
-const API_CACHE = "factory-api-v13";
-const PAGE_CACHE = "factory-pages-v13";
+const CACHE_NAME = "factory-agent-pwa-v14";
+const STATIC_CACHE = "factory-static-v14";
+const API_CACHE = "factory-api-v14";
+const PAGE_CACHE = "factory-pages-v14";
 
 /** Keep in sync with src/lib/notifications/pwaNotificationIcons.ts */
 const PWA_NOTIFICATION_ICON = "/icons/icon-192x192.png";
@@ -211,8 +211,14 @@ self.addEventListener("fetch", (event) => {
     request.headers.get("Next-Router-Prefetch") === "1" ||
     request.headers.get("Next-Router-State-Tree") != null;
 
+  // Hashed build files are immutable. Let the browser cache handle them so the
+  // SW cannot answer a navigation with a stale JS/CSS body.
+  if (url.pathname.startsWith("/_next/static/")) {
+    return;
+  }
+
   if (url.pathname.startsWith("/_next/") || isRscRequest) {
-    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
+    event.respondWith(networkFirst(request));
     return;
   }
 
@@ -569,7 +575,7 @@ async function cacheRoutes(routes) {
     if (typeof route !== "string" || !route.startsWith("/")) continue;
 
     try {
-      const response = await fetch(route);
+      const response = await fetch(route, { cache: "force-cache" });
       if (response.ok) {
         const cloned = response.clone();
         await cache.put(route, cloned);

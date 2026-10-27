@@ -2,28 +2,18 @@ import { env } from '@/constants/env';
 
 const SPACES_ORIGIN =
   process.env.NEXT_PUBLIC_SPACES_ORIGIN_URL ??
-  'https://factory23-storage.lon1.digitaloceanspaces.com';
+  'https://factory23-files-45822258.lon1.digitaloceanspaces.com';
 
 export const DEFAULT_AVATAR =
   process.env.NEXT_PUBLIC_AVATAR_DEFAULT_URL ??
   `${SPACES_ORIGIN}/avatar/default/ghost.svg`;
 
+/**
+ * Keep the same bucket hostname and only strip the `.cdn.` segment.
+ * Never rewrite onto a different bucket after the Spaces account move.
+ */
 export function normalizeSpacesAvatarUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-
-    if (!parsed.hostname.endsWith('.cdn.digitaloceanspaces.com')) {
-      return url;
-    }
-
-    const origin = new URL(SPACES_ORIGIN);
-    parsed.hostname = origin.hostname;
-    parsed.protocol = origin.protocol;
-
-    return parsed.toString();
-  } catch {
-    return url.replace(/\.cdn\.digitaloceanspaces\.com/g, '.digitaloceanspaces.com');
-  }
+  return url.replace(/\.cdn\.digitaloceanspaces\.com/g, '.digitaloceanspaces.com');
 }
 
 export function getSafeAvatarSrc(rawAvatar: string | null | undefined): string | null {
