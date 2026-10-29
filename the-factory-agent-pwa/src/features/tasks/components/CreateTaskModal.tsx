@@ -47,7 +47,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
 
   // Form states
   const [title, setTitle] = useState('');
-  const [type, setType] = useState<'sales_visit' | 'inspection' | 'delivery' | 'collection' | 'awareness'>('sales_visit');
+  const [type, setType] = useState<'' | 'sales_visit' | 'inspection' | 'delivery' | 'collection' | 'awareness'>('');
   const [description, setDescription] = useState('');
   const [locationName, setLocationName] = useState('');
   const [address, setAddress] = useState('');
@@ -139,6 +139,10 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       toast.error('Task title is required.');
       return;
     }
+    if (!type) {
+      toast.error('Task type is required.');
+      return;
+    }
     if (visitVerification && !coords) {
       toast.error('Visit verification requires GPS coordinates. Please search or use GPS location.');
       return;
@@ -182,7 +186,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
 
   const handleReset = () => {
     setTitle('');
-    setType('sales_visit');
+    setType('');
     setDescription('');
     setLocationName('');
     setAddress('');
@@ -243,9 +247,11 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             </label>
             <select
               value={type}
+              required
               onChange={(e) => setType(e.target.value as typeof type)}
               className="bg-[#0B1E26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
             >
+              <option value="" disabled />
               {TASK_TYPES.map((t) => (
                 <option key={t.value} value={t.value} className="bg-[#0B1E26] text-white">
                   {t.label}

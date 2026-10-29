@@ -8,6 +8,18 @@ export function useNotificationNavigation() {
   const router = useRouter();
 
   const navigateToNotification = (notification: AppNotification): void => {
+    // Lead events carry a canonical lead ID; older action URLs may point elsewhere.
+    if (notification.type.startsWith('crm.lead_')) {
+      const metadataId = notification.metadata?.lead_id;
+      const leadId = metadataId ?? (
+        notification.referenceType?.includes('Lead') ? notification.referenceId : null
+      );
+      if (leadId != null && /^[1-9]\d*$/.test(String(leadId))) {
+        router.push(`/crm/leads/${leadId}`);
+        return;
+      }
+    }
+
     if (notification.actionUrl) {
       router.push(resolveAgentDeepLink(notification.actionUrl));
       return;
