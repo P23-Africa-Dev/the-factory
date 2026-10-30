@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "typeRoots": ["../the-factory-agent-pwa/node_modules/@types"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "*": ["../the-factory-agent-pwa/node_modules/*"]
+    }
+  }
+}
+

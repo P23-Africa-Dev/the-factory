@@ -1,0 +1,67 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files — never commit real credentials
+.env*
+!.env*.example
+!.env.local.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# cursor / agent debug logs
+.cursor/
+debug-*.log
+
+# Capacitor / Android build outputs (source project is committed)
+android/.gradle/
+android/**/build/
+android/app/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Firebase — never commit the real Android config or Admin SDK keys
+android/app/google-services.json
+android/app/fcatory23-apk-*.json
+**/firebase-adminsdk*.json
+**/fcm-service-account*.json
+
+# Allow the published install APK (overwritten by npm run apk:release)
+!public/downloads/
+!public/downloads/.gitkeep
+!public/downloads/factory23-agent.apk
