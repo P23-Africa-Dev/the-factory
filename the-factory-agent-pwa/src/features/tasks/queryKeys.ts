@@ -7,4 +7,5 @@ export const taskKeys = {
   details: () => [...taskKeys.all, 'detail'] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
   route: (id: string) => [...taskKeys.detail(id), 'route'] as const,
+  comments: (id: string) => [...taskKeys.all, 'comments', id] as const,
 };

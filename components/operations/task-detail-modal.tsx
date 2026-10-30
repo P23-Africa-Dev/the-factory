@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 import { LocationPermissionGate } from '@/components/tracking/LocationPermissionGate';
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
 import { TaskProofGallery } from '@/components/operations/task-proof-gallery';
+import { TaskComments } from '@/components/operations/task-comments';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
@@ -668,13 +669,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                       <p key={i}>{line}</p>
                     ))
                     : (
-                      <>
-                        <p>Visit the Ikeja Computer village, and promote (product name) to the target audience there.</p>
-                        <p className="mt-2">Speak with the business owner and note:</p>
-                        <p>- Contact Details</p>
-                        <p>- Prospect brief</p>
-                        <p>- Any other usable details.</p>
-                      </>
+                      // Presentation-only empty state for legacy tasks; never persisted.
+                      <p className="italic text-gray-400">No description provided.</p>
                     )
                   }
                 </div>
@@ -785,6 +781,13 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   }}
                 />
               ) : null}
+              {taskId > 0 && (
+                <TaskComments
+                  taskId={taskId}
+                  companyId={companyId ?? undefined}
+                  className="mt-6 pt-5 border-t border-gray-100"
+                />
+              )}
               <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
                 <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>
                 {hasPendingReassignment ? (

@@ -12,6 +12,7 @@ import {
   formatTaskLocationLabel,
   taskHasMapLocation,
 } from '@/features/tasks';
+import { TaskComments } from '@/features/tasks/components/TaskComments';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 
@@ -52,13 +53,19 @@ function MetaRow({ label, value, icon: Icon }: { label: string; value: string; i
   );
 }
 
-function Section({ title, body }: { title: string; body: string }) {
+function Section({ title, body, muted = false }: { title: string; body: string; muted?: boolean }) {
   return (
     <div className="mb-5 font-sans">
       <h4 className="text-xs font-bold text-[#75ADAF] mb-1.5 uppercase tracking-wider">
         {title}
       </h4>
-      <p className="text-sm text-[#D0D0D0] leading-relaxed">{body}</p>
+      <p
+        className={`text-sm leading-relaxed whitespace-pre-wrap ${
+          muted ? 'text-[#8F9098] italic' : 'text-[#D0D0D0]'
+        }`}
+      >
+        {body}
+      </p>
     </div>
   );
 }
@@ -194,8 +201,14 @@ export default function TaskDetailPage() {
           {task.assignedBy && <MetaRow label="Assigned By" value={task.assignedBy} icon={User} />}
         </div>
 
-        {task.description && <Section title="Description" body={task.description} />}
+        <Section
+          title="Description"
+          body={task.description?.trim() ? task.description : 'No description provided.'}
+          muted={!task.description?.trim()}
+        />
         {task.instructions && <Section title="Instructions" body={task.instructions} />}
+
+        <TaskComments taskId={task.id} />
 
         <div className="h-[0.5px] bg-white/6 my-6" />
 

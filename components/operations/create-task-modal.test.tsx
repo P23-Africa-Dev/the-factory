@@ -73,6 +73,18 @@ function setUser(id: number, role: "owner" | "admin" | "supervisor" | "agent") {
   });
 }
 
+function fillDescription(value: string) {
+  fireEvent.change(screen.getByPlaceholderText("e.g. Check stock and speak to manager"), {
+    target: { value },
+  });
+}
+
+function fillTitle(value: string) {
+  fireEvent.change(screen.getByPlaceholderText("e.g. Visit Shoprite Lekki"), {
+    target: { value },
+  });
+}
+
 describe("CreateTaskModal task assignees", () => {
   beforeEach(() => {
     mocks.createTask.mockReset();
@@ -137,6 +149,7 @@ describe("CreateTaskModal task assignees", () => {
     fireEvent.change(screen.getByPlaceholderText("e.g. Visit Shoprite Lekki"), {
       target: { value: "Review operations report" },
     });
+    fillDescription("Check the stock and speak to the manager.");
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(mocks.createTask).toHaveBeenCalledWith(
@@ -154,9 +167,62 @@ describe("CreateTaskModal task assignees", () => {
     fireEvent.change(screen.getByPlaceholderText("e.g. Visit Shoprite Lekki"), {
       target: { value: "Agent field visit" },
     });
+    fillDescription("Check the stock and speak to the manager.");
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(mocks.createSelfTask).toHaveBeenCalled();
     expect(mocks.createTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("CreateTaskModal description validation", () => {
+  beforeEach(() => {
+    mocks.createTask.mockReset();
+    mocks.createSelfTask.mockReset();
+  });
+
+  it.each([
+    ["owner", 7],
+    ["agent", 10],
+  ] as const)("blocks %s submission when the description is missing", (role, id) => {
+    setUser(id, role);
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(screen.getByText("Task description is required.")).not.toBeNull();
+    expect(mocks.createTask).not.toHaveBeenCalled();
+    expect(mocks.createSelfTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects whitespace-only descriptions", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fillDescription("    \n   ");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(screen.getByText("Task description is required.")).not.toBeNull();
+    expect(mocks.createTask).not.toHaveBeenCalled();
+  });
+
+  it("clears the error once a valid description is entered and sends it trimmed", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    expect(screen.getByText("Task description is required.")).not.toBeNull();
+
+    fillDescription("  Meet the operations lead and collect feedback.  ");
+    expect(screen.queryByText("Task description is required.")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    expect(mocks.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Meet the operations lead and collect feedback." }),
+      expect.any(Object),
+    );
   });
 });

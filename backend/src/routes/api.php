@@ -74,6 +74,7 @@ use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
+use App\Http\Controllers\Api\V1\Task\TaskCommentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
 use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
@@ -446,6 +447,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
+                Route::get('/{task}/comments', [TaskCommentController::class, 'index'])->name('comments.index');
+                Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('comments.store');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
                 Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
@@ -826,6 +831,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
+                Route::get('/{task}/comments', [TaskCommentController::class, 'index'])->name('comments.index');
+                Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('comments.store');
                 Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
                     ->middleware('throttle:api-heavy')
                     ->name('start');
@@ -1060,6 +1069,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('destroy');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
+        Route::get('/{task}/comments', [TaskCommentController::class, 'index'])->name('comments.index');
+        Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('comments.store');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
             ->middleware('throttle:api-heavy')
             ->name('start');
