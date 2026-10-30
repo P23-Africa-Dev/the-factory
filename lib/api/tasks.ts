@@ -294,6 +294,59 @@ export function getTask(
   });
 }
 
+export type TaskCommentAuthorRole = "owner" | "admin" | "supervisor" | "agent";
+
+export type TaskCommentItem = {
+  id: number;
+  task_id: number;
+  body: string;
+  author: {
+    id: number;
+    name: string;
+    role: TaskCommentAuthorRole | string | null;
+    avatar_url?: string | null;
+  } | null;
+  is_mine: boolean;
+  created_at: string | null;
+  updated_at?: string | null;
+};
+
+export type TaskCommentsData = {
+  items: TaskCommentItem[];
+  can_comment: boolean;
+};
+
+export const TASK_COMMENT_MAX_LENGTH = 2000;
+
+export function listTaskComments(
+  taskId: number | string,
+  params: { company_id?: number | string },
+  token: string
+): Promise<ApiEnvelope<TaskCommentsData>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  return apiRequest<TaskCommentsData>({
+    method: "GET",
+    path: `/tasks/${taskId}/comments${query}`,
+    token,
+  });
+}
+
+export function createTaskComment(
+  taskId: number | string,
+  payload: { body: string; company_id?: number | string },
+  token: string
+): Promise<ApiEnvelope<{ comment: TaskCommentItem }>> {
+  return apiRequest<{ comment: TaskCommentItem }>({
+    method: "POST",
+    path: `/tasks/${taskId}/comments`,
+    body: payload,
+    token,
+  });
+}
+
 export function assignTask(
   taskId: number | string,
   payload: AssignTaskPayload,

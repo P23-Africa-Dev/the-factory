@@ -19,6 +19,7 @@ import type { RetrievedPlace } from '@/lib/map/place-search';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import { toast } from '@/lib/toast';
 import { useAgentIdentity } from '@/features/auth';
+import { validateTaskDescription, TASK_DESCRIPTION_MAX_LENGTH } from '../description';
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -49,6 +50,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<'' | 'sales_visit' | 'inspection' | 'delivery' | 'collection' | 'awareness'>('');
   const [description, setDescription] = useState('');
+  const [descriptionError, setDescriptionError] = useState('');
   const [locationName, setLocationName] = useState('');
   const [address, setAddress] = useState('');
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -143,6 +145,12 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       toast.error('Task type is required.');
       return;
     }
+    const descriptionValidation = validateTaskDescription(description);
+    if (descriptionValidation) {
+      setDescriptionError(descriptionValidation);
+      toast.error(descriptionValidation);
+      return;
+    }
     if (visitVerification && !coords) {
       toast.error('Visit verification requires GPS coordinates. Please search or use GPS location.');
       return;
@@ -151,7 +159,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     const payload = {
       title,
       type,
-      description: description || undefined,
+      description: description.trim(),
       location: locationName || undefined,
       address: address || undefined,
       latitude: coords?.lat ?? undefined,
@@ -188,6 +196,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     setTitle('');
     setType('');
     setDescription('');
+    setDescriptionError('');
     setLocationName('');
     setAddress('');
     setCoords(null);
@@ -263,14 +272,28 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
           {/* Description */}
           <div className="flex flex-col">
             <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
-              Description
+              Description <span className="text-red-400">*</span>
             </label>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                if (descriptionError) setDescriptionError('');
+              }}
               rows={2}
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors resize-none"
+              aria-required="true"
+              aria-invalid={!!descriptionError}
+              aria-describedby={descriptionError ? 'create-task-description-error' : undefined}
+              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
+              className={`bg-white/5 border rounded-xl px-4 py-2.5 text-sm text-white outline-none transition-colors resize-none ${
+                descriptionError ? 'border-[#FD6046]/60' : 'border-white/10 focus:border-[#75ADAF]/60'
+              }`}
             />
+            {descriptionError && (
+              <p id="create-task-description-error" className="text-[11px] text-[#FD6046] mt-1">
+                {descriptionError}
+              </p>
+            )}
           </div>
 
           {/* Priority Picker */}

@@ -7,6 +7,7 @@ import { toast } from '@/lib/toast';
 import { taskApi } from './api';
 import type { TaskListResult } from './api';
 import { taskKeys } from './queryKeys';
+import { canLoadTaskComments, taskCommentApi, type TaskCommentThread } from './comments';
 import type { Task, TaskFilters, UpdateTaskStatusPayload, CreateSelfTaskPayload } from './types';
 
 export function flattenTaskPages(data: InfiniteData<TaskListResult> | undefined): Task[] {
@@ -143,6 +144,36 @@ export function useDeleteTask() {
     mutationFn: (id: string) => taskApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+    },
+  });
+}
+
+export function useTaskComments(taskId: string) {
+  const isAuthenticated =
+    typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
+  return useQuery({
+    queryKey: taskKeys.comments(taskId),
+    queryFn: () => taskCommentApi.list(taskId),
+    enabled: isAuthenticated && canLoadTaskComments(taskId),
+    // Client errors (e.g. 403 for a task the agent no longer owns) will not succeed on retry.
+    retry: (failureCount, error) => {
+      const status = (error as { status?: number } | null)?.status ?? 0;
+      return !(status >= 400 && status < 500) && failureCount < 2;
+    },
+    staleTime: 1000 * 15,
+  });
+}
+
+export function useCreateTaskComment(taskId: string) {
+  return useMutation({
+    mutationFn: (body: string) => taskCommentApi.create(taskId, body),
+    onSuccess: (comment) => {
+      queryClient.setQueryData<TaskCommentThread>(taskKeys.comments(taskId), (current) =>
+        current && !current.items.some((c) => c.id === comment.id)
+          ? { ...current, items: [...current.items, comment] }
+          : current,
+      );
+      queryClient.invalidateQueries({ queryKey: taskKeys.comments(taskId) });
     },
   });
 }
