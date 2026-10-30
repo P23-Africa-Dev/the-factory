@@ -66,6 +66,7 @@ export function PlaceAutocompleteField({
   const [resolving, setResolving] = useState(false);
   const [searched, setSearched] = useState(false);
   const [statusNote, setStatusNote] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionTokenRef = useRef(createSearchSessionToken());
@@ -153,15 +154,18 @@ export function PlaceAutocompleteField({
   );
 
   useEffect(() => {
+    // Selected places and GPS updates populate controlled values without searching again.
+    if (searchQuery === null || searchQuery !== value) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      void runSearch(value);
+      void runSearch(searchQuery);
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       abortRef.current?.abort();
+      requestIdRef.current += 1;
     };
-  }, [value, runSearch]);
+  }, [value, searchQuery, runSearch]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -174,6 +178,11 @@ export function PlaceAutocompleteField({
   }, []);
 
   const handleSelect = async (suggestion: PlaceSuggestion) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    abortRef.current?.abort();
+    requestIdRef.current += 1;
+    setSearchQuery(null);
+    setBusy(false);
     setResolving(true);
     setStatusNote(null);
     try {
@@ -243,7 +252,10 @@ export function PlaceAutocompleteField({
           disabled={disabled || resolving}
           placeholder={placeholder}
           autoComplete="off"
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            onChange(e.target.value);
+          }}
           onFocus={() => {
             onFocus?.();
             setRecents(getRecentDestinations());

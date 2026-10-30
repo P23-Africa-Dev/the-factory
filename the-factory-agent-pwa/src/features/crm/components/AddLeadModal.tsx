@@ -295,7 +295,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Name *</label>
                   <input
                     type="text"
-                    placeholder="E.g John Doe"
+                    placeholder=""
                     value={currentContact.name}
                     onChange={(e) => updateActiveContact('name', e.target.value)}
                     className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
@@ -312,7 +312,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Email</label>
                   <input
                     type="email"
-                    placeholder="E.g john.doe@example.com"
+                    placeholder=""
                     value={currentContact.email ?? ''}
                     onChange={(e) => updateActiveContact('email', e.target.value)}
                     className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
@@ -330,7 +330,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   <PhoneNumberInput
                     value={currentContact.phone ?? ''}
                     onChange={(val) => updateActiveContact('phone', val)}
-                    placeholder="E.g +44 555-0199"
+                    placeholder=""
                     defaultCountry="NG"
                   />
                 </div>
@@ -340,7 +340,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Location</label>
                   <input
                     type="text"
-                    placeholder="E.g New York, USA"
+                    placeholder=""
                     value={currentContact.location ?? ''}
                     onChange={(e) => updateActiveContact('location', e.target.value)}
                     className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
@@ -355,7 +355,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Company Name</label>
                 <input
                   type="text"
-                  placeholder="Enter company name"
+                  placeholder=""
                   value={form.companyName}
                   onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))}
                   className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
@@ -366,7 +366,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Website</label>
                 <input
                   type="url"
-                  placeholder="https://company.com"
+                  placeholder=""
                   value={form.website}
                   onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))}
                   className={`h-12 border-1.5 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF] ${
@@ -382,7 +382,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Position</label>
                 <input
                   type="text"
-                  placeholder="E.g Head of Sales"
+                  placeholder=""
                   value={form.position}
                   onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
                   className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
@@ -399,7 +399,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Source</label>
                 <input
                   type="text"
-                  placeholder="e.g. Referral, Social Media"
+                  placeholder=""
                   value={form.source}
                   onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
                   className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
