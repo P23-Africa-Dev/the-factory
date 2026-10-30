@@ -1,0 +1,89 @@
+import { useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { authApi } from './api';
+import { authKeys } from './queryKeys';
+import type { LoginPayload, ForgotPasswordPayload, ResetPasswordPayload } from './types';
+import { setActiveCompanyId } from '@/lib/storage/stores';
+
+export function useLoginMutation() {
+  return useMutation({
+    mutationFn: (payload: LoginPayload) => authApi.login(payload),
+  });
+}
+
+export function useForgotPasswordMutation() {
+  return useMutation({
+    mutationFn: (payload: ForgotPasswordPayload) =>
+      authApi.forgotPassword({ ...payload, portal: 'management' }),
+  });
+}
+
+export function useValidateResetTokenQuery(
+  token: string,
+  email: string,
+  enabled: boolean = true,
+) {
+  return useQuery({
+    queryKey: [...authKeys.all, 'validate-token', token, email],
+    queryFn: () => authApi.validateResetToken(token, { email, portal: 'management' }),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useResetPasswordMutation() {
+  return useMutation({
+    mutationFn: (payload: ResetPasswordPayload) =>
+      authApi.resetPassword({ ...payload, portal: 'management' }),
+  });
+}
+
+export function useLogoutMutation() {
+  return useMutation({
+    mutationFn: () => authApi.logout(),
+  });
+}
+
+export function useProfile(enabled: boolean = true) {
+  const query = useQuery({
+    queryKey: authKeys.profile(),
+    queryFn: () => authApi.getProfile(),
+    enabled,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    const org = query.data?.organization;
+    const cid = org?.company_id
+      ? Number(org.company_id)
+      : org?.company?.id
+        ? Number(org.company.id)
+        : org?.assigned_company?.id
+          ? Number(org.assigned_company.id)
+          : NaN;
+    if (!isNaN(cid) && cid > 0) {
+      setActiveCompanyId(cid);
+    }
+  }, [query.data]);
+
+  return query;
+}
+
+export function useCompanySettings(enabled: boolean = true) {
+  return useQuery({
+    queryKey: [...authKeys.all, 'company-settings'],
+    queryFn: () => authApi.getCompanySettings(),
+    enabled,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdateCompanySettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) => authApi.updateCompanySettings(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [...authKeys.all, 'company-settings'] });
+    },
+  });
+}
