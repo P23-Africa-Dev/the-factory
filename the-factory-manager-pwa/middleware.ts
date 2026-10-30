@@ -5,6 +5,7 @@ import { isMobileUserAgent } from '@/lib/pwa/device';
 const PWA_ONLY_MODE = process.env.NEXT_PUBLIC_PWA_ONLY_MODE === 'true';
 
 const ALLOWED_PREFIXES = [
+  '/api/',
   '/install',
   '/offline',
   '/manifest.json',

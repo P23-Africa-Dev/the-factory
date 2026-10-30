@@ -25,7 +25,17 @@ export default function RootLayout({
       process.env.NEXT_PUBLIC_ENABLE_PWA === 'true' ||
       process.env.NEXT_PUBLIC_PWA_ONLY_MODE === 'true';
 
-    if (!shouldRegister) return;
+    if (!shouldRegister) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const reg of registrations) {
+            void reg.unregister();
+          }
+        })
+        .catch(() => {});
+      return;
+    }
 
     const registerServiceWorker = () => {
       navigator.serviceWorker

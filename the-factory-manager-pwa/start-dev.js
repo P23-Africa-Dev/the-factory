@@ -53,11 +53,11 @@ if (fs.existsSync(lockFile)) {
   }
 }
 
-// ─── 3. Spawn next dev (default port 3002 unless -p / --port is passed) ──────
+// ─── 3. Spawn next dev (default port 3001 — whitelisted in api.thefactory23.com CORS) ──
 
 const rawArgs = process.argv.slice(2);
 const hasPortArg = rawArgs.some((a) => a === '-p' || a === '--port' || a.startsWith('--port='));
-const defaultPort = process.env.PORT || '3002';
+const defaultPort = process.env.PORT || '3001';
 const extraArgs = hasPortArg ? rawArgs : ['-p', defaultPort, ...rawArgs];
 
 let nextBin;

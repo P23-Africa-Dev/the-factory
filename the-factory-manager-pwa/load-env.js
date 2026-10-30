@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /**
- * Load NEXT_PUBLIC_* and other env vars for the agent PWA.
- * The PWA is a nested app; Mapbox and API keys live in the parent workspace .env.
+ * Load NEXT_PUBLIC_* and other env vars for the Manager PWA.
+ * App-level .env.local / .env files take precedence over parent workspace .env files.
  */
 const fs = require('fs');
 const path = require('path');
@@ -30,10 +30,10 @@ function loadPwaEnv() {
   const loaded = [];
 
   for (const filePath of [
-    path.join(workspaceDir, '.env'),
-    path.join(workspaceDir, '.env.local'),
-    path.join(appDir, '.env'),
     path.join(appDir, '.env.local'),
+    path.join(appDir, '.env'),
+    path.join(workspaceDir, '.env.local'),
+    path.join(workspaceDir, '.env'),
   ]) {
     if (loadEnvFile(filePath)) {
       loaded.push(path.basename(filePath));
