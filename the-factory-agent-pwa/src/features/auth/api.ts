@@ -1,6 +1,6 @@
 /**
- * Auth API functions — ported from mobile app.
- * Typed Axios calls for agent authentication endpoints.
+ * Auth API functions — unified mobile authentication.
+ * Typed Axios calls for agent and manager mobile authentication endpoints.
  */
 import { client } from '@/lib/api/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
@@ -14,7 +14,7 @@ export type LoginPayload = {
 
 export type ForgotPasswordPayload = {
   email: string;
-  portal?: 'management' | 'agent';
+  portal?: 'management' | 'agent' | 'mobile';
 };
 
 export type ForgotPasswordResponse = {
@@ -28,7 +28,7 @@ export type ResetPasswordPayload = {
   token: string;
   password: string;
   password_confirmation: string;
-  portal?: 'management' | 'agent';
+  portal?: 'management' | 'agent' | 'mobile';
 };
 
 export type ResetPasswordResponse = {
@@ -43,6 +43,28 @@ export type ValidateResetTokenResponse = {
   data: {
     valid: boolean;
   };
+};
+
+export type CompanySettingsData = {
+  company?: {
+    id?: number;
+    name?: string;
+    industry?: string | null;
+    size?: string | null;
+    timezone?: string | null;
+    country?: string | null;
+  };
+  settings?: {
+    user_management?: {
+      supervisor_can_suspend_agents?: boolean;
+      supervisor_can_delete_agents?: boolean;
+    };
+    payroll?: {
+      admin_can_access_payroll?: boolean;
+    };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 };
 
 function normalizeProfileBody(body: Record<string, unknown>): Record<string, unknown> {
@@ -85,18 +107,40 @@ function normalizeProfileBody(body: Record<string, unknown>): Record<string, unk
 }
 
 export const authApi = {
-  login: (payload: LoginPayload): Promise<LoginResponse> =>
-    client.post('/agent/login', payload).then((r) => {
+  login: async (payload: LoginPayload): Promise<LoginResponse> => {
+    try {
+      const r = await client.post('/mobile/login', payload);
       const body = r.data as Record<string, unknown>;
       const data = (body.data && typeof body.data === 'object' ? body.data : body) as Record<string, unknown>;
-      const user = data.user as LoginResponse['user'];
       return {
         token: String(data.token ?? ''),
+        app_mode: (data.app_mode as LoginResponse['app_mode']) ?? 'agent',
+        home_path: data.home_path ? String(data.home_path) : undefined,
         access_role: data.access_role != null ? String(data.access_role) : undefined,
         internal_role: data.internal_role != null ? String(data.internal_role) : undefined,
-        user,
+        user_type: data.user_type != null ? String(data.user_type) : undefined,
+        companies: data.companies as LoginResponse['companies'],
+        user: data.user as LoginResponse['user'],
       };
-    }),
+    } catch (err: unknown) {
+      const status = (err as { status?: number })?.status;
+      // Graceful fallback to legacy /agent/login only if /mobile/login route doesn't exist yet (404)
+      if (status === 404) {
+        const r = await client.post('/agent/login', payload);
+        const body = r.data as Record<string, unknown>;
+        const data = (body.data && typeof body.data === 'object' ? body.data : body) as Record<string, unknown>;
+        return {
+          token: String(data.token ?? ''),
+          app_mode: 'agent',
+          home_path: '/',
+          access_role: data.access_role != null ? String(data.access_role) : undefined,
+          internal_role: data.internal_role != null ? String(data.internal_role) : undefined,
+          user: data.user as LoginResponse['user'],
+        };
+      }
+      throw err;
+    }
+  },
 
   logout: (): Promise<{ success: boolean }> =>
     client.post('/auth/logout').then((r) => r.data),
@@ -105,13 +149,13 @@ export const authApi = {
     client
       .post<ForgotPasswordResponse>('/auth/forgot-password', {
         ...payload,
-        portal: payload.portal ?? 'agent',
+        portal: payload.portal ?? 'mobile',
       })
       .then((r) => r.data),
 
   validateResetToken: (
     token: string,
-    params: { email: string; portal?: 'management' | 'agent' },
+    params: { email: string; portal?: 'management' | 'agent' | 'mobile' },
   ): Promise<ValidateResetTokenResponse> => {
     const qs = new URLSearchParams();
     qs.set('email', params.email);
@@ -127,7 +171,7 @@ export const authApi = {
     client
       .post<ResetPasswordResponse>('/auth/reset-password', {
         ...payload,
-        portal: payload.portal ?? 'agent',
+        portal: payload.portal ?? 'mobile',
       })
       .then((r) => r.data),
 
@@ -139,5 +183,17 @@ export const authApi = {
     const body = (raw?.data && typeof raw.data === 'object' ? raw.data : raw) as Record<string, unknown>;
     const normalized = normalizeProfileBody(body);
     return profileSchema.parse(normalized);
+  },
+
+  getCompanySettings: async (): Promise<CompanySettingsData> => {
+    const res = await client.get('/company/settings');
+    const raw = res.data as Record<string, unknown>;
+    return (raw?.data && typeof raw.data === 'object' ? raw.data : raw) as CompanySettingsData;
+  },
+
+  updateCompanySettings: async (payload: Record<string, unknown>): Promise<CompanySettingsData> => {
+    const res = await client.patch('/company/settings', payload);
+    const raw = res.data as Record<string, unknown>;
+    return (raw?.data && typeof raw.data === 'object' ? raw.data : raw) as CompanySettingsData;
   },
 };
