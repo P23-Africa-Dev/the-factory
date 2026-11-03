@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "the-factory-agent-pwa",
-    "the-factory-manager-pwa"
+    "the-factory-agent-pwa"
   ],
   "scripts": {
     "dev": "next dev",
