@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { hasActiveApiSession } from "@/lib/auth/support-session";
 import {
@@ -201,34 +201,55 @@ export function useLeadStagePages(
         })),
     });
 
-    const stagePages = stages.map((stage): LeadStagePage => {
-        const stageResults = specs
-            .map((spec, index) => ({ spec, query: queries[index] }))
-            .filter(({ spec }) => spec.stageId === stage.id)
-            .sort((left, right) => left.spec.page - right.spec.page);
-        const leads = mergeLeadPages(
-            stageResults.map(({ query }) => query.data?.leads ?? []),
-        );
-        const total = stageResults[0]?.query.data?.pagination.total ?? 0;
-        const pageCount = pageCounts[stage.id] ?? 1;
+    // Stabilize against useQueries identity churn: only rebuild when data/status changes.
+    const querySignature = queries
+        .map((query) => {
+            const leads = query.data?.leads ?? [];
+            const leadKey = leads
+                .map((lead) => `${lead.id}:${lead.status ?? ""}:${lead.updated_at ?? ""}`)
+                .join(",");
+            return [
+                query.dataUpdatedAt,
+                query.fetchStatus,
+                query.status,
+                query.isLoading,
+                query.isFetching,
+                query.data?.pagination.total ?? 0,
+                leadKey,
+            ].join(":");
+        })
+        .join("|");
 
-        return {
-            ...stage,
-            leads,
-            loaded: leads.length,
-            total,
-            hasMore: leads.length < total,
-            isLoading: stageResults.some(({ query }) => query.isLoading),
-            isFetchingMore:
-                pageCount > 1 &&
-                Boolean(stageResults.find(({ spec }) => spec.page === pageCount)?.query.isFetching),
-        };
-    });
+    const stagePages = useMemo(() => {
+        return stages.map((stage): LeadStagePage => {
+            const stageResults = specs
+                .map((spec, index) => ({ spec, query: queries[index] }))
+                .filter(({ spec }) => spec.stageId === stage.id)
+                .sort((left, right) => left.spec.page - right.spec.page);
+            const leads = mergeLeadPages(
+                stageResults.map(({ query }) => query.data?.leads ?? []),
+            );
+            const total = stageResults[0]?.query.data?.pagination.total ?? 0;
+            const pageCount = pageCounts[stage.id] ?? 1;
 
-    return {
-        stages: stagePages,
-        isLoading: stagePages.some((stage) => stage.isLoading),
-        loadMore: (stageId: LeadStageDefinition["id"]) => {
+            return {
+                ...stage,
+                leads,
+                loaded: leads.length,
+                total,
+                hasMore: leads.length < total,
+                isLoading: stageResults.some(({ query }) => query.isLoading),
+                isFetchingMore:
+                    pageCount > 1 &&
+                    Boolean(stageResults.find(({ spec }) => spec.page === pageCount)?.query.isFetching),
+            };
+        });
+        // querySignature captures meaningful query changes; queries is read from the latest render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional signature-based memo
+    }, [stages, specs, pageCounts, querySignature]);
+
+    const loadMore = useCallback(
+        (stageId: LeadStageDefinition["id"]) => {
             setPageState((current) => {
                 const counts = current.key === resetKey ? current.counts : {};
                 return {
@@ -240,7 +261,17 @@ export function useLeadStagePages(
                 };
             });
         },
-    };
+        [resetKey],
+    );
+
+    return useMemo(
+        () => ({
+            stages: stagePages,
+            isLoading: stagePages.some((stage) => stage.isLoading),
+            loadMore,
+        }),
+        [stagePages, loadMore],
+    );
 }
 
 export function useLeadPipeline(
