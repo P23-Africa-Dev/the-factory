@@ -22,7 +22,7 @@ class ForgotPasswordRequest extends FormRequest
                 'lowercase',
                 'max:255',
             ],
-            'portal' => ['nullable', 'string', 'in:management,agent'],
+            'portal' => ['nullable', 'string', 'in:management,agent,mobile'],
         ];
     }
 
@@ -32,7 +32,7 @@ class ForgotPasswordRequest extends FormRequest
             'email.required' => 'Email address is required.',
             'email.email' => 'Email address must be valid.',
             'email.max' => 'Email address must not exceed :max characters.',
-            'portal.in' => 'Portal must be management or agent.',
+            'portal.in' => 'Portal must be management, agent, or mobile.',
         ];
     }
 }

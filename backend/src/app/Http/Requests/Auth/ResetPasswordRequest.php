@@ -26,7 +26,7 @@ class ResetPasswordRequest extends FormRequest
             'token' => ['required', 'string', 'min:40'],
             'password' => ['required', 'string', Password::min(8)->letters()->numbers()],
             'password_confirmation' => ['required', 'string', 'same:password'],
-            'portal' => ['nullable', 'string', 'in:management,agent'],
+            'portal' => ['nullable', 'string', 'in:management,agent,mobile'],
         ];
     }
 
@@ -44,7 +44,7 @@ class ResetPasswordRequest extends FormRequest
             'password.numbers' => 'Password must contain at least one number.',
             'password_confirmation.required' => 'Password confirmation is required.',
             'password_confirmation.same' => 'Password confirmation does not match.',
-            'portal.in' => 'Portal must be management or agent.',
+            'portal.in' => 'Portal must be management, agent, or mobile.',
         ];
     }
 }
