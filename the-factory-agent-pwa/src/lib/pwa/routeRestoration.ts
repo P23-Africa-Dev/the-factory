@@ -2,82 +2,97 @@
 
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { readSession } from '@/session/sessionStore';
+import { homeFor, type AppMode } from '@/session/appMode';
 
-const LAST_ROUTE_KEY = 'agent:last_route';
-
-/** The PWA manifest start_url. A cold launch / relaunch always lands here. */
-const LAUNCH_PATH = '/';
-
-/** Forget the persisted route (e.g. on logout) so the next session starts clean. */
-export function clearSavedRoute(): void {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(LAST_ROUTE_KEY);
+function getStorageKey(mode?: AppMode, userId?: number | string): string {
+  if (mode && userId) {
+    return `f23:last_route:${mode}:${userId}`;
+  }
+  if (mode) {
+    return `f23:last_route:${mode}`;
+  }
+  return 'f23:last_route';
 }
 
-/**
- * Routes that should never be persisted or restored. Auth and install live
- * outside the agent route group, but guarding here keeps the helper safe if it
- * is ever mounted higher in the tree.
- */
-function isRestorableRoute(path: string): boolean {
+/** Forget persisted routes across all modes on logout */
+export function clearSavedRoute(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const keys = Object.keys(localStorage);
+    for (const key of keys) {
+      if (
+        key.startsWith('f23:last_route') ||
+        key === 'agent:last_route' ||
+        key === 'manager:last_route'
+      ) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+function isRestorableRoute(path: string, mode?: AppMode): boolean {
   if (!path.startsWith('/')) return false;
   if (path.startsWith('/login')) return false;
   if (path.startsWith('/install')) return false;
+  if (path.startsWith('/offline')) return false;
+
+  if (mode === 'manager') {
+    return path.startsWith('/manager');
+  }
+  if (mode === 'agent') {
+    return !path.startsWith('/manager');
+  }
   return true;
 }
 
 /**
- * Keeps the agent on the page they were last on across reloads.
+ * Keeps the user on the page they were last on across reloads, scoped per mode.
  *
- * A standalone PWA always boots at the manifest `start_url` (`/`), so a relaunch
- * — and a hard refresh on platforms that reset to the start URL — drops the user
- * back on the dashboard. We persist the current route on every navigation and,
- * when a cold load lands on the launch path while a deeper route was saved,
- * redirect back to it before the dashboard paints.
- *
- * Returns `isRestoring` so the caller can render a spinner instead of briefly
- * mounting the dashboard while the redirect is in flight.
+ * Standalone PWA cold launch lands on the manifest start_url or Edge-redirected home.
+ * We persist the active route per (mode, userId) and restore when landing on the mode's root.
  */
-export function useRouteRestoration(): { isRestoring: boolean } {
+export function useRouteRestoration(expectedMode?: AppMode): { isRestoring: boolean } {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Decide synchronously on the first render so the dashboard never mounts when
-  // we already know we are going to restore a deeper route.
+  const session = readSession();
+  const activeMode: AppMode = expectedMode ?? session?.app_mode ?? 'agent';
+  const launchPath = homeFor(activeMode);
+  const storageKey = getStorageKey(activeMode, session?.user?.id);
+
   const [isRestoring, setIsRestoring] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    if (pathname !== LAUNCH_PATH) return false;
-    const saved = window.localStorage.getItem(LAST_ROUTE_KEY);
-    return Boolean(saved && saved !== LAUNCH_PATH && isRestorableRoute(saved));
+    if (pathname !== launchPath) return false;
+    const saved = window.localStorage.getItem(storageKey);
+    return Boolean(saved && saved !== launchPath && isRestorableRoute(saved, activeMode));
   });
 
   useLayoutEffect(() => {
     if (!isRestoring) return;
-    const saved = window.localStorage.getItem(LAST_ROUTE_KEY);
-    if (saved && saved !== LAUNCH_PATH && isRestorableRoute(saved)) {
+    const saved = window.localStorage.getItem(storageKey);
+    if (saved && saved !== launchPath && isRestorableRoute(saved, activeMode)) {
       router.replace(saved);
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- end restoration when no saved route
       setIsRestoring(false);
     }
-    // Run once on mount; the lazy initializer captured the launch-time pathname.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restoration is complete once we have navigated away from the launch path.
   useEffect(() => {
-    if (isRestoring && pathname !== LAUNCH_PATH) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- route restoration completed after navigation
+    if (isRestoring && pathname !== launchPath) {
       setIsRestoring(false);
     }
-  }, [pathname, isRestoring]);
+  }, [pathname, isRestoring, launchPath]);
 
-  // Persist the active route on every change so the next launch can restore it.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!isRestorableRoute(pathname)) return;
-    window.localStorage.setItem(LAST_ROUTE_KEY, pathname + window.location.search);
-  }, [pathname]);
+    if (!isRestorableRoute(pathname, activeMode)) return;
+    window.localStorage.setItem(storageKey, pathname + window.location.search);
+  }, [pathname, activeMode, storageKey]);
 
   return { isRestoring };
 }
