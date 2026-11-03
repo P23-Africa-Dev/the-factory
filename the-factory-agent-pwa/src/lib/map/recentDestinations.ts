@@ -1,5 +1,5 @@
 /**
- * Uber-style recent places for the Agent PWA: local instant + Laravel sync.
+ * Uber-style recent places for the Manager PWA: local instant + Laravel sync.
  */
 
 import { client } from '@/lib/api/client';
@@ -43,6 +43,8 @@ export function getRecentDestinations(): RecentDestination[] {
     return [];
   }
 }
+
+export const loadRecentDestinations = getRecentDestinations;
 
 export function saveRecentDestination(dest: RecentDestination): void {
   const existing = getRecentDestinations().filter((r) => {
