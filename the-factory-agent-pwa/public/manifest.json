@@ -1,7 +1,7 @@
 {
-  "name": "Factory 23 Agent",
-  "short_name": "F23 Agent",
-  "description": "Field agent management app for tasks, tracking, CRM, and communication all in one app",
+  "name": "Factory 23",
+  "short_name": "Factory 23",
+  "description": "Unified mobile operations platform for field agents and managers",
   "id": "/",
   "start_url": "/",
   "scope": "/",

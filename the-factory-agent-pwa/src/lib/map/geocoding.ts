@@ -2,11 +2,17 @@ import { env } from '@/constants/env';
 import { getMapboxPublicToken } from '@/lib/map/public-env';
 
 export type GeocodedPlaceSuggestion = {
+  id?: string;
   name: string;
   address: string;
   latitude: number;
   longitude: number;
+  provider?: string;
+  sources?: Array<{ provider: string; id: string }>;
+  attributionVisible?: boolean;
 };
+
+export type GeocodedPlace = GeocodedPlaceSuggestion;
 
 /** Mapbox place types that support global search (countries through addresses). */
 const GLOBAL_PLACE_TYPES =
@@ -49,12 +55,13 @@ export async function searchPlacesWithMapbox(
     }
 
     const payload = (await response.json()) as {
-      features?: Array<{ text?: string; place_name?: string; center?: [number, number] }>;
+      features?: Array<{ id?: string; text?: string; place_name?: string; center?: [number, number] }>;
     };
 
     return (payload.features ?? [])
       .filter((feature) => feature.center && feature.center.length === 2)
-      .map((feature) => ({
+      .map((feature, idx) => ({
+        id: feature.id ?? `${feature.center![1]}-${feature.center![0]}-${idx}`,
         name: feature.text?.trim() || feature.place_name?.split(',')[0]?.trim() || 'Location',
         address: feature.place_name?.trim() || '',
         latitude: feature.center![1],
@@ -64,3 +71,5 @@ export async function searchPlacesWithMapbox(
     return [];
   }
 }
+
+export const searchPlaces = searchPlacesWithMapbox;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeIcpConfig, type IcpConfig } from "@/components/sales-engine/icp-builder-modal";
+import { normalizeIcpConfig, type IcpConfig, type IcpProfile } from "@/components/sales-engine/icp-builder-modal";
 import { mapApiIcpProfile } from "@/lib/api/sales-engine";
 
 describe("ICP profile and config normalization", () => {
@@ -34,18 +34,19 @@ describe("ICP profile and config normalization", () => {
         profileName: "FMCG Tech",
         description: "Sample",
         customPrompt: null,
-        industries: null as any,
-        companySizes: null as any,
-        revenueRanges: null as any,
-        territories: null as any,
-        decisionMakers: null as any,
+        industries: null,
+        companySizes: null,
+        revenueRanges: null,
+        territories: null,
+        decisionMakers: null,
         minMatchScore: 60,
         autoSyncCrm: true,
         enrichContactDetails: true,
-      } as any,
+      },
     };
 
-    const mapped = mapApiIcpProfile(apiProfile);
+    // Deliberately malformed API data exercises normalization at the type boundary.
+    const mapped = mapApiIcpProfile(apiProfile as unknown as IcpProfile);
     expect(mapped.config.customPrompt).toBe("");
     expect(mapped.config.customPrompt.trim()).toBe("");
     expect(Array.isArray(mapped.config.industries)).toBe(true);

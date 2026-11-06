@@ -153,6 +153,7 @@ class ProjectTaskIntegrationTest extends TestCase
             ->postJson('/api/v1/tasks', [
                 'company_id' => $company->id,
                 'title' => 'Minimal Task',
+                'description' => 'Task description for integration coverage.',
             ]);
 
         $response->assertCreated()
@@ -181,6 +182,7 @@ class ProjectTaskIntegrationTest extends TestCase
                 'company_id' => $company->id,
                 'project_id' => $project->id,
                 'title' => 'Project-Linked Task',
+                'description' => 'Task description for integration coverage.',
                 'assigned_agent_id' => $agent->id,
             ]);
 
@@ -233,6 +235,7 @@ class ProjectTaskIntegrationTest extends TestCase
             ->postJson('/api/v1/tasks', [
                 'company_id' => $company->id,
                 'title' => 'Cross-Company Project Task',
+                'description' => 'Task description for integration coverage.',
                 'project_id' => $otherProject->id,
             ]);
 

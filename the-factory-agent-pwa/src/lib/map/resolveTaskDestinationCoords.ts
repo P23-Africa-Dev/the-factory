@@ -12,17 +12,39 @@ function pickValid(point?: LatLng | null): LatLng | null {
  * Resolve the task destination from the most authoritative GPS source available.
  * Priority: live tracking session → server route → map selection → task record.
  */
-export function resolveTaskDestinationCoords(sources: {
-  liveDestination?: LatLng | null;
-  routeDestination?: LatLng | null;
-  selectedDestination?: LatLng | null;
-  taskRecord?: LatLng | null;
-}): LatLng | null {
+export function resolveTaskDestinationCoords(
+  sources:
+    | {
+        liveDestination?: LatLng | null;
+        routeDestination?: LatLng | null;
+        selectedDestination?: LatLng | null;
+        taskRecord?: LatLng | null;
+      }
+    | LatLng
+    | { latitude?: number | null; longitude?: number | null; [key: string]: unknown }
+    | null
+    | undefined,
+): LatLng | null {
+  if (!sources) return null;
+  if (
+    'latitude' in sources &&
+    'longitude' in sources &&
+    typeof sources.latitude === 'number' &&
+    typeof sources.longitude === 'number'
+  ) {
+    return pickValid({ latitude: sources.latitude, longitude: sources.longitude });
+  }
+  const s = sources as {
+    liveDestination?: LatLng | null;
+    routeDestination?: LatLng | null;
+    selectedDestination?: LatLng | null;
+    taskRecord?: LatLng | null;
+  };
   return (
-    pickValid(sources.liveDestination) ??
-    pickValid(sources.routeDestination) ??
-    pickValid(sources.selectedDestination) ??
-    pickValid(sources.taskRecord) ??
+    pickValid(s.liveDestination) ??
+    pickValid(s.routeDestination) ??
+    pickValid(s.selectedDestination) ??
+    pickValid(s.taskRecord) ??
     null
   );
 }

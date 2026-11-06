@@ -1,0 +1,163 @@
+/* Reference treatments scoped to Sales Engine content. */
+/* Shared Outreach treatments. Classes are opt-in so semantic badges and modals
+   keep their own colours and behaviour. */
+.se-workspace {
+  --se-ink: #022228;
+  --se-mint: #2ae9c9;
+  --se-purple: #c974f4;
+  --se-raised-shadow: 0 0 10px rgb(71 120 147 / 20%),
+    0 0 10px rgb(241 241 241 / 20%),
+    0 0 12px 5px rgb(0 0 0 / 40%), 0 4px 4px rgb(0 0 0 / 50%);
+  --se-surface-shadow: 0 -3px 9px rgb(255 255 255 / 25%),
+    0 6px 12px rgb(0 0 0 / 45%);
+}
+.se-workspace {
+  --se-raised-shadow: 0 0 12px 2px rgb(241 241 241 / 24%),
+    0 0 22px 4px rgb(71 120 147 / 22%),
+    0 5px 10px 1px rgb(0 0 0 / 25%),
+    0 2px 4px rgb(0 0 0 / 18%);
+  background: transparent;
+  color: white;
+  padding-inline: clamp(16px, 3.82vw, 68px);
+  padding-bottom: 48px;
+}
+.se-workspace .se-stat-card,
+.se-workspace .se-dark-surface,
+.se-workspace .se-chart {
+  border: 1px solid rgb(71 120 147 / 20%);
+  border-radius: 20px;
+  background: linear-gradient(53.462deg, #022228 73.052%, #477893 248.69%);
+  color: white;
+  box-shadow: var(--se-raised-shadow);
+}
+.se-workspace .se-stat-card :is(p, h3, span),
+.se-workspace .se-chart > div:first-child,
+.se-workspace .se-chart > div:first-child span { color: #f8f8f8; }
+.se-workspace .se-stat-card .rounded-full:not([class*="border-"]) { background-color: #14343e; }
+.se-workspace .se-chart { padding: 14px 20px 10px; }
+.se-workspace .se-surface {
+  border: 1px solid #e8e5e5;
+  border-radius: 24px;
+  background: white;
+  color: #070b16;
+  box-shadow: var(--se-surface-shadow);
+}
+.se-workspace .se-control {
+  border-color: #294f5d;
+  border-radius: 999px;
+  background: var(--se-ink);
+  color: white;
+  box-shadow: 0 -2px 8px rgb(255 255 255 / 20%), 0 4px 8px rgb(0 0 0 / 35%);
+}
+.se-workspace .se-control:not(:disabled):hover { background: #123942; color: white; }
+.se-workspace .se-primary {
+  border-color: var(--se-mint);
+  border-radius: 999px;
+  background: var(--se-mint);
+  color: var(--se-ink);
+  box-shadow: 0 0 10px rgb(42 233 201 / 25%), 0 4px 8px rgb(0 0 0 / 30%);
+}
+.se-workspace .se-primary:not(:disabled):hover { background: #55f0d6; }
+.se-workspace .se-search { border-color: #b0b0b0; color: #070b16; }
+.se-workspace :is(.se-control, .se-primary, .se-search):focus-visible {
+  outline: 2px solid var(--se-mint);
+  outline-offset: 3px;
+}
+.se-workspace .se-table { border-spacing: 0 8px; }
+.se-workspace .se-table-row { background: transparent; color: #070b16; filter: drop-shadow(0 4px 3px rgb(12 12 13 / 10%)); }
+.se-workspace .se-table-row td {
+  background: #f8f8f8;
+  border-block: 1px solid #b0b0b0;
+}
+.se-workspace .se-table-row td:first-child { border-left: 1px solid #b0b0b0; border-radius: 23px 0 0 23px; }
+.se-workspace .se-table-row td:last-child { border-right: 1px solid #b0b0b0; border-radius: 0 23px 23px 0; }
+.se-workspace .se-list-row,
+.se-workspace .se-lead-card {
+  border: 1px solid #b0b0b0;
+  border-radius: 23px;
+  background: #f8f8f8;
+  color: #070b16;
+  box-shadow: 0 4px 4px -1px rgb(12 12 13 / 10%), 0 4px 4px -1px rgb(12 12 13 / 5%);
+}
+.se-workspace :is(.se-list-row, .se-lead-card):is(:hover, :focus-visible),
+.se-workspace .se-list-row.se-table-row-active {
+  background: var(--se-ink);
+  color: white;
+  border-color: #e8e5e5;
+}
+.se-workspace .se-table-row {
+  transition: filter 0.15s ease;
+}
+.se-workspace .se-table-row td {
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+/* Hover on table row: box shadow only, no background change */
+.se-workspace .se-table-row:hover:not(.se-table-row-active) {
+  filter: drop-shadow(0 6px 6px rgb(12 12 13 / 18%));
+}
+.se-workspace .se-table-row:hover:not(.se-table-row-active) td {
+  border-color: #8c9096;
+}
+/* Active table row (when clicked): dark background and white text */
+.se-workspace .se-table-row.se-table-row-active td {
+  background: var(--se-ink);
+  color: white;
+  border-color: #1a424f;
+}
+.se-workspace .se-table-row.se-table-row-active [class*="text-[#616263]"],
+.se-workspace .se-table-row.se-table-row-active [class*="text-[#09232d]"] {
+  color: white;
+}
+.se-workspace :is(.se-list-row, .se-lead-card):is(:hover, :focus-visible) :is(p, span:not([class*="capitalize"])),
+.se-workspace .se-list-row.se-table-row-active > span {
+  color: white;
+}
+.se-workspace .se-table-row:focus-visible,
+.se-workspace .se-list-row:focus-visible { outline: 2px solid var(--se-mint); outline-offset: 2px; }
+.se-workspace .se-list-heading > div:not(:first-child) {
+  background: transparent;
+  color: #070b16;
+  text-align: left;
+}
+@media (prefers-reduced-motion: reduce) {
+  .se-workspace .se-stat-card,
+.se-workspace .se-table-row,
+.se-workspace .se-list-row,
+.se-workspace .se-lead-card { transition: none; }
+}
+.se-workspace .se-control svg { color: currentColor; }
+.se-workspace .se-list-surface { overflow-x: auto; }
+.se-workspace .se-list-surface > .se-list-heading,
+.se-workspace .se-list-surface > .se-list-heading + div { min-width: 900px; }
+.se-workspace .se-stat-link { color: var(--se-mint); }
+.se-workspace .se-stat-link:focus-visible { outline: 2px solid var(--se-mint); outline-offset: 3px; }
+.se-workspace .se-smart-actions { padding-top: 8px; }
+
+/* Trace the masked ticket silhouette, including its curved cutouts. */
+.se-workspace .se-outreach-frame {
+  filter: drop-shadow(0 0 1px rgb(71 120 147 / 40%))
+    drop-shadow(0 0 6px rgb(241 241 241 / 24%))
+    drop-shadow(0 0 11px rgb(71 120 147 / 22%))
+    drop-shadow(0 5px 5px rgb(0 0 0 / 25%))
+    drop-shadow(0 2px 2px rgb(0 0 0 / 18%));
+}
+.se-workspace .se-outreach-frame > .se-dark-surface {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+
+.se-workspace.se-workspace {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(0deg, #041014 56%, #17586a 123%);
+}
+.se-workspace::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url("/sales-engine-design/workspace-texture.png") left top / 1024px 1024px;
+  opacity: .025;
+}

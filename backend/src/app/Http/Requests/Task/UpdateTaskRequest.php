@@ -33,7 +33,7 @@ class UpdateTaskRequest extends FormRequest
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'title' => ['sometimes', 'string', 'min:3', 'max:255'],
             'type' => ['sometimes', 'nullable', 'string', Rule::in(TaskType::values())],
-            'description' => ['sometimes', 'nullable', 'string', 'min:10', 'max:5000'],
+            'description' => ['sometimes', 'required', 'string', 'min:10', 'max:5000'],
             'location' => ['sometimes', 'nullable', 'string', 'min:2', 'max:255'],
             'address' => ['sometimes', 'nullable', 'string', 'min:5', 'max:1000'],
             'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
@@ -44,6 +44,14 @@ class UpdateTaskRequest extends FormRequest
             'priority' => ['sometimes', 'nullable', 'string', Rule::in(TaskPriority::values())],
             'minimum_photos_required' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:20'],
             'visit_verification_required' => ['sometimes', 'nullable', 'boolean'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'description.required' => 'Task description is required.',
+            'description.min' => 'Task description must be at least 10 characters.',
         ];
     }
 

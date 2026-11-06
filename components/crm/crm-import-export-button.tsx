@@ -52,7 +52,7 @@ export function CrmImportExportButton({
             <div className="relative" ref={containerRef}>
                 <button
                     onClick={() => setMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
+                    className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
                 >
                     <Import size={13} />
                     Import / Export

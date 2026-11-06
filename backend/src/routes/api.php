@@ -63,6 +63,8 @@ use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Map\MapPoiDisplayController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\MapCredit\MapCreditController;
+use App\Http\Controllers\Api\V1\Mobile\MobileLoginController;
+use App\Http\Controllers\Api\V1\Mobile\MobileSessionController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
@@ -74,6 +76,7 @@ use App\Http\Controllers\Api\V1\Project\ProjectController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
+use App\Http\Controllers\Api\V1\Task\TaskCommentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
 use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
@@ -191,6 +194,12 @@ Route::prefix('agent')->name('agent.')->group(function (): void {
         ->name('login');
 });
 
+Route::prefix('mobile')->name('mobile.')->group(function (): void {
+    Route::post('/login', MobileLoginController::class)
+        ->middleware('throttle.login')
+        ->name('login');
+});
+
 Route::prefix('internal')->name('internal.')->group(function (): void {
     // Deprecated: use /api/v1/agent/login.
     Route::post('/login', InternalLoginController::class)
@@ -208,6 +217,9 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 
 // Authenticated
 Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscription.active'])->group(function (): void {
+    Route::get('/mobile/session', MobileSessionController::class)
+        ->name('mobile.session');
+
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])
         ->name('support-access.status');
     Route::post('/support-access/end', [SupportAccessController::class, 'end'])
@@ -446,6 +458,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
+                Route::get('/{task}/comments', [TaskCommentController::class, 'index'])->name('comments.index');
+                Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('comments.store');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
                 Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
@@ -826,6 +842,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('destroy');
                 Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
+                Route::get('/{task}/comments', [TaskCommentController::class, 'index'])->name('comments.index');
+                Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('comments.store');
                 Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
                     ->middleware('throttle:api-heavy')
                     ->name('start');
@@ -1060,6 +1080,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('destroy');
         Route::get('/{task}/route', [TaskTrackingController::class, 'route'])->name('route');
+        Route::get('/{task}/comments', [TaskCommentController::class, 'index'])->name('comments.index');
+        Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('comments.store');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
             ->middleware('throttle:api-heavy')
             ->name('start');

@@ -16,6 +16,10 @@ import {
   uploadTaskProof,
   updateTask,
   deleteTask,
+  listTaskComments,
+  createTaskComment,
+  type TaskCommentItem,
+  type TaskCommentsData,
   type ListTasksParams,
   type CreateTaskPayload,
   type CreateSelfTaskPayload,
@@ -30,6 +34,7 @@ import {
   type TaskAssignee,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
+import { ApiRequestError } from "@/lib/api/onboarding";
 import { hasActiveApiSession } from "@/lib/auth/support-session";
 import { toast } from "sonner";
 
@@ -39,6 +44,8 @@ export const TASK_KEYS = {
   assignees: (companyId: number | string) => ["tasks", "assignees", companyId] as const,
   detail: (taskId: number | string, companyId?: number | string) =>
     ["tasks", "detail", taskId, companyId] as const,
+  comments: (taskId: number | string, companyId?: number | string) =>
+    ["tasks", "comments", String(taskId), companyId] as const,
   reassignmentInbox: (params: TaskReassignmentsInboxParams) =>
     ["tasks", "reassignments", "inbox", params] as const,
 };
@@ -284,6 +291,44 @@ export function useUploadTaskProof(options?: {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
       options?.onSuccess?.(res.data.proof);
+    },
+  });
+}
+
+export function useTaskComments(taskId: number | string, companyId?: number | string) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useQuery({
+    queryKey: TASK_KEYS.comments(taskId, companyId),
+    queryFn: async (): Promise<TaskCommentsData> =>
+      (await listTaskComments(taskId, { company_id: companyId }, token)).data,
+    enabled: hasActiveApiSession(token) && !!taskId,
+    // A 403 means this user has no access to the thread; retrying will not change that.
+    retry: (failureCount, error) =>
+      !(error instanceof ApiRequestError && error.status >= 400 && error.status < 500) && failureCount < 2,
+  });
+}
+
+export function useCreateTaskComment(
+  taskId: number | string,
+  companyId?: number | string,
+  options?: { onSuccess?: (comment: TaskCommentItem) => void },
+) {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  return useMutation({
+    mutationFn: (body: string) =>
+      createTaskComment(taskId, { body, company_id: companyId }, token),
+    onSuccess: (res) => {
+      const comment = res.data.comment;
+      queryClient.setQueryData<TaskCommentsData>(
+        TASK_KEYS.comments(taskId, companyId),
+        (current) =>
+          current
+            ? { ...current, items: current.items.some((c) => c.id === comment.id) ? current.items : [...current.items, comment] }
+            : current,
+      );
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.comments(taskId, companyId) });
+      options?.onSuccess?.(comment);
     },
   });
 }

@@ -381,6 +381,7 @@ export function AddLeadModal({
 
   useEffect(() => {
     if (lead || !suggestionsReady) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear stale duplicate results while a new remote suggestion query is pending.
       setDuplicateMatch(null);
       return;
     }

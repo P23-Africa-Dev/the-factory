@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { useTaskDetail, useUpdateTaskStatus } from '@/hooks/use-tasks';
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
+import { TaskComments } from '@/components/operations/task-comments';
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: 'bg-red-100 text-red-600',
@@ -100,12 +101,14 @@ export default function AgentTaskDetailPage({
       </div>
 
       <div className="px-4 py-5 space-y-4">
-        {task.description && (
-          <div className="bg-white rounded-2xl p-4 border border-gray-100">
-            <p className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-2">Description</p>
-            <p className="text-[14px] text-dash-dark leading-relaxed">{task.description}</p>
-          </div>
-        )}
+        <div className="bg-white rounded-2xl p-4 border border-gray-100">
+          <p className="text-[12px] font-bold text-gray-400 uppercase tracking-wide mb-2">Description</p>
+          {task.description?.trim() ? (
+            <p className="text-[14px] text-dash-dark leading-relaxed whitespace-pre-wrap">{task.description}</p>
+          ) : (
+            <p className="text-[14px] text-gray-400 italic">No description provided.</p>
+          )}
+        </div>
 
         <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
           {task.due_date && (
@@ -192,6 +195,12 @@ export default function AgentTaskDetailPage({
             </div>
           </div>
         )}
+
+        <TaskComments
+          taskId={taskId}
+          companyId={companyId ?? undefined}
+          className="bg-white rounded-2xl p-4 border border-gray-100"
+        />
       </div>
 
       {(isPending || isInProgress) && !isCompleted && !isCancelled && (

@@ -22,6 +22,7 @@ import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
+import { validateTaskDescription, TASK_DESCRIPTION_MAX_LENGTH } from "@/lib/tasks/description";
 import type { RetrievedPlace } from "@/lib/utils/place-search";
 
 type StatusType = "pending" | "in-progress" | "completed";
@@ -244,6 +245,8 @@ export function CreateTaskModal({
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!form.title.trim()) errs.title = "Task title is required";
+    const descriptionError = validateTaskDescription(form.description);
+    if (descriptionError) errs.description = descriptionError;
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -254,7 +257,7 @@ export function CreateTaskModal({
     const payload = {
       title: form.title,
       taskType: form.taskType || undefined,
-      description: form.description || undefined,
+      description: form.description.trim(),
       location: form.location || undefined,
       address: form.address || undefined,
       dueDate: form.dueDate || undefined,
@@ -280,7 +283,7 @@ export function CreateTaskModal({
         company_id: companyId,
         title: form.title,
         type: form.taskType ? typeKey : undefined,
-        description: form.description || undefined,
+        description: form.description.trim(),
         location: form.location || undefined,
         address: form.address || undefined,
         latitude: coords?.lat,
@@ -452,6 +455,10 @@ export function CreateTaskModal({
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               rows={2}
+              required
+              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
+              aria-required="true"
+              aria-invalid={!!errors.description}
               className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
             {errors.description && (

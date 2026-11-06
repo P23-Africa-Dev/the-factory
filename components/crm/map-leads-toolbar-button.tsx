@@ -29,7 +29,7 @@ export function MapLeadsToolbarButton({
       onClick={() =>
         onPipelineChange(isMapLeadsActive ? null : mapLeadsPipeline.id)
       }
-      className={`flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-medium border transition-all shadow-sm ${
+      className={`${isMapLeadsActive ? "se-primary" : "se-control"} flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-medium border transition-all shadow-sm ${
         isMapLeadsActive
           ? "bg-[#0B1215] text-white border-[#0B1215]"
           : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"

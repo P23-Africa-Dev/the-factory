@@ -109,6 +109,11 @@ class Task extends Model
         return $this->hasMany(TaskProof::class);
     }
 
+    public function comments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class);
+    }
+
     public function trackingSession(): HasOne
     {
         // A task can have multiple tracking sessions over its lifetime; the

@@ -37,7 +37,7 @@ export function TotalLeadsCard({
   const growthLabel = formatWeekGrowthLabel(weekGrowthPercent, weekGrowthDirection);
 
   return (
-    <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85">
+    <div className="se-stat-card bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col justify-between min-w-0 sm:min-w-85">
       <div className="flex justify-between items-start">
         <h3 className="text-[#34373C] text-sm font-medium">Total Leads in Pipeline</h3>
         {/* <button className="text-gray-400 hover:text-gray-600">
@@ -65,7 +65,7 @@ export function TotalLeadsCard({
               cx="50"
               cy="50"
               r="38"
-              stroke="#FD6046"
+              stroke="#2ae9c9"
               strokeWidth="9"
               fill="transparent"
               strokeDasharray={isLoading ? "0 238.76" : getRingStrokeDasharray(weekGrowthPercent)}
@@ -124,7 +124,7 @@ export function LeadsChart({
   if (!isClient) return <div className="h-full w-full min-h-45" />;
 
   return (
-    <div className="rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">
+    <div className="se-chart rounded-3xl p-6 border-gray-100 flex-1 min-w-0 sm:min-w-75">
       <div className="flex items-center justify-between mb-1 px-2">
         {chartData.map((point) => (
           <span key={point.day} className="text-[11px] text-gray-400 font-medium">
@@ -138,8 +138,8 @@ export function LeadsChart({
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <defs>
               <linearGradient id="crmGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="#2ae9c9" stopOpacity={0.2} />
+                <stop offset="100%" stopColor="#2ae9c9" stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <XAxis dataKey="day" hide />
@@ -160,12 +160,12 @@ export function LeadsChart({
             <Area
               type="monotone"
               dataKey="value"
-              stroke="#3B82F6"
+              stroke="#2ae9c9"
               strokeWidth={2.5}
               fillOpacity={1}
               fill="url(#crmGradient)"
               dot={false}
-              activeDot={{ r: 5, fill: "#3B82F6", strokeWidth: 2, stroke: "white" }}
+              activeDot={{ r: 5, fill: "#2ae9c9", strokeWidth: 2, stroke: "white" }}
             />
           </AreaChart>
         </ResponsiveContainer>
