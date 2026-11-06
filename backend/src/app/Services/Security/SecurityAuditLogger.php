@@ -35,6 +35,8 @@ class SecurityAuditLogger
 
     public const CHANNEL_AGENT_API = 'agent_api';
 
+    public const CHANNEL_MOBILE_API = 'mobile_api';
+
     public const CHANNEL_INTERNAL_API = 'internal_api';
 
     public const CHANNEL_API = 'api';

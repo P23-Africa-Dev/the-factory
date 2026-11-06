@@ -24,7 +24,7 @@ beforeEach(() => {
     referenceType: 'App\\Models\\Crm\\Lead', referenceId: 42,
     actionUrl: '/crm/leads/42', metadata: { lead_id: 42 },
     isRead: false, createdAt: new Date().toISOString(),
-  } as AppNotification;
+  } as unknown as AppNotification;
 });
 
 it.each([
@@ -47,3 +47,4 @@ it('preserves task notification routing', () => {
   fireEvent.click(screen.getByText('New CRM lead created'));
   expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/task/7');
 });
+

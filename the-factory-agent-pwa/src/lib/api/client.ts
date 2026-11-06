@@ -1,17 +1,20 @@
 /**
- * Axios HTTP client — ported from mobile app's src/lib/api/client.ts
+ * Axios HTTP client — unified dual-mode PWA client (Agent & Manager).
  *
- * Key changes from mobile:
- * - Token read from localStorage (via appStore) instead of MMKV
- * - Sentry import path changed to @sentry/nextjs (or console fallback)
- * - __DEV__ check replaced with process.env.NODE_ENV
+ * Defense-in-depth Layer 4:
+ * - Automatically injects Bearer token
+ * - Attaches X-Company-ID header for manager sessions
+ * - Fail-closed mode-boundary interceptor prevents cross-mode endpoint calls:
+ *   agents cannot call /management/*; managers cannot call /agent/*
  */
 import axios, { AxiosError } from 'axios';
 import type { ApiError } from '@/types';
 import { env } from '@/constants/env';
-import { appStore } from '@/lib/storage/stores';
+import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import { sessionEvents } from '@/lib/auth/sessionEvents';
 import { resolveApiErrorMessage } from '@/lib/api/errors';
+import { readSession } from '@/session/sessionStore';
+import { homeFor } from '@/session/appMode';
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -46,8 +49,31 @@ client.interceptors.request.use(async (config) => {
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    const session = readSession();
+    const mode = session?.app_mode;
+    const url = config.url ?? '';
+
+    // Mode-boundary fail-closed enforcement
+    if (mode === 'agent') {
+      if (url.includes('/management/') || url.startsWith('management/')) {
+        return Promise.reject(
+          new Error(`[ModeGuard] Agent session is not permitted to access manager endpoint: ${url}`),
+        );
+      }
+    } else if (mode === 'manager') {
+      if (url.includes('/agent/') || url.startsWith('agent/')) {
+        return Promise.reject(
+          new Error(`[ModeGuard] Manager session is not permitted to access agent endpoint: ${url}`),
+        );
+      }
+      const companyId = getActiveCompanyId();
+      if (companyId && !config.headers['X-Company-ID']) {
+        config.headers['X-Company-ID'] = String(companyId);
+      }
+    }
   } catch {
-    // Token read failure is non-fatal — request proceeds unauthenticated
+    // Non-fatal
   }
   return config;
 });
@@ -93,6 +119,21 @@ client.interceptors.response.use(
       if (apiError.message) params.set('message', apiError.message);
       const query = params.toString();
       window.location.href = query ? `/login?${query}` : '/login';
+      return Promise.reject(apiError);
+    }
+
+    // Role / Ability permission failure on mode boundary
+    if (
+      apiError.status === 403 &&
+      (apiError.message?.toLowerCase().includes('insufficient token ability') ||
+        apiError.code === 'insufficient_ability' ||
+        apiError.code === 'role_denied')
+    ) {
+      console.error('[ModeGuard] Endpoint rejected due to token scope violation:', apiError.message);
+      const session = readSession();
+      if (session?.app_mode) {
+        window.location.href = homeFor(session.app_mode);
+      }
       return Promise.reject(apiError);
     }
 

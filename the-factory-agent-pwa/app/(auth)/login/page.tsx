@@ -7,7 +7,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
 
-import { useAuth, useLoginMutation, authApi } from '@/features/auth';
+import { useAuth, useLoginMutation, authApi, resolveManagerRole } from '@/features/auth';
+import type { AuthUser } from '@/features/auth';
+import { homeFor } from '@/session/appMode';
 import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -47,7 +49,7 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, isSignedIn, appMode } = useAuth();
   const { mutateAsync: loginMutate } = useLoginMutation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,7 +57,6 @@ export default function LoginPage() {
 
   const [agreed, setAgreed] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(true);
 
   const {
     control,
@@ -71,6 +72,13 @@ export default function LoginPage() {
   const emailVal = watch('email');
   const passwordVal = watch('password');
   const isButtonDisabled = isSubmitting || !agreed || !emailVal || !passwordVal;
+
+  // Auto-redirect if already signed in
+  useEffect(() => {
+    if (isSignedIn) {
+      router.replace(homeFor(appMode));
+    }
+  }, [isSignedIn, appMode, router]);
 
   // Hydrate saved credentials on mount
   useEffect(() => {
@@ -102,37 +110,52 @@ export default function LoginPage() {
           appStore.delete('saved_credentials');
         }
 
-        const baseUser = response.user
-          ? {
-              ...response.user,
-              avatar_url: response.user.avatar_url ?? response.user.avatar ?? null,
-              access_role: response.access_role,
-              internal_role: response.internal_role,
-            }
-          : undefined;
+        const mode = response.app_mode ?? 'agent';
+        const destination = response.home_path || homeFor(mode);
+
+        const baseUser: AuthUser = {
+          id: response.user?.id ?? 0,
+          email: response.user?.email ?? data.email,
+          name: response.user?.name,
+          company_id: response.user?.company_id,
+          avatar_url: response.user?.avatar_url ?? response.user?.avatar ?? null,
+          access_role: response.access_role,
+          internal_role: response.internal_role,
+          app_mode: mode,
+          manager_role:
+            mode === 'manager'
+              ? resolveManagerRole({
+                  internalRole: response.internal_role,
+                  accessRole: response.access_role,
+                  userType: response.user_type,
+                })
+              : undefined,
+          companies: response.companies,
+        };
 
         login(response.token, baseUser);
 
         try {
           const profile = await authApi.getProfile(baseUser?.company_id);
           login(response.token, {
-            id: profile.identity?.id ?? baseUser?.id ?? 0,
-            email: profile.identity?.email ?? baseUser?.email ?? data.email,
-            name: profile.identity?.name ?? baseUser?.name,
+            ...baseUser,
+            id: profile.identity?.id ?? baseUser.id,
+            email: profile.identity?.email ?? baseUser.email,
+            name: profile.identity?.name ?? baseUser.name,
             company_id:
               profile.organization?.company_id != null
                 ? Number(profile.organization.company_id)
-                : baseUser?.company_id,
-            avatar_url: profile.identity?.avatar_url ?? null,
-            access_role: profile.permissions?.access_role ?? response.access_role,
-            internal_role: profile.permissions?.internal_role ?? response.internal_role,
+                : baseUser.company_id,
+            avatar_url: profile.identity?.avatar_url ?? baseUser.avatar_url,
+            access_role: profile.permissions?.access_role ?? baseUser.access_role,
+            internal_role: profile.permissions?.internal_role ?? baseUser.internal_role,
           });
         } catch {
           // Profile fetch is best-effort; login still succeeds with token
         }
 
         toast.success('Logged in successfully');
-        router.replace('/');
+        router.replace(destination);
       } else {
         toast.error('Login failed. Invalid credentials or empty response.');
       }

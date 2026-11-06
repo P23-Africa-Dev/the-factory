@@ -42,3 +42,22 @@ export function placeAttributionLabel(
 
   return `via ${unique.map(formatPlaceProviderLabel).join(' · ')}`;
 }
+
+type PlaceItemAttributionInput = {
+  sources?: PlaceSourceRef[];
+  provider?: string;
+  attributionVisible?: boolean;
+};
+
+export function getAttributionLine(
+  input: PlaceItemAttributionInput | PlaceItemAttributionInput[] | undefined,
+): string | null {
+  if (!input) return null;
+  if (Array.isArray(input)) {
+    const first = input[0];
+    if (!first) return null;
+    const allSources = input.flatMap((i) => i.sources ?? (i.provider ? [{ provider: i.provider, id: '' }] : []));
+    return placeAttributionLabel(allSources, first.provider, first.attributionVisible);
+  }
+  return placeAttributionLabel(input.sources, input.provider, input.attributionVisible);
+}

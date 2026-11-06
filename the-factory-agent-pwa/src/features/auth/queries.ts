@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi } from './api';
 import { authKeys } from './queryKeys';
 import type { LoginPayload, ForgotPasswordPayload, ResetPasswordPayload } from './types';
@@ -14,7 +14,7 @@ export function useLoginMutation() {
 export function useForgotPasswordMutation() {
   return useMutation({
     mutationFn: (payload: ForgotPasswordPayload) =>
-      authApi.forgotPassword({ ...payload, portal: 'agent' }),
+      authApi.forgotPassword({ ...payload, portal: 'mobile' }),
   });
 }
 
@@ -25,7 +25,7 @@ export function useValidateResetTokenQuery(
 ) {
   return useQuery({
     queryKey: [...authKeys.all, 'validate-token', token, email],
-    queryFn: () => authApi.validateResetToken(token, { email, portal: 'agent' }),
+    queryFn: () => authApi.validateResetToken(token, { email, portal: 'mobile' }),
     enabled,
     retry: false,
   });
@@ -34,7 +34,7 @@ export function useValidateResetTokenQuery(
 export function useResetPasswordMutation() {
   return useMutation({
     mutationFn: (payload: ResetPasswordPayload) =>
-      authApi.resetPassword({ ...payload, portal: 'agent' }),
+      authApi.resetPassword({ ...payload, portal: 'mobile' }),
   });
 }
 
@@ -65,4 +65,23 @@ export function useProfile(enabled: boolean = true) {
   }, [query.data]);
 
   return query;
+}
+
+export function useCompanySettings(enabled: boolean = true) {
+  return useQuery({
+    queryKey: [...authKeys.all, 'company-settings'],
+    queryFn: () => authApi.getCompanySettings(),
+    enabled,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdateCompanySettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) => authApi.updateCompanySettings(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [...authKeys.all, 'company-settings'] });
+    },
+  });
 }

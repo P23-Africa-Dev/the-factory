@@ -18,6 +18,7 @@ import {
   useBottomNavVisibility,
 } from '@/components/shared/BottomNavVisibility';
 import { OfflineSyncBanner } from '@/components/shared/OfflineSyncBanner';
+import { ModeGate } from '@/session/ModeGate';
 
 function AgentShellContent({
   children,
@@ -50,7 +51,7 @@ function AgentShell({ children }: { children: React.ReactNode }) {
   usePushSubscription(user?.id);
   useDeviceNotificationBridge();
   useTrackingWebSocket();
-  const { isRestoring } = useRouteRestoration();
+  const { isRestoring } = useRouteRestoration('agent');
 
   useEffect(() => {
     const SYNC_DEBOUNCE_MS = 8_000;
@@ -130,10 +131,12 @@ export default function AgentLayout({
   }
 
   return (
-    <ActiveTrackingProvider>
-      <FieldActivityProvider>
-        <AgentShell>{children}</AgentShell>
-      </FieldActivityProvider>
-    </ActiveTrackingProvider>
+    <ModeGate mode="agent">
+      <ActiveTrackingProvider>
+        <FieldActivityProvider>
+          <AgentShell>{children}</AgentShell>
+        </FieldActivityProvider>
+      </ActiveTrackingProvider>
+    </ModeGate>
   );
 }

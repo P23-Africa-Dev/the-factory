@@ -1,14 +1,16 @@
 /**
- * Maps backend / dashboard notification action URLs onto Agent PWA routes.
+ * Maps backend / dashboard notification action URLs onto Unified PWA routes.
  *
- * Backend often emits dashboard paths (`/tasks/123`, `/agent/field-activity`).
- * The Agent PWA uses different routes (`/task/123`, `/field-activity`). Using
- * the raw URL on notification click produces a Next.js 404.
+ * Backend often emits dashboard paths (`/tasks/123`, `/agent/field-activity`, `/management/tasks`).
+ * This resolver remaps them to the appropriate Agent or Manager PWA routes based on active mode.
  */
+import { readSession } from '@/session/sessionStore';
+import type { AppMode } from '@/session/appMode';
 
 export type ResolveAgentDeepLinkOptions = {
   /** When true, absolute http(s) URLs are returned unchanged. */
   allowAbsolute?: boolean;
+  mode?: AppMode;
 };
 
 function stripOrigin(url: string): string {
@@ -22,7 +24,7 @@ function stripOrigin(url: string): string {
 }
 
 /**
- * Resolve a notification action_url / action_route to a navigable Agent PWA path.
+ * Resolve a notification action_url / action_route to a navigable PWA path.
  * Always returns a path starting with `/` (never null) so OS notification taps
  * never land on an unknown route.
  */
@@ -33,7 +35,10 @@ export function resolveAgentDeepLink(
   const allowAbsolute = options.allowAbsolute !== false;
   const input = typeof rawUrl === 'string' ? rawUrl.trim() : '';
 
-  if (!input) return '/';
+  if (!input) {
+    const currentMode = options.mode ?? readSession()?.app_mode;
+    return currentMode === 'manager' ? '/manager' : '/';
+  }
 
   if (allowAbsolute && /^https?:\/\//i.test(input)) {
     try {
@@ -44,6 +49,7 @@ export function resolveAgentDeepLink(
         parsed.origin === window.location.origin
       ) {
         return resolveAgentDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`, {
+          ...options,
           allowAbsolute: false,
         });
       }
@@ -65,13 +71,59 @@ export function resolveAgentDeepLink(
   let pathname = pathnamePart || '/';
   const search = query ? `?${query}` : '';
 
-  // Strip dashboard `/agent` prefix used by the main web app.
-  if (pathname === '/agent') {
+  // Detect explicit manager path
+  const isManagerExplicit = pathname === '/manager' || pathname.startsWith('/manager/');
+  const resolvedMode: AppMode =
+    options.mode ?? (isManagerExplicit ? 'manager' : readSession()?.app_mode ?? 'agent');
+
+  if (isManagerExplicit) {
+    return `${pathname}${search}`;
+  }
+
+  // Strip dashboard `/agent` or `/management` prefix
+  if (pathname === '/agent' || pathname === '/management') {
     pathname = '/';
   } else if (pathname.startsWith('/agent/')) {
     pathname = pathname.slice('/agent'.length);
+  } else if (pathname.startsWith('/management/')) {
+    pathname = pathname.slice('/management'.length);
   }
 
+  if (resolvedMode === 'manager') {
+    if (pathname === '/' || pathname === '/dashboard' || pathname === '/home') {
+      return `/manager${search}`;
+    }
+    if (pathname.startsWith('/tasks') || pathname.startsWith('/task/')) {
+      return `/manager/tasks${search}`;
+    }
+    if (pathname.startsWith('/crm')) {
+      return `/manager${pathname}${search}`;
+    }
+    if (pathname.startsWith('/meetings')) {
+      return `/manager${pathname}${search}`;
+    }
+    if (pathname.startsWith('/field-activity')) {
+      return `/manager${pathname}${search}`;
+    }
+    if (pathname.startsWith('/map')) {
+      return `/manager/map${search}`;
+    }
+    if (pathname.startsWith('/workforce')) {
+      return `/manager/workforce${search}`;
+    }
+    if (pathname.startsWith('/payroll')) {
+      return `/manager/payroll${search}`;
+    }
+    if (pathname.startsWith('/profile') || pathname === '/user/profile') {
+      return `/manager/profile${search}`;
+    }
+    if (pathname.startsWith('/assistant')) {
+      return `/manager/assistant${search}`;
+    }
+    return `/manager${search}`;
+  }
+
+  // Agent resolution logic
   // Task detail: /tasks/123 → /task/123
   const taskDetail = pathname.match(/^\/tasks\/(\d+)(?:\/.*)?$/);
   if (taskDetail) {
@@ -151,12 +203,6 @@ export function resolveAgentDeepLink(
     return '/';
   }
 
-  // Drive (not in agent PWA) → home
-  if (pathname.startsWith('/drive') || pathname.startsWith('/agent/drive')) {
-    return '/';
-  }
-
-  // Already a known agent route prefix — keep it
   const knownPrefixes = [
     '/task/',
     '/tasks',
@@ -173,6 +219,5 @@ export function resolveAgentDeepLink(
     return `${pathname}${search}`;
   }
 
-  // Unknown → home (never 404)
   return '/';
 }

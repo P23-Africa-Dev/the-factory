@@ -63,6 +63,8 @@ use App\Http\Controllers\Api\V1\Kpi\KpiStatusController;
 use App\Http\Controllers\Api\V1\Map\MapPoiDisplayController;
 use App\Http\Controllers\Api\V1\Map\MapProviderController;
 use App\Http\Controllers\Api\V1\MapCredit\MapCreditController;
+use App\Http\Controllers\Api\V1\Mobile\MobileLoginController;
+use App\Http\Controllers\Api\V1\Mobile\MobileSessionController;
 use App\Http\Controllers\Api\V1\Notification\NotificationController;
 use App\Http\Controllers\Api\V1\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\Notification\PushSubscriptionController;
@@ -192,6 +194,12 @@ Route::prefix('agent')->name('agent.')->group(function (): void {
         ->name('login');
 });
 
+Route::prefix('mobile')->name('mobile.')->group(function (): void {
+    Route::post('/login', MobileLoginController::class)
+        ->middleware('throttle.login')
+        ->name('login');
+});
+
 Route::prefix('internal')->name('internal.')->group(function (): void {
     // Deprecated: use /api/v1/agent/login.
     Route::post('/login', InternalLoginController::class)
@@ -209,6 +217,9 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 
 // Authenticated
 Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscription.active'])->group(function (): void {
+    Route::get('/mobile/session', MobileSessionController::class)
+        ->name('mobile.session');
+
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])
         ->name('support-access.status');
     Route::post('/support-access/end', [SupportAccessController::class, 'end'])

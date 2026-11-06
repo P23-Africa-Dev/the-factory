@@ -58,7 +58,7 @@ class PasswordResetService
         $broker = Password::broker('users');
         $token = $broker->createToken($user);
 
-        $frontendBaseUrl = $this->resolveFrontendBaseUrl();
+        $frontendBaseUrl = $this->resolveFrontendBaseUrl($effectivePortal);
         $query = http_build_query([
             'email' => $user->email,
             'portal' => $effectivePortal,
@@ -228,6 +228,9 @@ class PasswordResetService
 
     public function loginPathForPortal(string $portal): string
     {
+        if ($portal === 'mobile') {
+            return '/login';
+        }
         return $portal === 'agent' ? '/agent/login' : '/login';
     }
 
@@ -235,7 +238,7 @@ class PasswordResetService
     {
         $normalizedPortal = strtolower(trim((string) $portal));
 
-        if (in_array($normalizedPortal, ['agent', 'management'], true)) {
+        if (in_array($normalizedPortal, ['agent', 'management', 'mobile'], true)) {
             return $normalizedPortal;
         }
 
@@ -247,8 +250,15 @@ class PasswordResetService
         return $user->internal_role === 'agent' ? 'agent' : 'management';
     }
 
-    private function resolveFrontendBaseUrl(): string
+    private function resolveFrontendBaseUrl(?string $portal = null): string
     {
+        if ($portal === 'mobile') {
+            $pwaUrl = config('app.agent_pwa_url');
+            if (! empty($pwaUrl)) {
+                return rtrim((string) $pwaUrl, '/');
+            }
+        }
+
         return rtrim((string) config('app.frontend_url'), '/');
     }
 }

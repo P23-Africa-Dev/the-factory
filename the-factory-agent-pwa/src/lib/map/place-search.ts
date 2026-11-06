@@ -238,3 +238,10 @@ export async function retrievePlaceByMapboxId(
     sessionToken: createSearchSessionToken(),
   });
 }
+
+export class PlaceSearchCreditExhaustedError extends Error {
+  constructor(message = 'Place search credits exhausted') {
+    super(message);
+    this.name = 'PlaceSearchCreditExhaustedError';
+  }
+}
