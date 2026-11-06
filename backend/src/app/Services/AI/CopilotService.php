@@ -4,28 +4,29 @@ declare(strict_types=1);
 
 namespace App\Services\AI;
 
+use App\Enums\NotificationCategory;
 use App\Enums\TaskType;
+use App\Models\Company;
 use App\Models\User;
+use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Crm\CrmLeadReadArgsResolver;
 use App\Services\AI\Crm\EmailInferenceService;
 use App\Services\AI\Crm\LeadInferenceService;
 use App\Services\AI\Crm\VisitLogInferenceService;
 use App\Services\AI\Kpi\KpiInferenceService;
-use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Policy\ActionConfirmationPolicyService;
 use App\Services\AI\Policy\ToolPolicyService;
 use App\Services\AI\Providers\AiGenerationResult;
 use App\Services\AI\Providers\AiProviderRouter;
+use App\Services\AI\Support\LocalDateTimeContext;
 use App\Services\AI\Tools\ActionToolRegistry;
 use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
-use App\Enums\NotificationCategory;
 use App\Services\Demo\DemoCompanyService;
 use App\Services\Notification\NotificationService;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use App\Services\AI\AiLoggingService;
-use App\Services\AI\Support\LocalDateTimeContext;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -83,6 +84,7 @@ class CopilotService
                 sessionId: $threadId,
                 reason: 'Monthly credit limit exceeded.',
             );
+
             return $this->persistAndRespond(
                 user: $user,
                 companyId: $resolvedCompanyId,
@@ -389,7 +391,7 @@ class CopilotService
             tool: $resolvedTool,
             sources: $toolResult['sources'] ?? [],
             payload: $toolResult['payload'] ?? null,
-            creditsConsumed: $this->demoCompanyService->isDemo($resolvedCompanyId) ? 0 : 1,
+            creditsConsumed: $this->demoCompanyService->hasComplimentaryAccess($resolvedCompanyId) ? 0 : 1,
         );
     }
 
@@ -505,7 +507,7 @@ class CopilotService
         }
 
         if ((str_contains($normalized, 'same agent') || str_contains($normalized, 'that agent')) && is_string($contextEntities['agent'] ?? null)) {
-            $message .= ' (same agent refers to: ' . $contextEntities['agent'] . ')';
+            $message .= ' (same agent refers to: '.$contextEntities['agent'].')';
         }
 
         // Only answer when the user explicitly asks about their name.
@@ -545,8 +547,8 @@ class CopilotService
         }
 
         $systemPrompt = ElySystemPrompt::core()
-            . "\n\n" . ElySystemPrompt::productKnowledge()
-            . "\n\n" . ElySystemPrompt::fewShotExamples();
+            ."\n\n".ElySystemPrompt::productKnowledge()
+            ."\n\n".ElySystemPrompt::fewShotExamples();
         $userPrompt = sprintf(
             "Company name: %s\nTenant scope ID (internal, do not mention): %d\nUser name: %s\nRole: %s\n%s\nConversation summary:\n%s\nRecent conversation:\n%s\nKnown entities: %s\nQuestion: %s",
             $this->redactSensitiveText($resolvedCompanyName),
@@ -669,19 +671,18 @@ class CopilotService
     }
 
     /**
-     * @param array<int,array{role?:string,content?:string}> $recentMessages
+     * @param  array<int,array{role?:string,content?:string}>  $recentMessages
      */
     private function formatRecentMessagesForPrompt(array $recentMessages): string
     {
         return collect($recentMessages)
-            ->map(static fn(array $msg): string => sprintf(
+            ->map(static fn (array $msg): string => sprintf(
                 '[%s] %s',
                 (string) ($msg['role'] ?? 'assistant'),
                 (string) ($msg['content'] ?? '')
             ))
             ->implode("\n");
     }
-
 
     private function inferActionArgs(
         string $message,
@@ -824,7 +825,7 @@ class CopilotService
                 userId: $userId,
                 threadId: $threadId,
                 conversationSummary: (string) ($context['summary'] ?? ''),
-                companyName: (string) (\App\Models\Company::query()->find($companyId)?->name ?? 'your organization'),
+                companyName: (string) (Company::query()->find($companyId)?->name ?? 'your organization'),
             ),
             'crm.create_lead' => $this->leadInferenceService->infer(
                 message: $message,
@@ -858,8 +859,8 @@ class CopilotService
     }
 
     /**
-     * @param array<string,string> $entities
-     * @param array<string,mixed> $actionArgs
+     * @param  array<string,string>  $entities
+     * @param  array<string,mixed>  $actionArgs
      * @return array<string,mixed>
      */
     private function normalizeProvidedActionArgs(
@@ -1012,7 +1013,7 @@ class CopilotService
     }
 
     /**
-     * @param array<string,mixed> $actionArgs
+     * @param  array<string,mixed>  $actionArgs
      * @return array<string,mixed>
      */
     private function sanitizeActionArgs(array $actionArgs): array
@@ -1026,6 +1027,7 @@ class CopilotService
 
             if (is_array($value)) {
                 $sanitized[$key] = $this->sanitizeActionArgs($value);
+
                 continue;
             }
 
@@ -1034,7 +1036,6 @@ class CopilotService
 
         return $sanitized;
     }
-
 
     private function extractVisitLocationFromSentence(string $message): ?string
     {
@@ -1083,13 +1084,13 @@ class CopilotService
     }
 
     /**
-     * @param array<int,string> $labels
+     * @param  array<int,string>  $labels
      */
     private function extractLabeledValue(string $message, array $labels): ?string
     {
         foreach ($labels as $label) {
             $escaped = preg_quote($label, '/');
-            $pattern = '/\b' . $escaped . '\b\s*:\s*(.+?)(?=\s*(?:[a-z][a-z\s&\/]{1,30}\s*:|\.|;|\n|$))/i';
+            $pattern = '/\b'.$escaped.'\b\s*:\s*(.+?)(?=\s*(?:[a-z][a-z\s&\/]{1,30}\s*:|\.|;|\n|$))/i';
             if (preg_match($pattern, $message, $m) === 1) {
                 $value = $this->stripWrappingQuotes(trim((string) $m[1]));
                 if ($value !== '') {
@@ -1155,14 +1156,15 @@ class CopilotService
             $text = strtolower(trim($dueDateText));
 
             if (preg_match('/\bnext\s+week\b/i', $text) === 1) {
-                return now()->addWeek()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0)->toDateTimeString();
+                return now()->addWeek()->endOfWeek(CarbonInterface::FRIDAY)->setTime(17, 0)->toDateTimeString();
             }
 
             if (preg_match('/\bthis\s+week\b/i', $text) === 1) {
-                $thisFriday = now()->endOfWeek(\Carbon\CarbonInterface::FRIDAY)->setTime(17, 0);
+                $thisFriday = now()->endOfWeek(CarbonInterface::FRIDAY)->setTime(17, 0);
                 if ($thisFriday->lessThanOrEqualTo(now())) {
                     $thisFriday = $thisFriday->addWeek();
                 }
+
                 return $thisFriday->toDateTimeString();
             }
 
@@ -1200,6 +1202,7 @@ class CopilotService
 
             if (preg_match('/\bin\s+(\d{1,2})\s+days?\b/i', $text, $m) === 1) {
                 $days = max(1, (int) $m[1]);
+
                 return now()->addDays($days)->setTime(17, 0)->toDateTimeString();
             }
 
@@ -1232,7 +1235,7 @@ class CopilotService
     }
 
     /**
-     * @param array<string,string> $entities
+     * @param  array<string,string>  $entities
      */
     private function resolveAgentIdForTaskMessage(string $message, int $companyId, array $entities): ?int
     {
@@ -1313,7 +1316,7 @@ class CopilotService
 
         if (preg_match('/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i', $candidate) === 1) {
             $byEmail = User::query()
-                ->whereHas('companies', static fn($q) => $q->where('companies.id', $companyId))
+                ->whereHas('companies', static fn ($q) => $q->where('companies.id', $companyId))
                 ->where('email', $candidate)
                 ->value('id');
 
@@ -1321,8 +1324,8 @@ class CopilotService
         }
 
         $byName = User::query()
-            ->whereHas('companies', static fn($q) => $q->where('companies.id', $companyId))
-            ->where('name', 'like', '%' . $candidate . '%')
+            ->whereHas('companies', static fn ($q) => $q->where('companies.id', $companyId))
+            ->where('name', 'like', '%'.$candidate.'%')
             ->value('id');
 
         return is_numeric($byName) ? (int) $byName : null;
@@ -1351,15 +1354,15 @@ class CopilotService
         }
 
         if (preg_match('/\bin\s+(\d{1,2})\s+days?\b/i', $message, $m) === 1) {
-            return 'in ' . (int) $m[1] . ' days';
+            return 'in '.(int) $m[1].' days';
         }
 
         return null;
     }
 
     /**
-     * @param array<string,mixed> $args
-     * @param array<int,string> $warnings
+     * @param  array<string,mixed>  $args
+     * @param  array<int,string>  $warnings
      */
     private function buildActionPreviewSummary(string $tool, array $args, array $warnings = [], bool $blockingConfirmation = false): string
     {
@@ -1375,8 +1378,8 @@ class CopilotService
                 $type,
                 $location,
                 $due,
-            ) . ($warnings !== []
-                ? ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings))
+            ).($warnings !== []
+                ? ' Notes: '.implode(' ', array_map(static fn (string $w): string => '['.$w.']', $warnings))
                 : '');
 
             if ($blockingConfirmation) {
@@ -1391,7 +1394,7 @@ class CopilotService
             $toUser = (string) ($args['to_user_id'] ?? 'unassigned');
             $base = sprintf('ELY action ready: reassign task #%s to user %s. Click Confirm Action to proceed.', $taskId, $toUser);
             if ($warnings !== []) {
-                $base .= ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings));
+                $base .= ' Notes: '.implode(' ', array_map(static fn (string $w): string => '['.$w.']', $warnings));
             }
             if ($blockingConfirmation) {
                 $base .= ' Confirmation is currently blocked until task and assignee are set.';
@@ -1405,7 +1408,7 @@ class CopilotService
             $summary = Str::limit((string) ($args['summary'] ?? ''), 80, '…');
             $base = sprintf('ELY action ready: log visit for lead #%s (%s). Click Confirm Action to proceed.', $leadId, $summary !== '' ? $summary : 'no summary');
             if ($warnings !== []) {
-                $base .= ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings));
+                $base .= ' Notes: '.implode(' ', array_map(static fn (string $w): string => '['.$w.']', $warnings));
             }
             if ($blockingConfirmation) {
                 $base .= ' Confirmation is currently blocked until lead and summary are set.';
@@ -1418,7 +1421,7 @@ class CopilotService
             $name = (string) ($args['name'] ?? 'New Project');
             $base = sprintf('ELY action ready: create project "%s". Click Confirm Action to proceed.', $name);
             if ($warnings !== []) {
-                $base .= ' Notes: ' . implode(' ', array_map(static fn(string $w): string => '[' . $w . ']', $warnings));
+                $base .= ' Notes: '.implode(' ', array_map(static fn (string $w): string => '['.$w.']', $warnings));
             }
 
             return $base;
@@ -1448,7 +1451,7 @@ class CopilotService
     }
 
     /**
-     * @param array<string,mixed> $args
+     * @param  array<string,mixed>  $args
      * @return array<int,string>
      */
     private function inferActionWarnings(string $tool, array $args, string $role = 'admin'): array
@@ -1488,13 +1491,13 @@ class CopilotService
         ];
 
         return collect($codes)
-            ->map(static fn(string $code): string => $map[$code] ?? $code)
+            ->map(static fn (string $code): string => $map[$code] ?? $code)
             ->values()
             ->all();
     }
 
     /**
-     * @param array<string,mixed> $args
+     * @param  array<string,mixed>  $args
      * @return array<int,string>
      */
     private function inferActionWarningCodes(string $tool, array $args, string $role = 'admin'): array
@@ -1539,7 +1542,7 @@ class CopilotService
     }
 
     /**
-     * @param array<int,string> $validationWarningCodes
+     * @param  array<int,string>  $validationWarningCodes
      * @return array<int,string>
      */
     private function determineBlockingWarningCodes(array $validationWarningCodes): array
@@ -1673,7 +1676,7 @@ class CopilotService
     }
 
     /**
-     * @param array<string,string> $entities
+     * @param  array<string,string>  $entities
      */
     private function resolveAgentIdFromMessage(string $message, int $companyId, array $entities): ?int
     {
@@ -1690,8 +1693,8 @@ class CopilotService
         }
 
         return User::query()
-            ->whereHas('companies', static fn($q) => $q->where('companies.id', $companyId))
-            ->where('name', 'like', '%' . $candidate . '%')
+            ->whereHas('companies', static fn ($q) => $q->where('companies.id', $companyId))
+            ->where('name', 'like', '%'.$candidate.'%')
             ->value('id');
     }
 
@@ -1700,7 +1703,7 @@ class CopilotService
         if ($e instanceof ValidationException) {
             $firstError = collect($e->errors())
                 ->flatten()
-                ->filter(static fn(mixed $value): bool => is_string($value) && trim($value) !== '')
+                ->filter(static fn (mixed $value): bool => is_string($value) && trim($value) !== '')
                 ->first();
 
             return sprintf(
@@ -1810,7 +1813,7 @@ class CopilotService
             ->selectRaw('company_users.role as company_role')
             ->join(
                 'company_users',
-                static fn($join) => $join
+                static fn ($join) => $join
                     ->on('company_users.user_id', '=', 'users.id')
                     ->where('company_users.company_id', '=', $resolvedCompanyId)
             )
@@ -1818,7 +1821,7 @@ class CopilotService
                 $query->where('users.supervisor_user_id', $user->id);
             })
             ->when($search !== '', function ($query) use ($search): void {
-                $like = '%' . $search . '%';
+                $like = '%'.$search.'%';
                 $query->where(static function ($nested) use ($like): void {
                     $nested->where('users.name', 'like', $like)
                         ->orWhere('users.email', 'like', $like);
@@ -1830,7 +1833,7 @@ class CopilotService
             ->get();
 
         return $assignees
-            ->map(static fn(User $assignee): array => [
+            ->map(static fn (User $assignee): array => [
                 'id' => (int) $assignee->id,
                 'name' => (string) $assignee->name,
                 'email' => (string) ($assignee->email ?? ''),
@@ -1904,7 +1907,7 @@ class CopilotService
 
     private function canConsumeCredits(int $companyId): bool
     {
-        if ($this->demoCompanyService->isDemo($companyId)) {
+        if ($this->demoCompanyService->hasComplimentaryAccess($companyId)) {
             return true;
         }
 
@@ -1918,7 +1921,7 @@ class CopilotService
 
     private function registerCreditUsage(int $companyId, int $credits): void
     {
-        if ($this->demoCompanyService->isDemo($companyId)) {
+        if ($this->demoCompanyService->hasComplimentaryAccess($companyId)) {
             return;
         }
 
@@ -1956,7 +1959,7 @@ class CopilotService
         $protected = preg_replace_callback(
             '/\b\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/',
             static function (array $matches) use (&$datePlaceholders): string {
-                $token = '{{SAFE_DATE_' . count($datePlaceholders) . '}}';
+                $token = '{{SAFE_DATE_'.count($datePlaceholders).'}}';
                 $datePlaceholders[$token] = $matches[0];
 
                 return $token;
@@ -2001,6 +2004,7 @@ class CopilotService
             foreach ($value as $key => $item) {
                 if (is_string($key) && $this->isRedactionExemptKey($key)) {
                     $result[$key] = $item;
+
                     continue;
                 }
 
@@ -2051,7 +2055,7 @@ class CopilotService
                     $creatableCount > 0 ? " ({$creatableCount} can become tasks)" : '',
                 ),
             'action_url' => '/assistant',
-            'dedupe_key' => 'daily-plan-ready:' . $user->id . ':' . ($payload['plan_date'] ?? now()->toDateString()),
+            'dedupe_key' => 'daily-plan-ready:'.$user->id.':'.($payload['plan_date'] ?? now()->toDateString()),
         ]);
     }
 }

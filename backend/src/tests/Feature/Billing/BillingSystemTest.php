@@ -4,16 +4,25 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Billing;
 
+use App\Enums\BillingInterval;
 use App\Enums\SubscriptionStatus;
+use App\Models\Admin;
 use App\Models\Company;
+use App\Models\PlatformSetting;
 use App\Models\User;
+use App\Services\Admin\UserAdminService;
 use App\Services\Billing\BillingEnforcementSettingService;
 use App\Services\Billing\CompanySeatLimitService;
+use App\Services\Billing\CompanySubscriptionService;
 use App\Services\Billing\PaymentLinkService;
 use App\Services\Billing\SubscriptionLifecycleService;
-use App\Models\PlatformSetting;
+use App\Services\Demo\DemoCompanyService;
+use App\Services\Internal\InternalUserLifecycleService;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\ActivatesCompanySubscription;
 use Tests\TestCase;
 
@@ -264,7 +273,7 @@ class BillingSystemTest extends TestCase
         }
 
         $service = app(CompanySeatLimitService::class);
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         $service->assertCanAddMember($company->fresh());
     }
 
@@ -272,10 +281,10 @@ class BillingSystemTest extends TestCase
     {
         ['company' => $company] = $this->createCompanyWithOwner();
 
-        app(\App\Services\Billing\CompanySubscriptionService::class)->activateOfflinePayment(
+        app(CompanySubscriptionService::class)->activateOfflinePayment(
             company: $company,
             planKey: 'up_to_5',
-            interval: \App\Enums\BillingInterval::MONTHLY,
+            interval: BillingInterval::MONTHLY,
             periodStart: now()->startOfDay()->setDate(2026, 3, 1),
         );
 
@@ -295,7 +304,7 @@ class BillingSystemTest extends TestCase
             ]);
         }
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         app(CompanySeatLimitService::class)->assertCanAddMember($company->fresh());
     }
 
@@ -307,7 +316,7 @@ class BillingSystemTest extends TestCase
         $result = $service->generate(
             company: $company,
             planKey: 'up_to_10',
-            interval: \App\Enums\BillingInterval::MONTHLY,
+            interval: BillingInterval::MONTHLY,
         );
 
         $this->assertNotEmpty($result['url']);
@@ -385,7 +394,7 @@ class BillingSystemTest extends TestCase
         $token = app(PaymentLinkService::class)->generate(
             company: $company,
             planKey: 'up_to_10',
-            interval: \App\Enums\BillingInterval::MONTHLY,
+            interval: BillingInterval::MONTHLY,
         )['token'];
 
         $response = $this->postJson('/api/v1/billing/payment-link/' . $token . '/checkout');
@@ -420,7 +429,7 @@ class BillingSystemTest extends TestCase
             'subscription_plan_key' => null,
         ]);
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         $this->expectExceptionMessage('Subscription plan is not configured');
 
         app(CompanySeatLimitService::class)->assertCanAddMember($company->fresh());
@@ -440,7 +449,7 @@ class BillingSystemTest extends TestCase
             ]);
         }
 
-        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->expectException(ValidationException::class);
         $this->expectExceptionMessage('Remove');
 
         app(CompanySeatLimitService::class)->assertCanSwitchToPlan($company->fresh(), 'up_to_5');
@@ -474,7 +483,7 @@ class BillingSystemTest extends TestCase
         ]);
         $this->activateCompanySubscription($company, 'up_to_5');
 
-        \Illuminate\Support\Facades\DB::table('subscriptions')->insert([
+        DB::table('subscriptions')->insert([
             'company_id' => $company->id,
             'type' => 'default',
             'stripe_id' => 'sub_test_seats_' . $company->id,
@@ -508,7 +517,7 @@ class BillingSystemTest extends TestCase
         ]);
         $this->activateCompanySubscription($company, 'up_to_5');
 
-        \Illuminate\Support\Facades\DB::table('subscriptions')->insert([
+        DB::table('subscriptions')->insert([
             'company_id' => $company->id,
             'type' => 'default',
             'stripe_id' => 'sub_locked_' . $company->id,
@@ -565,12 +574,12 @@ class BillingSystemTest extends TestCase
 
     public function test_admin_can_update_offline_plan_for_company(): void
     {
-        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\PreventRequestForgery::class);
+        $this->withoutMiddleware(PreventRequestForgery::class);
 
         ['company' => $company] = $this->createCompanyWithOwner();
         $this->activateCompanySubscription($company, 'up_to_5');
 
-        $admin = \App\Models\Admin::create([
+        $admin = Admin::create([
             'name' => 'Billing Admin',
             'email' => 'billing-admin@example.com',
             'password' => 'StrongPass123!',
@@ -592,5 +601,165 @@ class BillingSystemTest extends TestCase
         $this->assertSame('2026-06-01', $company->subscription_current_period_start?->format('Y-m-d'));
         $this->assertSame('2027-06-01', $company->subscription_current_period_end?->format('Y-m-d'));
         $this->assertSame(10, app(CompanySeatLimitService::class)->seatLimit($company));
+    }
+
+    public function test_demo_company_with_plan_key_can_add_past_seat_limit(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner([
+            'is_demo' => true,
+            'subscription_status' => SubscriptionStatus::GRACE->value,
+            'subscription_plan_key' => 'up_to_5',
+            'subscription_grace_ends_at' => '2038-01-01 00:00:00',
+        ]);
+        $this->attachAgents($company, 4);
+
+        $usage = app(CompanySeatLimitService::class)->usage($company->fresh());
+
+        $this->assertNull($usage['limit']);
+        $this->assertNull($usage['remaining']);
+        app(CompanySeatLimitService::class)->assertCanAddMember($company->fresh());
+    }
+
+    public function test_long_lived_grace_without_demo_flag_can_add_past_seat_limit(): void
+    {
+        ['company' => $farGrace] = $this->createCompanyWithOwner([
+            'is_demo' => false,
+            'subscription_status' => SubscriptionStatus::GRACE->value,
+            'subscription_plan_key' => 'up_to_5',
+            'subscription_grace_ends_at' => '2038-01-01 00:00:00',
+        ]);
+        ['company' => $openGrace] = $this->createCompanyWithOwner([
+            'is_demo' => false,
+            'subscription_status' => SubscriptionStatus::GRACE->value,
+            'subscription_plan_key' => 'up_to_5',
+            'subscription_grace_ends_at' => null,
+        ]);
+
+        $this->attachAgents($farGrace, 4);
+        $this->attachAgents($openGrace, 4);
+
+        $service = app(CompanySeatLimitService::class);
+        $service->assertCanAddMember($farGrace->fresh());
+        $service->assertCanAddMember($openGrace->fresh());
+        $this->assertNull($service->seatLimit($farGrace->fresh()));
+        $this->assertNull($service->seatLimit($openGrace->fresh()));
+    }
+
+    public function test_short_grace_still_blocks_adds_at_seat_cap(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner([
+            'is_demo' => false,
+            'subscription_status' => SubscriptionStatus::GRACE->value,
+            'subscription_plan_key' => 'up_to_5',
+            'subscription_grace_ends_at' => now()->addDays(3),
+        ]);
+        $this->attachAgents($company, 4);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Your plan allows up to 5 users');
+
+        app(CompanySeatLimitService::class)->assertCanAddMember($company->fresh());
+    }
+
+    public function test_lifecycle_delete_frees_a_seat_at_the_cap(): void
+    {
+        ['user' => $owner, 'company' => $company] = $this->createCompanyWithOwner();
+        $this->activateCompanySubscription($company, 'up_to_5');
+        $member = $this->attachAgents($company, 4);
+        $service = app(CompanySeatLimitService::class);
+
+        try {
+            $service->assertCanAddMember($company->fresh());
+            $this->fail('Expected the plan seat cap to block another member.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('Your plan allows up to 5 users', $exception->getMessage());
+        }
+
+        app(InternalUserLifecycleService::class)->delete($owner, $member, (int) $company->id);
+
+        $service->assertCanAddMember($company->fresh());
+        $this->assertSoftDeleted('users', ['id' => $member->id]);
+        $this->assertDatabaseMissing('company_users', [
+            'company_id' => $company->id,
+            'user_id' => $member->id,
+        ]);
+    }
+
+    public function test_admin_delete_frees_the_seat_and_detaches_membership(): void
+    {
+        ['company' => $company] = $this->createCompanyWithOwner();
+        $this->activateCompanySubscription($company, 'up_to_5');
+        $member = $this->attachAgents($company, 1);
+        $service = app(CompanySeatLimitService::class);
+
+        $this->assertSame(2, $service->countMembers($company->fresh()));
+
+        app(UserAdminService::class)->delete($member);
+
+        $this->assertSame(1, $service->countMembers($company->fresh()));
+        $this->assertSoftDeleted('users', ['id' => $member->id]);
+        $this->assertDatabaseMissing('company_users', [
+            'company_id' => $company->id,
+            'user_id' => $member->id,
+        ]);
+    }
+
+    public function test_removing_demo_clears_long_lived_grace_and_restores_the_seat_cap(): void
+    {
+        ['company' => $complimentary] = $this->createCompanyWithOwner([
+            'subscription_plan_key' => 'up_to_5',
+        ]);
+        $complimentary = app(DemoCompanyService::class)->markAsDemo($complimentary);
+        $this->attachAgents($complimentary, 4);
+        app(CompanySeatLimitService::class)->assertCanAddMember($complimentary->fresh());
+
+        $complimentary = app(DemoCompanyService::class)->unmarkDemo($complimentary->fresh());
+
+        $this->assertFalse((bool) $complimentary->is_demo);
+        $this->assertSame(SubscriptionStatus::NONE->value, $complimentary->subscription_status);
+        $this->assertNull($complimentary->subscription_grace_ends_at);
+        $this->assertFalse($complimentary->hasComplimentaryAccess());
+
+        try {
+            app(CompanySeatLimitService::class)->assertCanAddMember($complimentary);
+            $this->fail('Expected subscription access to be required after demo access is removed.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('active subscription is required', $exception->getMessage());
+        }
+
+        ['company' => $paidDemo] = $this->createCompanyWithOwner();
+        $paidDemo = $this->activateCompanySubscription($paidDemo, 'up_to_5');
+        $paidDemo->forceFill(['is_demo' => true])->save();
+        $this->attachAgents($paidDemo, 4);
+        app(CompanySeatLimitService::class)->assertCanAddMember($paidDemo->fresh());
+
+        $paidDemo = app(DemoCompanyService::class)->unmarkDemo($paidDemo->fresh());
+
+        $this->assertSame(SubscriptionStatus::ACTIVE->value, $paidDemo->subscription_status);
+        $this->assertFalse($paidDemo->hasComplimentaryAccess());
+
+        try {
+            app(CompanySeatLimitService::class)->assertCanAddMember($paidDemo);
+            $this->fail('Expected the paid plan seat cap to apply after demo access is removed.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('Your plan allows up to 5 users', $exception->getMessage());
+        }
+    }
+
+    private function attachAgents(Company $company, int $count): User
+    {
+        $member = null;
+
+        for ($i = 0; $i < $count; $i++) {
+            $member = User::factory()->create([
+                'internal_role' => 'agent',
+            ]);
+            $company->users()->attach($member->id, [
+                'role' => 'agent',
+                'joined_at' => now(),
+            ]);
+        }
+
+        return $member;
     }
 }

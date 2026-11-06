@@ -6,6 +6,7 @@ namespace App\Services\Billing;
 
 use App\Enums\SubscriptionStatus;
 use App\Models\Company;
+use App\Support\Billing\BillingPlanCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -22,6 +23,10 @@ class CompanySeatLimitService
 
     public function seatLimit(Company $company): ?int
     {
+        if ($company->hasComplimentaryAccess()) {
+            return null;
+        }
+
         $planKey = $company->subscription_plan_key;
 
         if ($planKey === null || $planKey === '') {
@@ -29,7 +34,7 @@ class CompanySeatLimitService
         }
 
         try {
-            return \App\Support\Billing\BillingPlanCatalog::seatLimit($planKey);
+            return BillingPlanCatalog::seatLimit($planKey);
         } catch (\InvalidArgumentException) {
             return null;
         }
@@ -40,7 +45,7 @@ class CompanySeatLimitService
      */
     public function requiresConfiguredPlan(Company $company): bool
     {
-        if ($company->isDemo()) {
+        if ($company->hasComplimentaryAccess()) {
             return false;
         }
 
@@ -101,7 +106,7 @@ class CompanySeatLimitService
     public function assertCanSwitchToPlan(Company $company, string $planKey): void
     {
         try {
-            $limit = \App\Support\Billing\BillingPlanCatalog::seatLimit($planKey);
+            $limit = BillingPlanCatalog::seatLimit($planKey);
         } catch (\InvalidArgumentException) {
             throw ValidationException::withMessages([
                 'plan_key' => ['The selected plan is invalid.'],
@@ -115,8 +120,8 @@ class CompanySeatLimitService
 
             throw ValidationException::withMessages([
                 'plan_key' => [
-                    "Remove {$excess} team member" . ($excess === 1 ? '' : 's')
-                    . " before switching to a plan that allows {$limit} users.",
+                    "Remove {$excess} team member".($excess === 1 ? '' : 's')
+                    ." before switching to a plan that allows {$limit} users.",
                 ],
             ]);
         }

@@ -96,7 +96,7 @@ class MapCreditService
 
     public function isMeteredFor(Company $company): bool
     {
-        if ($company->isDemo()) {
+        if ($company->hasComplimentaryAccess()) {
             return false;
         }
 
@@ -375,7 +375,6 @@ class MapCreditService
     }
 
     /**
-     * @param  CompanyMapCredit  $record
      * @return array<string, mixed>
      */
     private function consumeResult(CompanyMapCredit $record, bool $allowed, bool $blocked, bool $metered): array

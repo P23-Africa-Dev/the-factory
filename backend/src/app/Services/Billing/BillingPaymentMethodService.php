@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Billing;
 
-use App\Enums\CompanyUserRole;
 use App\Enums\SubscriptionStatus;
 use App\Models\Company;
 use App\Models\User;
@@ -226,6 +225,10 @@ class BillingPaymentMethodService
 
     private function requiresPaymentMethod(Company $company): bool
     {
+        if ($company->hasComplimentaryAccess()) {
+            return false;
+        }
+
         return in_array($company->subscriptionStatusEnum(), [
             SubscriptionStatus::ACTIVE,
             SubscriptionStatus::PAST_DUE,

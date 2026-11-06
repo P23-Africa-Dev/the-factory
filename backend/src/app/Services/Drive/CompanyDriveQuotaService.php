@@ -51,13 +51,13 @@ class CompanyDriveQuotaService
 
     public function assertCanStore(Company $company, int $additionalBytes): void
     {
-        if ($additionalBytes <= 0) {
+        if ($additionalBytes <= 0 || $company->hasComplimentaryAccess()) {
             return;
         }
 
         $usage = $this->usage($company);
 
-        if ($usage['used_bytes'] + $additionalBytes > $usage['limit_bytes']) {
+        if ($usage['limit_bytes'] < $usage['used_bytes'] + $additionalBytes) {
             throw ValidationException::withMessages([
                 'file' => ['Company drive storage limit reached. Remove files or upgrade your plan to upload more.'],
             ]);
