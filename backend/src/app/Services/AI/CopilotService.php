@@ -24,6 +24,7 @@ use App\Services\AI\Tools\ReadToolRegistry;
 use App\Services\Company\CompanyContextService;
 use App\Services\Demo\DemoCompanyService;
 use App\Services\Notification\NotificationService;
+use App\Services\Workforce\OrganizationAgentRoster;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -59,6 +60,7 @@ class CopilotService
         private readonly ReadToolArgsResolver $readToolArgsResolver,
         private readonly LocalDateTimeContext $localDateTimeContext,
         private readonly CopilotIntentResolver $intentResolver,
+        private readonly OrganizationAgentRoster $organizationAgentRoster,
     ) {}
 
     public function chat(
@@ -161,11 +163,12 @@ class CopilotService
                             $companyCountry,
                             $message,
                         );
+                        $sanitizedArgs = $this->sanitizeActionArgs($inferredArgs);
                         $validationWarningCodes = $this->inferActionWarningCodes($candidateTool, $inferredArgs, $role);
+                        [$validationWarningCodes, $missingFields] = $this->withMissingRequiredFields($candidateTool, $sanitizedArgs, $validationWarningCodes);
                         $validationWarnings = $this->inferActionWarnings($candidateTool, $inferredArgs, $role);
                         $blockingWarningCodes = $this->determineBlockingWarningCodes($validationWarningCodes);
                         $blockingConfirmation = $blockingWarningCodes !== [];
-                        $sanitizedArgs = $this->sanitizeActionArgs($inferredArgs);
 
                         if (is_string($threadId) && $threadId !== '') {
                             $draftId = is_string($actionArgs['draft_id'] ?? null) ? (string) $actionArgs['draft_id'] : null;
@@ -194,6 +197,7 @@ class CopilotService
                                 'validation_warning_codes' => $validationWarningCodes,
                                 'blocking_warning_codes' => $blockingWarningCodes,
                                 'blocking_confirmation' => $blockingConfirmation,
+                                'missing_fields' => $missingFields,
                                 'execution_model' => $routing['model'],
                             ],
                         ];
@@ -214,6 +218,7 @@ class CopilotService
 
                         // Server-side blocker revalidation — frontend disabled buttons are UX only.
                         $revalidationCodes = $this->inferActionWarningCodes($candidateTool, $inferredForExecution, $role);
+                        [$revalidationCodes, $revalidationMissingFields] = $this->withMissingRequiredFields($candidateTool, $resolvedActionArgs, $revalidationCodes);
                         $revalidationBlocking = $this->determineBlockingWarningCodes($revalidationCodes);
                         if ($actionConfirmed && $actionArgs !== []) {
                             $revalidationBlocking = $this->filterConfirmedExecutionBlockers(
@@ -253,6 +258,7 @@ class CopilotService
                                     'validation_warning_codes' => $revalidationCodes,
                                     'blocking_warning_codes' => $revalidationBlocking,
                                     'blocking_confirmation' => true,
+                                    'missing_fields' => $revalidationMissingFields,
                                     'execution_model' => $routing['model'],
                                 ],
                             ];
@@ -1491,9 +1497,49 @@ class CopilotService
         ];
 
         return collect($codes)
-            ->map(static fn (string $code): string => $map[$code] ?? $code)
+            ->map(function (string $code) use ($map): string {
+                if (str_starts_with($code, 'missing_required:')) {
+                    $field = substr($code, strlen('missing_required:'));
+
+                    return ActionFieldCatalog::label($field).' is missing. Enter it on the confirmation form before confirming.';
+                }
+
+                return $map[$code] ?? $code;
+            })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $args
+     * @param  array<int, string>  $codes
+     * @return array{0: array<int, string>, 1: array<int, array{key: string, label: string}>}
+     */
+    private function withMissingRequiredFields(string $tool, array $args, array $codes): array
+    {
+        $missing = [];
+
+        foreach (ActionFieldCatalog::missingRequired($tool, $args) as $field) {
+            $alreadyCovered = false;
+            foreach ($codes as $code) {
+                if ($code === 'missing_'.$field || str_contains($code, $field)) {
+                    $alreadyCovered = true;
+                    break;
+                }
+            }
+
+            if ($alreadyCovered) {
+                continue;
+            }
+
+            $codes[] = 'missing_required:'.$field;
+            $missing[] = [
+                'key' => $field,
+                'label' => ActionFieldCatalog::label($field),
+            ];
+        }
+
+        return [$codes, $missing];
     }
 
     /**
@@ -1548,6 +1594,12 @@ class CopilotService
     private function determineBlockingWarningCodes(array $validationWarningCodes): array
     {
         $blockingCodes = [];
+
+        foreach ($validationWarningCodes as $code) {
+            if (str_starts_with($code, 'missing_required:')) {
+                $blockingCodes[] = $code;
+            }
+        }
 
         if (in_array('assignee_unresolved', $validationWarningCodes, true)) {
             $blockingCodes[] = 'assignee_unresolved';
@@ -1808,18 +1860,9 @@ class CopilotService
         $search = trim((string) $query);
         $boundedLimit = max(1, min(20, $limit));
 
-        $assignees = User::query()
-            ->select(['users.id', 'users.name', 'users.email'])
-            ->selectRaw('company_users.role as company_role')
-            ->join(
-                'company_users',
-                static fn ($join) => $join
-                    ->on('company_users.user_id', '=', 'users.id')
-                    ->where('company_users.company_id', '=', $resolvedCompanyId)
-            )
-            ->when($context['role'] === 'supervisor', function ($query) use ($user): void {
-                $query->where('users.supervisor_user_id', $user->id);
-            })
+        $supervisorId = $context['role'] === 'supervisor' ? (int) $user->id : null;
+        $assignees = $this->organizationAgentRoster
+            ->assignableQuery($resolvedCompanyId, $supervisorId)
             ->when($search !== '', function ($query) use ($search): void {
                 $like = '%'.$search.'%';
                 $query->where(static function ($nested) use ($like): void {

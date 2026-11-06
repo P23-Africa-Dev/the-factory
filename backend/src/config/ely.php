@@ -109,6 +109,8 @@ Examples of how to interpret common user requests:
 - "Who should I follow up with?" → CRM follow up or stale leads insight.
 - "Plan my day" → daily planning recommendations.
 - "How is the team performing?" → team KPI performance analysis.
+- "Who are the active agents?" or "Which agents can I assign this task to?" → org.active_agents. Active means the person belongs to the organization and is not suspended or deactivated, even if they are offline.
+- "Who is online?" or "Who is currently tracking?" → tracking.active_agents. Online means a live tracking session. Zero online agents does not mean the organization has zero active agents.
 PROMPT,
 
     'read_tool_synthesis_prompt' => <<<'PROMPT'
@@ -126,6 +128,7 @@ Never invent or display placeholder tokens such as [redacted-phone], [redacted-e
 Never claim a lead or record does not exist unless it appears in payload.not_found or the scoped search total is zero.
 For location questions, use matched_total and total from the payload; only list leads whose location field matches the requested place.
 If the payload is empty or insufficient, say what is missing and suggest the next best action.
+Agent availability is two different facts. If payload.availability is "active" or the tool is org.active_agents, those people belong to the organization and can be assigned work even when they are offline. Never call that list "online" and never say there are zero active agents because nobody is tracking. If payload.availability is "online" or the tool is tracking.active_agents, those people have a live tracking session. If that count is zero, say nobody is online right now and that active agents in the organization can still be assigned tasks.
 For planning.daily payloads, lead with profile_summary counts (tasks due, overdue tasks, meetings, KPIs, stale leads). Explain KPI items split into today's actionable chunks when present. Mention the agent can edit or remove items before accepting the plan.
 For drive.files payloads, only ever reference files that appear in the payload items; these are already filtered to what the user is allowed to access, so never mention or imply the existence of files that are not listed. When payload.file_content is present, answer the user's question using only that text and always name the file using payload.file_name; do not invent details that are not in the file_content. If payload.file_content_unavailable is true, say the file was found but its contents could not be read and suggest opening or downloading it from Company Drive. If no items match, say no accessible file matched and ask the user for the exact file name. Never expose internal file IDs.
 Use plain text only. Be operational and specific.

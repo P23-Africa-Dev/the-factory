@@ -14,6 +14,7 @@ use App\Models\TaskProof;
 use App\Models\User;
 use App\Notifications\TaskAssignedNotification;
 use App\Services\Notification\NotificationService;
+use App\Services\Workforce\OrganizationAgentRoster;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -119,17 +120,8 @@ class TaskService
         $context = $this->accessService->resolve($user, $companyId);
         $this->accessService->ensureManager($context);
 
-        return User::query()
-            ->select([
-                'users.id',
-                'users.name',
-                'users.email',
-                'company_users.role as company_role',
-            ])
-            ->join('company_users', 'company_users.user_id', '=', 'users.id')
-            ->where('company_users.company_id', $context->company->id)
-            ->whereIn('company_users.role', self::ASSIGNABLE_ROLES)
-            ->where('users.is_active', true)
+        return app(OrganizationAgentRoster::class)
+            ->assignableQuery((int) $context->company->id)
             ->orderBy('company_users.role')
             ->orderBy('users.name')
             ->get();

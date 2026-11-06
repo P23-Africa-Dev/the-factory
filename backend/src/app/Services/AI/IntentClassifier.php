@@ -316,6 +316,15 @@ class IntentClassifier
             ],
         ];
 
+        $agentAvailabilityTool = $this->resolveAgentAvailabilityTool($normalized);
+        if ($agentAvailabilityTool !== null) {
+            return [
+                'type' => 'tool',
+                'tool' => $agentAvailabilityTool,
+                'confidence' => 0.92,
+            ];
+        }
+
         foreach ($toolPatterns as $tool => $regexPatterns) {
             foreach ($regexPatterns as $regex) {
                 if (preg_match($regex, $normalized) === 1) {
@@ -333,6 +342,23 @@ class IntentClassifier
             'tool' => null,
             'confidence' => 0.4,
         ];
+    }
+
+    /**
+     * "Active" is organization membership. "Online" is a live tracking session.
+     * Location and tracking questions stay on the GPS tool.
+     */
+    private function resolveAgentAvailabilityTool(string $normalized): ?string
+    {
+        $asksOnline = preg_match('/\b(online|tracking|tracked|live|locations?|where\s+is|in\s+the\s+field|moving|map)\b/i', $normalized) === 1;
+        $asksActive = preg_match('/\bactive\s+agents?\b/i', $normalized) === 1
+            || preg_match('/\bagents?\s+(i\s+can\s+assign|to\s+assign|available\s+for\s+assignment)\b/i', $normalized) === 1;
+
+        if ($asksActive && ! $asksOnline) {
+            return 'org.active_agents';
+        }
+
+        return null;
     }
 
     /**

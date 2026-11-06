@@ -350,6 +350,50 @@ final class CopilotReadFlowTest extends TestCase
     /**
      * @return array{0: Company, 1: User}
      */
+    public function test_active_agents_include_offline_members_and_exclude_suspended_accounts(): void
+    {
+        [$company, $admin] = $this->seedCompanyAdmin();
+
+        $offline = User::factory()->createOne([
+            'name' => 'Ada Offline',
+            'is_active' => true,
+        ]);
+        $suspended = User::factory()->createOne([
+            'name' => 'Ben Suspended',
+            'is_active' => true,
+            'suspended_until' => now()->addDay(),
+        ]);
+        $deactivated = User::factory()->createOne([
+            'name' => 'Cara Deactivated',
+            'is_active' => false,
+            'deactivated_at' => now(),
+        ]);
+
+        foreach ([$offline, $suspended, $deactivated] as $agent) {
+            $company->users()->attach($agent->id, [
+                'role' => 'agent',
+                'joined_at' => now(),
+            ]);
+        }
+
+        $response = $this
+            ->actingAs($admin)
+            ->postJson('/api/v1/copilot/chat', [
+                'company_id' => $company->id,
+                'message' => 'Who are the active agents?',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.response.tool', 'org.active_agents');
+
+        $content = (string) $response->json('data.response.content');
+        $this->assertStringContainsString('Ada Offline', $content);
+        $this->assertStringNotContainsString('Ben Suspended', $content);
+        $this->assertStringNotContainsString('Cara Deactivated', $content);
+        $this->assertStringNotContainsString('currently online', strtolower($content));
+    }
+
     private function seedCompanyAdmin(string $role = 'admin'): array
     {
         $company = Company::query()->create([

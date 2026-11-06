@@ -104,4 +104,81 @@ final class ActionFieldCatalog
             'required' => [],
         ];
     }
+
+    public static function label(string $field): string
+    {
+        return self::labels()[$field] ?? str_replace('_', ' ', $field);
+    }
+
+    /**
+     * Required catalog fields that are empty on the confirmation payload.
+     *
+     * @param  array<string, mixed>  $args
+     * @return array<int, string>
+     */
+    public static function missingRequired(string $tool, array $args): array
+    {
+        $missing = [];
+
+        foreach (self::forTool($tool)['required'] as $field) {
+            if (! self::valuePresent($args[$field] ?? null)) {
+                $missing[] = $field;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function labels(): array
+    {
+        return [
+            'title' => 'Title',
+            'type' => 'Type',
+            'description' => 'Description',
+            'due_date' => 'Due date',
+            'location' => 'Location',
+            'address' => 'Address',
+            'assignee' => 'Assignee',
+            'name' => 'Name',
+            'phone' => 'Phone',
+            'objective' => 'Objective',
+            'target_value' => 'Target value',
+            'expected_outcome' => 'Expected outcome',
+            'start_at' => 'Start',
+            'end_at' => 'End',
+            'timezone' => 'Timezone',
+            'start_date' => 'Start date',
+            'full_name' => 'Full name',
+            'email' => 'Email',
+            'role' => 'Role',
+            'lead_id' => 'Lead',
+            'summary' => 'Summary',
+            'to_email' => 'Recipient email',
+            'subject' => 'Subject',
+            'body_text' => 'Message',
+            'message' => 'Message',
+            'task_id' => 'Task',
+            'to_user_id' => 'Assignee',
+        ];
+    }
+
+    private static function valuePresent(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        if (is_string($value)) {
+            return trim($value) !== '';
+        }
+
+        if (is_array($value)) {
+            return $value !== [];
+        }
+
+        return true;
+    }
 }

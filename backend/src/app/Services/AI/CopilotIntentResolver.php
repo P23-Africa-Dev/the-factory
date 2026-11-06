@@ -218,7 +218,7 @@ class CopilotIntentResolver
             $tool = $intent['tool'];
             $readTools = [
                 'crm.top_leads', 'tasks.overdue', 'tasks.list', 'projects.at_risk_summary',
-                'attendance.today_summary', 'meetings.today', 'tracking.active_agents',
+                'attendance.today_summary', 'meetings.today', 'tracking.active_agents', 'org.active_agents',
                 'dashboard.overview', 'planning.daily', 'crm.follow_up_summary',
                 'crm.stale_leads', 'crm.visit_extract', 'crm.email_threads',
                 'crm.unread_emails', 'crm.draft_email', 'kpi.team_performance',
@@ -460,6 +460,7 @@ class CopilotIntentResolver
                 'field.territory_coverage',
                 'field.unvisited_customers',
                 'tracking.active_agents',
+                'org.active_agents',
                 'tracking.agent_history',
             ], true)
         ) {

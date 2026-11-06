@@ -1897,12 +1897,25 @@ export function AIChat({ open, onClose }: AIChatProps) {
     const warningCodes = warningCodesForMessage(msg);
 
     if (tool === "tasks.create") {
+      const missingKeys = new Set(
+        (Array.isArray(payload.missing_fields) ? payload.missing_fields : [])
+          .map((field) => {
+            if (field && typeof field === "object" && "key" in field) {
+              return String((field as { key?: unknown }).key ?? "");
+            }
+            return "";
+          })
+          .filter((key) => key !== ""),
+      );
       const rows: ConfirmationPreviewRow[] = [
-        { key: "title", label: "Title", value: formatPreviewValue("title", args.title) },
-        { key: "type", label: "Type", value: formatPreviewValue("type", args.type) },
-        { key: "due_date", label: "Due Date", value: formatPreviewValue("due_date", args.due_date) },
+        { key: "title", label: "Title", value: formatPreviewValue("title", args.title), warning: missingKeys.has("title") || warningCodes.includes("used_default_title") },
+        { key: "type", label: "Type", value: formatPreviewValue("type", args.type), warning: missingKeys.has("type") },
+        { key: "description", label: "Description", value: formatPreviewValue("description", args.description), warning: missingKeys.has("description") },
+        { key: "due_date", label: "Due Date", value: formatPreviewValue("due_date", args.due_date), warning: missingKeys.has("due_date") || warningCodes.includes("used_default_due_date") },
+        { key: "priority", label: "Priority", value: formatPreviewValue("priority", args.priority) },
         { key: "location", label: "Location", value: formatPreviewValue("location", args.location) },
         { key: "address", label: "Address", value: formatPreviewValue("address", args.address) },
+        { key: "required_actions", label: "Required actions", value: formatPreviewValue("required_actions", args.required_actions) },
       ];
 
       const assigneeEdited = assigneeDropdownValue(msg, args) !== "";
@@ -2209,8 +2222,30 @@ export function AIChat({ open, onClose }: AIChatProps) {
     return blockingIssuesForMessage(msg).length > 0;
   }
 
+  function missingFieldLabels(msg: Message): string[] {
+    const payload = messagePayload(msg);
+    const fields = payload?.missing_fields;
+    if (!Array.isArray(fields)) {
+      return [];
+    }
+
+    return fields
+      .map((field) => {
+        if (field && typeof field === "object" && "label" in field) {
+          return String((field as { label?: unknown }).label ?? "").trim();
+        }
+        return "";
+      })
+      .filter((label) => label !== "");
+  }
+
   function blockingMessage(msg: Message): string {
     const issues = blockingIssuesForMessage(msg);
+    const missingLabels = missingFieldLabels(msg);
+    if (missingLabels.length > 0) {
+      return `Confirmation is blocked until these fields are filled: ${missingLabels.join(", ")}.`;
+    }
+
     if (issues.includes("assignee_unresolved")) {
       return "Confirmation is blocked until assignee details are corrected.";
     }
@@ -3565,6 +3600,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
                               </div>
                             );
                           })()}
+                          {missingFieldLabels(msg).length > 0 && (
+                            <div className="mb-2 rounded-xl border border-[#7A3A3A]/70 bg-[#2A1717] px-3 py-2">
+                              <p className="text-[11px] font-semibold text-[#F2B4A6] mb-1">Still missing on this record:</p>
+                              <p className="text-[11px] text-[#EBCFA0] leading-relaxed">
+                                {missingFieldLabels(msg).join(", ")}. Fill these in the form below before confirming.
+                              </p>
+                            </div>
+                          )}
                           {Array.isArray(messagePayload(msg)?.validation_warnings) && (messagePayload(msg)?.validation_warnings as unknown[]).length > 0 && (
                             <div className="mb-2 rounded-xl border border-[#7A5A2A]/60 bg-[#2F2617] px-3 py-2">
                               <p className="text-[11px] font-semibold text-[#F2D9A6] mb-1">Please review before confirming:</p>

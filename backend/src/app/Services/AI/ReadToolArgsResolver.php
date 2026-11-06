@@ -17,6 +17,7 @@ class ReadToolArgsResolver
         'tasks.overdue',
         'tasks.list',
         'org.users',
+        'org.active_agents',
         'meetings.today',
         'crm.stale_leads',
         'crm.follow_up_summary',
@@ -364,7 +365,11 @@ class ReadToolArgsResolver
         }
 
         if (preg_match('/\bagents?\b/i', $normalizedContent) === 1) {
-            return 'tracking.active_agents';
+            if (preg_match('/\b(online|tracking|live|locations?|in\s+the\s+field)\b/i', $normalizedContent) === 1) {
+                return 'tracking.active_agents';
+            }
+
+            return 'org.active_agents';
         }
 
         if (preg_match('/\bprojects?\b/i', $normalizedContent) === 1) {

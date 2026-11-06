@@ -58,6 +58,7 @@ class ToolPolicyService
         'kpi.team_performance',
         'kpi.list',
         'org.users',
+        'org.active_agents',
         'drive.files',
         'map.pinned_locations_count',
         'field.daily_summary',

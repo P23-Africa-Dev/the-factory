@@ -334,7 +334,13 @@ export function ElyTaskActionFields({
               </option>
             ))}
           </select>
-          <p className="text-[9px] text-[#8CB9B3]/50">Hold Cmd/Ctrl to select multiple agents.</p>
+          <p className="text-[9px] text-[#8CB9B3]/50">
+            {loadingAssignees
+              ? "Loading active agents..."
+              : assigneeOptions.length === 0
+                ? "No active agents are in this organization. Active means the account exists and is not suspended or deactivated."
+                : "These are active agents in this organization, including people who are offline. Hold Cmd/Ctrl to select more than one."}
+          </p>
         </div>
       )}
 

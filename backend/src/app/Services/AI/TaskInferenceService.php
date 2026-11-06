@@ -86,6 +86,9 @@ class TaskInferenceService
             isset($entities['agent']) ? (string) $entities['agent'] : null,
             $llmCandidate['assignee'] ?? null,
         ]);
+        if (is_string($assigneeToken) && $this->isPlaceholderAssignee($assigneeToken)) {
+            $assigneeToken = null;
+        }
         $assignedAgentId = $isAgent ? null : $this->resolveAgentIdFromAssigneeToken((string) ($assigneeToken ?? ''), $companyId);
 
         $priority = $this->resolvePriority(
@@ -178,6 +181,10 @@ class TaskInferenceService
         }
 
         if (! $isAgent) {
+            if (is_string($normalized['assignee'] ?? null) && $this->isPlaceholderAssignee((string) $normalized['assignee'])) {
+                unset($normalized['assignee']);
+            }
+
             if (is_string($normalized['assignee'] ?? null)) {
                 $assigneeToken = trim((string) $normalized['assignee']);
                 unset($normalized['assignee']);
@@ -242,7 +249,13 @@ class TaskInferenceService
         $warningCodes = [];
         $inference = is_array($args['__inference'] ?? null) ? $args['__inference'] : [];
 
-        if ($role !== 'agent' && (($inference['assignee_unresolved'] ?? false) === true || ($args['assigned_agent_id'] ?? null) === null)) {
+        $pendingAssignee = is_string($args['assignee'] ?? null) ? trim((string) $args['assignee']) : '';
+        if (
+            $role !== 'agent'
+            && $pendingAssignee !== ''
+            && ! $this->isPlaceholderAssignee($pendingAssignee)
+            && ($args['assigned_agent_id'] ?? null) === null
+        ) {
             $warningCodes[] = 'assignee_unresolved';
         }
 
@@ -493,11 +506,17 @@ class TaskInferenceService
     public function resolveAgentIdFromAssigneeToken(string $token, int $companyId): ?int
     {
         $candidate = trim($token);
-        if ($candidate === '') {
+        if ($candidate === '' || $this->isPlaceholderAssignee($candidate)) {
             return null;
         }
 
         $query = User::query()
+            ->where('users.is_active', true)
+            ->whereNull('users.deactivated_at')
+            ->where(static function ($active): void {
+                $active->whereNull('users.suspended_until')
+                    ->orWhere('users.suspended_until', '<=', now());
+            })
             ->whereHas('companies', static function ($q) use ($companyId): void {
                 $q->where('companies.id', $companyId)
                     ->where('company_users.role', 'agent');
@@ -531,6 +550,31 @@ class TaskInferenceService
         }
 
         return null;
+    }
+
+    private function isPlaceholderAssignee(string $token): bool
+    {
+        $normalized = strtolower(trim($token));
+        if ($normalized === '') {
+            return false;
+        }
+
+        return in_array($normalized, [
+            'active',
+            'an active',
+            'a active',
+            'active agent',
+            'an active agent',
+            'any',
+            'any agent',
+            'anyone',
+            'somebody',
+            'someone',
+            'available',
+            'available agent',
+            'online',
+            'online agent',
+        ], true);
     }
 
     private function normalizeAssigneeCandidate(string $raw): string
