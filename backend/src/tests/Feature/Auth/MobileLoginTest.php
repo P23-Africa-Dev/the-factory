@@ -175,7 +175,8 @@ class MobileLoginTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.app_mode', 'manager')
             ->assertJsonPath('data.home_path', '/manager')
-            ->assertJsonPath('data.user_type', 'self-serve');
+            ->assertJsonPath('data.user_type', 'self-serve')
+            ->assertJsonPath('data.access_role', 'owner');
     }
 
     public function test_enterprise_owner_logs_in_with_manager_mode(): void
@@ -188,7 +189,8 @@ class MobileLoginTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.app_mode', 'manager')
             ->assertJsonPath('data.home_path', '/manager')
-            ->assertJsonPath('data.user_type', 'enterprise');
+            ->assertJsonPath('data.user_type', 'enterprise')
+            ->assertJsonPath('data.access_role', 'owner');
     }
 
     public function test_wrong_password_returns_401(): void

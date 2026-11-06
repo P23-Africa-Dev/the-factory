@@ -44,69 +44,33 @@ class MobileAuthService
             return null;
         }
 
-        $isRealAgent = $user->internal_role === 'agent' && $user->onboarding_status === 'active';
-        $hasAgentCompany = $isRealAgent && $this->hasAgentCompany($user);
-
-        $isMobileManagement = $this->isEligibleMobileManagement($user);
-        $hasManagementCompany = $isMobileManagement && $this->hasManagementCompany($user);
-
-        if (! $hasAgentCompany && ! $hasManagementCompany) {
+        $classification = $this->classify($user);
+        if ($classification === null) {
             $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_MOBILE_API, $user, $email, 'role_not_permitted');
 
             return null;
         }
 
-        if ($hasAgentCompany) {
-            $appMode = 'agent';
-            $token = $user->createToken(
-                name: 'agent_auth_token',
-                abilities: ['*'],
-                expiresAt: now()->addDays(30),
-            );
-            $userType = 'agent';
-            $accessRole = 'agent';
-            $homePath = '/';
-            $companies = $this->loadCompaniesForUser($user, ['agent']);
-        } else {
-            $appMode = 'manager';
-            $token = $user->createToken(
-                name: 'mobile_manager_token',
-                abilities: ['*'],
-                expiresAt: now()->addDays(30),
-            );
-
-            $isSupervisor = $user->internal_role === 'supervisor' && $user->onboarding_status === 'active';
-            $isInternalAdmin = $user->internal_role === 'admin' && $user->onboarding_status === 'active';
-            $hasSelfServeOnboarding = ! $user->internal_role && $user->hasCompletedOnboarding();
-
-            $userType = $isSupervisor
-                ? 'supervisor'
-                : ($isInternalAdmin
-                    ? 'admin'
-                    : ($hasSelfServeOnboarding ? 'self-serve' : 'enterprise'));
-
-            $accessRole = $isSupervisor ? 'supervisor' : 'admin';
-            $homePath = '/manager';
-            $allowedRoles = ($isSupervisor || $isInternalAdmin)
-                ? ['owner', 'admin', 'supervisor']
-                : ['owner', 'admin'];
-            $companies = $this->loadCompaniesForUser($user, $allowedRoles);
-        }
+        $token = $user->createToken(
+            name: $classification['app_mode'] === 'manager' ? 'mobile_manager_token' : 'agent_auth_token',
+            abilities: ['*'],
+            expiresAt: now()->addDays(30),
+        );
 
         $this->securityAudit->loginSucceeded(SecurityAuditLogger::CHANNEL_MOBILE_API, $user, [
-            'app_mode' => $appMode,
-            'user_type' => $userType,
+            'app_mode' => $classification['app_mode'],
+            'user_type' => $classification['user_type'],
         ]);
 
         return [
             'user' => $user,
             'token' => $token->plainTextToken,
-            'app_mode' => $appMode,
-            'home_path' => $homePath,
-            'user_type' => $userType,
-            'access_role' => $accessRole,
+            'app_mode' => $classification['app_mode'],
+            'home_path' => $classification['home_path'],
+            'user_type' => $classification['user_type'],
+            'access_role' => $classification['access_role'],
             'internal_role' => $user->internal_role,
-            'companies' => $companies,
+            'companies' => $classification['companies'],
         ];
     }
 
@@ -124,53 +88,101 @@ class MobileAuthService
             ];
         }
 
-        $isRealAgent = $user->internal_role === 'agent' && $user->onboarding_status === 'active';
-        $hasAgentCompany = $isRealAgent && $this->hasAgentCompany($user);
-
-        $isMobileManagement = $this->isEligibleMobileManagement($user);
-        $hasManagementCompany = $isMobileManagement && $this->hasManagementCompany($user);
-
-        if ($hasAgentCompany) {
-            $appMode = 'agent';
-            $homePath = '/';
-            $userType = 'agent';
-            $accessRole = 'agent';
-            $companies = $this->loadCompaniesForUser($user, ['agent']);
-        } elseif ($hasManagementCompany) {
-            $appMode = 'manager';
-            $homePath = '/manager';
-            $isSupervisor = $user->internal_role === 'supervisor' && $user->onboarding_status === 'active';
-            $isInternalAdmin = $user->internal_role === 'admin' && $user->onboarding_status === 'active';
-            $hasSelfServeOnboarding = ! $user->internal_role && $user->hasCompletedOnboarding();
-
-            $userType = $isSupervisor
-                ? 'supervisor'
-                : ($isInternalAdmin
-                    ? 'admin'
-                    : ($hasSelfServeOnboarding ? 'self-serve' : 'enterprise'));
-
-            $accessRole = $isSupervisor ? 'supervisor' : 'admin';
-            $allowedRoles = ($isSupervisor || $isInternalAdmin)
-                ? ['owner', 'admin', 'supervisor']
-                : ['owner', 'admin'];
-            $companies = $this->loadCompaniesForUser($user, $allowedRoles);
-        } else {
-            $appMode = 'unknown';
-            $homePath = '/login';
-            $userType = null;
-            $accessRole = null;
-            $companies = [];
+        $classification = $this->classify($user);
+        if ($classification === null) {
+            return [
+                'user' => $user,
+                'app_mode' => 'unknown',
+                'home_path' => '/login',
+                'user_type' => null,
+                'access_role' => null,
+                'internal_role' => $user->internal_role,
+                'companies' => [],
+            ];
         }
 
         return [
             'user' => $user,
-            'app_mode' => $appMode,
-            'home_path' => $homePath,
-            'user_type' => $userType,
-            'access_role' => $accessRole,
+            'app_mode' => $classification['app_mode'],
+            'home_path' => $classification['home_path'],
+            'user_type' => $classification['user_type'],
+            'access_role' => $classification['access_role'],
             'internal_role' => $user->internal_role,
+            'companies' => $classification['companies'],
+        ];
+    }
+
+    /**
+     * Management membership wins. A person is never both an agent and a manager.
+     *
+     * @return array{app_mode: string, home_path: string, user_type: string, access_role: string, companies: array<int, array<string, mixed>>}|null
+     */
+    private function classify(User $user): ?array
+    {
+        if ($this->isEligibleMobileManagement($user) && $this->hasManagementCompany($user)) {
+            return $this->managerClassification($user);
+        }
+
+        $isRealAgent = $user->internal_role === 'agent' && $user->onboarding_status === 'active';
+        if ($isRealAgent && $this->hasAgentCompany($user)) {
+            return [
+                'app_mode' => 'agent',
+                'home_path' => '/',
+                'user_type' => 'agent',
+                'access_role' => 'agent',
+                'companies' => $this->loadCompaniesForUser($user, ['agent']),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{app_mode: string, home_path: string, user_type: string, access_role: string, companies: array<int, array<string, mixed>>}
+     */
+    private function managerClassification(User $user): array
+    {
+        $isSupervisor = $user->internal_role === 'supervisor' && $user->onboarding_status === 'active';
+        $isInternalAdmin = $user->internal_role === 'admin' && $user->onboarding_status === 'active';
+        $hasSelfServeOnboarding = ! $user->internal_role && $user->hasCompletedOnboarding();
+
+        $userType = $isSupervisor
+            ? 'supervisor'
+            : ($isInternalAdmin
+                ? 'admin'
+                : ($hasSelfServeOnboarding ? 'self-serve' : 'enterprise'));
+
+        $allowedRoles = ($isSupervisor || $isInternalAdmin)
+            ? ['owner', 'admin', 'supervisor']
+            : ['owner', 'admin'];
+        $companies = $this->loadCompaniesForUser($user, $allowedRoles);
+
+        return [
+            'app_mode' => 'manager',
+            'home_path' => '/manager',
+            'user_type' => $userType,
+            'access_role' => $this->accessRoleFromCompanies($companies),
             'companies' => $companies,
         ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $companies
+     */
+    private function accessRoleFromCompanies(array $companies): string
+    {
+        $roles = array_map(
+            static fn (array $company): string => (string) ($company['role'] ?? ''),
+            $companies,
+        );
+
+        foreach (['owner', 'admin', 'supervisor'] as $preferred) {
+            if (in_array($preferred, $roles, true)) {
+                return $preferred;
+            }
+        }
+
+        return 'admin';
     }
 
     private function isEligibleMobileManagement(User $user): bool

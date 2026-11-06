@@ -17,10 +17,10 @@
  *   installed PWA / browser tabs.
  */
 
-const CACHE_NAME = "factory-unified-pwa-v1";
-const STATIC_CACHE = "factory-static-v1";
-const API_CACHE = "factory-api-v1";
-const PAGE_CACHE = "factory-pages-v1";
+const CACHE_NAME = "factory-agent-pwa-v14";
+const STATIC_CACHE = "factory-static-v14";
+const API_CACHE = "factory-api-v14";
+const PAGE_CACHE = "factory-pages-v14";
 
 /** Keep in sync with src/lib/notifications/pwaNotificationIcons.ts */
 const PWA_NOTIFICATION_ICON = "/icons/icon-192x192.png";
@@ -32,15 +32,15 @@ const LOCATION_BATCH_SIZE = 50;
  * Keep in sync with src/lib/notifications/resolveAgentDeepLink.ts
  * (service workers cannot import the TS module).
  */
-function resolveAgentDeepLink(rawUrl, mode) {
+function resolveAgentDeepLink(rawUrl) {
   const input = typeof rawUrl === "string" ? rawUrl.trim() : "";
-  if (!input) return mode === "manager" ? "/manager" : "/";
+  if (!input) return "/";
 
   if (/^https?:\/\//i.test(input)) {
     try {
       const parsed = new URL(input);
       if (parsed.origin === self.location.origin) {
-        return resolveAgentDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`, mode);
+        return resolveAgentDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`);
       }
       return input;
     } catch {
@@ -64,50 +64,10 @@ function resolveAgentDeepLink(rawUrl, mode) {
   let pathname = parts[0] || "/";
   const search = parts[1] ? `?${parts[1]}` : "";
 
-  if (pathname === "/manager" || pathname.startsWith("/manager/")) {
-    return `${pathname}${search}`;
-  }
-
-  if (pathname === "/agent" || pathname === "/management") {
+  if (pathname === "/agent") {
     pathname = "/";
   } else if (pathname.startsWith("/agent/")) {
     pathname = pathname.slice("/agent".length);
-  } else if (pathname.startsWith("/management/")) {
-    pathname = pathname.slice("/management".length);
-  }
-
-  if (mode === "manager") {
-    if (pathname === "/" || pathname === "/dashboard" || pathname === "/home") {
-      return `/manager${search}`;
-    }
-    if (pathname.startsWith("/tasks") || pathname.startsWith("/task/")) {
-      return `/manager/tasks${search}`;
-    }
-    if (pathname.startsWith("/crm")) {
-      return `/manager${pathname}${search}`;
-    }
-    if (pathname.startsWith("/meetings")) {
-      return `/manager${pathname}${search}`;
-    }
-    if (pathname.startsWith("/field-activity")) {
-      return `/manager${pathname}${search}`;
-    }
-    if (pathname.startsWith("/map")) {
-      return `/manager/map${search}`;
-    }
-    if (pathname.startsWith("/workforce")) {
-      return `/manager/workforce${search}`;
-    }
-    if (pathname.startsWith("/payroll")) {
-      return `/manager/payroll${search}`;
-    }
-    if (pathname.startsWith("/profile") || pathname === "/user/profile") {
-      return `/manager/profile${search}`;
-    }
-    if (pathname.startsWith("/assistant")) {
-      return `/manager/assistant${search}`;
-    }
-    return `/manager${search}`;
   }
 
   const taskDetail = pathname.match(/^\/tasks\/(\d+)(?:\/.*)?$/);
@@ -173,9 +133,9 @@ function resolveAgentDeepLink(rawUrl, mode) {
   return "/";
 }
 
+
 const STATIC_ASSETS = [
   "/",
-  "/manager",
   "/offline.html",
   "/offline",
   "/manifest.json",
@@ -392,7 +352,6 @@ async function uploadQueuedLocationsFromIdb() {
   try {
     const credentials = await readSyncCredentials(db);
     if (!credentials) return;
-    if (credentials.appMode === "manager") return;
 
     const pending = await getPendingLocationRows(db);
     if (pending.length === 0) return;
@@ -529,21 +488,9 @@ self.addEventListener("push", (event) => {
         }
       }
 
-      let mode = data.app_mode;
-      if (!mode) {
-        try {
-          const db = await openFactoryDb();
-          const creds = await readSyncCredentials(db);
-          mode = creds ? creds.appMode : null;
-          db.close();
-        } catch {
-          // ignore
-        }
-      }
-
-      const title = data.title || (mode === "manager" ? "Factory 23 Manager" : "Factory 23 Agent");
+      const title = data.title || "Factory 23 Agent";
       const body = data.message || data.body || "";
-      const url = resolveAgentDeepLink(data.action_url || data.url || "/", mode);
+      const url = resolveAgentDeepLink(data.action_url || data.url || "/");
       const tag = data.tag || `factory-notification-${data.notification_id || Date.now()}`;
 
       await self.registration.showNotification(title, {

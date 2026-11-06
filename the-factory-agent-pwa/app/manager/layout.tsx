@@ -86,7 +86,7 @@ function ManagerShell({ children }: { children: React.ReactNode }) {
     if (navigator.onLine) {
       scheduleDebouncedSync(INITIAL_SYNC_DELAY_MS);
       void syncEngine.scheduleSync();
-      scheduleWarmAgentRoutes();
+      scheduleWarmAgentRoutes(['/manager', '/manager/map', '/manager/crm', '/manager/assistant']);
     }
 
     return () => {

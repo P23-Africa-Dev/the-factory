@@ -48,24 +48,23 @@ export function useManagerIdentity(enabled = true): ManagerIdentity {
     const avatarUrl = identity?.avatar_url || null;
     const avatarSrc = resolveAvatarSrc(avatarUrl);
 
-    const internalRole =
-      perms?.internal_role ||
-      (typeof org?.internal_role === 'string' ? org.internal_role : null) ||
-      user?.internalRole ||
-      null;
-    const accessRole =
-      perms?.access_role ||
-      user?.accessRole ||
-      null;
+    const internalRole = perms?.internal_role || user?.internal_role || null;
+    const accessRole = perms?.access_role || user?.access_role || null;
     const userType =
       (typeof org?.user_type === 'string' ? org.user_type : null) ||
-      user?.userType ||
+      user?.user_type ||
       null;
+    const companyRole =
+      user?.companies?.find(
+        (company) =>
+          company.role === 'owner' || company.role === 'admin' || company.role === 'supervisor',
+      )?.role ?? null;
 
     const role = resolveManagerRole({
       internalRole,
       accessRole,
       userType,
+      companyRole,
     });
 
     const roleLabel: 'Owner' | 'Admin' | 'Supervisor' =
@@ -85,7 +84,7 @@ export function useManagerIdentity(enabled = true): ManagerIdentity {
       org?.company_id ||
       org?.company?.id ||
       org?.assigned_company?.id ||
-      user?.companyId ||
+      user?.company_id ||
       null;
 
     return {

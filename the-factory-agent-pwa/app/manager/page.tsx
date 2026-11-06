@@ -128,7 +128,7 @@ function getStatusBadge(status: string): { bg: string; text: string; label: stri
 
 export default function ManagerHomeScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, logout } = useAuth();
   const { firstName, avatarSrc, roleLabel } = useManagerIdentity();
   const { canAccessPayroll } = useManagerPermissions();
 
@@ -466,7 +466,7 @@ export default function ManagerHomeScreen() {
                     <button
                       onClick={() => {
                         setProfileMenuOpen(false);
-                        signOut();
+                        logout();
                       }}
                       className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-[#EF4444] hover:bg-white/5 flex items-center gap-2.5"
                     >

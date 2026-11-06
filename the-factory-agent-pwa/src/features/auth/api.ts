@@ -108,38 +108,20 @@ function normalizeProfileBody(body: Record<string, unknown>): Record<string, unk
 
 export const authApi = {
   login: async (payload: LoginPayload): Promise<LoginResponse> => {
-    try {
-      const r = await client.post('/mobile/login', payload);
-      const body = r.data as Record<string, unknown>;
-      const data = (body.data && typeof body.data === 'object' ? body.data : body) as Record<string, unknown>;
-      return {
-        token: String(data.token ?? ''),
-        app_mode: (data.app_mode as LoginResponse['app_mode']) ?? 'agent',
-        home_path: data.home_path ? String(data.home_path) : undefined,
-        access_role: data.access_role != null ? String(data.access_role) : undefined,
-        internal_role: data.internal_role != null ? String(data.internal_role) : undefined,
-        user_type: data.user_type != null ? String(data.user_type) : undefined,
-        companies: data.companies as LoginResponse['companies'],
-        user: data.user as LoginResponse['user'],
-      };
-    } catch (err: unknown) {
-      const status = (err as { status?: number })?.status;
-      // Graceful fallback to legacy /agent/login only if /mobile/login route doesn't exist yet (404)
-      if (status === 404) {
-        const r = await client.post('/agent/login', payload);
-        const body = r.data as Record<string, unknown>;
-        const data = (body.data && typeof body.data === 'object' ? body.data : body) as Record<string, unknown>;
-        return {
-          token: String(data.token ?? ''),
-          app_mode: 'agent',
-          home_path: '/',
-          access_role: data.access_role != null ? String(data.access_role) : undefined,
-          internal_role: data.internal_role != null ? String(data.internal_role) : undefined,
-          user: data.user as LoginResponse['user'],
-        };
-      }
-      throw err;
-    }
+    const r = await client.post('/mobile/login', payload);
+    const body = r.data as Record<string, unknown>;
+    const data = (body.data && typeof body.data === 'object' ? body.data : body) as Record<string, unknown>;
+    const appMode = data.app_mode === 'manager' ? 'manager' : 'agent';
+    return {
+      token: String(data.token ?? ''),
+      app_mode: appMode,
+      home_path: data.home_path ? String(data.home_path) : undefined,
+      access_role: data.access_role != null ? String(data.access_role) : undefined,
+      internal_role: data.internal_role != null ? String(data.internal_role) : undefined,
+      user_type: data.user_type != null ? String(data.user_type) : undefined,
+      companies: data.companies as LoginResponse['companies'],
+      user: data.user as LoginResponse['user'],
+    };
   },
 
   logout: (): Promise<{ success: boolean }> =>
