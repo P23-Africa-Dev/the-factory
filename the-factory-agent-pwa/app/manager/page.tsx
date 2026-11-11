@@ -218,7 +218,6 @@ export default function ManagerHomeScreen() {
   const [whereToSearching, setWhereToSearching] = useState(false);
   const [placeCreditsExhausted, setPlaceCreditsExhausted] = useState(false);
   const [recentPlaces, setRecentPlaces] = useState<RecentDestination[]>([]);
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const matchingAgents = React.useMemo(() => {
     const q = whereToQuery.trim().toLowerCase();
@@ -232,35 +231,37 @@ export default function ManagerHomeScreen() {
   }, [fleetAgents, whereToQuery]);
 
   useEffect(() => {
-    setRecentPlaces(loadRecentDestinations());
+    const load = setTimeout(() => setRecentPlaces(loadRecentDestinations()), 0);
+    return () => clearTimeout(load);
   }, [sheetExpanded]);
 
   useEffect(() => {
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    const trimmed = whereToQuery.trim();
-    if (trimmed.length < 2) {
-      setWhereToResults([]);
-      setWhereToSearching(false);
-      return;
-    }
-    setWhereToSearching(true);
-    searchDebounceRef.current = setTimeout(async () => {
+    const query = whereToQuery.trim();
+    let current = true;
+    const timer = setTimeout(async () => {
+      if (query.length < 2) {
+        setWhereToResults([]);
+        setWhereToSearching(false);
+        return;
+      }
+      setWhereToSearching(true);
       try {
-        const results = await searchPlaces(trimmed);
+        const results = await searchPlaces(query);
+        if (!current) return;
         setPlaceCreditsExhausted(false);
         setWhereToResults(results);
-      } catch (err) {
-        if (err instanceof PlaceSearchCreditExhaustedError) {
-          setPlaceCreditsExhausted(true);
-        }
+      } catch (error) {
+        if (!current) return;
+        if (error instanceof PlaceSearchCreditExhaustedError) setPlaceCreditsExhausted(true);
         setWhereToResults([]);
       } finally {
-        setWhereToSearching(false);
+        if (current) setWhereToSearching(false);
       }
-    }, 350);
+    }, query.length < 2 ? 0 : 350);
 
     return () => {
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      current = false;
+      clearTimeout(timer);
     };
   }, [whereToQuery]);
 

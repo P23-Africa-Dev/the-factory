@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef, Suspense } from 'react';
+import { useAuth } from '@/features/auth/hooks/useAuth';
+import { ChecklistDraftFields, ProjectChecklist, saveCreatedChecklist, TaskOverview, useChecklistTasks, type ChecklistStep } from '@/features/tasks/components/ProjectChecklist';
+import React, { useState, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
 import {
@@ -8,7 +10,6 @@ import {
   Plus,
   MoreVertical,
   MapPin,
-  Calendar,
   Flag,
   Trash2,
   Edit2,
@@ -143,6 +144,7 @@ function ManagerTasksContent() {
     ['tasks', 'kpis', 'reassignments', 'projects'].includes(initialTab) ? initialTab : 'tasks',
   );
   const [taskFilter, setTaskFilter] = useState<TaskStatus | undefined>(undefined);
+  const [projectFilter, setProjectFilter] = useState<number>();
   const [assigneeFilter, setAssigneeFilter] = useState<string>('');
   const [kpiFilter, setKpiFilter] = useState<KpiStatus | undefined>(undefined);
 
@@ -155,10 +157,10 @@ function ManagerTasksContent() {
     hasNextPage: hasMoreTasks,
     isFetchingNextPage: isFetchingMoreTasks,
   } = useTaskList({
-    status: taskFilter,
+    project_id: projectFilter,
     assigned_to: assigneeFilter ? Number(assigneeFilter) : undefined,
   });
-  const tasks = React.useMemo(() => flattenTaskPages(taskPages), [taskPages]);
+  const { items: allTasks, visible: tasks } = useChecklistTasks(flattenTaskPages(taskPages), taskFilter);
 
   const { data: assignees = [] } = useTaskAssignees();
   const { data: reassignments = [], isLoading: reassignmentsLoading } = useTaskReassignmentsInbox();
@@ -190,7 +192,13 @@ function ManagerTasksContent() {
   );
 
   // Create Task modal state
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const createRequested = searchParams.get('create') === '1';
+  const [previousCreateRequest, setPreviousCreateRequest] = useState(createRequested);
+  const [createModalOpen, setCreateModalOpen] = useState(createRequested);
+  if (createRequested !== previousCreateRequest) {
+    setPreviousCreateRequest(createRequested);
+    if (createRequested) setCreateModalOpen(true);
+  }
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState<TaskType>('sales_visit');
   const [newDesc, setNewDesc] = useState('');
@@ -201,10 +209,11 @@ function ManagerTasksContent() {
   const [placeCreditsExhausted, setPlaceCreditsExhausted] = useState(false);
   const [newPriority, setNewPriority] = useState<Priority>('medium');
   const [newDueDate, setNewDueDate] = useState('');
+  const { user } = useAuth();
+  const [subtasks, setSubtasks] = useState<ChecklistStep[]>([]);
   const [newAssigneeId, setNewAssigneeId] = useState<string>('');
   const [newProjectId, setNewProjectId] = useState<string>('');
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
-  const placeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Edit Task modal state
   const [editTask, setEditTask] = useState<Task | null>(null);
@@ -239,39 +248,35 @@ function ManagerTasksContent() {
   const [projectDesc, setProjectDesc] = useState('');
   const [projectDueDate, setProjectDueDate] = useState('');
 
+  // Debounced place search inside Create Task modal.
   useEffect(() => {
-    if (searchParams.get('create') === '1') {
-      setCreateModalOpen(true);
-    }
-  }, [searchParams]);
-
-  // Debounced place search inside Create Task modal
-  useEffect(() => {
-    if (placeDebounceRef.current) clearTimeout(placeDebounceRef.current);
-    const trimmed = newAddress.trim();
-    if (!createModalOpen || newPlaceCoords !== null || trimmed.length < 2) {
-      setNewPlaceResults([]);
-      setNewPlaceSearching(false);
-      return;
-    }
-    setNewPlaceSearching(true);
-    placeDebounceRef.current = setTimeout(async () => {
+    const query = newAddress.trim();
+    let current = true;
+    const shouldSearch = createModalOpen && newPlaceCoords === null && query.length >= 2;
+    const timer = setTimeout(async () => {
+      if (!shouldSearch) {
+        setNewPlaceResults([]);
+        setNewPlaceSearching(false);
+        return;
+      }
+      setNewPlaceSearching(true);
       try {
-        const results = await searchPlaces(trimmed);
+        const results = await searchPlaces(query);
+        if (!current) return;
         setPlaceCreditsExhausted(false);
         setNewPlaceResults(results);
-      } catch (err) {
-        if (err instanceof PlaceSearchCreditExhaustedError) {
-          setPlaceCreditsExhausted(true);
-        }
+      } catch (error) {
+        if (!current) return;
+        if (error instanceof PlaceSearchCreditExhaustedError) setPlaceCreditsExhausted(true);
         setNewPlaceResults([]);
       } finally {
-        setNewPlaceSearching(false);
+        if (current) setNewPlaceSearching(false);
       }
-    }, 350);
+    }, shouldSearch ? 350 : 0);
 
     return () => {
-      if (placeDebounceRef.current) clearTimeout(placeDebounceRef.current);
+      current = false;
+      clearTimeout(timer);
     };
   }, [newAddress, newPlaceCoords, createModalOpen]);
 
@@ -284,6 +289,7 @@ function ManagerTasksContent() {
     setNewPlaceResults([]);
     setNewPriority('medium');
     setNewDueDate('');
+    setSubtasks([]);
     setNewAssigneeId('');
     setNewProjectId('');
     setCreateErrors({});
@@ -295,13 +301,17 @@ function ManagerTasksContent() {
       const errs: Record<string, string> = {};
       if (newTitle.trim().length < 3) errs.title = 'Title must be at least 3 characters';
       if (newDesc.trim().length < 5) errs.description = 'Description must be at least 5 characters';
+      if (newDueDate && subtasks.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(newDueDate))) {
+        toast.error('The task deadline cannot be earlier than a subtask deadline.');
+        return;
+      }
       if (Object.keys(errs).length > 0) {
         setCreateErrors(errs);
         return;
       }
       setCreateErrors({});
       try {
-        await createTask.mutateAsync({
+        const createdTask = await createTask.mutateAsync({
           title: newTitle.trim(),
           type: newType,
           description: newDesc.trim(),
@@ -315,6 +325,7 @@ function ManagerTasksContent() {
           assignee_ids: newAssigneeId ? [Number(newAssigneeId)] : undefined,
           project_id: newProjectId ? Number(newProjectId) : null,
         });
+        saveCreatedChecklist(createdTask, String(user?.id ?? ""), user?.company_id, subtasks);
         setCreateModalOpen(false);
         resetCreateForm();
         void refetchTasks();
@@ -330,6 +341,8 @@ function ManagerTasksContent() {
       newPlaceCoords,
       newPriority,
       newDueDate,
+      subtasks,
+      user,
       newAssigneeId,
       newProjectId,
       createTask,
@@ -594,6 +607,12 @@ function ManagerTasksContent() {
               })}
             </div>
 
+            {projectFilter !== undefined && (
+              <button type="button" className="text-xs text-[#9ed3d4] underline" onClick={() => setProjectFilter(undefined)}>
+                Clear project filter
+              </button>
+            )}
+            <TaskOverview tasks={allTasks} />
             {tasksLoading ? (
               <div className="flex flex-col gap-3 mt-2">
                 {[1, 2, 3].map((i) => (
@@ -681,33 +700,28 @@ function ManagerTasksContent() {
                         </p>
                       )}
 
-                      <div className="flex items-center justify-between text-[11px] text-white/45 pt-2 border-t border-white/6">
+                      <ProjectChecklist task={task} compact />
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-white/45 pt-2 border-t border-white/6">
                         <div className="flex items-center gap-1.5 truncate max-w-[65%]">
                           <MapPin size={12} className="text-[#75ADAF] shrink-0" />
                           <span className="truncate">{formatTaskLocationLabel(task)}</span>
                         </div>
-                        {task.dueDate && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Calendar size={11} className="text-white/40" />
-                            <span>{format(new Date(task.dueDate), 'MMM d')}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
                 })}
 
-                {hasMoreTasks && (
-                  <button
-                    type="button"
-                    disabled={isFetchingMoreTasks}
-                    onClick={() => void fetchNextTasksPage()}
-                    className="mt-1 py-3 rounded-2xl bg-[#0B3343] border border-white/10 text-xs font-bold text-[#75ADAF] hover:bg-[#0E3B4D] disabled:opacity-50 transition-all"
-                  >
-                    {isFetchingMoreTasks ? 'Loading more tasks…' : 'Load more tasks'}
-                  </button>
-                )}
               </div>
+            )}
+            {hasMoreTasks && (
+              <button
+                type="button"
+                disabled={isFetchingMoreTasks}
+                onClick={() => void fetchNextTasksPage()}
+                className="mt-1 py-3 rounded-2xl bg-[#0B3343] border border-white/10 text-xs font-bold text-[#75ADAF] hover:bg-[#0E3B4D] disabled:opacity-50 transition-all"
+              >
+                {isFetchingMoreTasks ? 'Loading more tasks…' : 'Load more tasks'}
+              </button>
             )}
           </>
         )}
@@ -973,11 +987,21 @@ function ManagerTasksContent() {
                     <p className="mt-1 text-xs text-white/60 line-clamp-2">{proj.description}</p>
                   )}
                   <div className="mt-3 flex items-center justify-between text-[11px] text-white/50 border-t border-white/8 pt-2">
-                    <span>{proj.tasks_count ?? 0} linked tasks</span>
+                    <span>{proj.completed_tasks_count ?? 0}/{proj.tasks_count ?? 0} tasks completed</span>
                     {proj.due_date && (
                       <span>Due {format(new Date(proj.due_date), 'MMM d, yyyy')}</span>
                     )}
                   </div>
+                  {Boolean(proj.tasks_count) && (
+                    <progress aria-label={`Completion for ${proj.name}`} max={proj.tasks_count} value={proj.completed_tasks_count ?? 0}
+                      className="mt-2 h-1.5 w-full accent-[#75ADAF]" />
+                  )}
+                  <button type="button" className="mt-3 text-xs font-semibold text-[#9ed3d4] underline" onClick={() => {
+                    setProjectFilter(proj.id);
+                    setTaskFilter(undefined);
+                    setAssigneeFilter('');
+                    setSection('tasks');
+                  }}>View project tasks</button>
                 </div>
               ))
             )}
@@ -1313,6 +1337,9 @@ function ManagerTasksContent() {
                     className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
                   />
                 </div>
+
+                <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} dueDate={newDueDate} agents={assignees}
+                  defaultAssignee={{ id: newAssigneeId || String(user?.id ?? ""), name: assignees.find((agent) => String(agent.id) === newAssigneeId)?.name ?? user?.name ?? "You" }} />
 
                 <div className="flex gap-3 pt-2">
                   <button

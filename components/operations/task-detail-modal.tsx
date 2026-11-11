@@ -39,6 +39,10 @@ import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/l
 import { buildTaskMapUrl } from '@/lib/tasks/map-navigation';
 import { useTrackingStore } from '@/store/tracking';
 
+import { ProjectChecklistSection } from "./project-checklist";
+import { formatChecklistDate, isOverdue, type ProjectSubtask } from "@/lib/tasks/project-checklist";
+import { TASK_COMMENT_MAX_LENGTH, type ApiTaskStatus } from "@/lib/api/tasks";
+
 type TaskGoogleMaps = {
   maps: {
     Map: new (el: HTMLElement, opts: Record<string, unknown>) => { [key: string]: unknown };
@@ -52,6 +56,15 @@ interface TaskDetailModalProps {
   onClose: () => void;
   task: DndItem | null;
   status: 'pending' | 'in-progress' | 'completed' | string;
+  onToggleSubtask?: (id: string) => void;
+  onSaveSubtasks?: (items: ProjectSubtask[]) => void;
+  onApiStatusUpdated?: () => void;
+  localTask?: {
+    comments: string[];
+    onComment: (body: string) => void;
+    onStatus: (status: ApiTaskStatus) => void;
+    onAssign: (assignee: { id: number; name: string }) => void;
+  };
 }
 
 function toBoardStatus(status?: string): 'pending' | 'in-progress' | 'completed' | 'cancelled' {
@@ -277,13 +290,13 @@ function TaskLocationMap({
   );
 }
 
-export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailModalProps) {
+export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask, onSaveSubtasks, onApiStatusUpdated, localTask }: TaskDetailModalProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
   const currentUserId = Number(authUser?.id ?? 0);
-  const taskId = Number(task?.id ?? 0);
+  const taskId = localTask ? 0 : Number(task?.id ?? 0);
   const detailQuery = useTaskDetail(taskId, companyId ?? undefined);
   const { data: internalUsers = [], isLoading: loadingInternalUsers } = useInternalUsers({
     company_id: companyId ?? undefined,
@@ -301,6 +314,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   const updateStatusMutation = useUpdateTaskStatus({
     onSuccess: (updatedTask) => {
+      onApiStatusUpdated?.();
       toast.success(`Task moved to ${updatedTask.status.replace('_', ' ')}`);
     },
   });
@@ -324,10 +338,10 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
   const resolvedSelectedAgentId =
     selectedAgentId ||
-    (detailQuery.data?.assignee?.id ? String(detailQuery.data.assignee.id) : '');
+    (detailQuery.data?.assignee?.id ? String(detailQuery.data.assignee.id) : localTask ? task.projectChecklist?.assigneeId ?? '' : '');
 
   const apiStatus = detailQuery.data?.status;
-  const boardStatus = toBoardStatus(apiStatus ?? status);
+  const boardStatus = toBoardStatus(task.projectChecklist ? status : apiStatus ?? status);
   const isPending = boardStatus === 'pending';
   const isInProgress = boardStatus === 'in-progress';
   const isCompleted = boardStatus === 'completed';
@@ -348,9 +362,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
     "No location set",
     detailQuery.data?.created_at || task.createdAt,
   );
-  const dueDateText = detailQuery.data?.due_date
-    ? new Date(detailQuery.data.due_date).toLocaleString()
-    : task.dueDate || 'No due date';
+  const checklist = task.projectChecklist;
+  const dueDateText = checklist
+    ? checklist.dueAt ? formatChecklistDate(checklist.dueAt) : 'No due date'
+    : detailQuery.data?.due_date
+      ? new Date(detailQuery.data.due_date).toLocaleString()
+      : task.dueDate || 'No due date';
   const assignedByText = detailQuery.data?.creator?.name || task.assignedBy || 'Not specified';
   const taskDescription = detailQuery.data?.description || task.addedDescription || '';
   const descriptionLines = taskDescription.split('\n').filter(Boolean);
@@ -478,6 +495,11 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
   const currentStatus = statusConfig[boardStatus as keyof typeof statusConfig] || statusConfig.pending;
 
   const updateTaskStatus = (nextStatus: 'in_progress' | 'completed' | 'cancelled') => {
+    if (localTask) {
+      localTask.onStatus(nextStatus);
+      toast.success(`Task moved to ${nextStatus.replace('_', ' ')}`);
+      return;
+    }
     if (!companyId) {
       toast.error('Company context is required.');
       return;
@@ -513,6 +535,19 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
     if (!resolvedSelectedAgentId) {
       toast.error('Select an agent to assign this task.');
+      return;
+    }
+
+    if (localTask) {
+      const assignee = eligibleUsers.find((candidate) => String(candidate.id) === resolvedSelectedAgentId);
+      if (!assignee || resolvedSelectedAgentId === checklist?.assigneeId) {
+        toast.error('Select a different user for reassignment.');
+        return;
+      }
+      localTask.onAssign({ id: Number(assignee.id), name: assignee.name });
+      setSelectedAgentId('');
+      setReassignmentReason('');
+      toast.success('Demo task reassigned.');
       return;
     }
 
@@ -586,6 +621,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
           {/* Close button */}
           <button
+            aria-label="Close task details"
             onClick={onClose}
             className="absolute top-4 left-4 w-9 h-9 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-500 hover:text-gray-900 transition-all shadow-md z-30"
           >
@@ -646,7 +682,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
 
               <section>
                 <h3 className="text-[15px] font-bold text-dash-dark mb-1.5">Due Date</h3>
-                <p className="text-[14px] text-gray-400">
+                <p className={`text-[14px] ${!isCompleted && !isCancelled && isOverdue(checklist?.dueAt) ? "text-red-600" : "text-gray-400"}`}>
                   {dueDateText}
                 </p>
               </section>
@@ -657,6 +693,28 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   {assignedByText}
                 </p>
               </section>
+              {checklist && onToggleSubtask && onSaveSubtasks && (
+                <ProjectChecklistSection
+                  key={task.id}
+                  checklist={{
+                    ...checklist,
+                    assigneeId: String(detailQuery.data?.assignee?.id ?? (checklist.assigneeId || currentUserId || "")),
+                    assigneeName:
+                      detailQuery.data?.assignee?.name ||
+                      (checklist.assigneeName && checklist.assigneeName !== "Unassigned"
+                        ? checklist.assigneeName
+                        : assigneeName),
+                  }}
+                  userId={String(authUser?.id ?? "")}
+                  locked={isCancelled}
+                  agents={(internalUsers.length > 0 ? internalUsers : eligibleUsers).map((agent) => ({
+                    id: String(agent.id),
+                    name: agent.name,
+                  }))}
+                  onToggle={onToggleSubtask}
+                  onSave={onSaveSubtasks}
+                />
+              )}
             </div>
 
             {/* Right column */}
@@ -781,6 +839,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
                   }}
                 />
               ) : null}
+              {localTask && <DemoTaskComments key={task.id} comments={localTask.comments} onComment={localTask.onComment} />}
               {taskId > 0 && (
                 <TaskComments
                   taskId={taskId}
@@ -880,5 +939,29 @@ export function TaskDetailModal({ isOpen, onClose, task, status }: TaskDetailMod
         />
       )}
     </div>
+  );
+}
+
+function DemoTaskComments({ comments, onComment }: { comments: string[]; onComment: (body: string) => void }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <section className="mt-6 space-y-3 border-t border-gray-100 pt-5">
+      <h3 className="text-[15px] font-bold text-dash-dark">Comments &amp; Feedback</h3>
+      {comments.length ? (
+        <ul className="space-y-2 text-sm text-gray-600">
+          {comments.map((body, index) => <li key={index} className="whitespace-pre-wrap break-words rounded-lg bg-dash-bg p-3">{body}</li>)}
+        </ul>
+      ) : <p className="text-sm text-gray-400">No comments yet. Start the conversation below.</p>}
+      <form className="space-y-2" onSubmit={(event) => {
+        event.preventDefault();
+        if (!draft.trim()) return;
+        onComment(draft.trim());
+        setDraft("");
+      }}>
+        <textarea aria-label="Write feedback or a reply" placeholder="Write feedback or a reply…" maxLength={TASK_COMMENT_MAX_LENGTH}
+          className="w-full rounded-xl bg-dash-bg p-3 text-sm text-dash-dark" value={draft} onChange={(event) => setDraft(event.target.value)} />
+        <button type="submit" disabled={!draft.trim()} className="rounded-lg bg-[#094B5C] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Post comment</button>
+      </form>
+    </section>
   );
 }

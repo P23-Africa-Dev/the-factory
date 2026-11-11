@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { format, parseISO, subDays, startOfWeek, endOfWeek } from 'date-fns';
@@ -83,14 +83,14 @@ function JourneyHistoryContent(): React.ReactElement {
   const [page, setPage] = useState(1);
   const perPage = 10;
 
-  useEffect(() => {
-    if (userIdParam) {
-      const parsed = Number(userIdParam);
-      if (Number.isFinite(parsed)) setSelectedUserId(parsed);
-    } else if (!selectedUserId && assignees.length > 0) {
-      setSelectedUserId(assignees[0].id);
-    }
-  }, [userIdParam, assignees, selectedUserId]);
+  const [previousUserIdParam, setPreviousUserIdParam] = useState(userIdParam);
+  if (previousUserIdParam !== userIdParam) {
+    setPreviousUserIdParam(userIdParam);
+    const parsed = userIdParam ? Number(userIdParam) : NaN;
+    if (Number.isFinite(parsed)) setSelectedUserId(parsed);
+  } else if (!userIdParam && !selectedUserId && assignees.length > 0) {
+    setSelectedUserId(assignees[0].id);
+  }
 
   const { from, to } = useMemo(() => getPresetDates(preset), [preset]);
 

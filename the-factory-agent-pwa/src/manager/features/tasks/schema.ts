@@ -87,9 +87,12 @@ const rawTaskSchema = z
     required_actions: z.array(z.string()).optional().nullable(),
     minimum_photos_required: z.number().optional().nullable(),
     visit_verification_required: z.boolean().optional().nullable(),
+    created_by_user_id: z.union([z.string(), z.number()]).nullish(),
+    comments_count: z.number().nullish(),
     creator: z
       .object({
         name: z.string().optional(),
+        id: z.union([z.string(), z.number()]).optional(),
       })
       .passthrough()
       .nullable()
@@ -172,6 +175,8 @@ const rawTaskSchema = z
       instructions: data.instructions ?? undefined,
       completionNotes: data.completion_notes ?? null,
       priority: data.priority ?? undefined,
+      ...((data.created_by_user_id ?? data.creator?.id) != null && { creatorId: String(data.created_by_user_id ?? data.creator?.id) }),
+      ...(data.comments_count != null && { commentCount: data.comments_count }),
       assignedBy: data.assigned_by ?? data.creator?.name ?? undefined,
       assignedAgentId: resolvedAgentId,
       assigneeName: primaryAssignee?.name ?? null,

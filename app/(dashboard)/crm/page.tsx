@@ -536,19 +536,18 @@ function LeadBoard({
     !initialContainers.some((c) => c.id === activeTabId)
       ? initialContainers[0].id
       : activeTabId;
-  const [prevBoardKey, setPrevBoardKey] = useState(boardKey);
+  useEffect(() => {
+    initialContainersRef.current = initialContainers;
+    boardKeyRef.current = boardKey;
+  }, [boardKey, initialContainers]);
 
-  initialContainersRef.current = initialContainers;
-  boardKeyRef.current = boardKey;
-
-  if (boardKey !== prevBoardKey) {
-    setPrevBoardKey(boardKey);
-    // Only adopt server columns when lead/status content actually changed,
-    // and never while a status mutation is in flight (avoids optimistic snap-back).
-    if (!statusPendingRef.current) {
-      setContainers(initialContainers);
-    }
-  }
+  useEffect(() => {
+    if (statusPendingRef.current) return;
+    const timer = setTimeout(() => {
+      if (!statusPendingRef.current) setContainers(initialContainersRef.current);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [boardKey]);
 
   useEffect(() => {
     containersRef.current = containers;

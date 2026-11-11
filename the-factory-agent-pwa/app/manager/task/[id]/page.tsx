@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectChecklist, useChecklistTasks } from '@/features/tasks/components/ProjectChecklist';
 import React, { useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { format } from 'date-fns';
@@ -54,6 +55,8 @@ export default function ManagerTaskDetailScreen() {
   const id = (params?.id as string) || '';
 
   const { data: task, isLoading } = useTask(id);
+  const { items: checklistTasks } = useChecklistTasks(task ? [task] : []);
+  const checklistTask = checklistTasks[0];
   const { data: assignees = [] } = useTaskAssignees();
   const { data: routeData } = useTaskRoute(id, Boolean(id));
   const updateStatus = useUpdateTaskStatus();
@@ -131,7 +134,7 @@ export default function ManagerTaskDetailScreen() {
     );
   }
 
-  const badge = getStatusBadge(task.status);
+  const badge = getStatusBadge(checklistTask.status);
   const hasLocation = taskHasMapLocation(task);
   const proofs = task.proofs ?? [];
   const routePointsCount = Array.isArray((routeData as { points?: unknown[] })?.points)
@@ -361,6 +364,7 @@ export default function ManagerTaskDetailScreen() {
 
         {/* Task Comments */}
         <div className="mt-2">
+          <ProjectChecklist key={task.id} task={checklistTask} agents={assignees} />
           <TaskComments taskId={task.id} />
         </div>
       </div>

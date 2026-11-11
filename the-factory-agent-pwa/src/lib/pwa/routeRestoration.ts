@@ -77,16 +77,15 @@ export function useRouteRestoration(expectedMode?: AppMode): { isRestoring: bool
     if (saved && saved !== launchPath && isRestorableRoute(saved, activeMode)) {
       router.replace(saved);
     } else {
-      setIsRestoring(false);
+      const clear = setTimeout(() => setIsRestoring(false), 0);
+      return () => clearTimeout(clear);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (isRestoring && pathname !== launchPath) {
-      setIsRestoring(false);
-    }
-  }, [pathname, isRestoring, launchPath]);
+  if (isRestoring && pathname !== launchPath) {
+    setIsRestoring(false);
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

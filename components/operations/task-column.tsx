@@ -7,6 +7,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { DndItem } from "@/types/operations";
+import type { ProjectSubtask } from "@/lib/tasks/project-checklist";
 import { TaskCard } from "./task-card";
 import { Plus, Check, X } from "lucide-react";
 
@@ -16,6 +17,11 @@ interface TaskColumnProps {
   color: string;
   items: DndItem[];
   onAddCard: (item: DndItem) => void;
+  onOpenCreateTask?: () => void;
+  checklistUserId?: string;
+  onToggleSubtask?: (taskId: string, subtaskId: string) => void;
+  onAddSubtask?: (taskId: string, title: string) => void;
+  onReorderSubtasks?: (taskId: string, subtasks: ProjectSubtask[]) => void;
   onTaskClick?: (item: DndItem) => void;
   onTaskEdit?: (item: DndItem) => void;
   onTaskDelete?: (item: DndItem) => void;
@@ -28,6 +34,11 @@ export function TaskColumn({
   color,
   items,
   onAddCard,
+  onOpenCreateTask,
+  checklistUserId,
+  onToggleSubtask,
+  onAddSubtask,
+  onReorderSubtasks,
   onTaskClick,
   onTaskEdit,
   onTaskDelete,
@@ -97,6 +108,10 @@ export function TaskColumn({
           <div className="pt-2">
             {items.map((item) => (
               <TaskCard
+                checklistUserId={checklistUserId}
+                onToggleSubtask={onToggleSubtask}
+                onAddSubtask={onAddSubtask}
+                onReorderSubtasks={onReorderSubtasks}
                 key={item.id}
                 item={item}
                 onClick={onTaskClick}
@@ -167,7 +182,7 @@ export function TaskColumn({
         {/* Add Card Manually */}
         {!showForm && (
           <button
-            onClick={() => setShowForm(true)}
+            onClick={onOpenCreateTask ?? (() => setShowForm(true))}
             className="w-full flex items-center justify-between px-2 py-3 text-gray-400 hover:text-[#0B1215] transition-colors group mt-6"
           >
             <span className="text-xs font-medium">Add Card Manually</span>

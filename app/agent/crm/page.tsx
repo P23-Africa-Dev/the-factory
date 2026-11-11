@@ -472,17 +472,18 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
       ? containers[0].id
       : activeTabId;
 
-  const [prevBoardKey, setPrevBoardKey] = useState(boardKey);
+  useEffect(() => {
+    initialContainersRef.current = initialContainers;
+    boardKeyRef.current = boardKey;
+  }, [boardKey, initialContainers]);
 
-  initialContainersRef.current = initialContainers;
-  boardKeyRef.current = boardKey;
-
-  if (boardKey !== prevBoardKey) {
-    setPrevBoardKey(boardKey);
-    if (!statusPendingRef.current) {
-      setContainers(initialContainers);
-    }
-  }
+  useEffect(() => {
+    if (statusPendingRef.current) return;
+    const timer = setTimeout(() => {
+      if (!statusPendingRef.current) setContainers(initialContainersRef.current);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [boardKey]);
 
   useEffect(() => {
     containersRef.current = containers;

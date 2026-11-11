@@ -42,7 +42,8 @@ function ProjectsContent() {
 
   const handleTabChange = (tab: ProjectsTab) => {
     const params = new URLSearchParams(searchParams.toString());
-    tab === "projects" ? params.delete("tab") : params.set("tab", tab);
+    if (tab === "projects") params.delete("tab");
+    else params.set("tab", tab);
     router.push(`${pathname}?${params.toString()}`);
   };
 
@@ -83,7 +84,7 @@ function ProjectsContent() {
           //   currentPage={page}
           //   onPageChange={setPage}
           // />
-          <AllProjectsTasksView />
+          <AllProjectsTasksView enableProjectChecklist agentView />
         ) : (
           <AllTasksView />
         )}
