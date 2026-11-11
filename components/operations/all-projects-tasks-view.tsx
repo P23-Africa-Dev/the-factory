@@ -19,6 +19,7 @@ import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/l
 import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { checklistStatus, mockProjectTasks, toLocalChecklistDate, type ProjectChecklist, type ProjectSubtask } from "@/lib/tasks/project-checklist";
 import Arrow57Deg from "@/assets/images/arrow-57deg.png";
 
 const STATUS_OPTIONS = ["All", "Pending", "In Progress", "Completed", "Cancelled"];
@@ -197,7 +198,14 @@ function statusToContainerId(s: string): string | null {
   return null;
 }
 
-export function AllProjectsTasksView() {
+type BoardTask = TaskApiItem & { checklist?: ProjectChecklist; commentCount?: number };
+type LocalTaskChanges = Partial<Pick<ProjectChecklist, "dueAt" | "subtasks">> & {
+  status?: ApiTaskStatus;
+  assignee?: { id: number; name: string };
+  deleted?: boolean;
+};
+
+export function AllProjectsTasksView({ enableProjectChecklist = false }: { enableProjectChecklist?: boolean }) {
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
@@ -211,6 +219,22 @@ export function AllProjectsTasksView() {
     role === "management" ||
     role === "manager" ||
     role === "supervisor";
+
+  const companyKey = String(companyId ?? "");
+  const userId = String(authUser?.id ?? "");
+  const userName = authUser?.name ?? "Current user";
+  const [changes, setChanges] = useState<Record<string, LocalTaskChanges>>({});
+  const [comments, setComments] = useState<Record<string, string[]>>({});
+  const changeKey = (id: string) => JSON.stringify([companyKey, userId, id]);
+  const mockTasks = useMemo(
+    () => enableProjectChecklist && companyKey ? mockProjectTasks(companyKey, userId, userName) : [],
+    [enableProjectChecklist, companyKey, userId, userName],
+  );
+
+  const patchTask = useCallback((id: string, patch: LocalTaskChanges) => {
+    const key = JSON.stringify([companyKey, userId, id]);
+    setChanges((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
+  }, [companyKey, userId]);
 
   const [search, setSearch] = useState("");
   const [taskScope, setTaskScope] = useState<"mine" | "all">("mine");
@@ -243,10 +267,85 @@ export function AllProjectsTasksView() {
     },
   });
 
-  const serverContainers = useMemo(
-    () => buildContainers(tasksData?.tasks ?? []),
-    [tasksData?.tasks],
-  );
+  const allTasks = useMemo<BoardTask[]>(() => {
+    const apiTasks = tasksData?.tasks ?? [];
+    if (!enableProjectChecklist) return apiTasks;
+    const tasks: Array<{ task: TaskApiItem; checklist: ProjectChecklist }> = [
+      ...apiTasks.map((task) => ({
+        task,
+        checklist: {
+          creatorId: String(task.created_by_user_id ?? task.creator?.id ?? userId),
+          assigneeId: String(task.assigned_agent_id ?? task.assignee?.id ?? task.assigned_users?.[0]?.id ?? userId),
+          assigneeName: task.assignee?.name ?? task.assigned_users?.[0]?.name ?? (userId ? userName : "Unassigned"),
+          dueAt: task.due_date ?? null,
+          subtasks: [],
+        },
+      })),
+      ...mockTasks,
+    ];
+    return tasks.flatMap(({ task, checklist }) => {
+      const key = JSON.stringify([companyKey, userId, String(task.id)]);
+      const patch = changes[key];
+      if (patch?.deleted) return [];
+      const activeComments = comments[key] ?? checklist.initialComments ?? [];
+      return [{
+        ...task,
+        status: task.status === "cancelled" ? task.status : patch?.status ?? task.status,
+        ...(patch?.assignee && { assigned_users: [patch.assignee], assigned_agent_id: patch.assignee.id }),
+        commentCount: activeComments.length,
+        checklist: {
+          ...checklist,
+          ...(patch?.dueAt !== undefined && { dueAt: patch.dueAt }),
+          ...(patch?.subtasks && { subtasks: patch.subtasks }),
+          ...(patch?.assignee && { assigneeId: String(patch.assignee.id), assigneeName: patch.assignee.name }),
+        },
+      }];
+    });
+  }, [changes, comments, companyKey, enableProjectChecklist, mockTasks, tasksData?.tasks, userId, userName]);
+  const serverContainers = useMemo(() => buildContainers(allTasks), [allTasks]);
+
+  function saveSubtasks(id: string, subtasks: ProjectSubtask[]) {
+    const task = allTasks.find((entry) => String(entry.id) === id);
+    if (!task?.checklist || task.status === "cancelled" || (task.checklist.creatorId && task.checklist.creatorId !== userId) || !userId) return;
+    const status = checklistStatus(task.status, subtasks);
+    patchTask(id, { subtasks, ...(status !== task.status && { status }) });
+    if (status !== task.status) toast.success(getStatusTransitionMessage(task.status, status));
+  }
+
+  function addSubtask(id: string, title: string) {
+    const task = allTasks.find((entry) => String(entry.id) === id);
+    const trimmed = title.trim();
+    if (!task?.checklist || !trimmed || task.status === "cancelled" || !userId) return;
+    if (task.checklist.creatorId && task.checklist.creatorId !== userId) return;
+    const nextSubtask: ProjectSubtask = {
+      id: crypto.randomUUID(),
+      title: trimmed,
+      assigneeId: task.checklist.assigneeId || userId,
+      assigneeName: task.checklist.assigneeName && task.checklist.assigneeName !== "Unassigned"
+        ? task.checklist.assigneeName
+        : userName,
+      dueAt: task.checklist.dueAt,
+      isCompleted: false,
+      completedAt: null,
+    };
+    saveSubtasks(id, [...task.checklist.subtasks, nextSubtask]);
+  }
+
+  function toggleSubtask(id: string, subtaskId: string) {
+    const task = allTasks.find((entry) => String(entry.id) === id);
+    const item = task?.checklist?.subtasks.find((subtask) => subtask.id === subtaskId);
+    if (!task?.checklist || task.status === "cancelled" || !item || !userId ||
+      (item.assigneeId !== userId && task.checklist.creatorId !== userId)) return;
+    const subtasks = task.checklist.subtasks.map((subtask) => subtask.id === subtaskId ? {
+      ...subtask, isCompleted: !item.isCompleted, completedAt: item.isCompleted ? null : new Date().toISOString(),
+    } : subtask);
+    const status = checklistStatus(task.status, subtasks);
+    patchTask(id, { subtasks, ...(status !== task.status && { status }) });
+    if (status !== task.status) toast.success(status === "completed"
+      ? "All subtasks done. Task moved to Completed."
+      : getStatusTransitionMessage(task.status, status));
+  }
+
   const [boardContainers, setBoardContainers] = useState<DndContainer[]>(serverContainers);
   const [isDraggingBoard, setIsDraggingBoard] = useState(false);
   const [pendingServerContainers, setPendingServerContainers] = useState<DndContainer[] | null>(null);
@@ -336,58 +435,63 @@ export function AllProjectsTasksView() {
     [canManageTaskStatuses]
   );
 
-  const handleStatusDrop = useCallback(
-    (activeId: string, fromContainerId: string, toContainerId: string) => {
-      const nextStatus = containerToApiStatus(toContainerId);
-      const previousStatus = containerToApiStatus(fromContainerId);
+  function handleStatusDrop(activeId: string, fromContainerId: string, toContainerId: string) {
+    const nextStatus = containerToApiStatus(toContainerId);
+    const previousStatus = containerToApiStatus(fromContainerId);
 
-      if (!nextStatus || !previousStatus || nextStatus === previousStatus) return;
+    if (!nextStatus || !previousStatus || nextStatus === previousStatus) return;
 
-      if (!canManageTaskStatuses) {
-        toast.error("Only management users can move task status on this board.");
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
-        return;
+    if (!canManageTaskStatuses) {
+      toast.error("Only management users can move task status on this board.");
+      setBoardContainers(serverContainers);
+      return;
+    }
+
+    if (!companyId) {
+      toast.error("Company context is required.");
+      setBoardContainers(serverContainers);
+      return;
+    }
+
+    const boardTask = allTasks.find((task) => String(task.id) === activeId);
+    if (boardTask?.checklist?.isMock) {
+      patchTask(activeId, { status: nextStatus });
+      toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
+      return;
+    }
+
+    const taskId = Number(activeId);
+    if (!Number.isFinite(taskId)) {
+      setBoardContainers(serverContainers);
+      return;
+    }
+
+    const snapshot = boardContainers;
+
+    statusMutation.mutate(
+      { taskId, payload: { company_id: companyId, status: nextStatus } },
+      {
+        onSuccess: (response) => {
+          if (enableProjectChecklist) patchTask(activeId, { status: undefined });
+          setBoardContainers((prev) =>
+            prev.map((container) => ({
+              ...container,
+              items: container.items.map((item) =>
+                item.id === activeId
+                  ? { ...item, statusLabel: mapStatusToLabel(response.data.task.status) }
+                  : item
+              ),
+            }))
+          );
+          toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
+        },
+        onError: () => {
+          setBoardContainers(snapshot);
+          toast.error("Failed to update task status. Board state has been restored.");
+        },
       }
-
-      if (!companyId) {
-        toast.error("Company context is required.");
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
-        return;
-      }
-
-      const taskId = Number(activeId);
-      if (!Number.isFinite(taskId)) {
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
-        return;
-      }
-
-      const snapshot = boardContainers;
-
-      statusMutation.mutate(
-        { taskId, payload: { company_id: companyId, status: nextStatus } },
-        {
-          onSuccess: (response) => {
-            setBoardContainers((prev) =>
-              prev.map((container) => ({
-                ...container,
-                items: container.items.map((item) =>
-                  item.id === activeId
-                    ? { ...item, statusLabel: mapStatusToLabel(response.data.task.status) }
-                    : item
-                ),
-              }))
-            );
-            toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
-          },
-          onError: () => {
-            setBoardContainers(snapshot);
-            toast.error("Failed to update task status. Board state has been restored.");
-          },
-        }
-      );
-    },
-    [boardContainers, canManageTaskStatuses, companyId, statusMutation, tasksData?.tasks]
-  );
+    );
+  }
 
   const displayContainers: DndContainer[] = boardContainers
     .filter((c) => {
@@ -408,7 +512,12 @@ export function AllProjectsTasksView() {
       };
     });
 
-  const allTasks = tasksData?.tasks ?? [];
+  const currentSelection = selectedTask && (enableProjectChecklist
+    ? serverContainers.flatMap((container) => container.items.map((item) => ({ item, containerId: container.id })))
+      .find(({ item }) => item.id === selectedTask.item.id)
+    : selectedTask);
+  const selectedId = currentSelection?.item.id;
+  const localMock = currentSelection?.item.projectChecklist?.isMock;
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -537,6 +646,11 @@ export function AllProjectsTasksView() {
       ) : (
         <TaskBoard
           containers={displayContainers}
+          onOpenCreateTask={enableProjectChecklist ? () => setShowCreateModal(true) : undefined}
+          checklistUserId={userId}
+          onToggleSubtask={enableProjectChecklist ? toggleSubtask : undefined}
+          onAddSubtask={enableProjectChecklist ? addSubtask : undefined}
+          onReorderSubtasks={enableProjectChecklist ? saveSubtasks : undefined}
           activeTab="all"
           onAddCard={() => {}}
           findContainer={findContainer}
@@ -546,7 +660,7 @@ export function AllProjectsTasksView() {
           onStatusDrop={handleStatusDrop}
           onDragStateChange={handleDragStateChange}
           onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
-          onTaskEdit={(item) => setEditingTask(item)}
+          onTaskEdit={setEditingTask}
           onTaskDelete={(item) => setDeleteTaskTarget(item)}
           onViewMap={(item) => {
             const url = buildTaskMapUrl(item, role);
@@ -561,6 +675,9 @@ export function AllProjectsTasksView() {
 
       <CreateTaskModal
         isOpen={showCreateModal}
+        onProjectChecklistCreated={enableProjectChecklist
+          ? (id, dueAt, subtasks) => patchTask(id, { dueAt, subtasks })
+          : undefined}
         onClose={() => setShowCreateModal(false)}
       />
 
@@ -569,6 +686,7 @@ export function AllProjectsTasksView() {
         isOpen={!!editingTask}
         onClose={() => setEditingTask(null)}
         mode="edit"
+        projectSubtasks={editingTask?.projectChecklist?.subtasks}
         submitLabel="Save Changes"
         initialValues={
           editingTask
@@ -578,7 +696,9 @@ export function AllProjectsTasksView() {
                 description: editingTask.addedDescription ?? "",
                 location: editingTask.location ?? "",
                 address: editingTask.address ?? "",
-                dueDate: editingTask.dueDateIso ? editingTask.dueDateIso.slice(0, 10) : "",
+                dueDate: editingTask.projectChecklist
+                  ? toLocalChecklistDate(editingTask.projectChecklist.dueAt)
+                  : editingTask.dueDateIso?.slice(0, 10) ?? "",
                 requiredActions: editingTask.requiredActions?.join(", ") ?? "",
                 priority: editingTask.priority
                   ? (editingTask.priority.charAt(0).toUpperCase() + editingTask.priority.slice(1).toLowerCase()) as
@@ -593,6 +713,8 @@ export function AllProjectsTasksView() {
         }
         onSubmitTask={(payload) => {
           if (!editingTask || !companyId) return;
+          const editedTaskId = editingTask.id;
+          const dueAt = payload.dueDate ? new Date(payload.dueDate).toISOString() : null;
           updateTaskMutation.mutate({
             taskId: editingTask.id,
             payload: {
@@ -602,13 +724,17 @@ export function AllProjectsTasksView() {
               description: payload.description,
               location: payload.location,
               address: payload.address,
-              due_date: payload.dueDate ? new Date(payload.dueDate).toISOString() : undefined,
+              due_date: enableProjectChecklist ? undefined : dueAt ?? undefined,
               required_actions: payload.requiredActions,
               priority: payload.priority,
               minimum_photos_required: payload.minPhotos,
               visit_verification_required: payload.visitVerification,
               latitude: payload.latitude,
               longitude: payload.longitude,
+            },
+          }, {
+            onSuccess: () => {
+              if (enableProjectChecklist) patchTask(editedTaskId, { dueAt });
             },
           });
         }}
@@ -622,6 +748,11 @@ export function AllProjectsTasksView() {
         confirmLabel={deleteTaskMutation.isPending ? "Deleting..." : "Delete"}
         onConfirm={() => {
           if (!deleteTaskTarget || !companyId) return;
+          if (deleteTaskTarget.projectChecklist?.isMock) {
+            patchTask(deleteTaskTarget.id, { deleted: true });
+            setDeleteTaskTarget(null);
+            return;
+          }
           deleteTaskMutation.mutate({
             taskId: deleteTaskTarget.id,
             companyId,
@@ -632,8 +763,21 @@ export function AllProjectsTasksView() {
       <TaskDetailModal
         isOpen={!!selectedTask}
         onClose={() => setSelectedTask(null)}
-        task={selectedTask?.item ?? null}
-        status={selectedTask?.containerId ?? ""}
+        task={currentSelection?.item ?? null}
+        status={currentSelection?.containerId ?? ""}
+        onToggleSubtask={enableProjectChecklist && selectedId ? (id) => toggleSubtask(selectedId, id) : undefined}
+        onSaveSubtasks={enableProjectChecklist && selectedId ? (items) => saveSubtasks(selectedId, items) : undefined}
+        onApiStatusUpdated={enableProjectChecklist && selectedId ? () => patchTask(selectedId, { status: undefined }) : undefined}
+        localTask={localMock && selectedId ? {
+          comments: comments[changeKey(selectedId)] ?? currentSelection?.item.projectChecklist?.initialComments ?? [],
+          onComment: (body) => {
+            const key = changeKey(selectedId);
+            const initial = currentSelection?.item.projectChecklist?.initialComments ?? [];
+            setComments((current) => ({ ...current, [key]: [...(current[key] ?? initial), body] }));
+          },
+          onStatus: (status) => patchTask(selectedId, { status }),
+          onAssign: (assignee) => patchTask(selectedId, { assignee }),
+        } : undefined}
       />
     </div>
   );
@@ -667,7 +811,7 @@ function getStatusTransitionMessage(from: ApiTaskStatus, to: ApiTaskStatus): str
   return "Task status updated successfully.";
 }
 
-function buildContainers(tasks: TaskApiItem[]): DndContainer[] {
+function buildContainers(tasks: BoardTask[]): DndContainer[] {
   return [
     {
       id: "pending",
@@ -698,7 +842,7 @@ function buildContainers(tasks: TaskApiItem[]): DndContainer[] {
   ];
 }
 
-function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
+function mapTaskToDnd(apiTask: BoardTask): DndItem {
   const statusLabel = mapStatusToLabel(apiTask.status);
   const assigneeLabel =
     apiTask.assigned_users && apiTask.assigned_users.length > 0
@@ -719,6 +863,8 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
     dueDateIso: apiTask.due_date ?? undefined,
+    projectChecklist: apiTask.checklist,
+    commentCount: apiTask.commentCount,
     createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,

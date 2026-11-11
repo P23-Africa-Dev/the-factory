@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
+import type { ProjectSubtask } from '@/lib/tasks/project-checklist';
 import { TaskColumn } from './task-column';
 import { TaskCard } from './task-card';
 
@@ -22,6 +23,11 @@ interface TaskBoardProps {
   containers: DndContainer[];
   activeTab: TaskCategory;
   onAddCard: (containerId: string, item: DndItem) => void;
+  onOpenCreateTask?: () => void;
+  checklistUserId?: string;
+  onToggleSubtask?: (taskId: string, subtaskId: string) => void;
+  onAddSubtask?: (taskId: string, title: string) => void;
+  onReorderSubtasks?: (taskId: string, subtasks: ProjectSubtask[]) => void;
   onTaskClick?: (item: DndItem, containerId: string) => void;
   onTaskEdit?: (item: DndItem, containerId: string) => void;
   onTaskDelete?: (item: DndItem, containerId: string) => void;
@@ -47,6 +53,11 @@ export function TaskBoard({
   moveItem,
   moveToContainer,
   moveBetweenContainers,
+  onOpenCreateTask,
+  checklistUserId,
+  onToggleSubtask,
+  onAddSubtask,
+  onReorderSubtasks,
   onTaskClick,
   onTaskEdit,
   onTaskDelete,
@@ -152,6 +163,11 @@ export function TaskBoard({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {filteredContainers.map((container) => (
           <TaskColumn
+            onOpenCreateTask={onOpenCreateTask}
+            checklistUserId={checklistUserId}
+            onToggleSubtask={onToggleSubtask}
+            onAddSubtask={onAddSubtask}
+            onReorderSubtasks={onReorderSubtasks}
             key={container.id}
             id={container.id}
             title={container.title}

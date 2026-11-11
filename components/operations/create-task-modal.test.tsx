@@ -225,4 +225,39 @@ describe("CreateTaskModal description validation", () => {
       expect.any(Object),
     );
   });
+
+  it("opens the right-hand subtask modal on Add Subtask, preselects the parent task assignee, and adds the subtask on submit", () => {
+    setUser(7, "owner");
+    render(
+      <CreateTaskModal
+        isOpen
+        onClose={vi.fn()}
+        onProjectChecklistCreated={vi.fn()}
+      />,
+    );
+
+    const parentAssigneeSelect = screen.getByRole("combobox", { name: "Select user" }) as HTMLSelectElement;
+    fireEvent.change(parentAssigneeSelect, { target: { value: "9" } });
+
+    const subtaskInput = screen.getByPlaceholderText("Input your task title");
+    expect(screen.queryByLabelText("Assign to")).toBeNull();
+    expect(screen.queryByLabelText("Subtask due date and time")).toBeNull();
+
+    fireEvent.change(subtaskInput, { target: { value: "Confirm delivery manifest" } });
+    fireEvent.click(screen.getByRole("button", { name: "Multiple Tasks" }));
+
+    const subtaskAssigneeSelect = screen.getByLabelText("Assign to") as HTMLSelectElement;
+    expect(subtaskAssigneeSelect.value).toBe("9");
+
+    fireEvent.change(subtaskAssigneeSelect, { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Subtask due date and time"), {
+      target: { value: "2026-11-12T14:30" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    expect(screen.queryByLabelText("Assign to")).toBeNull();
+    expect(screen.getByText("Confirm delivery manifest")).not.toBeNull();
+    expect(screen.getByTitle("Amara Agent")).not.toBeNull();
+  });
 });

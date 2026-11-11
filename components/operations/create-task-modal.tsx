@@ -25,6 +25,9 @@ import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField"
 import { validateTaskDescription, TASK_DESCRIPTION_MAX_LENGTH } from "@/lib/tasks/description";
 import type { RetrievedPlace } from "@/lib/utils/place-search";
 
+import { ChecklistRows, SubtaskEditor } from "./project-checklist";
+import type { ProjectSubtask } from "@/lib/tasks/project-checklist";
+
 type StatusType = "pending" | "in-progress" | "completed";
 
 interface CreateTaskModalProps {
@@ -32,6 +35,8 @@ interface CreateTaskModalProps {
   onClose: () => void;
   onCreateTask?: (containerId: StatusType, item: DndItem) => void;
   projectId?: number | string;
+  projectSubtasks?: ProjectSubtask[];
+  onProjectChecklistCreated?: (id: string, dueAt: string | null, subtasks: ProjectSubtask[]) => void;
   mode?: "create" | "edit";
   initialValues?: Partial<{
     title: string;
@@ -155,6 +160,8 @@ export function CreateTaskModal({
   initialValues,
   submitLabel,
   onSubmitTask,
+  onProjectChecklistCreated,
+  projectSubtasks,
 }: CreateTaskModalProps) {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
@@ -165,14 +172,25 @@ export function CreateTaskModal({
     canManageTasks ? companyId ?? undefined : undefined,
   );
 
+  const [subtasks, setSubtasks] = useState<ProjectSubtask[]>([]);
+  const [editingSubtask, setEditingSubtask] = useState<ProjectSubtask | null>(null);
+  const usesProjectDueDate = Boolean(onProjectChecklistCreated || projectSubtasks);
+  const submittedChecklist = useRef<{ dueAt: string | null; subtasks: ProjectSubtask[] }>(null);
+
   const { mutate, isPending } = useCreateTask({
-    onSuccess: () => {
+    onSuccess: (task) => {
+      const checklist = submittedChecklist.current;
+      if (checklist) onProjectChecklistCreated?.(String(task.id), checklist.dueAt, checklist.subtasks);
+      submittedChecklist.current = null;
       toast.success("Task created successfully.");
       handleClose();
     },
   });
   const { mutate: createSelfTask, isPending: isSelfTaskPending } = useCreateSelfTask({
-    onSuccess: () => {
+    onSuccess: (task) => {
+      const checklist = submittedChecklist.current;
+      if (checklist) onProjectChecklistCreated?.(String(task.id), checklist.dueAt, checklist.subtasks);
+      submittedChecklist.current = null;
       toast.success("Task created successfully.");
       handleClose();
     },
@@ -247,6 +265,9 @@ export function CreateTaskModal({
     if (!form.title.trim()) errs.title = "Task title is required";
     const descriptionError = validateTaskDescription(form.description);
     if (descriptionError) errs.description = descriptionError;
+    if (usesProjectDueDate && form.dueDate && (projectSubtasks ?? subtasks).some((item) => item.dueAt && Date.parse(item.dueAt) > Date.parse(form.dueDate))) {
+      errs.dueDate = "The task due date cannot be earlier than a subtask due date.";
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -277,6 +298,12 @@ export function CreateTaskModal({
     }
 
     if (companyId) {
+      if (onProjectChecklistCreated) {
+        submittedChecklist.current = {
+          dueAt: form.dueDate ? new Date(form.dueDate).toISOString() : null,
+          subtasks,
+        };
+      }
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
       const payload = {
@@ -288,7 +315,7 @@ export function CreateTaskModal({
         address: form.address || undefined,
         latitude: coords?.lat,
         longitude: coords?.lng,
-        due_date: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+        due_date: !onProjectChecklistCreated && form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
         priority: form.priority ? priorityVal : undefined,
         minimum_photos_required: form.minPhotos ? Number(form.minPhotos) : undefined,
@@ -376,6 +403,8 @@ export function CreateTaskModal({
       category: "all",
     });
     setErrors({});
+    setSubtasks([]);
+    setEditingSubtask(null);
     setCoords(null);
     onClose();
   };
@@ -545,13 +574,71 @@ export function CreateTaskModal({
             ) : null}
           </div>
 
+          {/* Subtasks — placed right after Address */}
+          {onProjectChecklistCreated && (
+            <section className="space-y-2.5">
+              <FieldLabel>Subtasks</FieldLabel>
+              <SubtaskEditor
+                dueAt={form.dueDate || null}
+                assignee={{
+                  id: form.assignTo || String(user?.id ?? ""),
+                  name:
+                    assignees.find((agent) => String(agent.id) === form.assignTo)?.name ??
+                    user?.name ??
+                    "Current user",
+                }}
+                agents={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                onSave={(item) => setSubtasks((current) => [...current, item])}
+              />
+              {subtasks.length > 0 && (
+                <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-[#F4F7F9]">
+                  <ChecklistRows
+                    subtasks={subtasks}
+                    userId=""
+                    creatorId=""
+                    locked={false}
+                    onEdit={setEditingSubtask}
+                    onReorder={setSubtasks}
+                    onRemove={(id) => {
+                      setSubtasks((current) => current.filter((item) => item.id !== id));
+                      if (editingSubtask?.id === id) setEditingSubtask(null);
+                    }}
+                  />
+                </div>
+              )}
+              {editingSubtask && (
+                <SubtaskEditor
+                  key={editingSubtask.id}
+                  initial={editingSubtask}
+                  dueAt={form.dueDate || null}
+                  assignee={{
+                    id: form.assignTo || String(user?.id ?? ""),
+                    name:
+                      assignees.find((agent) => String(agent.id) === form.assignTo)?.name ??
+                      user?.name ??
+                      "Current user",
+                  }}
+                  agents={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                  onCancel={() => setEditingSubtask(null)}
+                  onSave={(item) => {
+                    setSubtasks((current) =>
+                      current.map((existing) => (existing.id === item.id ? item : existing)),
+                    );
+                    setEditingSubtask(null);
+                  }}
+                />
+              )}
+            </section>
+          )}
+
           {/* Due Date + Priority */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <FieldLabel required>Due Date</FieldLabel>
+              <FieldLabel required={!usesProjectDueDate}>Due Date</FieldLabel>
               <InputWrap icon={<Calendar size={13} />}>
                 <input
-                  type="date"
+                  type={usesProjectDueDate ? "datetime-local" : "date"}
+                  aria-label="Due Date"
                   value={form.dueDate}
                   onChange={(e) => set("dueDate", e.target.value)}
                   className={`${INPUT_CLS(errors.dueDate)} pl-9 pr-4`}
