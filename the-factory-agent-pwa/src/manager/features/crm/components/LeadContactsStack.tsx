@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
 import { Mail, MapPin, Phone, User, ChevronsLeftRight } from 'lucide-react';
 import type { LeadContact } from '../types';
 
@@ -10,6 +10,8 @@ interface LeadContactsStackProps {
 }
 
 export function LeadContactsStack({ contacts }: LeadContactsStackProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
   // If contacts is empty, we don't render anything
   if (!contacts || contacts.length === 0) {
     return (
@@ -18,8 +20,6 @@ export function LeadContactsStack({ contacts }: LeadContactsStackProps) {
       </div>
     );
   }
-
-  const [currentIndex, setCurrentIndex] = useState(0);
 
   // If there's only 1 contact, render it as a single static card
   if (contacts.length === 1) {
@@ -158,7 +158,7 @@ function SwipeableCard({ contact, isTop, stackIndex, onSwipe }: SwipeableCardPro
   const rotateZ = isTop ? 0 : stackIndex === 1 ? 1.5 : -1.5;
   const zIndex = 30 - stackIndex;
 
-  const handleDragEnd = (event: any, info: any) => {
+  const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const threshold = 100;
     if (info.offset.x > threshold) {
       onSwipe('right');

@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { ChecklistDraftFields, ProjectChecklist, saveCreatedChecklist, TaskOverview, useChecklistTasks, type ChecklistStep } from '@/features/tasks/components/ProjectChecklist';
-import React, { useState, useCallback, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
 import {
@@ -192,7 +192,13 @@ function ManagerTasksContent() {
   );
 
   // Create Task modal state
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const createRequested = searchParams.get('create') === '1';
+  const [previousCreateRequest, setPreviousCreateRequest] = useState(createRequested);
+  const [createModalOpen, setCreateModalOpen] = useState(createRequested);
+  if (createRequested !== previousCreateRequest) {
+    setPreviousCreateRequest(createRequested);
+    if (createRequested) setCreateModalOpen(true);
+  }
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState<TaskType>('sales_visit');
   const [newDesc, setNewDesc] = useState('');
@@ -208,7 +214,6 @@ function ManagerTasksContent() {
   const [newAssigneeId, setNewAssigneeId] = useState<string>('');
   const [newProjectId, setNewProjectId] = useState<string>('');
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
-  const placeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Edit Task modal state
   const [editTask, setEditTask] = useState<Task | null>(null);
@@ -243,39 +248,35 @@ function ManagerTasksContent() {
   const [projectDesc, setProjectDesc] = useState('');
   const [projectDueDate, setProjectDueDate] = useState('');
 
+  // Debounced place search inside Create Task modal.
   useEffect(() => {
-    if (searchParams.get('create') === '1') {
-      setCreateModalOpen(true);
-    }
-  }, [searchParams]);
-
-  // Debounced place search inside Create Task modal
-  useEffect(() => {
-    if (placeDebounceRef.current) clearTimeout(placeDebounceRef.current);
-    const trimmed = newAddress.trim();
-    if (!createModalOpen || newPlaceCoords !== null || trimmed.length < 2) {
-      setNewPlaceResults([]);
-      setNewPlaceSearching(false);
-      return;
-    }
-    setNewPlaceSearching(true);
-    placeDebounceRef.current = setTimeout(async () => {
+    const query = newAddress.trim();
+    let current = true;
+    const shouldSearch = createModalOpen && newPlaceCoords === null && query.length >= 2;
+    const timer = setTimeout(async () => {
+      if (!shouldSearch) {
+        setNewPlaceResults([]);
+        setNewPlaceSearching(false);
+        return;
+      }
+      setNewPlaceSearching(true);
       try {
-        const results = await searchPlaces(trimmed);
+        const results = await searchPlaces(query);
+        if (!current) return;
         setPlaceCreditsExhausted(false);
         setNewPlaceResults(results);
-      } catch (err) {
-        if (err instanceof PlaceSearchCreditExhaustedError) {
-          setPlaceCreditsExhausted(true);
-        }
+      } catch (error) {
+        if (!current) return;
+        if (error instanceof PlaceSearchCreditExhaustedError) setPlaceCreditsExhausted(true);
         setNewPlaceResults([]);
       } finally {
-        setNewPlaceSearching(false);
+        if (current) setNewPlaceSearching(false);
       }
-    }, 350);
+    }, shouldSearch ? 350 : 0);
 
     return () => {
-      if (placeDebounceRef.current) clearTimeout(placeDebounceRef.current);
+      current = false;
+      clearTimeout(timer);
     };
   }, [newAddress, newPlaceCoords, createModalOpen]);
 

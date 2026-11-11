@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useClientMounted } from '@/lib/use-client-mounted';
+import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { SAVED_LOCATION_TYPES } from '@/lib/map/locationTypes';
@@ -45,21 +46,17 @@ export function SaveLocationSheet({
   const { data: crmLabels = [] } = useCrmLabels();
   const defaultCrmStatus = crmLabels.find((l) => l.is_default)?.slug ?? crmLabels[0]?.slug ?? 'newly_lead';
   const [crmStatus, setCrmStatus] = useState(defaultCrmStatus);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useClientMounted();
 
   const resolvedLat = pickedCoords?.lat ?? latitude;
   const resolvedLng = pickedCoords?.lng ?? longitude;
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Keep address in sync when reverse-geocode arrives from the parent.
-  useEffect(() => {
-    if (initialAddress != null && initialAddress !== '') {
-      setAddress(initialAddress);
-    }
-  }, [initialAddress]);
+  const [previousAddress, setPreviousAddress] = useState(initialAddress);
+  if (previousAddress !== initialAddress) {
+    setPreviousAddress(initialAddress);
+    if (initialAddress) setAddress(initialAddress);
+  }
 
   if (!visible || !mounted) return null;
 

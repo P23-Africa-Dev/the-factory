@@ -181,47 +181,42 @@ function MapContent() {
   // Selected Task Route from backend
   const { data: selectedTaskRoute } = useTaskRoute(selectedTaskId);
 
-  // Sync deep-linked agentId
-  useEffect(() => {
-    if (agentIdParam) {
-      const id = Number(agentIdParam);
-      if (Number.isFinite(id)) {
-        setSelectedAgentId(id);
-        setSheetTab('agents');
-      }
-    }
-  }, [agentIdParam]);
+  // Apply deep links when their destination changes or becomes available.
+  const deepLinkedTask = taskIdParam ? allTasks.find((task) => Number(task.id) === Number(taskIdParam)) : undefined;
+  const deepLinkedLocation = locationIdParam ? savedLocations.find((location) => location.id === Number(locationIdParam)) : undefined;
+  const [previousAgentParam, setPreviousAgentParam] = useState<string | null>(null);
+  const [previousTaskLink, setPreviousTaskLink] = useState<typeof deepLinkedTask>();
+  const [previousLocationLink, setPreviousLocationLink] = useState<typeof deepLinkedLocation>();
 
-  // Sync deep-linked taskId
-  useEffect(() => {
-    if (!taskIdParam || allTasks.length === 0) return;
-    const id = Number(taskIdParam);
-    const found = allTasks.find((t) => Number(t.id) === id);
-    if (found) {
-      setSelectedTaskId(Number(found.id));
-      const coords = resolveTaskDestinationCoords(found);
+  if (previousAgentParam !== agentIdParam) {
+    setPreviousAgentParam(agentIdParam);
+    const id = agentIdParam ? Number(agentIdParam) : NaN;
+    if (Number.isFinite(id)) {
+      setSelectedAgentId(id);
+      setSheetTab('agents');
+    }
+  }
+  if (previousTaskLink !== deepLinkedTask) {
+    setPreviousTaskLink(deepLinkedTask);
+    if (deepLinkedTask) {
+      setSelectedTaskId(Number(deepLinkedTask.id));
+      const coords = resolveTaskDestinationCoords(deepLinkedTask);
       if (coords) {
         setCustomDestination({
-          name: found.title,
-          address: found.location ?? undefined,
+          name: deepLinkedTask.title,
+          address: deepLinkedTask.location ?? undefined,
           latitude: coords.latitude,
           longitude: coords.longitude,
-          radiusMeters: found.proximityThreshold ?? 100,
+          radiusMeters: deepLinkedTask.proximityThreshold ?? 100,
           kind: 'task',
         });
       }
     }
-  }, [taskIdParam, allTasks]);
-
-  // Sync deep-linked locationId
-  useEffect(() => {
-    if (!locationIdParam || savedLocations.length === 0) return;
-    const id = Number(locationIdParam);
-    const found = savedLocations.find((loc) => loc.id === id);
-    if (found) {
-      setSelectedSavedLocation(found);
-    }
-  }, [locationIdParam, savedLocations]);
+  }
+  if (previousLocationLink !== deepLinkedLocation) {
+    setPreviousLocationLink(deepLinkedLocation);
+    if (deepLinkedLocation) setSelectedSavedLocation(deepLinkedLocation);
+  }
 
   // Selected Agent object
   const selectedAgent = useMemo(
@@ -357,8 +352,8 @@ function MapContent() {
   useEffect(() => {
     let cancelled = false;
     if (!customDestination) {
-      setPlannedRouteCoords([]);
-      return;
+      const clear = setTimeout(() => setPlannedRouteCoords([]), 0);
+      return () => clearTimeout(clear);
     }
     const originLng =
       selectedAgent?.longitude ?? managerGpsLocation?.coords.longitude ?? null;
@@ -366,8 +361,8 @@ function MapContent() {
       selectedAgent?.latitude ?? managerGpsLocation?.coords.latitude ?? null;
 
     if (originLng == null || originLat == null) {
-      setPlannedRouteCoords([]);
-      return;
+      const clear = setTimeout(() => setPlannedRouteCoords([]), 0);
+      return () => clearTimeout(clear);
     }
 
     const token = getMapboxPublicToken();
@@ -398,8 +393,8 @@ function MapContent() {
     let cancelled = false;
     const q = searchQuery.trim();
     if (!isSearchOpen || q.length < 2) {
-      setPlaceSuggestions([]);
-      return;
+      const clear = setTimeout(() => setPlaceSuggestions([]), 0);
+      return () => clearTimeout(clear);
     }
     const timer = setTimeout(async () => {
       try {

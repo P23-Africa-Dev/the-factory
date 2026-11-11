@@ -6,7 +6,7 @@ export const FIELD_ACTIVITY_KEYS = {
   all: ['field-activity'] as const,
   today: ['field-activity', 'today'] as const,
   pendingReview: ['field-activity', 'pending-review'] as const,
-  journeys: (params?: Record<string, any>) => ['field-activity', 'journeys', params] as const,
+  journeys: (params?: Record<string, unknown>) => ['field-activity', 'journeys', params] as const,
   journey: (id: number | string) => ['field-activity', 'journey', id] as const,
 };
 

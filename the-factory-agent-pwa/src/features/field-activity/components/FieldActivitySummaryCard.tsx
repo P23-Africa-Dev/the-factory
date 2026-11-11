@@ -128,34 +128,36 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
   const { data, isLoading, isError } = useFieldActivityToday();
   const { data: pendingReview } = useFieldActivityPendingReview();
   const classifyMutation = useClassifyFieldStop();
-  const [collapsedSessionIds, setCollapsedSessionIds] = useState<Record<number, boolean>>({});
+  const [collapsedSessionIds, setCollapsedSessionIds] = useState<Record<number, boolean> | null>(null);
   const skipStateStorageKey = 'field-activity:pending-review:collapsed-sessions';
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = window.localStorage.getItem(skipStateStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as unknown;
-      if (!parsed || typeof parsed !== 'object') return;
-      const restored = Object.entries(parsed as Record<string, unknown>).reduce<Record<number, boolean>>(
-        (acc, [sessionId, value]) => {
-          const numericSessionId = Number(sessionId);
-          if (Number.isFinite(numericSessionId) && typeof value === 'boolean') {
-            acc[numericSessionId] = value;
-          }
-          return acc;
-        },
-        {},
-      );
-      setCollapsedSessionIds(restored);
-    } catch {
-      // Ignore malformed local state and continue with defaults.
-    }
+    const load = setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(skipStateStorageKey);
+        if (!raw) return setCollapsedSessionIds({});
+        const parsed = JSON.parse(raw) as unknown;
+        if (!parsed || typeof parsed !== 'object') return setCollapsedSessionIds({});
+        const restored = Object.entries(parsed as Record<string, unknown>).reduce<Record<number, boolean>>(
+          (acc, [sessionId, value]) => {
+            const numericSessionId = Number(sessionId);
+            if (Number.isFinite(numericSessionId) && typeof value === 'boolean') {
+              acc[numericSessionId] = value;
+            }
+            return acc;
+          },
+          {},
+        );
+        setCollapsedSessionIds(restored);
+      } catch {
+        setCollapsedSessionIds({});
+      }
+    }, 0);
+    return () => clearTimeout(load);
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (collapsedSessionIds === null) return;
     try {
       window.localStorage.setItem(skipStateStorageKey, JSON.stringify(collapsedSessionIds));
     } catch {
@@ -199,7 +201,7 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
   };
 
   const toggleSessionCollapsed = (sessionId: number) => {
-    setCollapsedSessionIds((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
+    setCollapsedSessionIds((prev) => ({ ...prev, [sessionId]: !prev?.[sessionId] }));
   };
 
   return (
@@ -268,7 +270,7 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
             </span>
           </div>
           {backlogSessions.map((session) => {
-            const collapsed = !!collapsedSessionIds[session.session_id];
+            const collapsed = !!collapsedSessionIds?.[session.session_id];
             const label = session.started_at
               ? new Date(session.started_at).toLocaleDateString()
               : 'Unknown date';

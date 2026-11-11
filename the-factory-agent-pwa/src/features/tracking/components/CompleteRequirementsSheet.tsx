@@ -1,5 +1,6 @@
 'use client';
 
+import { useClientMounted } from '@/lib/use-client-mounted';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, X } from 'lucide-react';
@@ -47,7 +48,7 @@ export function CompleteRequirementsSheet({
   const { getCurrentPosition } = useGeolocation();
   const { stopTracking } = useActiveTracking();
   const { hide: hideBottomNav, show: showBottomNav } = useBottomNavVisibility();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useClientMounted();
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -68,17 +69,14 @@ export function CompleteRequirementsSheet({
   );
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
     if (!visible) return;
     hideBottomNav();
     return () => showBottomNav();
   }, [visible, hideBottomNav, showBottomNav]);
 
   useEffect(() => {
-    if (!visible) {
+    if (visible) return;
+    const reset = setTimeout(() => {
       setNote('');
       setPhotos([]);
       setPreviews((prev) => {
@@ -87,7 +85,8 @@ export function CompleteRequirementsSheet({
       });
       setSubmitAttempted(false);
       setIsSubmitting(false);
-    }
+    }, 0);
+    return () => clearTimeout(reset);
   }, [visible]);
 
   const handlePickPhoto = () => {

@@ -261,7 +261,7 @@ export function useLeadStagePages(
                 };
             });
         },
-        [resetKey],
+        [resetKey, setPageState],
     );
 
     return useMemo(

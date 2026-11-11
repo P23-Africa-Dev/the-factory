@@ -110,31 +110,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const storedToken = appStore.getString('auth_token') || null;
-      const storedUserRaw = appStore.getString('auth_user');
-      const storedUser: AuthUser | null = storedUserRaw
-        ? JSON.parse(storedUserRaw)
-        : null;
-      const resolvedUser = withResolvedMode(storedUser);
-      if (resolvedUser?.company_id && typeof resolvedUser.company_id === 'number') {
-        setActiveCompanyId(resolvedUser.company_id);
+    const hydrate = setTimeout(() => {
+      try {
+        const storedToken = appStore.getString('auth_token') || null;
+        const storedUserRaw = appStore.getString('auth_user');
+        const storedUser: AuthUser | null = storedUserRaw
+          ? JSON.parse(storedUserRaw)
+          : null;
+        const resolvedUser = withResolvedMode(storedUser);
+        if (resolvedUser?.company_id && typeof resolvedUser.company_id === 'number') {
+          setActiveCompanyId(resolvedUser.company_id);
+        }
+        persistSessionMode(resolvedUser);
+        // Apply token and user in the same turn as isLoading so the shell
+        // never sees "loaded but signed out" and bounces to /login.
+        setToken(storedToken);
+        setUser(resolvedUser);
+        if (storedToken) {
+          void import('@/lib/offline/syncCredentials')
+            .then((m) => m.writeSyncCredentials(storedToken))
+            .catch(() => {});
+        }
+      } catch (err) {
+        console.error('[Auth] Hydration error:', err);
+      } finally {
+        setIsLoading(false);
       }
-      persistSessionMode(resolvedUser);
-      // Apply token and user in the same turn as isLoading so the shell
-      // never sees "loaded but signed out" and bounces to /login.
-      setToken(storedToken);
-      setUser(resolvedUser);
-      if (storedToken) {
-        void import('@/lib/offline/syncCredentials')
-          .then((m) => m.writeSyncCredentials(storedToken))
-          .catch(() => {});
-      }
-    } catch (err) {
-      console.error('[Auth] Hydration error:', err);
-    } finally {
-      setIsLoading(false);
-    }
+    }, 0);
+    return () => clearTimeout(hydrate);
   }, []);
 
   const login = useCallback((newToken: string, newUser?: AuthUser) => {
