@@ -44,7 +44,7 @@ export function isOverdue(value: string | null | undefined) {
 
 const USE_MOCK_SUBTASKS = true;
 
-export function mockProjectTasks(companyId: number | string, userId: string, userName: string) {
+export function mockProjectTasks(companyId: number | string, userId: string, userName: string, assignedView = false) {
   if (!USE_MOCK_SUBTASKS || !userId) return [];
   const now = Date.now();
   const date = (days: number) => new Date(now + days * 86_400_000).toISOString();
@@ -104,14 +104,16 @@ export function mockProjectTasks(companyId: number | string, userId: string, use
 
   return examples.map((example, index) => {
     const id = -(index + 1);
+    const creatorId = assignedView ? "-100" : userId;
+    const creatorName = assignedView ? "Demo Supervisor" : userName;
     const task: TaskApiItem = {
-      id, company_id: companyId, created_by_user_id: userId, assigned_agent_id: userId,
+      id, company_id: companyId, created_by_user_id: creatorId, assigned_agent_id: userId,
       title: example.title, status: example.status, created_at: date(-4),
       assigned_users: [{ id: Number(userId), name: userName }],
-      creator: { id: Number(userId), name: userName, email: "" },
+      creator: { id: Number(creatorId), name: creatorName, email: "" },
     };
     const checklist: ProjectChecklist = {
-      creatorId: userId, assigneeId: userId, assigneeName: userName, isMock: true,
+      creatorId, assigneeId: userId, assigneeName: userName, isMock: true,
       dueAt: example.due === null ? null : date(example.due),
       initialComments: example.comments,
       subtasks: example.steps.map((title, position) => ({

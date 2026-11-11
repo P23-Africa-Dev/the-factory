@@ -205,7 +205,7 @@ type LocalTaskChanges = Partial<Pick<ProjectChecklist, "dueAt" | "subtasks">> & 
   deleted?: boolean;
 };
 
-export function AllProjectsTasksView({ enableProjectChecklist = false }: { enableProjectChecklist?: boolean }) {
+export function AllProjectsTasksView({ enableProjectChecklist = false, agentView = false }: { enableProjectChecklist?: boolean; agentView?: boolean }) {
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
@@ -213,12 +213,12 @@ export function AllProjectsTasksView({ enableProjectChecklist = false }: { enabl
     role === "owner" ||
     role === "admin" ||
     role === "supervisor";
-  const canManageTaskStatuses =
+  const canManageTaskStatuses = !agentView && (
     role === "owner" ||
     role === "admin" ||
     role === "management" ||
     role === "manager" ||
-    role === "supervisor";
+    role === "supervisor");
 
   const companyKey = String(companyId ?? "");
   const userId = String(authUser?.id ?? "");
@@ -227,8 +227,8 @@ export function AllProjectsTasksView({ enableProjectChecklist = false }: { enabl
   const [comments, setComments] = useState<Record<string, string[]>>({});
   const changeKey = (id: string) => JSON.stringify([companyKey, userId, id]);
   const mockTasks = useMemo(
-    () => enableProjectChecklist && companyKey ? mockProjectTasks(companyKey, userId, userName) : [],
-    [enableProjectChecklist, companyKey, userId, userName],
+    () => enableProjectChecklist && companyKey ? mockProjectTasks(companyKey, userId, userName, agentView) : [],
+    [enableProjectChecklist, companyKey, userId, userName, agentView],
   );
 
   const patchTask = useCallback((id: string, patch: LocalTaskChanges) => {
@@ -249,7 +249,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false }: { enabl
     companyId
       ? {
           company_id: companyId,
-          assigned_to_me: isManagementUser && taskScope === "mine",
+          assigned_to_me: agentView || (isManagementUser && taskScope === "mine"),
         }
       : {}
   );
@@ -522,7 +522,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false }: { enabl
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        {isManagementUser && (
+        {isManagementUser && !agentView && (
           <div
             className="flex w-fit items-center gap-1 rounded-full border border-gray-200 bg-white p-1 shadow-sm shrink-0"
             role="group"
@@ -660,8 +660,8 @@ export function AllProjectsTasksView({ enableProjectChecklist = false }: { enabl
           onStatusDrop={handleStatusDrop}
           onDragStateChange={handleDragStateChange}
           onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
-          onTaskEdit={setEditingTask}
-          onTaskDelete={(item) => setDeleteTaskTarget(item)}
+          onTaskEdit={agentView ? undefined : setEditingTask}
+          onTaskDelete={agentView ? undefined : setDeleteTaskTarget}
           onViewMap={(item) => {
             const url = buildTaskMapUrl(item, role);
             if (!url) {

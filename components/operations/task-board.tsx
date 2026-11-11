@@ -175,8 +175,8 @@ export function TaskBoard({
             items={container.items}
             onAddCard={(item) => onAddCard(container.id, item)}
             onTaskClick={(item) => onTaskClick?.(item, container.id)}
-            onTaskEdit={(item) => onTaskEdit?.(item, container.id)}
-            onTaskDelete={(item) => onTaskDelete?.(item, container.id)}
+            onTaskEdit={onTaskEdit ? (item) => onTaskEdit(item, container.id) : undefined}
+            onTaskDelete={onTaskDelete ? (item) => onTaskDelete(item, container.id) : undefined}
             onViewMap={onViewMap}
           />
         ))}
