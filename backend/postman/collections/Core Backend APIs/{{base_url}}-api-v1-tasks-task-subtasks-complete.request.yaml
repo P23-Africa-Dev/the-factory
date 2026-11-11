@@ -1,0 +1,17 @@
+$kind: http-request
+name: "{{base_url}}/api/v1/tasks/{task}/subtasks/{subtask}/complete"
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/subtasks/{{subtask_id}}/complete"
+method: PATCH
+headers:
+  Content-Type: application/json
+  Accept: application/json
+  Authorization: "Bearer {{access_token}}"
+body:
+  type: json
+  content: |
+    {
+      "company_id": "{{company_id}}",
+      "is_completed": true
+    }
+settings:
+  disabledSystemHeaders: []

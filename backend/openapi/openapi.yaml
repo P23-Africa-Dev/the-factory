@@ -696,7 +696,7 @@ paths:
       tags:
         - Tasks
       summary: Get task details
-      description: Returns task detail with proof metadata and related project, creator, and assignee data.
+      description: Returns task detail with proof metadata, subtasks, comment count, and related project, creator, and assignee data.
       operationId: getTask
       security:
         - bearerAuth: []
@@ -727,6 +727,225 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tasks/{task}/subtasks:
+    post:
+      tags:
+        - Tasks
+      summary: Add a task subtask
+      description: Creator-only. Appends a checklist item and returns the updated task.
+      operationId: createTaskSubtask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TaskSubtaskInput"
+                - type: object
+                  properties:
+                    company_id:
+                      oneOf:
+                        - type: integer
+                        - type: string
+      responses:
+        "201":
+          description: Subtask created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubtaskMutationResponse"
+        "403":
+          description: Not the task creator
+        "422":
+          description: Validation failure or cancelled task
+
+  /api/v1/tasks/{task}/subtasks/reorder:
+    patch:
+      tags:
+        - Tasks
+      summary: Reorder task subtasks
+      description: Creator-only. `subtask_ids` must list every subtask exactly once.
+      operationId: reorderTaskSubtasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subtask_ids]
+              properties:
+                company_id:
+                  oneOf:
+                    - type: integer
+                    - type: string
+                subtask_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "200":
+          description: Subtasks reordered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "403":
+          description: Not the task creator
+        "422":
+          description: Reorder list mismatch or cancelled task
+
+  /api/v1/tasks/{task}/subtasks/{subtask}:
+    patch:
+      tags:
+        - Tasks
+      summary: Update a task subtask
+      description: Creator-only. Any subset of title, assigned_user_id, due_at.
+      operationId: updateTaskSubtask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: subtask
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                company_id:
+                  oneOf:
+                    - type: integer
+                    - type: string
+                title:
+                  type: string
+                assigned_user_id:
+                  type:
+                    - integer
+                    - "null"
+                due_at:
+                  type:
+                    - string
+                    - "null"
+                  format: date-time
+      responses:
+        "200":
+          description: Subtask updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubtaskMutationResponse"
+        "403":
+          description: Not the task creator
+        "422":
+          description: Validation failure or cancelled task
+    delete:
+      tags:
+        - Tasks
+      summary: Delete a task subtask
+      description: Creator-only. May auto-complete the parent task when the last open item is removed.
+      operationId: deleteTaskSubtask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: subtask
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: company_id
+          schema:
+            oneOf:
+              - type: integer
+              - type: string
+      responses:
+        "200":
+          description: Subtask deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubtaskMutationResponse"
+        "403":
+          description: Not the task creator
+        "422":
+          description: Cancelled task
+
+  /api/v1/tasks/{task}/subtasks/{subtask}/complete:
+    patch:
+      tags:
+        - Tasks
+      summary: Complete or uncomplete a task subtask
+      description: Subtask assignee or task creator. May move the parent task status automatically.
+      operationId: completeTaskSubtask
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: task
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: subtask
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_completed]
+              properties:
+                company_id:
+                  oneOf:
+                    - type: integer
+                    - type: string
+                is_completed:
+                  type: boolean
+      responses:
+        "200":
+          description: Subtask completion updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubtaskMutationResponse"
+        "403":
+          description: Not assignee or creator
+        "422":
+          description: Cancelled task
 
   /api/v1/tasks/{task}/start:
     post:
@@ -1816,6 +2035,11 @@ components:
           type:
             - boolean
             - "null"
+        subtasks:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TaskSubtaskInput"
 
     CreateSelfTaskRequest:
       type: object
@@ -1887,6 +2111,11 @@ components:
           type:
             - boolean
             - "null"
+        subtasks:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/TaskSubtaskInput"
 
     AssignTaskRequest:
       type: object
@@ -2689,12 +2918,105 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskProof"
+        comments_count:
+          type: integer
+        subtasks_summary:
+          type: object
+          properties:
+            total:
+              type: integer
+            completed:
+              type: integer
+        subtasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskSubtask"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    TaskSubtaskInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        assigned_user_id:
+          type:
+            - integer
+            - "null"
+        due_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+
+    TaskSubtask:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        title:
+          type: string
+        position:
+          type: integer
+        due_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        is_completed:
+          type: boolean
+        completed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        assignee:
+          $ref: "#/components/schemas/TaskUserSummary"
+        completed_by:
+          $ref: "#/components/schemas/TaskUserSummary"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskSubtaskMutationResponse:
+      type: object
+      required: [success, message, data, errors]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            task:
+              $ref: "#/components/schemas/Task"
+            subtask:
+              $ref: "#/components/schemas/TaskSubtask"
+            deleted_subtask_id:
+              type: integer
+            status_changed:
+              type: boolean
+            completion_blocked_reason:
+              type:
+                - string
+                - "null"
+        errors:
+          type:
+            - "null"
 
     TaskResponse:
       type: object

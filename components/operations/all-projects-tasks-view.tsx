@@ -12,14 +12,25 @@ import { TaskDetailModal } from "@/components/operations/task-detail-modal";
 import { CreateTaskModal } from "@/components/operations/create-task-modal";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { TaskBoardSkeleton } from "@/components/operations/skeletons/task-board-skeleton";
-import { useTasks, useUpdateTaskStatusAdmin, useUpdateTask, useDeleteTask } from "@/hooks/use-tasks";
+import {
+  useTasks,
+  useUpdateTaskStatusAdmin,
+  useUpdateTask,
+  useDeleteTask,
+  useCreateTaskSubtask,
+  useUpdateTaskSubtask,
+  useCompleteTaskSubtask,
+  useReorderTaskSubtasks,
+  useDeleteTaskSubtask,
+} from "@/hooks/use-tasks";
 import type { DndContainer, DndItem } from "@/types/operations";
-import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
+import type { ApiTaskStatus, TaskApiItem, TaskSubtaskMutationData } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
 import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { checklistStatus, mockProjectTasks, toLocalChecklistDate, type ProjectChecklist, type ProjectSubtask } from "@/lib/tasks/project-checklist";
+import { checklistFromTask, toLocalChecklistDate, type ProjectChecklist, type ProjectSubtask } from "@/lib/tasks/project-checklist";
+import { ApiRequestError } from "@/lib/api/onboarding";
 import Arrow57Deg from "@/assets/images/arrow-57deg.png";
 
 const STATUS_OPTIONS = ["All", "Pending", "In Progress", "Completed", "Cancelled"];
@@ -199,11 +210,6 @@ function statusToContainerId(s: string): string | null {
 }
 
 type BoardTask = TaskApiItem & { checklist?: ProjectChecklist; commentCount?: number };
-type LocalTaskChanges = Partial<Pick<ProjectChecklist, "dueAt" | "subtasks">> & {
-  status?: ApiTaskStatus;
-  assignee?: { id: number; name: string };
-  deleted?: boolean;
-};
 
 export function AllProjectsTasksView({ enableProjectChecklist = false, agentView = false }: { enableProjectChecklist?: boolean; agentView?: boolean }) {
   const router = useRouter();
@@ -220,21 +226,8 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
     role === "manager" ||
     role === "supervisor");
 
-  const companyKey = String(companyId ?? "");
   const userId = String(authUser?.id ?? "");
   const userName = authUser?.name ?? "Current user";
-  const [changes, setChanges] = useState<Record<string, LocalTaskChanges>>({});
-  const [comments, setComments] = useState<Record<string, string[]>>({});
-  const changeKey = (id: string) => JSON.stringify([companyKey, userId, id]);
-  const mockTasks = useMemo(
-    () => enableProjectChecklist && companyKey ? mockProjectTasks(companyKey, userId, userName, agentView) : [],
-    [enableProjectChecklist, companyKey, userId, userName, agentView],
-  );
-
-  const patchTask = useCallback((id: string, patch: LocalTaskChanges) => {
-    const key = JSON.stringify([companyKey, userId, id]);
-    setChanges((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
-  }, [companyKey, userId]);
 
   const [search, setSearch] = useState("");
   const [taskScope, setTaskScope] = useState<"mine" | "all">("mine");
@@ -267,83 +260,145 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
     },
   });
 
+  const handleSubtaskResult = useCallback((data: TaskSubtaskMutationData) => {
+    if (data.completion_blocked_reason) {
+      toast.error(data.completion_blocked_reason);
+      return;
+    }
+    if (data.status_changed && data.task?.status === "completed") {
+      toast.success("All subtasks done. Task moved to Completed.");
+    } else if (data.status_changed) {
+      toast.success(getStatusTransitionMessage("pending", data.task.status));
+    }
+  }, []);
+
+  const createSubtaskMutation = useCreateTaskSubtask({ onSuccess: handleSubtaskResult });
+  const updateSubtaskMutation = useUpdateTaskSubtask({ onSuccess: handleSubtaskResult });
+  const completeSubtaskMutation = useCompleteTaskSubtask({ onSuccess: handleSubtaskResult });
+  const reorderSubtasksMutation = useReorderTaskSubtasks({ onSuccess: handleSubtaskResult });
+  const deleteSubtaskMutation = useDeleteTaskSubtask({ onSuccess: handleSubtaskResult });
+
   const allTasks = useMemo<BoardTask[]>(() => {
     const apiTasks = tasksData?.tasks ?? [];
     if (!enableProjectChecklist) return apiTasks;
-    const tasks: Array<{ task: TaskApiItem; checklist: ProjectChecklist }> = [
-      ...apiTasks.map((task) => ({
-        task,
-        checklist: {
-          creatorId: String(task.created_by_user_id ?? task.creator?.id ?? userId),
-          assigneeId: String(task.assigned_agent_id ?? task.assignee?.id ?? task.assigned_users?.[0]?.id ?? userId),
-          assigneeName: task.assignee?.name ?? task.assigned_users?.[0]?.name ?? (userId ? userName : "Unassigned"),
-          dueAt: task.due_date ?? null,
-          subtasks: [],
-        },
-      })),
-      ...mockTasks,
-    ];
-    return tasks.flatMap(({ task, checklist }) => {
-      const key = JSON.stringify([companyKey, userId, String(task.id)]);
-      const patch = changes[key];
-      if (patch?.deleted) return [];
-      const activeComments = comments[key] ?? checklist.initialComments ?? [];
-      return [{
+    return apiTasks.map((task) => {
+      const checklist = checklistFromTask(task, userId, userName);
+      return {
         ...task,
-        status: task.status === "cancelled" ? task.status : patch?.status ?? task.status,
-        ...(patch?.assignee && { assigned_users: [patch.assignee], assigned_agent_id: patch.assignee.id }),
-        commentCount: activeComments.length,
-        checklist: {
-          ...checklist,
-          ...(patch?.dueAt !== undefined && { dueAt: patch.dueAt }),
-          ...(patch?.subtasks && { subtasks: patch.subtasks }),
-          ...(patch?.assignee && { assigneeId: String(patch.assignee.id), assigneeName: patch.assignee.name }),
-        },
-      }];
+        commentCount: task.comments_count ?? 0,
+        checklist,
+      };
     });
-  }, [changes, comments, companyKey, enableProjectChecklist, mockTasks, tasksData?.tasks, userId, userName]);
+  }, [enableProjectChecklist, tasksData?.tasks, userId, userName]);
   const serverContainers = useMemo(() => buildContainers(allTasks), [allTasks]);
+
+  function subtaskError(err: unknown) {
+    if (err instanceof ApiRequestError) {
+      toast.error(err.message || "Unable to update subtask.");
+      return;
+    }
+    toast.error("Unable to update subtask.");
+  }
 
   function saveSubtasks(id: string, subtasks: ProjectSubtask[]) {
     const task = allTasks.find((entry) => String(entry.id) === id);
-    if (!task?.checklist || task.status === "cancelled" || (task.checklist.creatorId && task.checklist.creatorId !== userId) || !userId) return;
-    const status = checklistStatus(task.status, subtasks);
-    patchTask(id, { subtasks, ...(status !== task.status && { status }) });
-    if (status !== task.status) toast.success(getStatusTransitionMessage(task.status, status));
+    if (!task?.checklist || task.status === "cancelled" || (task.checklist.creatorId && task.checklist.creatorId !== userId) || !userId || !companyId) return;
+    const previous = task.checklist.subtasks;
+
+    if (subtasks.length < previous.length) {
+      const removed = previous.find((item) => !subtasks.some((next) => next.id === item.id));
+      if (!removed) return;
+      deleteSubtaskMutation.mutate(
+        { taskId: task.id, subtaskId: removed.id, companyId },
+        { onError: subtaskError },
+      );
+      return;
+    }
+
+    if (subtasks.length > previous.length) {
+      const added = subtasks.find((item) => !previous.some((current) => current.id === item.id));
+      if (!added) return;
+      createSubtaskMutation.mutate(
+        {
+          taskId: task.id,
+          payload: {
+            company_id: companyId,
+            title: added.title,
+            assigned_user_id: added.assigneeId || undefined,
+            due_at: added.dueAt,
+          },
+        },
+        { onError: subtaskError },
+      );
+      return;
+    }
+
+    const previousIds = previous.map((item) => item.id).join(",");
+    const nextIds = subtasks.map((item) => item.id).join(",");
+    if (previousIds !== nextIds && subtasks.every((item) => previous.some((current) => current.id === item.id))) {
+      reorderSubtasksMutation.mutate(
+        { taskId: task.id, payload: { company_id: companyId, subtask_ids: subtasks.map((item) => item.id) } },
+        { onError: subtaskError },
+      );
+      return;
+    }
+
+    const changed = subtasks.find((item) => {
+      const current = previous.find((entry) => entry.id === item.id);
+      return current && (
+        current.title !== item.title
+        || current.assigneeId !== item.assigneeId
+        || current.dueAt !== item.dueAt
+      );
+    });
+    if (!changed) return;
+    updateSubtaskMutation.mutate(
+      {
+        taskId: task.id,
+        subtaskId: changed.id,
+        payload: {
+          company_id: companyId,
+          title: changed.title,
+          assigned_user_id: changed.assigneeId || null,
+          due_at: changed.dueAt,
+        },
+      },
+      { onError: subtaskError },
+    );
   }
 
   function addSubtask(id: string, title: string) {
     const task = allTasks.find((entry) => String(entry.id) === id);
     const trimmed = title.trim();
-    if (!task?.checklist || !trimmed || task.status === "cancelled" || !userId) return;
+    if (!task?.checklist || !trimmed || task.status === "cancelled" || !userId || !companyId) return;
     if (task.checklist.creatorId && task.checklist.creatorId !== userId) return;
-    const nextSubtask: ProjectSubtask = {
-      id: crypto.randomUUID(),
-      title: trimmed,
-      assigneeId: task.checklist.assigneeId || userId,
-      assigneeName: task.checklist.assigneeName && task.checklist.assigneeName !== "Unassigned"
-        ? task.checklist.assigneeName
-        : userName,
-      dueAt: task.checklist.dueAt,
-      isCompleted: false,
-      completedAt: null,
-    };
-    saveSubtasks(id, [...task.checklist.subtasks, nextSubtask]);
+    createSubtaskMutation.mutate(
+      {
+        taskId: task.id,
+        payload: {
+          company_id: companyId,
+          title: trimmed,
+          assigned_user_id: task.checklist.assigneeId || userId,
+          due_at: task.checklist.dueAt,
+        },
+      },
+      { onError: subtaskError },
+    );
   }
 
   function toggleSubtask(id: string, subtaskId: string) {
     const task = allTasks.find((entry) => String(entry.id) === id);
     const item = task?.checklist?.subtasks.find((subtask) => subtask.id === subtaskId);
-    if (!task?.checklist || task.status === "cancelled" || !item || !userId ||
+    if (!task?.checklist || task.status === "cancelled" || !item || !userId || !companyId ||
       (item.assigneeId !== userId && task.checklist.creatorId !== userId)) return;
-    const subtasks = task.checklist.subtasks.map((subtask) => subtask.id === subtaskId ? {
-      ...subtask, isCompleted: !item.isCompleted, completedAt: item.isCompleted ? null : new Date().toISOString(),
-    } : subtask);
-    const status = checklistStatus(task.status, subtasks);
-    patchTask(id, { subtasks, ...(status !== task.status && { status }) });
-    if (status !== task.status) toast.success(status === "completed"
-      ? "All subtasks done. Task moved to Completed."
-      : getStatusTransitionMessage(task.status, status));
+    completeSubtaskMutation.mutate(
+      {
+        taskId: task.id,
+        subtaskId: item.id,
+        payload: { company_id: companyId, is_completed: !item.isCompleted },
+      },
+      { onError: subtaskError },
+    );
   }
 
   const [boardContainers, setBoardContainers] = useState<DndContainer[]>(serverContainers);
@@ -453,13 +508,6 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
       return;
     }
 
-    const boardTask = allTasks.find((task) => String(task.id) === activeId);
-    if (boardTask?.checklist?.isMock) {
-      patchTask(activeId, { status: nextStatus });
-      toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
-      return;
-    }
-
     const taskId = Number(activeId);
     if (!Number.isFinite(taskId)) {
       setBoardContainers(serverContainers);
@@ -472,7 +520,6 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
       { taskId, payload: { company_id: companyId, status: nextStatus } },
       {
         onSuccess: (response) => {
-          if (enableProjectChecklist) patchTask(activeId, { status: undefined });
           setBoardContainers((prev) =>
             prev.map((container) => ({
               ...container,
@@ -517,7 +564,6 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
       .find(({ item }) => item.id === selectedTask.item.id)
     : selectedTask);
   const selectedId = currentSelection?.item.id;
-  const localMock = currentSelection?.item.projectChecklist?.isMock;
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -675,9 +721,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
 
       <CreateTaskModal
         isOpen={showCreateModal}
-        onProjectChecklistCreated={enableProjectChecklist
-          ? (id, dueAt, subtasks) => patchTask(id, { dueAt, subtasks })
-          : undefined}
+        onProjectChecklistCreated={enableProjectChecklist ? () => undefined : undefined}
         onClose={() => setShowCreateModal(false)}
       />
 
@@ -713,7 +757,6 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         }
         onSubmitTask={(payload) => {
           if (!editingTask || !companyId) return;
-          const editedTaskId = editingTask.id;
           const dueAt = payload.dueDate ? new Date(payload.dueDate).toISOString() : null;
           updateTaskMutation.mutate({
             taskId: editingTask.id,
@@ -724,17 +767,13 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
               description: payload.description,
               location: payload.location,
               address: payload.address,
-              due_date: enableProjectChecklist ? undefined : dueAt ?? undefined,
+              due_date: dueAt ?? undefined,
               required_actions: payload.requiredActions,
               priority: payload.priority,
               minimum_photos_required: payload.minPhotos,
               visit_verification_required: payload.visitVerification,
               latitude: payload.latitude,
               longitude: payload.longitude,
-            },
-          }, {
-            onSuccess: () => {
-              if (enableProjectChecklist) patchTask(editedTaskId, { dueAt });
             },
           });
         }}
@@ -748,11 +787,6 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         confirmLabel={deleteTaskMutation.isPending ? "Deleting..." : "Delete"}
         onConfirm={() => {
           if (!deleteTaskTarget || !companyId) return;
-          if (deleteTaskTarget.projectChecklist?.isMock) {
-            patchTask(deleteTaskTarget.id, { deleted: true });
-            setDeleteTaskTarget(null);
-            return;
-          }
           deleteTaskMutation.mutate({
             taskId: deleteTaskTarget.id,
             companyId,
@@ -767,17 +801,6 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         status={currentSelection?.containerId ?? ""}
         onToggleSubtask={enableProjectChecklist && selectedId ? (id) => toggleSubtask(selectedId, id) : undefined}
         onSaveSubtasks={enableProjectChecklist && selectedId ? (items) => saveSubtasks(selectedId, items) : undefined}
-        onApiStatusUpdated={enableProjectChecklist && selectedId ? () => patchTask(selectedId, { status: undefined }) : undefined}
-        localTask={localMock && selectedId ? {
-          comments: comments[changeKey(selectedId)] ?? currentSelection?.item.projectChecklist?.initialComments ?? [],
-          onComment: (body) => {
-            const key = changeKey(selectedId);
-            const initial = currentSelection?.item.projectChecklist?.initialComments ?? [];
-            setComments((current) => ({ ...current, [key]: [...(current[key] ?? initial), body] }));
-          },
-          onStatus: (status) => patchTask(selectedId, { status }),
-          onAssign: (assignee) => patchTask(selectedId, { assignee }),
-        } : undefined}
       />
     </div>
   );

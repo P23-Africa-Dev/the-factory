@@ -39,14 +39,14 @@ class TaskResource extends JsonResource
             'paused_at' => $this->paused_at?->toIso8601String(),
             'resumed_at' => $this->resumed_at?->toIso8601String(),
             'completed_at' => $this->completed_at?->toIso8601String(),
-            'project' => $this->whenLoaded('project', fn(): ?array => $this->project ? [
+            'project' => $this->whenLoaded('project', fn (): ?array => $this->project ? [
                 'id' => $this->project->id,
                 'company_id' => $this->project->company_id,
                 'name' => $this->project->name,
                 'status' => $this->project->status?->value,
                 'priority' => $this->project->priority?->value,
             ] : null),
-            'creator' => $this->whenLoaded('creator', fn(): ?array => $this->creator ? [
+            'creator' => $this->whenLoaded('creator', fn (): ?array => $this->creator ? [
                 'id' => $this->creator->id,
                 'name' => $this->creator->name,
                 'email' => $this->creator->email,
@@ -76,7 +76,7 @@ class TaskResource extends JsonResource
                 }
 
                 return $assignees
-                    ->map(fn($u) => [
+                    ->map(fn ($u) => [
                         'id' => $u->id,
                         'name' => $u->name,
                         'avatar_url' => AvatarUrlResolver::resolveOrDefault($u->avatar, $u->gender),
@@ -84,7 +84,7 @@ class TaskResource extends JsonResource
                     ->values()
                     ->all();
             }),
-            'latest_reassignment' => $this->whenLoaded('latestReassignment', fn(): ?array => $this->latestReassignment ? [
+            'latest_reassignment' => $this->whenLoaded('latestReassignment', fn (): ?array => $this->latestReassignment ? [
                 'id' => $this->latestReassignment->id,
                 'status' => $this->latestReassignment->status?->value,
                 'reason' => $this->latestReassignment->reason,
@@ -118,6 +118,18 @@ class TaskResource extends JsonResource
             ] : null),
             'proofs_count' => $this->whenCounted('proofs'),
             'proofs' => TaskProofResource::collection($this->whenLoaded('proofs')),
+            'comments_count' => (int) ($this->comments_count ?? 0),
+            'subtasks_summary' => [
+                'total' => $this->relationLoaded('subtasks')
+                    ? $this->subtasks->count()
+                    : (int) ($this->subtasks_count ?? 0),
+                'completed' => $this->relationLoaded('subtasks')
+                    ? $this->subtasks->where('is_completed', true)->count()
+                    : (int) ($this->subtasks_completed_count ?? 0),
+            ],
+            'subtasks' => $this->relationLoaded('subtasks')
+                ? TaskSubtaskResource::collection($this->subtasks)
+                : [],
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

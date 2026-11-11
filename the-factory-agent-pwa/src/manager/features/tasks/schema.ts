@@ -89,6 +89,27 @@ const rawTaskSchema = z
     visit_verification_required: z.boolean().optional().nullable(),
     created_by_user_id: z.union([z.string(), z.number()]).nullish(),
     comments_count: z.number().nullish(),
+    subtasks: z
+      .array(
+        z
+          .object({
+            id: z.union([z.string(), z.number()]),
+            title: z.string(),
+            due_at: z.string().nullable().optional(),
+            is_completed: z.boolean().optional(),
+            assignee: z
+              .object({
+                id: z.union([z.string(), z.number()]),
+                name: z.string().optional(),
+              })
+              .passthrough()
+              .nullable()
+              .optional(),
+          })
+          .passthrough(),
+      )
+      .optional()
+      .nullable(),
     creator: z
       .object({
         name: z.string().optional(),
@@ -193,6 +214,14 @@ const rawTaskSchema = z
           ? Math.max(0, Math.floor(data.minimum_photos_required))
           : 0,
       visitVerificationRequired: Boolean(data.visit_verification_required),
+      checklistSteps: (data.subtasks ?? []).map((item) => ({
+        id: String(item.id),
+        title: item.title,
+        assigneeId: item.assignee ? String(item.assignee.id) : '',
+        assigneeName: item.assignee?.name ?? 'Unassigned',
+        dueAt: item.due_at ?? null,
+        done: Boolean(item.is_completed),
+      })),
     };
   });
 
@@ -245,4 +274,14 @@ export const createSelfTaskSchema = z.object({
   assignee_ids: z.array(z.number()).optional(),
   project_id: z.number().optional().nullable(),
   kpi_id: z.number().optional().nullable(),
+  subtasks: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(255),
+        assigned_user_id: z.union([z.number(), z.string()]).optional(),
+        due_at: z.string().nullable().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 });

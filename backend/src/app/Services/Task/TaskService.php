@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Notifications\TaskAssignedNotification;
 use App\Services\Notification\NotificationService;
 use App\Services\Workforce\OrganizationAgentRoster;
+use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -38,6 +39,8 @@ class TaskService
         'latestReassignment.fromUser',
         'latestReassignment.toUser',
         'latestReassignment.respondedBy',
+        'subtasks.assignee',
+        'subtasks.completer',
     ];
 
     private const DETAIL_RELATIONS = [
@@ -50,6 +53,8 @@ class TaskService
         'latestReassignment.toUser',
         'latestReassignment.respondedBy',
         'proofs.uploader',
+        'subtasks.assignee',
+        'subtasks.completer',
     ];
 
     public function __construct(
@@ -63,7 +68,7 @@ class TaskService
 
         $query = $this->queryForCompany($context->company->id)
             ->with(self::INDEX_RELATIONS)
-            ->withCount('proofs')
+            ->withCount(['proofs', 'comments'])
             ->latest('id');
 
         if (! empty($filters['status'])) {
@@ -90,7 +95,8 @@ class TaskService
                     });
             });
         } elseif ($context->isAgent()) {
-            // Agents see currently owned tasks and historical tasks they previously owned.
+            // Agents see currently owned tasks, historical tasks they previously owned,
+            // and tasks where they are assigned a subtask.
             $query->where(function (Builder $q) use ($user): void {
                 $q->where('assigned_agent_id', $user->id)
                     ->orWhereExists(function ($sub) use ($user): void {
@@ -105,6 +111,12 @@ class TaskService
                             ->from('task_assignments as historical_task_assignments')
                             ->whereColumn('historical_task_assignments.task_id', 'tasks.id')
                             ->where('historical_task_assignments.assigned_agent_id', $user->id);
+                    })
+                    ->orWhereExists(function ($sub) use ($user): void {
+                        $sub->selectRaw('1')
+                            ->from('task_subtasks')
+                            ->whereColumn('task_subtasks.task_id', 'tasks.id')
+                            ->where('task_subtasks.assigned_user_id', $user->id);
                     });
             });
         }
@@ -189,6 +201,10 @@ class TaskService
                 ]);
             }
 
+            if (! empty($data['subtasks']) && is_array($data['subtasks'])) {
+                app(TaskSubtaskService::class)->createMany($task, $user, $data['subtasks']);
+            }
+
             return $this->loadTask($task, $context);
         });
 
@@ -249,6 +265,10 @@ class TaskService
                 'is_current' => true,
             ]);
 
+            if (! empty($data['subtasks']) && is_array($data['subtasks'])) {
+                app(TaskSubtaskService::class)->createMany($task, $user, $data['subtasks'], selfAssignedFlow: true);
+            }
+
             return $this->loadTask($task, $context);
         });
 
@@ -275,6 +295,10 @@ class TaskService
 
         if (! empty($data['project_id']) && $context->canManageTasks()) {
             $this->ensureProjectBelongsToCompany($context->company->id, (int) $data['project_id']);
+        }
+
+        if (array_key_exists('due_date', $data) && $data['due_date'] !== null) {
+            $this->assertTaskDueDateNotBeforeSubtasks($task, $data['due_date']);
         }
 
         $updatedTask = DB::transaction(function () use ($task, $data, $context): Task {
@@ -708,11 +732,118 @@ class TaskService
         }
     }
 
+    public function reloadTaskForContext(Task $task, TaskAccessContext $context, bool $includeProofs = false): Task
+    {
+        return $this->loadTask($task, $context, $includeProofs);
+    }
+
+    /**
+     * Recompute parent task status after a subtask completion set changes.
+     *
+     * @return array{status_changed: bool, completion_blocked_reason: ?string}
+     */
+    public function syncStatusFromSubtasks(Task $task, User $actor): array
+    {
+        $task->refresh();
+        $total = $task->subtasks()->count();
+        $done = $task->subtasks()->where('is_completed', true)->count();
+        $current = $task->status?->value;
+        $blockedReason = null;
+        $nextStatus = null;
+
+        if ($total === 0 || $current === TaskStatus::CANCELLED->value) {
+            return [
+                'status_changed' => false,
+                'completion_blocked_reason' => null,
+            ];
+        }
+
+        if ($done >= 1 && $done < $total && $current === TaskStatus::PENDING->value) {
+            $nextStatus = TaskStatus::IN_PROGRESS->value;
+        } elseif ($done === $total && $total > 0) {
+            if (in_array($current, [
+                TaskStatus::PENDING->value,
+                TaskStatus::IN_PROGRESS->value,
+                TaskStatus::PAUSED->value,
+                TaskStatus::RESUMED->value,
+            ], true)) {
+                $blockedReason = $this->completionBlockedReason($task);
+                if ($blockedReason !== null) {
+                    if ($current === TaskStatus::PENDING->value) {
+                        $nextStatus = TaskStatus::IN_PROGRESS->value;
+                    }
+                } else {
+                    $nextStatus = TaskStatus::COMPLETED->value;
+                }
+            }
+        } elseif ($done < $total && $current === TaskStatus::COMPLETED->value) {
+            $nextStatus = TaskStatus::IN_PROGRESS->value;
+        }
+
+        if ($nextStatus === null || $nextStatus === $current) {
+            return [
+                'status_changed' => false,
+                'completion_blocked_reason' => $blockedReason,
+            ];
+        }
+
+        // Pending -> completed must pass through in_progress so started_at is set.
+        if ($current === TaskStatus::PENDING->value && $nextStatus === TaskStatus::COMPLETED->value) {
+            $task->update($this->buildStatusUpdatePayload($task, (int) $actor->id, TaskStatus::IN_PROGRESS->value));
+            $task->refresh();
+        }
+
+        $task->update($this->buildStatusUpdatePayload($task, (int) $actor->id, $nextStatus));
+        $task->refresh();
+        $this->notifyTaskStatusChanged($task, $actor, $nextStatus);
+
+        return [
+            'status_changed' => true,
+            'completion_blocked_reason' => $blockedReason,
+        ];
+    }
+
+    private function completionBlockedReason(Task $task): ?string
+    {
+        $proofsCount = $task->proofs()->count();
+
+        if ($proofsCount < $task->minimum_photos_required) {
+            return "Minimum {$task->minimum_photos_required} proof image(s) required before completion.";
+        }
+
+        if ($task->visit_verification_required) {
+            $hasGpsProof = $task->proofs()
+                ->whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->exists();
+
+            if (! $hasGpsProof) {
+                return 'A GPS-verified proof is required to complete this task.';
+            }
+        }
+
+        return null;
+    }
+
+    private function assertTaskDueDateNotBeforeSubtasks(Task $task, mixed $dueDate): void
+    {
+        $taskDue = Carbon::parse($dueDate);
+        $latestSubtaskDue = $task->subtasks()
+            ->whereNotNull('due_at')
+            ->max('due_at');
+
+        if ($latestSubtaskDue !== null && $taskDue->lt(Carbon::parse($latestSubtaskDue))) {
+            throw ValidationException::withMessages([
+                'due_date' => ['The task due date cannot be earlier than a subtask due date.'],
+            ]);
+        }
+    }
+
     private function loadTask(Task $task, TaskAccessContext $context, bool $includeProofs = false): Task
     {
         $relations = $includeProofs ? self::DETAIL_RELATIONS : self::INDEX_RELATIONS;
 
-        $task->loadMissing($relations)->loadCount('proofs');
+        $task->load($relations)->loadCount(['proofs', 'comments']);
 
         if ($includeProofs && $task->relationLoaded('proofs')) {
             $task->proofs->each(function (TaskProof $proof) use ($task, $context): void {
@@ -786,8 +917,12 @@ class TaskService
             return true;
         }
 
-        return $task->assignments()
-            ->where('assigned_agent_id', $user->id)
+        if ($task->assignments()->where('assigned_agent_id', $user->id)->exists()) {
+            return true;
+        }
+
+        return $task->subtasks()
+            ->where('assigned_user_id', $user->id)
             ->exists();
     }
 

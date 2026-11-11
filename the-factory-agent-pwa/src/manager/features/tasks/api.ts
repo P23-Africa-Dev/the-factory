@@ -317,10 +317,23 @@ export const taskApi = {
   listProjects: async (): Promise<ProjectItem[]> => {
     const { data } = await client.get('/admin/projects');
     const raw = unwrap<unknown>(data);
-    if (Array.isArray(raw)) return raw as ProjectItem[];
-    const obj = (raw ?? {}) as Record<string, unknown>;
-    const list = (obj.projects ?? obj.items ?? obj.data ?? []) as ProjectItem[];
-    return Array.isArray(list) ? list : [];
+    const list = Array.isArray(raw)
+      ? raw
+      : (((raw ?? {}) as Record<string, unknown>).projects
+        ?? ((raw ?? {}) as Record<string, unknown>).items
+        ?? ((raw ?? {}) as Record<string, unknown>).data
+        ?? []);
+    if (!Array.isArray(list)) return [];
+    return list.map((project) => {
+      const item = project as ProjectItem & Record<string, unknown>;
+      const summary = (item.task_summary ?? {}) as { total_tasks?: number; completed_tasks?: number };
+      return {
+        ...item,
+        tasks_count: item.tasks_count ?? summary.total_tasks ?? 0,
+        completed_tasks_count: item.completed_tasks_count ?? summary.completed_tasks ?? 0,
+        task_summary: summary,
+      };
+    });
   },
 
   createProject: async (payload: {

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { create } from 'zustand';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { taskApi } from '@/features/tasks/api';
+import { taskKeys } from '@/features/tasks/queryKeys';
 
 type Status = 'pending' | 'in_progress' | 'paused' | 'resumed' | 'completed' | 'cancelled';
 export type ChecklistTask = {
@@ -16,23 +18,27 @@ export type ChecklistTask = {
   dueDate: string | null;
   commentCount?: number;
   assigneeName?: string | null;
+  checklistSteps?: ChecklistStep[];
 };
-export type ChecklistStep = { id: string; title: string; assigneeId: string; assigneeName: string; dueAt: string | null; done: boolean };
-type Draft = { steps: ChecklistStep[]; dueAt?: string | null; status?: Status; baseStatus?: Status; creatorId?: string };
+export type ChecklistStep = {
+  id: string;
+  title: string;
+  assigneeId: string;
+  assigneeName: string;
+  dueAt: string | null;
+  done: boolean;
+};
 
-const useChecklistStore = create<{ drafts: Record<string, Draft> }>(() => ({ drafts: {} }));
 const emptySteps: ChecklistStep[] = [];
 
-function keyFor(task: ChecklistTask, userId: string, companyId?: number | string) {
-  return JSON.stringify([String(task.companyId ?? companyId ?? ""), userId, task.id]);
-}
-
-export function saveCreatedChecklist(task: ChecklistTask, userId: string, companyId: string | number | undefined, steps: ChecklistStep[]) {
-  if (!steps.length || !userId) return;
-  const key = keyFor(task, userId, companyId);
-  useChecklistStore.setState((state) => ({
-    drafts: { ...state.drafts, [key]: { steps, creatorId: userId } },
-  }));
+/** Kept for create-form callers that previously staged local drafts. Subtasks now go in the create payload. */
+export function saveCreatedChecklist(
+  _task: ChecklistTask,
+  _userId: string,
+  _companyId: string | number | undefined,
+  _steps: ChecklistStep[],
+) {
+  return;
 }
 
 export function ChecklistDraftFields({ steps, onChange, dueDate, defaultAssignee, agents = [] }: {
@@ -80,15 +86,9 @@ export function ChecklistDraftFields({ steps, onChange, dueDate, defaultAssignee
 }
 
 export function useChecklistTasks<T extends ChecklistTask>(tasks: T[], filter?: Status | 'all') {
-  const { user } = useAuth();
-  const drafts = useChecklistStore((state) => state.drafts);
-  const items: Array<T & Pick<ChecklistTask, "checklistBaseStatus">> = tasks.map((task) => {
-    const draft = drafts[keyFor(task, String(user?.id ?? ''), user?.company_id)];
-    return draft?.status && draft.baseStatus === task.status && task.status !== 'cancelled' ? { ...task, status: draft.status, checklistBaseStatus: task.status } : task;
-  });
   return {
-    items,
-    visible: filter && filter !== 'all' ? items.filter((task) => task.status === filter) : items,
+    items: tasks,
+    visible: filter && filter !== 'all' ? tasks.filter((task) => task.status === filter) : tasks,
   };
 }
 
@@ -116,39 +116,66 @@ function overdue(date: string | null | undefined) {
   return Boolean(date && Date.parse(date) < Date.now());
 }
 
+function handleMutationResult(data: { status_changed?: boolean; completion_blocked_reason?: string | null; task?: { status?: Status } }) {
+  if (data.completion_blocked_reason) {
+    toast.error(data.completion_blocked_reason);
+    return;
+  }
+  if (data.status_changed && data.task?.status === 'completed') {
+    toast.success('All subtasks done. Task moved to Completed.');
+  } else if (data.status_changed) {
+    toast.success('Task moved to In Progress.');
+  }
+}
+
 export function ProjectChecklist({ task, compact = false, agents = [] }: {
   task: ChecklistTask;
   compact?: boolean;
   agents?: { id: number; name: string }[];
 }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const userId = String(user?.id ?? '');
-  const key = keyFor(task, userId, user?.company_id);
-  const draft = useChecklistStore((state) => state.drafts[key]);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [assignee, setAssignee] = useState('');
   const [editing, setEditing] = useState<string>();
   const [error, setError] = useState('');
-  const steps = draft?.steps ?? emptySteps;
-  const dueAt = draft?.dueAt === undefined ? task.dueDate : draft.dueAt;
+  const [busy, setBusy] = useState(false);
+  const steps = task.checklistSteps ?? emptySteps;
+  const dueAt = task.dueDate;
   const locked = task.status === 'cancelled';
-  const canEdit = Boolean(userId && (task.creatorId ?? draft?.creatorId) === userId && !locked);
+  const canEdit = Boolean(userId && task.creatorId === userId && !locked);
   const assignedToMe = Boolean(userId && String(task.assignedAgentId) === userId);
   const completed = steps.filter((step) => step.done).length;
   const defaultAssignee = String(task.assignedAgentId ?? userId);
   const defaultName = task.assigneeName ?? (defaultAssignee === userId ? user?.name ?? 'You' : 'Task assignee');
   const options = [...new Map([{ id: defaultAssignee, name: defaultName }, ...agents.map((agent) => ({ ...agent, id: String(agent.id) }))].map((agent) => [agent.id, agent.name])).entries()];
 
-  function write(nextSteps: ChecklistStep[], nextDue = dueAt, toggle = false) {
-    const status = task.status;
-    const baseStatus = task.checklistBaseStatus ?? status;
-    let nextStatus = draft?.baseStatus === baseStatus ? draft?.status : undefined;
-    if (nextSteps.length && nextSteps.every((step) => step.done)) nextStatus = 'completed';
-    else if (status === 'completed' && nextSteps.length) nextStatus = 'in_progress';
-    else if (toggle && status === 'pending' && nextSteps.some((step) => step.done)) nextStatus = 'in_progress';
-    useChecklistStore.setState((state) => ({ drafts: { ...state.drafts, [key]: { steps: nextSteps, dueAt: nextDue, status: nextStatus, baseStatus, creatorId: draft?.creatorId } } }));
-    if (nextStatus && nextStatus !== status) toast.success(nextStatus === 'completed' ? 'All subtasks done. Task moved to Completed.' : 'Task moved to In Progress.');
+  async function refresh() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() }),
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(task.id) }),
+    ]);
+  }
+
+  async function run(action: () => Promise<unknown>) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const data = await action() as {
+        status_changed?: boolean;
+        completion_blocked_reason?: string | null;
+        task?: { status?: Status };
+      };
+      handleMutationResult(data ?? {});
+      await refresh();
+    } catch (err) {
+      const message = err && typeof err === 'object' && 'message' in err ? String((err as { message?: string }).message) : 'Unable to update subtask.';
+      toast.error(message || 'Unable to update subtask.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   function saveStep() {
@@ -157,9 +184,23 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
     if (due && dueAt && Date.parse(due) > Date.parse(dueAt)) return setError('Subtask due date cannot be later than the task due date.');
     const id = assignee || defaultAssignee;
     const existing = steps.find((step) => step.id === editing);
-    const item = { id: existing?.id ?? crypto.randomUUID(), title: title.trim(), dueAt: due, assigneeId: id, assigneeName: options.find(([value]) => value === id)?.[1] ?? defaultName, done: existing?.done ?? false };
-    write(editing ? steps.map((step) => step.id === editing ? item : step) : [...steps, item]);
-    setTitle(''); setDate(''); setAssignee(''); setEditing(undefined); setError('');
+    setError('');
+    void run(async () => {
+      if (existing) {
+        return taskApi.updateSubtask(task.id, existing.id, {
+          title: title.trim(),
+          assigned_user_id: id || null,
+          due_at: due,
+        });
+      }
+      return taskApi.createSubtask(task.id, {
+        title: title.trim(),
+        assigned_user_id: id || undefined,
+        due_at: due,
+      });
+    }).then(() => {
+      setTitle(''); setDate(''); setAssignee(''); setEditing(undefined);
+    });
   }
 
   if (compact && !steps.length && !dueAt && !task.commentCount && !canEdit) return null;
@@ -175,48 +216,50 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
       {steps.slice(0, compact ? 3 : steps.length).map((step, index) => (
         <div key={step.id} className="flex items-start gap-2">
           <input type="checkbox" className="mt-0.5 accent-[#75ADAF]" aria-label={step.title} checked={step.done}
-            disabled={locked || (!canEdit && (!userId || step.assigneeId !== userId))}
-            onChange={() => write(steps.map((item) => item.id === step.id ? { ...item, done: !item.done } : item), dueAt, true)} />
+            disabled={busy || locked || (!canEdit && (!userId || step.assigneeId !== userId))}
+            onChange={() => void run(() => taskApi.completeSubtask(task.id, step.id, !step.done))} />
           <div className="min-w-0 flex-1">
             <p className={step.done ? 'line-through text-white/55' : 'break-words'}>{step.title}</p>
             <p className="text-white/60">{step.assigneeName}
               {step.dueAt && <time dateTime={step.dueAt} className={!locked && !step.done && overdue(step.dueAt) ? 'ml-2 text-[#ff8774]' : 'ml-2'}>{new Date(step.dueAt).toLocaleString()}</time>}
             </p>
           </div>
-          {compact && canEdit && <div className="flex gap-2">
-        <input aria-label="Subtask" placeholder="Subtask" className="min-w-0 flex-1 rounded bg-black/30 p-2"
-          value={title} onChange={(event) => setTitle(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
-        <button type="button" disabled={!title.trim()} className="rounded bg-[#75ADAF] px-2 font-semibold text-[#0A1D25] disabled:opacity-50"
-          onClick={saveStep}>Add Subtask</button>
-      </div>}
-      {!compact && canEdit && <>
-            <button type="button" onClick={() => {
+          {compact && canEdit && index === 0 && <div className="flex gap-2">
+            <input aria-label="Subtask" placeholder="Subtask" className="min-w-0 flex-1 rounded bg-black/30 p-2"
+              value={title} onChange={(event) => setTitle(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
+            <button type="button" disabled={!title.trim() || busy} className="rounded bg-[#75ADAF] px-2 font-semibold text-[#0A1D25] disabled:opacity-50"
+              onClick={saveStep}>Add Subtask</button>
+          </div>}
+          {!compact && canEdit && <>
+            <button type="button" disabled={busy} onClick={() => {
               const due = step.dueAt ? new Date(step.dueAt) : null;
               setDate(due ? new Date(due.getTime() - due.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '');
               setEditing(step.id); setTitle(step.title); setAssignee(step.assigneeId);
             }}>Edit</button>
-            <button type="button" aria-label={`Move ${step.title} up`} disabled={!index} className="disabled:opacity-30" onClick={() => {
-              const next = [...steps]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; write(next);
+            <button type="button" aria-label={`Move ${step.title} up`} disabled={busy || !index} className="disabled:opacity-30" onClick={() => {
+              const next = [...steps];
+              [next[index - 1], next[index]] = [next[index], next[index - 1]];
+              void run(() => taskApi.reorderSubtasks(task.id, next.map((item) => item.id)));
             }}>↑</button>
-            <button type="button" aria-label={`Remove ${step.title}`} onClick={() => {
-              write(steps.filter((item) => item.id !== step.id));
+            <button type="button" aria-label={`Remove ${step.title}`} disabled={busy} onClick={() => {
+              void run(() => taskApi.deleteSubtask(task.id, step.id));
               if (editing === step.id) { setEditing(undefined); setTitle(''); setDate(''); setAssignee(''); }
             }}>×</button>
           </>}
         </div>
       ))}
       {compact && steps.length > 3 && <p className="text-white/60">+{steps.length - 3} more</p>}
+      {compact && canEdit && !steps.length && (
+        <div className="flex gap-2">
+          <input aria-label="Subtask" placeholder="Subtask" className="min-w-0 flex-1 rounded bg-black/30 p-2"
+            value={title} onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
+          <button type="button" disabled={!title.trim() || busy} className="rounded bg-[#75ADAF] px-2 font-semibold text-[#0A1D25] disabled:opacity-50"
+            onClick={saveStep}>Add Subtask</button>
+        </div>
+      )}
       {!compact && canEdit && <>
-        <label className="block text-white/75">Task due date and time
-          <input type="datetime-local" className="mt-1 block w-full rounded bg-black/30 p-2"
-            value={dueAt ? (() => { const due = new Date(dueAt); return new Date(due.getTime() - due.getTimezoneOffset() * 60_000).toISOString().slice(0, 16); })() : ''}
-            onChange={(event) => {
-              const due = event.target.value ? new Date(event.target.value).toISOString() : null;
-              if (due && steps.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(due))) return setError('The task deadline cannot be earlier than a subtask deadline.');
-              write(steps, due); setError('');
-            }} />
-        </label>
         <div className="grid gap-2">
           <input aria-label="Subtask" placeholder="Subtask" className="rounded bg-black/30 p-2" value={title} onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
@@ -228,18 +271,13 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
           <label>Subtask due date and time
             <input type="datetime-local" className="mt-1 block w-full rounded bg-black/30 p-2" value={date} onChange={(event) => setDate(event.target.value)} />
           </label>
-          <button type="button" className="rounded bg-[#75ADAF] px-3 py-2 font-semibold text-[#0A1D25]" onClick={saveStep}>{editing ? 'Save subtask' : 'Add Subtask'}</button>
+          <button type="button" disabled={busy} className="rounded bg-[#75ADAF] px-3 py-2 font-semibold text-[#0A1D25]" onClick={saveStep}>{editing ? 'Save subtask' : 'Add Subtask'}</button>
           {error && <p role="alert" className="text-[#ff8774]">{error}</p>}
         </div>
       </>}
-      {!compact && assignedToMe && !locked && !steps.length && (
-        <button type="button" className="text-[#9ed3d4] underline" onClick={() => write(
-          ['Review task instructions', 'Complete the assigned work', 'Confirm the outcome'].map((label) => ({
-            id: crypto.randomUUID(), title: label, dueAt, assigneeId: userId, assigneeName: user?.name ?? 'You', done: false,
-          })),
-        )}>Load demo checklist</button>
+      {!compact && assignedToMe && !locked && !steps.length && !canEdit && (
+        <p className="text-white/50">No checklist items yet.</p>
       )}
-      {!compact && <p className="text-white/50">Checklist changes are local to this session.</p>}
     </section>
   );
 }

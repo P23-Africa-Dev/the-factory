@@ -621,7 +621,7 @@ export type LeadFitBreakdownItem = {
 
 export type LeadContactSource = {
   value?: string | null;
-  type?: "direct" | "generic" | "company_line" | string | null;
+  type?: "direct" | "generic" | "company_line" | "hq_line" | string | null;
   method?: string | null;
   source_url?: string | null;
   confidence?: "on_page" | "snippet" | "pattern" | "provider" | string | null;
@@ -1456,6 +1456,8 @@ export function normalizeRecommendedAction(
 export type SocialListeningRunResultSummary = {
   totalChecked: number;
   qualified: number;
+  /** Every searched source failed this run (network/outage) — the empty result is not "no posts". */
+  sources_unavailable?: boolean;
   /** Server-side diagnostics; no longer sent to the browser. */
   rejected?: {
     icpMismatch: number;

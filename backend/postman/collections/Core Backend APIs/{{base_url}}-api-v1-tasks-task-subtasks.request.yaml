@@ -1,0 +1,19 @@
+$kind: http-request
+name: "{{base_url}}/api/v1/tasks/{task}/subtasks (create)"
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/subtasks"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+  Authorization: "Bearer {{access_token}}"
+body:
+  type: json
+  content: |
+    {
+      "company_id": "{{company_id}}",
+      "title": "Confirm next steps",
+      "assigned_user_id": {{assignee_user_id}},
+      "due_at": "2026-11-14T10:00:00Z"
+    }
+settings:
+  disabledSystemHeaders: []

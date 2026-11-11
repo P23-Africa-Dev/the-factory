@@ -18,6 +18,11 @@ import {
   deleteTask,
   listTaskComments,
   createTaskComment,
+  createTaskSubtask,
+  updateTaskSubtask,
+  completeTaskSubtask,
+  reorderTaskSubtasks,
+  deleteTaskSubtask,
   type TaskCommentItem,
   type TaskCommentsData,
   type ListTasksParams,
@@ -32,6 +37,7 @@ import {
   type PaginationData,
   type UpdateTaskPayload,
   type TaskAssignee,
+  type TaskSubtaskMutationData,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { ApiRequestError } from "@/lib/api/onboarding";
@@ -330,5 +336,109 @@ export function useCreateTaskComment(
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.comments(taskId, companyId) });
       options?.onSuccess?.(comment);
     },
+  });
+}
+
+function useInvalidateTasksOnSubtask(
+  options?: { onSuccess?: (data: TaskSubtaskMutationData) => void },
+) {
+  const queryClient = useQueryClient();
+  return (data: TaskSubtaskMutationData) => {
+    queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
+    if (data.task?.id != null) {
+      queryClient.invalidateQueries({ queryKey: TASK_KEYS.detail(data.task.id, data.task.company_id) });
+    }
+    options?.onSuccess?.(data);
+  };
+}
+
+export function useCreateTaskSubtask(options?: { onSuccess?: (data: TaskSubtaskMutationData) => void }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const onSuccess = useInvalidateTasksOnSubtask(options);
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      payload,
+    }: {
+      taskId: number | string;
+      payload: {
+        company_id?: number | string;
+        title: string;
+        assigned_user_id?: number | string;
+        due_at?: string | null;
+      };
+    }) => createTaskSubtask(taskId, payload, token),
+    onSuccess: (res) => onSuccess(res.data),
+  });
+}
+
+export function useUpdateTaskSubtask(options?: { onSuccess?: (data: TaskSubtaskMutationData) => void }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const onSuccess = useInvalidateTasksOnSubtask(options);
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      subtaskId,
+      payload,
+    }: {
+      taskId: number | string;
+      subtaskId: number | string;
+      payload: {
+        company_id?: number | string;
+        title?: string;
+        assigned_user_id?: number | string | null;
+        due_at?: string | null;
+      };
+    }) => updateTaskSubtask(taskId, subtaskId, payload, token),
+    onSuccess: (res) => onSuccess(res.data),
+  });
+}
+
+export function useCompleteTaskSubtask(options?: { onSuccess?: (data: TaskSubtaskMutationData) => void }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const onSuccess = useInvalidateTasksOnSubtask(options);
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      subtaskId,
+      payload,
+    }: {
+      taskId: number | string;
+      subtaskId: number | string;
+      payload: { company_id?: number | string; is_completed: boolean };
+    }) => completeTaskSubtask(taskId, subtaskId, payload, token),
+    onSuccess: (res) => onSuccess(res.data),
+  });
+}
+
+export function useReorderTaskSubtasks(options?: { onSuccess?: (data: TaskSubtaskMutationData) => void }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const onSuccess = useInvalidateTasksOnSubtask(options);
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      payload,
+    }: {
+      taskId: number | string;
+      payload: { company_id?: number | string; subtask_ids: Array<number | string> };
+    }) => reorderTaskSubtasks(taskId, payload, token),
+    onSuccess: (res) => onSuccess(res.data),
+  });
+}
+
+export function useDeleteTaskSubtask(options?: { onSuccess?: (data: TaskSubtaskMutationData) => void }) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+  const onSuccess = useInvalidateTasksOnSubtask(options);
+  return useMutation({
+    mutationFn: ({
+      taskId,
+      subtaskId,
+      companyId,
+    }: {
+      taskId: number | string;
+      subtaskId: number | string;
+      companyId?: number | string;
+    }) => deleteTaskSubtask(taskId, subtaskId, { company_id: companyId }, token),
+    onSuccess: (res) => onSuccess(res.data),
   });
 }

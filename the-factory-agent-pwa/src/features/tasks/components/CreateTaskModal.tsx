@@ -1,6 +1,6 @@
 'use client';
 
-import { ChecklistDraftFields, saveCreatedChecklist, type ChecklistStep } from './ProjectChecklist';
+import { ChecklistDraftFields, type ChecklistStep } from './ProjectChecklist';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
@@ -178,11 +178,19 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       required_actions: requiredActions.length > 0 ? requiredActions : undefined,
       minimum_photos_required: minPhotos || undefined,
       visit_verification_required: visitVerification,
+      ...(subtasks.length > 0
+        ? {
+            subtasks: subtasks.map((step) => ({
+              title: step.title,
+              assigned_user_id: step.assigneeId || undefined,
+              due_at: step.dueAt,
+            })),
+          }
+        : {}),
     };
 
     createSelfTask(payload, {
-      onSuccess: (task) => {
-        saveCreatedChecklist(task, String(user?.id ?? ""), user?.company_id, subtasks);
+      onSuccess: () => {
         handleReset();
         onClose();
       },

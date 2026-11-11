@@ -306,6 +306,13 @@ export function CreateTaskModal({
       }
       const typeKey = TASK_TYPES[form.taskType] || "general";
       const priorityVal = form.priority.toLowerCase() as ApiTaskPriority;
+      const nestedSubtasks = usesProjectDueDate
+        ? subtasks.map((item) => ({
+            title: item.title,
+            assigned_user_id: item.assigneeId || undefined,
+            due_at: item.dueAt,
+          }))
+        : undefined;
       const payload = {
         company_id: companyId,
         title: form.title,
@@ -315,12 +322,13 @@ export function CreateTaskModal({
         address: form.address || undefined,
         latitude: coords?.lat,
         longitude: coords?.lng,
-        due_date: !onProjectChecklistCreated && form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+        due_date: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
         required_actions: form.requiredActions ? form.requiredActions.split(',').map(s => s.trim()) : undefined,
         priority: form.priority ? priorityVal : undefined,
         minimum_photos_required: form.minPhotos ? Number(form.minPhotos) : undefined,
         visit_verification_required:
           coords?.lat != null && coords?.lng != null ? form.visitVerification : false,
+        ...(nestedSubtasks && nestedSubtasks.length > 0 ? { subtasks: nestedSubtasks } : {}),
       };
       const onError = (err: unknown) => {
         const apiErr = err as { errors?: Record<string, string[]>; message?: string };

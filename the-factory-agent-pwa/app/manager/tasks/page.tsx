@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/features/auth/hooks/useAuth';
-import { ChecklistDraftFields, ProjectChecklist, saveCreatedChecklist, TaskOverview, useChecklistTasks, type ChecklistStep } from '@/features/tasks/components/ProjectChecklist';
+import { ChecklistDraftFields, ProjectChecklist, TaskOverview, useChecklistTasks, type ChecklistStep } from '@/features/tasks/components/ProjectChecklist';
 import React, { useState, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
@@ -311,7 +311,7 @@ function ManagerTasksContent() {
       }
       setCreateErrors({});
       try {
-        const createdTask = await createTask.mutateAsync({
+        await createTask.mutateAsync({
           title: newTitle.trim(),
           type: newType,
           description: newDesc.trim(),
@@ -324,8 +324,16 @@ function ManagerTasksContent() {
           assigned_to: newAssigneeId ? Number(newAssigneeId) : null,
           assignee_ids: newAssigneeId ? [Number(newAssigneeId)] : undefined,
           project_id: newProjectId ? Number(newProjectId) : null,
+          ...(subtasks.length > 0
+            ? {
+                subtasks: subtasks.map((step) => ({
+                  title: step.title,
+                  assigned_user_id: step.assigneeId || undefined,
+                  due_at: step.dueAt,
+                })),
+              }
+            : {}),
         });
-        saveCreatedChecklist(createdTask, String(user?.id ?? ""), user?.company_id, subtasks);
         setCreateModalOpen(false);
         resetCreateForm();
         void refetchTasks();
