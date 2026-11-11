@@ -1,6 +1,6 @@
 'use client';
 
-import { ProjectChecklist, TaskOverview, useChecklistTasks, type ChecklistTask } from '@/features/tasks/components/ProjectChecklist';
+import { ProjectChecklist, TaskOverview, useChecklistTasks } from '@/features/tasks/components/ProjectChecklist';
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -120,7 +120,7 @@ function TaskCard({
   onEdit,
   onDelete,
 }: {
-  task: Task & Pick<ChecklistTask, "checklistBaseStatus">;
+  task: Task;
   onPrimaryAction: (e: React.MouseEvent) => void;
   onDecline: (e: React.MouseEvent) => void;
   onPress: () => void;
@@ -132,8 +132,7 @@ function TaskCard({
   const isActive = task.status === 'in_progress' || task.status === 'paused' || task.status === 'resumed';
   const locationLabel = task.location ?? task.address;
 
-  const primaryLabel =
-    task.checklistBaseStatus ? 'View' : isPending ? 'Start' : isActive ? 'Continue' : 'View';
+  const primaryLabel = isPending ? 'Start' : isActive ? 'Continue' : 'View';
 
   return (
     <div
@@ -374,9 +373,9 @@ export default function TasksPage() {
   const { mutate: updateKpiStatus, isPending: isUpdatingKpi } = useUpdateKpiStatus();
 
   // Handlers
-  const handleTaskAction = (task: Task & Pick<ChecklistTask, "checklistBaseStatus">, e: React.MouseEvent) => {
+  const handleTaskAction = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (taskHasMapLocation(task) && isResumeTrackingStatus(task.checklistBaseStatus ?? task.status)) {
+    if (taskHasMapLocation(task) && isResumeTrackingStatus(task.status)) {
       goToContinueTracking(task.id);
       return;
     }
@@ -543,7 +542,7 @@ export default function TasksPage() {
                     key={task.id}
                     task={task}
                     onPress={() =>
-                      isResumeTrackingStatus(task.checklistBaseStatus ?? task.status) && taskHasMapLocation(task)
+                      isResumeTrackingStatus(task.status) && taskHasMapLocation(task)
                         ? goToContinueTracking(task.id)
                         : goToTaskDetail(task.id)
                     }

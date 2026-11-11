@@ -318,6 +318,14 @@ export const taskApi = {
         requiredActions: [],
         minimumPhotosRequired: 0,
         visitVerificationRequired: false,
+        checklistSteps: (payload.subtasks ?? []).map((step, index) => ({
+          id: `temp-step-${index}`,
+          title: step.title,
+          assigneeId: step.assigned_user_id != null ? String(step.assigned_user_id) : '',
+          assigneeName: 'You',
+          dueAt: step.due_at ?? null,
+          done: false,
+        })),
       };
       if (companyId) {
         await putCachedTaskDetail(companyId, mockTask);
