@@ -167,7 +167,7 @@ export function AgentDetailsModal({
                     set("phone", value);
                     onClearError?.("phone");
                   }}
-                  placeholder="E.g +234 9099999999"
+                  placeholder="Phone number with country code"
                 />
               </div>
             </FormRow>

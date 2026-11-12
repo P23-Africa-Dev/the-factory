@@ -81,11 +81,12 @@ export default function ManagerTaskDetailScreen() {
       try {
         await updateStatus.mutateAsync({ id: task.id, status: newStatus });
         toast.success(`Task status updated to ${newStatus.replace('_', ' ')}`);
+        if (newStatus === 'cancelled') router.back();
       } catch {
         toast.error('Failed to update task status');
       }
     },
-    [task, updateStatus],
+    [task, updateStatus, router],
   );
 
   const handleReassignSubmit = useCallback(async () => {

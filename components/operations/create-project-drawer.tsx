@@ -314,7 +314,7 @@ export function CreateProjectDrawer({
             <input
               value={form.territoryZone}
               onChange={(e) => set("territoryZone", e.target.value)}
-              placeholder="E.g Lagos Mainland"
+              placeholder="E.g North Region"
               className={FIELD}
             />
           </Row>

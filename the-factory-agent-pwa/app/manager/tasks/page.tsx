@@ -1199,7 +1199,7 @@ function ManagerTasksContent() {
                     type="text"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g. Client site inspection at Lekki"
+                    placeholder="e.g. Client site inspection"
                     className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
                   />
                   {createErrors.title && (

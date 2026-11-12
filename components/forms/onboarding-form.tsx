@@ -25,7 +25,7 @@ const onboardingSchema = z
   .object({
     phone_number: z
       .string()
-      .regex(/^\+[1-9][0-9]{7,14}$/, "Use a valid international number (e.g. +2348012345678)."),
+      .regex(/^\+[1-9][0-9]{7,14}$/, "Use a valid international number (e.g. +15551234567)."),
     gender: z.enum(["male", "female"]),
     avatar_key: z.string().optional(),
     avatar_file: z.instanceof(File).optional(),

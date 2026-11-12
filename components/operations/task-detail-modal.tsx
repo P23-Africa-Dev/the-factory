@@ -498,19 +498,17 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
     if (localTask) {
       localTask.onStatus(nextStatus);
       toast.success(`Task moved to ${nextStatus.replace('_', ' ')}`);
+      if (nextStatus === 'cancelled') onClose();
       return;
     }
     if (!companyId) {
       toast.error('Company context is required.');
       return;
     }
-    updateStatusMutation.mutate({
-      taskId,
-      payload: {
-        company_id: companyId,
-        status: nextStatus,
-      },
-    });
+    updateStatusMutation.mutate(
+      { taskId, payload: { company_id: companyId, status: nextStatus } },
+      nextStatus === 'cancelled' ? { onSuccess: onClose } : undefined,
+    );
   };
 
   const onProofSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -764,12 +762,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                       Task Done
                     </button>
                   </div>
-                  <button
-                    onClick={() => updateTaskStatus('cancelled')}
-                    className="w-full px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
-                  >
-                    Cancel Task
-                  </button>
+                  {role === 'agent' && (
+                    <button
+                      onClick={() => updateTaskStatus('cancelled')}
+                      className="w-full px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
+                    >
+                      Cancel Task
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -784,12 +784,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                     {commencing && <Loader2 size={16} className="animate-spin" />}
                     {commencing ? 'Starting…' : 'Commence Task'}
                   </button>
-                  <button
-                    onClick={() => updateTaskStatus('cancelled')}
-                    className="w-full mt-2 px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
-                  >
-                    Cancel Task
-                  </button>
+                  {role === 'agent' && (
+                    <button
+                      onClick={() => updateTaskStatus('cancelled')}
+                      className="w-full mt-2 px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
+                    >
+                      Cancel Task
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -802,12 +804,14 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                   >
                     Start Task
                   </button>
-                  <button
-                    onClick={() => updateTaskStatus('cancelled')}
-                    className="w-full px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
-                  >
-                    Cancel Task
-                  </button>
+                  {role === 'agent' && (
+                    <button
+                      onClick={() => updateTaskStatus('cancelled')}
+                      className="w-full px-4 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50"
+                    >
+                      Cancel Task
+                    </button>
+                  )}
                 </div>
               )}
 

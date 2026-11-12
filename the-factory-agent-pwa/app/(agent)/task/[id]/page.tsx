@@ -96,6 +96,7 @@ export default function TaskDetailPage() {
                 ? 'Task completed'
                 : 'Task cancelled',
           );
+          if (status === 'cancelled') router.back();
         },
         onError: (err: unknown) => {
           toast.error(err instanceof Error ? err.message : 'Failed to update task status');

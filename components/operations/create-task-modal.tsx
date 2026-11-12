@@ -383,7 +383,8 @@ export function CreateTaskModal({
         label: user?.name || form.title,
         description: form.title,
         location: `${form.location}${form.address ? `, ${form.address}` : ""}`,
-        time: "Just now",
+        time: "",
+        createdAt: new Date().toISOString(),
         category: form.category,
         dueDate: form.dueDate,
         addedDescription: form.description,
@@ -458,7 +459,7 @@ export function CreateTaskModal({
             <InputWrap icon={<FileText size={13} />}>
               <input
                 type="text"
-                placeholder="e.g. Visit Shoprite Lekki"
+                placeholder="e.g. Visit client store"
                 value={form.title}
                 onChange={(e) => set("title", e.target.value)}
                 className={`${INPUT_CLS(errors.title)} pl-9 pr-4`}
@@ -538,7 +539,7 @@ export function CreateTaskModal({
                 value={form.location}
                 onChange={(next) => set("location", next)}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder="e.g. Lekki Phase 1"
+                placeholder="e.g. Downtown branch"
                 inputClassName={`${INPUT_CLS(errors.location)} pl-9 pr-4`}
               />
             </InputWrap>
@@ -567,7 +568,7 @@ export function CreateTaskModal({
                 value={form.address}
                 onChange={(next) => set("address", next)}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder="e.g. Admiralty Way, Lekki Phase 1, Lagos"
+                placeholder="e.g. 12 Main Street, City"
                 inputClassName={`${INPUT_CLS()} pl-9 pr-4`}
               />
             </InputWrap>
