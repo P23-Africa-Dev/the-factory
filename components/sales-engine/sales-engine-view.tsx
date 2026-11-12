@@ -291,12 +291,12 @@ function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount
 }
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
-type SalesEngineTab = "smart-lead" | "social-listening";
+type SalesEngineTab = "smart-lead" | "social-listening" | "opportunities";
 
 const SALES_ENGINE_TAB_STORAGE_KEY = "sales-engine-active-tab";
 
 function isSalesEngineTab(value: string | null): value is SalesEngineTab {
-  return value === "smart-lead" || value === "social-listening";
+  return value === "smart-lead" || value === "social-listening" || value === "opportunities";
 }
 type SocialSignal = SocialSignalApi;
 
@@ -309,6 +309,7 @@ type SocialStatCard = {
 };
 
 import { useSalesEngineCrmPipelines } from "@/hooks/use-sales-engine-pipelines";
+import { OpportunitiesView } from "@/components/sales-engine/opportunities-view";
 
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
@@ -352,6 +353,7 @@ const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
 const salesEngineTabs: Array<{ id: SalesEngineTab; label: string }> = [
   { id: "smart-lead", label: "Smart Lead" },
   { id: "social-listening", label: "Social Listening" },
+  { id: "opportunities", label: "Opportunities" },
 ];
 
 const SOURCE_SETTING_OPTIONS = [
@@ -2884,6 +2886,8 @@ const TAB_TRUST_MODE_COPY: Record<SalesEngineTab, string> = {
     "Follows your question first. Results may include strong matches outside your saved ICP, with an explanation for each.",
   "social-listening":
     "Strictly follows your saved ICP filters. Nothing outside your filter criteria will appear here.",
+  opportunities:
+    "Verified, dated company events from companies that fit your ICP, with the person to contact.",
 };
 
 function SalesEngineTabs({
@@ -4992,7 +4996,9 @@ export function SalesEngineView() {
           />
         )}
 
-        {activeTab === "social-listening" && !chatExpanded ? (
+        {activeTab === "opportunities" && !chatExpanded ? (
+          <OpportunitiesView />
+        ) : activeTab === "social-listening" && !chatExpanded ? (
           <SocialListeningTab
             onOpenIcpBuilder={handleOpenIcpBuilder}
             onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
