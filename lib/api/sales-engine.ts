@@ -1422,6 +1422,8 @@ export type SocialSignalApi = {
   /** Object shape from newer API responses; string tolerated for defensive/cached-response compatibility. */
   recommendedAction?: RecommendedActionApi | string;
   whyThisMattersToYou?: string;
+  /** "possible": a real opening that scored under the account's minimum; shown labelled. */
+  opportunityTier?: "strong" | "possible" | string;
   benefits?: string[];
   personalRecommendedAction?: RecommendedActionApi | string;
   status?: string;
@@ -1461,6 +1463,8 @@ export type SocialListeningRunResultSummary = {
   qualified: number;
   /** Every searched source failed this run (network/outage) — the empty result is not "no posts". */
   sources_unavailable?: boolean;
+  /** Real openings that scored under the minimum, kept as "possible openings". */
+  possible?: number;
   /** Server-side diagnostics; no longer sent to the browser. */
   rejected?: {
     icpMismatch: number;
