@@ -68,10 +68,10 @@ export default function AgentTaskDetailPage({
   const isCancelled = task.status === 'cancelled';
 
   const updateTaskStatus = (status: 'in_progress' | 'completed' | 'cancelled') => {
-    updateStatus({
-      taskId,
-      payload: { company_id: companyId ?? undefined, status },
-    });
+    updateStatus(
+      { taskId, payload: { company_id: companyId ?? undefined, status } },
+      status === 'cancelled' ? { onSuccess: () => router.back() } : undefined,
+    );
   };
 
   return (

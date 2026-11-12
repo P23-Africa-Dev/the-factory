@@ -600,7 +600,7 @@ function WorkforceContent() {
                   type="tel"
                   value={invitePhone}
                   onChange={(e) => setInvitePhone(e.target.value)}
-                  placeholder="+234..."
+                  placeholder="Phone number with country code"
                   className="w-full h-11 rounded-xl bg-white/10 border border-white/15 px-3 text-xs text-white"
                 />
               </div>

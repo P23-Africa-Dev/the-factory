@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
+import { formatDistanceStrict } from 'date-fns';
 import { CSS } from '@dnd-kit/utilities';
 import type { DndItem } from '@/types/operations';
 import { ChecklistRows } from './project-checklist';
@@ -84,6 +85,16 @@ export function TaskCard({
         displayLocation = item.location;
       }
     }
+  }
+
+  const createdAt = item.createdAt ? Date.parse(item.createdAt) : NaN;
+  const now = Date.now();
+  let creationAge = item.time;
+  if (Number.isFinite(createdAt)) {
+    const elapsed = now - createdAt;
+    creationAge = elapsed >= 0 && elapsed < 60_000
+      ? "Just now"
+      : formatDistanceStrict(createdAt, now, { addSuffix: true, roundingMethod: "floor" });
   }
 
   const checklist = item.projectChecklist;
@@ -169,7 +180,7 @@ export function TaskCard({
                 View on Map
               </button>
             ) : null}
-            <span className="text-gray-400 text-[11px]">{item.time}</span>
+            {creationAge && <span className="text-gray-400 text-[11px]">{creationAge}</span>}
           </div>
         </div>
       </div>

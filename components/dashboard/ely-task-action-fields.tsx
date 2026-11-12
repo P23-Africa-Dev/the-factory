@@ -358,7 +358,7 @@ export function ElyTaskActionFields({
               visit_verification_required: false,
             })}
           onPlaceSelect={applyRetrievedPlace}
-          placeholder="e.g. Lekki Phase 1"
+          placeholder="e.g. Downtown branch"
           inputClassName={INPUT_CLASS}
         />
       </div>

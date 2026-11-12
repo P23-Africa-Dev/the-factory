@@ -80,7 +80,7 @@ function fillDescription(value: string) {
 }
 
 function fillTitle(value: string) {
-  fireEvent.change(screen.getByPlaceholderText("e.g. Visit Shoprite Lekki"), {
+  fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
     target: { value },
   });
 }
@@ -146,7 +146,7 @@ describe("CreateTaskModal task assignees", () => {
     setUser(7, "owner");
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Visit Shoprite Lekki"), {
+    fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
       target: { value: "Review operations report" },
     });
     fillDescription("Check the stock and speak to the manager.");
@@ -164,7 +164,7 @@ describe("CreateTaskModal task assignees", () => {
 
     expect(screen.queryByRole("combobox", { name: "Select user" })).toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Visit Shoprite Lekki"), {
+    fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
       target: { value: "Agent field visit" },
     });
     fillDescription("Check the stock and speak to the manager.");

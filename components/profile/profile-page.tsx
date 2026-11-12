@@ -796,7 +796,7 @@ export function ProfilePage() {
                       <EditableInput
                         value={phone}
                         onChange={setPhone}
-                        placeholder="+2348000000000"
+                        placeholder="Phone number with country code"
                         error={fieldErrors.phone_number}
                       />
                     ) : (

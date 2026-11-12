@@ -155,7 +155,7 @@ export function SaveLocationModal({
             <input
               value={values.name}
               onChange={(e) => handleChange("name", e.target.value)}
-              placeholder="e.g. Lagos Head Office"
+              placeholder="e.g. Head Office"
               className={`${BASE_INPUT} px-3 py-2.5 ${errors.name ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
             {errors.name && <p className="mt-1 text-[11px] text-red-500">{errors.name}</p>}
@@ -212,7 +212,7 @@ export function SaveLocationModal({
                 <input
                   value={values.contact_number}
                   onChange={(e) => handleChange("contact_number", e.target.value)}
-                  placeholder="+234…"
+                  placeholder="Phone number with country code"
                   className={`${BASE_INPUT} pl-9 pr-3 py-2.5 border-gray-200 focus:border-[#094B5C]`}
                 />
               </div>

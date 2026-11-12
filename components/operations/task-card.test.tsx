@@ -57,6 +57,17 @@ function buildChecklistItem(overrides: Partial<DndItem> = {}): DndItem {
 }
 
 describe("TaskCard checklist UI", () => {
+  it("shows the age of an older task from its creation timestamp", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-12T05:28:53+01:00"));
+    try {
+      render(<TaskCard item={buildChecklistItem({ createdAt: "2026-10-29T11:18:50+01:00" })} />);
+      expect(screen.getByText("13 days ago")).not.toBeNull();
+      expect(screen.queryByText("Just now")).toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("renders checklist progress, comment count, and toggles collapsible subtasks", () => {
     const onToggleSubtask = vi.fn();
     render(
