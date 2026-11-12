@@ -269,7 +269,7 @@ export default function ProfilePage() {
                     type="text"
                     value={countryInput}
                     onChange={(e) => setCountryInput(e.target.value)}
-                    placeholder="e.g. Kenya, Nigeria"
+                    placeholder="e.g. United Kingdom"
                     className="w-full h-11 px-3.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#75ADAF]"
                   />
                 </div>

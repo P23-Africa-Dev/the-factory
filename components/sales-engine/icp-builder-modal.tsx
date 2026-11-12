@@ -1466,7 +1466,7 @@ export function IcpBuilderModal({
                           type="text"
                           value={customTerritoryInput}
                           onChange={(e) => handleTerritorySearchChange(e.target.value)}
-                          placeholder="Search countries or cities (e.g. Germany, Lagos)…"
+                          placeholder="Search countries or cities (e.g. Germany, Berlin)…"
                           className="flex-1 rounded-xl border border-gray-200 bg-[#F6F6F6] px-3.5 py-2 text-[12px] text-[#09232D] outline-none placeholder:text-gray-400 focus:border-[#09232D]/30 focus:bg-white"
                           autoComplete="off"
                         />

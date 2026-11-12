@@ -45,7 +45,7 @@ const scheduleDemoSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
   phone: z
     .string()
-    .regex(/^\+[1-9][0-9]{7,14}$/, "Use a valid international number (e.g. +2348012345678)."),
+    .regex(/^\+[1-9][0-9]{7,14}$/, "Use a valid international number (e.g. +15551234567)."),
   company_name: z.string().min(2, "Company name must be at least 2 characters."),
   country: z.string().min(2, "Please select a country."),
   team_size: z.enum(["2-10", "11-50", "51-200", "201-500", "501+"]),

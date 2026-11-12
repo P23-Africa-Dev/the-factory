@@ -254,7 +254,7 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
-                      placeholder="+234 800 000 0000"
+                      placeholder="Phone number with country code"
                     />
                   </div>
                   {(permissions.role === 'owner' || permissions.role === 'admin') && (
