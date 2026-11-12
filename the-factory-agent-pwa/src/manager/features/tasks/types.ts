@@ -61,5 +61,9 @@ export type ProjectItem = {
   due_date?: string | null;
   tasks_count?: number;
   completed_tasks_count?: number;
+  task_summary?: {
+    total_tasks?: number;
+    completed_tasks?: number;
+  };
   progress?: number;
 };

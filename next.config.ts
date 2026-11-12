@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  typescript: {
+    // Builds use a config that excludes test files. tsconfig.json includes them
+    // so the editor resolves the "@/" alias inside tests.
+    tsconfigPath: "tsconfig.build.json",
+  },
   turbopack: {
     root: process.cwd(),
   },

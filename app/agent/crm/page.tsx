@@ -444,9 +444,10 @@ function LeadListView({
   );
 }
 
-function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, onStatusChange, onAddClick, isLoading, stageMeta, onLoadMore }: {
+function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, isLoading, stageMeta, onLoadMore }: {
   basePath?: string;
   leadListUrl?: string;
+  boardKey: string;
   initialContainers: DndContainer[];
   onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
   onAddClick?: (status: ApiLeadStatus) => void;
@@ -459,21 +460,30 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const containersRef = useRef<DndContainer[]>(initialContainers);
+  const initialContainersRef = useRef(initialContainers);
+  const boardKeyRef = useRef(boardKey);
+  const statusPendingRef = useRef(false);
+  const boardKeyAtPendingStartRef = useRef(boardKey);
   const dragOriginRef = useRef<string | null>(null);
   const [activeTabId, setActiveTabId] = useState<string>(() => initialContainers[0]?.id ?? "newly_lead");
-
 
   const resolvedActiveTabId =
     containers.length > 0 && !containers.some((c) => c.id === activeTabId)
       ? containers[0].id
       : activeTabId;
 
-  const [prevInitialContainers, setPrevInitialContainers] = useState(initialContainers);
+  useEffect(() => {
+    initialContainersRef.current = initialContainers;
+    boardKeyRef.current = boardKey;
+  }, [boardKey, initialContainers]);
 
-  if (initialContainers !== prevInitialContainers) {
-    setPrevInitialContainers(initialContainers);
-    setContainers(initialContainers);
-  }
+  useEffect(() => {
+    if (statusPendingRef.current) return;
+    const timer = setTimeout(() => {
+      if (!statusPendingRef.current) setContainers(initialContainersRef.current);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [boardKey]);
 
   useEffect(() => {
     containersRef.current = containers;
@@ -485,6 +495,22 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
       containersRef.current = next;
       return next;
     });
+  }
+
+  async function persistStageMove(leadId: string, status: ApiLeadStatus) {
+    boardKeyAtPendingStartRef.current = boardKeyRef.current;
+    statusPendingRef.current = true;
+    try {
+      await onStatusChange(leadId, status);
+    } catch {
+      apply(initialContainersRef.current);
+      throw new Error("status update failed");
+    } finally {
+      statusPendingRef.current = false;
+      if (boardKeyRef.current !== boardKeyAtPendingStartRef.current) {
+        apply(initialContainersRef.current);
+      }
+    }
   }
 
   const sensors = useSensors(
@@ -527,14 +553,14 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
     const activeId = String(active.id);
     const origin = dragOriginRef.current;
     dragOriginRef.current = null;
-    if (!over || !origin) { apply(initialContainers); return; }
+    if (!over || !origin) { apply(initialContainersRef.current); return; }
     const dest = findContainerForItem(containersRef.current, activeId);
-    if (!dest) { apply(initialContainers); return; }
+    if (!dest) { apply(initialContainersRef.current); return; }
     if (origin === dest.id) return; // same column reorder, no API call needed
     try {
-      await onStatusChange(activeId, dest.id as ApiLeadStatus);
+      await persistStageMove(activeId, dest.id as ApiLeadStatus);
     } catch {
-      apply(initialContainers);
+      // persistStageMove already reverted local state
     }
   }
 
@@ -635,7 +661,24 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, initialContainers, on
                   activeTabId={resolvedActiveTabId}
                   stages={stagesList}
                   onMoveToStage={async (leadId, targetStageId) => {
-                    await onStatusChange(leadId, targetStageId as ApiLeadStatus);
+                    const origin = findContainerForItem(containersRef.current, leadId);
+                    if (!origin || origin.id === targetStageId) return;
+                    apply((prev) => {
+                      const next = prev.map((c) => ({ ...c, items: [...c.items] }));
+                      const from = next.find((c) => c.id === origin.id);
+                      const to = next.find((c) => c.id === targetStageId);
+                      if (!from || !to) return prev;
+                      const item = from.items.find((i) => i.id === leadId);
+                      if (!item) return prev;
+                      from.items = from.items.filter((i) => i.id !== leadId);
+                      to.items = [...to.items, item];
+                      return next;
+                    });
+                    try {
+                      await persistStageMove(leadId, targetStageId as ApiLeadStatus);
+                    } catch {
+                      // persistStageMove already reverted local state
+                    }
                   }}
                   total={stageMeta?.[container.id]?.total}
                   hasMore={stageMeta?.[container.id]?.hasMore}
@@ -835,6 +878,17 @@ export default function CRMPage() {
     () => buildContainers(loadedLeads, visibleStages),
     [loadedLeads, visibleStages],
   );
+  const boardKey = useMemo(
+    () =>
+      [
+        selectedPipelineId ?? "all",
+        selectedLabel,
+        ...loadedLeads.map(
+          (lead) => `${lead.id}:${lead.status ?? "new"}:${lead.updated_at ?? ""}`,
+        ),
+      ].join("|"),
+    [loadedLeads, selectedLabel, selectedPipelineId],
+  );
   const stageMeta = useMemo(
     () =>
       Object.fromEntries(
@@ -975,6 +1029,7 @@ export default function CRMPage() {
         <LeadBoard
           basePath={basePath}
           leadListUrl={agentUploadScope ? leadListUrl : undefined}
+          boardKey={boardKey}
           initialContainers={initialContainers}
           onStatusChange={persistStatusChange}
           onAddClick={(status) => { setDefaultStatus(status); setIsAddModalOpen(true); }}

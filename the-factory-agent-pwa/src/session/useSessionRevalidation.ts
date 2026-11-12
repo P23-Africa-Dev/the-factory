@@ -40,20 +40,23 @@ export function useSessionRevalidation(): void {
           return;
         }
 
+        if (session.app_mode !== 'agent' && session.app_mode !== 'manager') {
+          return;
+        }
+
         if (user?.app_mode && session.app_mode !== user.app_mode) {
           toast.info('Your permissions have changed. Please sign in again.');
           logout();
           return;
         }
 
-        // Update company and role info if needed
-        if (session.companies && Array.isArray(session.companies)) {
-          updateUser({
-            companies: session.companies,
-            access_role: session.access_role ?? user?.access_role,
-            internal_role: session.internal_role ?? user?.internal_role,
-          });
-        }
+        updateUser({
+          app_mode: session.app_mode,
+          user_type: session.user_type ?? user?.user_type,
+          companies: session.companies,
+          access_role: session.access_role ?? user?.access_role,
+          internal_role: session.internal_role ?? user?.internal_role,
+        });
       } catch (err: unknown) {
         const status = (err as { status?: number })?.status;
         if (status === 401) {

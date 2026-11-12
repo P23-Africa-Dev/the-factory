@@ -5,7 +5,7 @@
  * - Automatically injects Bearer token
  * - Attaches X-Company-ID header for manager sessions
  * - Fail-closed mode-boundary interceptor prevents cross-mode endpoint calls:
- *   agents cannot call /management/*; managers cannot call /agent/*
+ *   agents cannot call /admin/*; managers cannot call /agent/*
  */
 import axios, { AxiosError } from 'axios';
 import type { ApiError } from '@/types';
@@ -56,7 +56,7 @@ client.interceptors.request.use(async (config) => {
 
     // Mode-boundary fail-closed enforcement
     if (mode === 'agent') {
-      if (url.includes('/management/') || url.startsWith('management/')) {
+      if (url.includes('/admin/') || url.startsWith('admin/')) {
         return Promise.reject(
           new Error(`[ModeGuard] Agent session is not permitted to access manager endpoint: ${url}`),
         );

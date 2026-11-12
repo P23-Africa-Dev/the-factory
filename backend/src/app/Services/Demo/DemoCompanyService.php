@@ -34,6 +34,19 @@ class DemoCompanyService
             && in_array($publicId, config('demo.company_public_ids', []), true);
     }
 
+    public function hasComplimentaryAccess(Company|int|null $company): bool
+    {
+        if ($company === null) {
+            return false;
+        }
+
+        $model = $company instanceof Company
+            ? $company
+            : Company::query()->find((int) $company);
+
+        return $model?->hasComplimentaryAccess() ?? false;
+    }
+
     public function markAsDemo(Company $company): Company
     {
         $company->forceFill([
@@ -47,11 +60,33 @@ class DemoCompanyService
 
     public function unmarkDemo(Company $company): Company
     {
-        $company->forceFill([
+        $attributes = [
             'is_demo' => false,
             'demo_config' => null,
-        ])->save();
+        ];
+
+        if (! $company->hasPaidSubscription()
+            && $company->subscriptionStatusEnum() === SubscriptionStatus::GRACE
+            && $this->hasLongLivedGrace($company)) {
+            $attributes['subscription_status'] = SubscriptionStatus::NONE->value;
+            $attributes['subscription_grace_ends_at'] = null;
+        }
+
+        $company->forceFill($attributes)->save();
 
         return $company->fresh();
+    }
+
+    private function hasLongLivedGrace(Company $company): bool
+    {
+        $endsAt = $company->subscription_grace_ends_at;
+
+        if ($endsAt === null) {
+            return true;
+        }
+
+        $shortWindowDays = (int) config('billing.grace_period_days', 7) + 1;
+
+        return $endsAt->greaterThan(now()->addDays($shortWindowDays));
     }
 }

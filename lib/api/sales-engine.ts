@@ -578,6 +578,7 @@ export function suggestIcpSearchBrief(payload: {
   decisionMakers?: string[];
   companySizes?: string[];
   minMatchScore?: number;
+  exclusions?: string[];
 }): Promise<IcpSearchBriefSuggestResult> {
   return withSessionRetry(async () => {
     const data = await seRequest<IcpSearchBriefSuggestResult>({
@@ -607,6 +608,37 @@ export function suggestIcpSearchBrief(payload: {
 
 export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "generate_more_leads" | "create_outreach";
 
+/** Entity mix for lead generation; sent as a structured field (not a prompt cue). */
+export type ChatEntityMode = "both" | "companies" | "people";
+
+export type LeadFitStatus = "verified" | "partial" | "unknown" | "contradicted";
+
+export type LeadFitBreakdownItem = {
+  dimension: string;
+  status: LeadFitStatus | string;
+  evidence?: string | null;
+};
+
+export type LeadContactSource = {
+  value?: string | null;
+  type?: "direct" | "generic" | "company_line" | "hq_line" | string | null;
+  method?: string | null;
+  source_url?: string | null;
+  confidence?: "on_page" | "snippet" | "pattern" | "provider" | string | null;
+};
+
+/** Optional per-lead metadata from newer backends; every field may be absent. */
+export type ChatLeadMeta = {
+  fit_breakdown?: LeadFitBreakdownItem[] | null;
+  partial_match?: boolean | null;
+  contact_sources?: {
+    email?: LeadContactSource | null;
+    phone?: LeadContactSource | null;
+  } | null;
+  contact_status?: string | null;
+  [key: string]: unknown;
+};
+
 export type ChatLead = {
   id: number;
   name: string;
@@ -624,7 +656,7 @@ export type ChatLead = {
   linkedin_url?: string | null;
   profile_urls?: string[] | null;
   contact_ready?: boolean;
-  contact_status?: "not_attempted" | "found" | "not_found" | string | null;
+  contact_status?: "not_attempted" | "found" | "not_found" | "searching" | string | null;
   contact_enrichment_tier?: string | null;
   contact_enrichment_provider?: string | null;
   next_action?: string | null;
@@ -643,6 +675,11 @@ export type ChatLead = {
   query_match?: boolean;
   icp_relevance_reason?: string | null;
   location_status?: "unknown" | "confirmed" | "resolved" | "outside_territory" | string | null;
+  /** Chat lead payloads carry these at the top level; `meta` is the Lead resource shape. */
+  fit_breakdown?: LeadFitBreakdownItem[] | null;
+  partial_match?: boolean | null;
+  contact_sources?: ChatLeadMeta["contact_sources"];
+  meta?: ChatLeadMeta | null;
 };
 
 export type ChatMessageApi = {
@@ -715,6 +752,11 @@ const DISCOVERY_STAGE_LABELS: Record<string, string> = {
   enriching: "Enriching signal data…",
   synthesizing: "Synthesizing insights…",
   compiling_results: "Compiling ranked results…",
+  people_pass: "Finding decision makers…",
+  company_pass: "Finding matching companies…",
+  people_rescue_pass: "Widening the search for people…",
+  company_rescue_pass: "Widening the search for companies…",
+  enriching_contacts: "Looking up contact details…",
   completed: "Finalizing results…",
 };
 
@@ -723,8 +765,13 @@ const STAGE_TO_STEP: Record<string, number> = {
   analyzing_brief: 0,
   analyzing_icp: 0,
   searching_sources: 1,
+  people_pass: 1,
+  company_pass: 1,
+  people_rescue_pass: 1,
+  company_rescue_pass: 1,
   extracting: 2,
   enriching: 2,
+  enriching_contacts: 2,
   synthesizing: 2,
   compiling_results: 3,
   completed: 3,
@@ -915,7 +962,8 @@ export async function pollDiscoveryRunUntilComplete(
       }
 
       // Not a validation/ICP 422 — use 502 so UI does not treat this as "select an ICP".
-      throw new SalesEngineApiError(rechecked.error ?? "Discovery run failed.", 502);
+      // The run error can carry system details; the user gets a plain message.
+      throw new SalesEngineApiError("We couldn't finish this search. Please try again in a moment.", 502);
     }
 
     if (options?.signal?.aborted) {
@@ -942,9 +990,30 @@ export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
   );
 }
 
+export type SendChatMessagePayload = {
+  body: string;
+  intent: ChatIntent;
+  /** Lead-gen only: which entities to return. Omitted for other intents. */
+  entity_mode?: ChatEntityMode;
+  /** Lead-gen only: requested number of prospects. */
+  count?: number;
+};
+
+/** Build the JSON body for POST /chat/sessions/{id}/messages — structured fields, never prompt cues. */
+export function buildChatMessageRequestBody(payload: SendChatMessagePayload): SendChatMessagePayload {
+  const body: SendChatMessagePayload = { body: payload.body, intent: payload.intent };
+  if (payload.entity_mode) {
+    body.entity_mode = payload.entity_mode;
+  }
+  if (typeof payload.count === "number" && Number.isFinite(payload.count) && payload.count > 0) {
+    body.count = Math.round(payload.count);
+  }
+  return body;
+}
+
 export async function sendChatMessage(
   sessionId: number,
-  payload: { body: string; intent: ChatIntent },
+  payload: SendChatMessagePayload,
   options?: {
     onStage?: (info: DiscoveryStageInfo) => void;
     onDiscoveryRun?: (runId: number) => void;
@@ -959,78 +1028,80 @@ export async function sendChatMessage(
     extraWaitMsRef?: { current: number };
   }
 ): Promise<SendChatMessageResult> {
-  return withSessionRetry(async () => {
-    const timeoutMs = payload.intent === "create_outreach" ? CHAT_OUTREACH_TIMEOUT_MS : undefined;
+  const timeoutMs = payload.intent === "create_outreach" ? CHAT_OUTREACH_TIMEOUT_MS : undefined;
 
-    const initial = await seRequest<SendChatMessageResult>({
+  // Only the POST is retried on 401. The poll below uses calls that re-auth on their own,
+  // so an expired token mid-poll can never re-POST and start a duplicate run.
+  const initial = await withSessionRetry(() =>
+    seRequest<SendChatMessageResult>({
       method: "POST",
       path: `/chat/sessions/${sessionId}/messages`,
-      body: payload,
+      body: buildChatMessageRequestBody(payload),
       timeoutMs,
+    })
+  );
+
+  if (
+    ASYNC_CHAT_INTENTS.includes(payload.intent) &&
+    initial.status === "processing" &&
+    initial.discovery_run_id
+  ) {
+    options?.onDiscoveryRun?.(initial.discovery_run_id);
+
+    let messages = await listChatMessages(sessionId);
+    const placeholder = findLatestAssistantMessage(messages);
+
+    const pollResult = await pollDiscoveryRunUntilComplete(initial.discovery_run_id, {
+      intent: payload.intent,
+      onStage: options?.onStage,
+      onPartial: options?.onPartial,
+      signal: options?.signal,
+      extraWaitMsRef: options?.extraWaitMsRef,
+      maxMs:
+        payload.intent === "quick_research" ? CHAT_QUICK_RESEARCH_POLL_MAX_MS : CHAT_POLL_MAX_MS,
     });
 
-    if (
-      ASYNC_CHAT_INTENTS.includes(payload.intent) &&
-      initial.status === "processing" &&
-      initial.discovery_run_id
-    ) {
-      options?.onDiscoveryRun?.(initial.discovery_run_id);
+    messages = await listChatMessages(sessionId);
+    const assistantMessage =
+      findLatestAssistantMessage(messages.filter((message) => !message.meta?.pending)) ??
+      findLatestAssistantMessage(messages) ??
+      placeholder;
 
-      let messages = await listChatMessages(sessionId);
-      const placeholder = findLatestAssistantMessage(messages);
-
-      const pollResult = await pollDiscoveryRunUntilComplete(initial.discovery_run_id, {
-        intent: payload.intent,
-        onStage: options?.onStage,
-        onPartial: options?.onPartial,
-        signal: options?.signal,
-        extraWaitMsRef: options?.extraWaitMsRef,
-        maxMs:
-          payload.intent === "quick_research" ? CHAT_QUICK_RESEARCH_POLL_MAX_MS : CHAT_POLL_MAX_MS,
-      });
-
-      messages = await listChatMessages(sessionId);
-      const assistantMessage =
-        findLatestAssistantMessage(messages.filter((message) => !message.meta?.pending)) ??
-        findLatestAssistantMessage(messages) ??
-        placeholder;
-
-      if (pollResult.aborted) {
-        return {
-          ...initial,
-          assistant_message: assistantMessage ?? null,
-          status: "processing",
-          pending: true,
-        };
-      }
-
-      if (pollResult.timedOut && pollResult.run.status !== "completed") {
-        return {
-          ...initial,
-          assistant_message: assistantMessage ?? null,
-          status: "processing",
-          pending: true,
-        };
-      }
-
-      if (!assistantMessage || assistantMessage.meta?.pending) {
-        throw new SalesEngineApiError("Assistant response was not found after processing.", 500);
-      }
-
+    if (pollResult.aborted) {
       return {
         ...initial,
-        assistant_message: assistantMessage,
-        status: "completed",
-        pending: false,
+        assistant_message: assistantMessage ?? null,
+        status: "processing",
+        pending: true,
       };
     }
 
-    if (!initial.assistant_message) {
-      throw new SalesEngineApiError("Assistant response was missing from the server.", 500);
+    if (pollResult.timedOut && pollResult.run.status !== "completed") {
+      return {
+        ...initial,
+        assistant_message: assistantMessage ?? null,
+        status: "processing",
+        pending: true,
+      };
     }
 
-    return initial;
-  });
+    if (!assistantMessage || assistantMessage.meta?.pending) {
+      throw new SalesEngineApiError("Assistant response was not found after processing.", 500);
+    }
+
+    return {
+      ...initial,
+      assistant_message: assistantMessage,
+      status: "completed",
+      pending: false,
+    };
+  }
+
+  if (!initial.assistant_message) {
+    throw new SalesEngineApiError("Assistant response was missing from the server.", 500);
+  }
+
+  return initial;
 }
 
 // ── Metrics ─────────────────────────────────────────────────────────────────
@@ -1385,7 +1456,10 @@ export function normalizeRecommendedAction(
 export type SocialListeningRunResultSummary = {
   totalChecked: number;
   qualified: number;
-  rejected: {
+  /** Every searched source failed this run (network/outage) — the empty result is not "no posts". */
+  sources_unavailable?: boolean;
+  /** Server-side diagnostics; no longer sent to the browser. */
+  rejected?: {
     icpMismatch: number;
     missingSourceUrl: number;
     missingSourceDate: number;
@@ -1393,7 +1467,21 @@ export type SocialListeningRunResultSummary = {
     typeMismatch?: number;
     belowMinScore?: number;
     duplicate?: number;
+    /** Read by the AI (or pre-filtered) and judged not to be a concrete opening. */
+    notActionable?: number;
     total: number;
+  };
+  /**
+   * Why posts were dropped, by reason key. Keys from the backend include:
+   * not_a_buyer, self_promotion, excluded_term, not_an_opportunity, over_enrich_cap,
+   * muted_author, muted_community.
+   */
+  rejectedDetail?: Record<string, number>;
+  /** What the scan learned from earlier dismissals and saves for this ICP. */
+  feedback?: {
+    mutedAuthors?: number;
+    mutedCommunities?: number;
+    labelAdjustments?: Record<string, number>;
   };
   enrichment?: {
     pending?: number;
@@ -1402,7 +1490,36 @@ export type SocialListeningRunResultSummary = {
   };
   unlabeled?: number;
   budget_exhausted?: boolean;
+  /** True when the AI model was not configured, so nothing could be qualified. */
+  model_unavailable?: boolean;
+  freshnessWindowRequested?: number;
+  freshnessWindowApplied?: number;
+  /** The listening plan the scan used (offer, synonyms, pain phrases, competitors, communities). */
+  listeningProfile?: SocialListeningProfileSummary;
+  /** The exact searches the scan ran, per source, with hit counts. */
+  queries?: Array<{ source: string; family: string; query: string; hits: number }>;
   sources?: SocialSourceHealthItem[];
+};
+
+export type SocialListeningProfileSummary = {
+  mode?: "sell" | "invest" | "partner" | string;
+  offer?: string;
+  competitors?: string[];
+  include_hiring?: boolean;
+  synonyms?: string[];
+  pain_phrases?: string[];
+  communities?: string[];
+  exclude_terms?: string[];
+  buyer?: string;
+  avoid?: string[];
+};
+
+/** Whether a source the user can choose is offered and working. No provider or key details. */
+export type SocialSourceAvailability = {
+  key: string;
+  offered: boolean;
+  available: boolean;
+  needs_pages?: boolean;
 };
 
 export type SocialSourceHealthItem = {
@@ -1431,7 +1548,7 @@ export type SocialListeningRunStatus = {
 export function isStructuredRunSummary(
   value: SocialListeningRunStatus["result_summary"]
 ): value is SocialListeningRunResultSummary {
-  return typeof value === "object" && value !== null && "rejected" in value;
+  return typeof value === "object" && value !== null && "totalChecked" in value;
 }
 
 export type SocialListeningMetrics = {
@@ -1445,11 +1562,11 @@ export type SocialListeningMetrics = {
   last_run_at?: string | null;
   cadence_days?: number | null;
   freshness_window_days?: number | null;
-  source_health?: SocialSourceHealthItem[];
+  source_availability?: SocialSourceAvailability[];
   latest_run?: SocialListeningRunStatus | null;
 };
 
-export type FreshnessWindowDays = 7 | 14 | 30 | 90 | 180;
+export type FreshnessWindowDays = 7 | 14 | 30;
 
 export type SocialListeningSettings = {
   enabled_sources: string[];
@@ -1465,7 +1582,7 @@ export type SocialListeningSettings = {
   org_verified_domain?: string | null;
   verification_status: "pending" | "verified" | "failed";
   last_run_at?: string | null;
-  source_health?: SocialSourceHealthItem[];
+  source_availability?: SocialSourceAvailability[];
 };
 
 export type OutreachSenderMode = "platform" | "organization";

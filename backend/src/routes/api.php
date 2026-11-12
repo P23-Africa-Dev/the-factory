@@ -40,8 +40,6 @@ use App\Http\Controllers\Api\V1\Crm\LeadFieldController;
 use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardOverviewController;
 use App\Http\Controllers\Api\V1\Drive\DriveController;
-use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAssertionController;
-use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAccessRequestController;
 use App\Http\Controllers\Api\V1\EmailAccountController;
 use App\Http\Controllers\Api\V1\EmailAccountOAuthController;
 use App\Http\Controllers\Api\V1\Enterprise\BookDemoController;
@@ -73,6 +71,8 @@ use App\Http\Controllers\Api\V1\Payroll\PayrollController;
 use App\Http\Controllers\Api\V1\Places\PlaceRecentsController;
 use App\Http\Controllers\Api\V1\Places\PlaceSearchController;
 use App\Http\Controllers\Api\V1\Project\ProjectController;
+use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAccessRequestController;
+use App\Http\Controllers\Api\V1\SalesEngine\SalesEngineAssertionController;
 use App\Http\Controllers\Api\V1\Task\AdminTaskStatusController;
 use App\Http\Controllers\Api\V1\Task\AgentTaskController;
 use App\Http\Controllers\Api\V1\Task\TaskAssignmentController;
@@ -80,6 +80,7 @@ use App\Http\Controllers\Api\V1\Task\TaskCommentController;
 use App\Http\Controllers\Api\V1\Task\TaskController;
 use App\Http\Controllers\Api\V1\Task\TaskProofController;
 use App\Http\Controllers\Api\V1\Task\TaskStatusController;
+use App\Http\Controllers\Api\V1\Task\TaskSubtaskController;
 use App\Http\Controllers\Api\V1\Task\TaskTrackingController;
 use App\Http\Controllers\Api\V1\Territory\TerritoryController;
 use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
@@ -462,6 +463,21 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('comments.store');
+                Route::post('/{task}/subtasks', [TaskSubtaskController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.store');
+                Route::patch('/{task}/subtasks/reorder', [TaskSubtaskController::class, 'reorder'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.reorder');
+                Route::patch('/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.update');
+                Route::patch('/{task}/subtasks/{subtask}/complete', [TaskSubtaskController::class, 'complete'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.complete');
+                Route::delete('/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.destroy');
                 Route::patch('/{task}/assign', [TaskAssignmentController::class, 'update'])->name('assign');
                 Route::patch('/{task}/status', [AdminTaskStatusController::class, 'update'])->name('status.update');
                 Route::get('/{task}/proofs/{proof}', [TaskProofController::class, 'show'])->name('proofs.show');
@@ -846,6 +862,21 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('comments.store');
+                Route::post('/{task}/subtasks', [TaskSubtaskController::class, 'store'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.store');
+                Route::patch('/{task}/subtasks/reorder', [TaskSubtaskController::class, 'reorder'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.reorder');
+                Route::patch('/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'update'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.update');
+                Route::patch('/{task}/subtasks/{subtask}/complete', [TaskSubtaskController::class, 'complete'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.complete');
+                Route::delete('/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('subtasks.destroy');
                 Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
                     ->middleware('throttle:api-heavy')
                     ->name('start');
@@ -1084,6 +1115,21 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/{task}/comments', [TaskCommentController::class, 'store'])
             ->middleware('throttle:api')
             ->name('comments.store');
+        Route::post('/{task}/subtasks', [TaskSubtaskController::class, 'store'])
+            ->middleware('throttle:api')
+            ->name('subtasks.store');
+        Route::patch('/{task}/subtasks/reorder', [TaskSubtaskController::class, 'reorder'])
+            ->middleware('throttle:api')
+            ->name('subtasks.reorder');
+        Route::patch('/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'update'])
+            ->middleware('throttle:api')
+            ->name('subtasks.update');
+        Route::patch('/{task}/subtasks/{subtask}/complete', [TaskSubtaskController::class, 'complete'])
+            ->middleware('throttle:api')
+            ->name('subtasks.complete');
+        Route::delete('/{task}/subtasks/{subtask}', [TaskSubtaskController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('subtasks.destroy');
         Route::post('/{task}/start', [TaskTrackingController::class, 'start'])
             ->middleware('throttle:api-heavy')
             ->name('start');

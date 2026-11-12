@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { useAuth, useLoginMutation, authApi, resolveManagerRole } from '@/features/auth';
 import type { AuthUser } from '@/features/auth';
 import { homeFor } from '@/session/appMode';
+import { syncSessionCookie } from '@/session/sessionCookie';
 import { toast } from '@/lib/toast';
 import { Input } from '@/components/ui/Input';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -134,6 +135,7 @@ export default function LoginPage() {
         };
 
         login(response.token, baseUser);
+        await syncSessionCookie(response.token);
 
         try {
           const profile = await authApi.getProfile(baseUser?.company_id);
@@ -149,6 +151,10 @@ export default function LoginPage() {
             avatar_url: profile.identity?.avatar_url ?? baseUser.avatar_url,
             access_role: profile.permissions?.access_role ?? baseUser.access_role,
             internal_role: profile.permissions?.internal_role ?? baseUser.internal_role,
+            app_mode: baseUser.app_mode,
+            manager_role: baseUser.manager_role,
+            user_type: baseUser.user_type,
+            companies: baseUser.companies,
           });
         } catch {
           // Profile fetch is best-effort; login still succeeds with token

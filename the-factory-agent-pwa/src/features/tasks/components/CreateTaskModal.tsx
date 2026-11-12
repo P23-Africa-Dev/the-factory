@@ -1,5 +1,7 @@
 'use client';
 
+import { ChecklistDraftFields, type ChecklistStep } from './ProjectChecklist';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -44,6 +46,8 @@ const PRIORITIES = [
 export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
   const { mutate: createSelfTask, isPending } = useCreateSelfTask();
   const { userRole } = useAgentIdentity();
+  const { user } = useAuth();
+  const [subtasks, setSubtasks] = useState<ChecklistStep[]>([]);
   const isOwnerOrSupervisor = userRole === 'owner' || userRole === 'supervisor';
 
   // Form states
@@ -156,6 +160,11 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       return;
     }
 
+    if (dueDate && subtasks.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(dueDate))) {
+      toast.error('The task deadline cannot be earlier than a subtask deadline.');
+      return;
+    }
+
     const payload = {
       title,
       type,
@@ -169,6 +178,15 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       required_actions: requiredActions.length > 0 ? requiredActions : undefined,
       minimum_photos_required: minPhotos || undefined,
       visit_verification_required: visitVerification,
+      ...(subtasks.length > 0
+        ? {
+            subtasks: subtasks.map((step) => ({
+              title: step.title,
+              assigned_user_id: step.assigneeId || undefined,
+              due_at: step.dueAt,
+            })),
+          }
+        : {}),
     };
 
     createSelfTask(payload, {
@@ -202,6 +220,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     setCoords(null);
     setPriority('medium');
     setRequiredActions([]);
+    setSubtasks([]);
     setVisitVerification(false);
     setMinPhotos(0);
   };
@@ -398,6 +417,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
               />
             </div>
           </div>
+
+          <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} dueDate={dueDate}
+            defaultAssignee={{ id: String(user?.id ?? ""), name: user?.name ?? "You" }} />
 
           {/* Required Actions Checklist */}
           <div className="flex flex-col border-t border-white/5 pt-3">

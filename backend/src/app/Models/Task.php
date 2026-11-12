@@ -114,6 +114,11 @@ class Task extends Model
         return $this->hasMany(TaskComment::class);
     }
 
+    public function subtasks(): HasMany
+    {
+        return $this->hasMany(TaskSubtask::class)->orderBy('position')->orderBy('id');
+    }
+
     public function trackingSession(): HasOne
     {
         // A task can have multiple tracking sessions over its lifetime; the

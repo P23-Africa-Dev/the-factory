@@ -92,8 +92,8 @@ export default function ProfilePage() {
 
   const displayName = identity?.name ?? user?.name ?? 'Manager';
   const displayEmail = identity?.email ?? user?.email ?? '';
-  const accessRole = perms?.access_role ?? user?.accessRole ?? roleLabel;
-  const internalRole = perms?.internal_role ?? user?.internalRole;
+  const accessRole = perms?.access_role ?? user?.access_role ?? roleLabel;
+  const internalRole = perms?.internal_role ?? user?.internal_role;
   const companyName = org?.company_name;
   const isActive = account?.status?.toLowerCase() === 'active';
   const isEmailVerified = account?.email_verified === true;
@@ -269,7 +269,7 @@ export default function ProfilePage() {
                     type="text"
                     value={countryInput}
                     onChange={(e) => setCountryInput(e.target.value)}
-                    placeholder="e.g. Kenya, Nigeria"
+                    placeholder="e.g. United Kingdom"
                     className="w-full h-11 px-3.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 text-sm focus:outline-none focus:border-[#75ADAF]"
                   />
                 </div>

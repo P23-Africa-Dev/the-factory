@@ -14,8 +14,11 @@ export const loginResponseSchema = z.object({
   data: z.object({
     token: z.string(),
     token_type: z.literal('Bearer'),
-    internal_role: z.string(),
+    app_mode: z.enum(['agent', 'manager']),
+    home_path: z.string(),
     access_role: z.string(),
+    internal_role: z.string().nullable().optional(),
+    user_type: z.string().nullable().optional(),
     user: z
       .object({
         id: z.number(),

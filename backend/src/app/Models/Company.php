@@ -131,6 +131,34 @@ class Company extends Model
             && in_array($publicId, config('demo.company_public_ids', []), true);
     }
 
+    /**
+     * Demo accounts and deliberately granted grace are unrestricted.
+     *
+     * The automatic post-expiry grace window (about billing.grace_period_days)
+     * stays on the plan's limits. Grace with no end date, or an end date beyond
+     * that short window, is treated as complimentary.
+     */
+    public function hasComplimentaryAccess(): bool
+    {
+        if ($this->isDemo()) {
+            return true;
+        }
+
+        if ($this->subscriptionStatusEnum() !== SubscriptionStatus::GRACE) {
+            return false;
+        }
+
+        $endsAt = $this->subscription_grace_ends_at;
+
+        if ($endsAt === null) {
+            return true;
+        }
+
+        $shortWindowDays = (int) config('billing.grace_period_days', 7) + 1;
+
+        return $endsAt->greaterThan(now()->addDays($shortWindowDays));
+    }
+
     public function canChoosePlan(): bool
     {
         return $this->assigned_plan_key === null || $this->assigned_plan_key === '';

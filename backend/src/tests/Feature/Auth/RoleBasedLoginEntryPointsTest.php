@@ -7,7 +7,6 @@ namespace Tests\Feature\Auth;
 use App\Models\Company;
 use App\Models\Lead;
 use App\Models\User;
-use App\Support\MobileAgentSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -187,24 +186,36 @@ class RoleBasedLoginEntryPointsTest extends TestCase
         $response->assertUnauthorized();
     }
 
-    public function test_supervisor_can_login_via_agent_endpoint_as_agent(): void
+    public function test_supervisor_cannot_login_via_agent_endpoint(): void
     {
-        $this->assertMobileAgentLogin('supervisor@example.com', 'supervisor');
+        $this->postJson('/api/v1/agent/login', [
+            'email' => 'supervisor@example.com',
+            'password' => 'password123',
+        ])->assertUnauthorized();
     }
 
-    public function test_self_serve_owner_can_login_via_agent_endpoint_as_agent(): void
+    public function test_self_serve_owner_cannot_login_via_agent_endpoint(): void
     {
-        $this->assertMobileAgentLogin('selfserve@example.com', null);
+        $this->postJson('/api/v1/agent/login', [
+            'email' => 'selfserve@example.com',
+            'password' => 'password123',
+        ])->assertUnauthorized();
     }
 
-    public function test_enterprise_owner_can_login_via_agent_endpoint_as_agent(): void
+    public function test_enterprise_owner_cannot_login_via_agent_endpoint(): void
     {
-        $this->assertMobileAgentLogin('enterprise@example.com', null);
+        $this->postJson('/api/v1/agent/login', [
+            'email' => 'enterprise@example.com',
+            'password' => 'password123',
+        ])->assertUnauthorized();
     }
 
-    public function test_admin_can_login_via_agent_endpoint_as_agent(): void
+    public function test_admin_cannot_login_via_agent_endpoint(): void
     {
-        $this->assertMobileAgentLogin('admin@example.com', 'admin');
+        $this->postJson('/api/v1/agent/login', [
+            'email' => 'admin@example.com',
+            'password' => 'password123',
+        ])->assertUnauthorized();
     }
 
     public function test_management_mobile_login_rejects_wrong_password(): void
@@ -395,56 +406,45 @@ class RoleBasedLoginEntryPointsTest extends TestCase
         ])->assertUnauthorized();
     }
 
-    public function test_mobile_agent_token_can_use_agent_routes_but_not_admin_routes(): void
+    public function test_management_account_cannot_obtain_an_agent_token(): void
     {
-        $login = $this->postJson('/api/v1/agent/login', [
+        $this->postJson('/api/v1/agent/login', [
             'email' => 'supervisor@example.com',
             'password' => 'password123',
-        ]);
-
-        $login->assertOk();
-        $token = (string) $login->json('data.token');
-
-        $this->withToken($token)
-            ->getJson('/api/v1/agent/tasks')
-            ->assertOk();
-
-        $this->withToken($token)
-            ->getJson('/api/v1/admin/tasks')
-            ->assertForbidden();
+        ])->assertUnauthorized();
     }
 
-    public function test_mobile_agent_session_only_sees_own_or_assigned_leads(): void
+    public function test_agent_session_only_sees_own_or_assigned_leads(): void
     {
         $owner = User::where('email', 'selfserve@example.com')->firstOrFail();
         $agent = User::where('email', 'agent@example.com')->firstOrFail();
         $companyId = (int) DB::table('company_users')->where('user_id', $owner->id)->value('company_id');
 
-        $own = Lead::query()->create([
+        $agentOwn = Lead::query()->create([
             'company_id' => $companyId,
-            'created_by_user_id' => $owner->id,
-            'name' => 'Owner Lead',
+            'created_by_user_id' => $agent->id,
+            'name' => 'Agent Lead',
             'status' => 'new',
             'priority' => 'medium',
         ]);
-        $assigned = Lead::query()->create([
+        $agentAssigned = Lead::query()->create([
             'company_id' => $companyId,
-            'created_by_user_id' => $agent->id,
-            'assigned_to_user_id' => $owner->id,
+            'created_by_user_id' => $owner->id,
+            'assigned_to_user_id' => $agent->id,
             'name' => 'Assigned Lead',
             'status' => 'new',
             'priority' => 'medium',
         ]);
-        $other = Lead::query()->create([
+        $someoneElse = Lead::query()->create([
             'company_id' => $companyId,
-            'created_by_user_id' => $agent->id,
-            'name' => 'Someone Else Lead',
+            'created_by_user_id' => $owner->id,
+            'name' => 'Owner Only Lead',
             'status' => 'new',
             'priority' => 'medium',
         ]);
 
         $login = $this->postJson('/api/v1/agent/login', [
-            'email' => 'selfserve@example.com',
+            'email' => 'agent@example.com',
             'password' => 'password123',
         ]);
         $login->assertOk()->assertJsonPath('data.access_role', 'agent');
@@ -453,10 +453,10 @@ class RoleBasedLoginEntryPointsTest extends TestCase
             ->getJson('/api/v1/agent/crm/leads');
         $mobile->assertOk();
 
-        $mobileIds = collect($mobile->json('data.items'))->pluck('id')->map(static fn(mixed $id): int => (int) $id)->all();
-        $this->assertContains($own->id, $mobileIds);
-        $this->assertContains($assigned->id, $mobileIds);
-        $this->assertNotContains($other->id, $mobileIds);
+        $mobileIds = collect($mobile->json('data.items'))->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
+        $this->assertContains($agentOwn->id, $mobileIds);
+        $this->assertContains($agentAssigned->id, $mobileIds);
+        $this->assertNotContains($someoneElse->id, $mobileIds);
 
         $this->app['auth']->forgetGuards();
 
@@ -464,30 +464,9 @@ class RoleBasedLoginEntryPointsTest extends TestCase
             ->getJson('/api/v1/admin/crm/leads');
         $web->assertOk();
 
-        $webIds = collect($web->json('data.items'))->pluck('id')->map(static fn(mixed $id): int => (int) $id)->all();
-        $this->assertContains($own->id, $webIds);
-        $this->assertContains($assigned->id, $webIds);
-        $this->assertContains($other->id, $webIds);
-    }
-
-    private function assertMobileAgentLogin(string $email, ?string $internalRole): void
-    {
-        $response = $this->postJson('/api/v1/agent/login', [
-            'email' => $email,
-            'password' => 'password123',
-        ]);
-
-        $response->assertOk()
-            ->assertJsonPath('data.dashboard_path', '/agent/dashboard')
-            ->assertJsonPath('data.access_role', 'agent')
-            ->assertJsonPath('data.internal_role', $internalRole);
-
-        $user = User::where('email', $email)->firstOrFail();
-        $this->assertSame([MobileAgentSession::ABILITY], $user->tokens()->first()?->abilities);
-
-        $this->postJson('/api/v1/auth/login', [
-            'email' => $email,
-            'password' => 'password123',
-        ])->assertOk();
+        $webIds = collect($web->json('data.items'))->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
+        $this->assertContains($agentOwn->id, $webIds);
+        $this->assertContains($agentAssigned->id, $webIds);
+        $this->assertContains($someoneElse->id, $webIds);
     }
 }

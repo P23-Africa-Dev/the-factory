@@ -51,7 +51,7 @@ function AgentShell({ children }: { children: React.ReactNode }) {
   usePushSubscription(user?.id);
   useDeviceNotificationBridge();
   useTrackingWebSocket();
-  const { isRestoring } = useRouteRestoration('agent');
+  const { isRestoring } = useRouteRestoration();
 
   useEffect(() => {
     const SYNC_DEBOUNCE_MS = 8_000;

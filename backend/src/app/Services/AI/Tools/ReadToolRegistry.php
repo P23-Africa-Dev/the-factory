@@ -27,6 +27,7 @@ use App\Services\Dashboard\DashboardAggregateService;
 use App\Services\Drive\CompanyDriveService;
 use App\Support\UserDisplayNameResolver;
 use App\Services\Tracking\AgentLocationSnapshotService;
+use App\Services\Workforce\OrganizationAgentRoster;
 use App\Services\FieldActivity\FieldActivityElyService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,6 +54,7 @@ class ReadToolRegistry
         private readonly DriveFileContentReader $driveFileContentReader,
         private readonly TaskInferenceService $taskInferenceService,
         private readonly FieldActivityElyService $fieldActivityElyService,
+        private readonly OrganizationAgentRoster $organizationAgentRoster,
     ) {}
 
     public function execute(string $tool, User $user, int $companyId, array $args = []): array
@@ -65,6 +67,7 @@ class ReadToolRegistry
             'attendance.today_summary' => $this->attendanceSummary($user, $companyId, $args),
             'meetings.today' => $this->meetingsToday($user, $companyId, $args),
             'tracking.active_agents' => $this->activeAgents($user, $companyId, $args),
+            'org.active_agents' => $this->organizationActiveAgents($user, $companyId, $args),
             'dashboard.overview' => $this->dashboardOverview($user, $companyId),
             'planning.daily' => $this->dailyPlanningService->buildPlan($user, $companyId, $args),
             'crm.follow_up_summary' => $this->crmIntelligenceService->followUpSummary($user, $companyId, $args),
@@ -1142,7 +1145,7 @@ class ReadToolRegistry
 
         $truncated = ($payload['truncated'] ?? false) === true;
         $header = $this->readListPresenter->formatListHeader(
-            resourceLabel: 'active agent(s)',
+            resourceLabel: 'online agent(s)',
             shownCount: count($items),
             scopeTotal: (int) ($payload['total'] ?? count($items)),
             filterLabel: null,
@@ -1151,18 +1154,91 @@ class ReadToolRegistry
         );
 
         $summary = (int) ($payload['total'] ?? 0) <= 0
-            ? 'No active agents are currently online in the selected scope.'
-            : rtrim($header, ':') . ($countOnly ? '.' : ': Live active agent locations are available now.');
+            ? 'No agents are online right now. Online means a live tracking session. Agents who belong to this organization and are not suspended or deactivated are still active and can be assigned tasks while they are offline.'
+            : rtrim($header, ':') . ($countOnly ? '.' : ': These agents are online with a live tracking session.');
 
         if ($truncated && ! $countOnly) {
             $summary .= "\nWould you like me to list all of them?";
         }
+
+        $payload['availability'] = 'online';
+        $payload['availability_definition'] = 'Online means a live tracking session. This is not the list of active agents in the organization.';
 
         return [
             'tool' => 'tracking.active_agents',
             'summary' => $summary,
             'payload' => array_merge($active, $payload),
             'sources' => ['tracking.active_agents'],
+        ];
+    }
+
+    private function organizationActiveAgents(User $user, int $companyId, array $args): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $limit = max(1, min($this->readListPresenter->maxExpandedLimit('org.users'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
+        $countOnly = ($args['count_only'] ?? false) === true;
+        $supervisorId = (string) ($context['role'] ?? '') === 'supervisor' ? (int) $user->id : null;
+
+        $query = $this->organizationAgentRoster->activeAgentsQuery($resolvedCompanyId, $supervisorId);
+        $total = (int) (clone $query)->count();
+        $agents = $query->orderBy('users.name')->limit($limit)->get();
+
+        $items = $agents
+            ->map(static fn (User $agent): array => [
+                'id' => (int) $agent->id,
+                'name' => (string) $agent->name,
+                'email' => (string) ($agent->email ?? ''),
+                'role' => is_string($agent->company_role ?? null) ? (string) $agent->company_role : 'agent',
+                'availability' => 'active',
+                'online' => false,
+            ])
+            ->values()
+            ->all();
+
+        $payload = $this->readListPresenter->enrichPayload($items, $total);
+        if ($countOnly) {
+            $payload['count_only'] = true;
+        }
+        $payload['availability'] = 'active';
+        $payload['availability_definition'] = 'Active means the person belongs to this organization and is not suspended or deactivated. They do not need a live tracking session.';
+
+        $truncated = ($payload['truncated'] ?? false) === true;
+        $header = $this->readListPresenter->formatListHeader(
+            resourceLabel: 'active agent(s)',
+            shownCount: count($items),
+            scopeTotal: $total,
+            filterLabel: null,
+            truncated: $truncated,
+            remainingCount: (int) ($payload['remaining_count'] ?? 0),
+        );
+
+        if ($total <= 0) {
+            $summary = 'No active agents are in this organization. Active means the account exists here and is not suspended or deactivated. It does not mean the agent is online.';
+        } else {
+            $lines = collect($items)
+                ->values()
+                ->map(static fn (array $agent, int $index): string => sprintf(
+                    '%d. %s%s',
+                    $index + 1,
+                    (string) ($agent['name'] ?? 'Agent'),
+                    is_string($agent['email'] ?? null) && $agent['email'] !== '' ? ' ('.$agent['email'].')' : '',
+                ))
+                ->all();
+            $summary = rtrim($header, ':').'. These agents can be assigned tasks even when they are offline.';
+            if (! $countOnly && $lines !== []) {
+                $summary .= "\n".implode("\n", $lines);
+            }
+            if ($truncated && ! $countOnly) {
+                $summary .= "\nWould you like me to list all of them?";
+            }
+        }
+
+        return [
+            'tool' => 'org.active_agents',
+            'summary' => $summary,
+            'payload' => $payload,
+            'sources' => ['org.active_agents'],
         ];
     }
 

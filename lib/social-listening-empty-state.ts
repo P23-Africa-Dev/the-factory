@@ -1,4 +1,7 @@
-import type { SocialListeningRunResultSummary, SocialListeningRunStatus } from "@/lib/api/sales-engine";
+import {
+  isStructuredRunSummary,
+  type SocialListeningRunStatus,
+} from "@/lib/api/sales-engine";
 import { SOCIAL_LISTENING_TIPS } from "@/lib/social-listening-processing-labels";
 
 export type SocialListeningEmptyVariant =
@@ -20,12 +23,6 @@ export type SocialListeningEmptyStateOptions = {
   signalTypeLabel?: string | null;
   freshnessWindowDays?: number | null;
 };
-
-function isStructuredSummary(
-  value: SocialListeningRunStatus["result_summary"]
-): value is SocialListeningRunResultSummary {
-  return typeof value === "object" && value !== null && "rejected" in value;
-}
 
 export function recencyWindowPhrase(days?: number | null): string {
   if (!days || days <= 0) return "the selected window";
@@ -52,7 +49,8 @@ export function getSocialListeningEmptyState(
     return {
       variant: "scan_failed",
       title: "Scan couldn't complete",
-      description: latestRun.error ?? "The last scan failed. Try Scan now to retry.",
+      // Never echo the backend error text: it can carry provider or system details.
+      description: "We couldn't finish this scan. Try Scan now again in a few minutes.",
       tip: SOCIAL_LISTENING_TIPS[4],
       showActions: true,
     };
@@ -90,27 +88,36 @@ export function getSocialListeningEmptyState(
   }
 
   if (latestRun?.status === "completed" && (latestRun.signals_created ?? 0) === 0) {
-    const summary = isStructuredSummary(latestRun.result_summary)
+    const summary = isStructuredRunSummary(latestRun.result_summary)
       ? latestRun.result_summary
       : null;
     const checked = summary?.totalChecked ?? 0;
-    const rejected = summary?.rejected;
-    const parts: string[] = [];
-    if (rejected?.icpMismatch) parts.push(`${rejected.icpMismatch} outside the ICP`);
-    if (rejected?.stale) parts.push(`${rejected.stale} too old`);
-    if (rejected?.belowMinScore) parts.push(`${rejected.belowMinScore} below the score bar`);
-    if (rejected?.missingSourceUrl) parts.push(`${rejected.missingSourceUrl} without a source link`);
-    if (summary?.budget_exhausted) parts.push("the daily search budget was used up");
 
-    const detail =
-      checked === 0
-        ? "The scan searched your active ICP and the live sources returned no recent posts."
-        : `The scan checked ${checked} recent posts for this ICP and kept 0.${parts.length ? ` Dropped: ${parts.join(", ")}.` : ""}`;
+    let description: string;
+    if (summary?.sources_unavailable) {
+      return {
+        variant: "scan_failed",
+        title: "We couldn't reach the social networks this time",
+        description: "This scan couldn't search its sources, so it tells us nothing about new posts. Try Scan now again in a few minutes.",
+        tip,
+        showActions: true,
+      };
+    }
+    if (summary?.model_unavailable) {
+      description = "We couldn't review new posts just now. Try Scan now again shortly.";
+    } else if (summary?.budget_exhausted) {
+      description = "You've reached today's scan limit. We'll pick up where we left off on the next scan.";
+    } else if (!summary || checked > 0) {
+      description =
+        "We reviewed the latest conversations for what you're looking for and nothing was a strong enough opening to show you. We'll keep listening.";
+    } else {
+      description = "No recent conversations matched what you're looking for yet. We'll keep listening.";
+    }
 
     return {
       variant: "no_match_after_scan",
-      title: checked === 0 ? "No recent posts found" : "No opportunities kept",
-      description: detail,
+      title: summary && checked === 0 ? "Quiet for now" : "Nothing new worth your time yet",
+      description,
       tip,
       showActions: true,
     };

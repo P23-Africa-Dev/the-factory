@@ -7,7 +7,6 @@ namespace App\Services\Agent;
 use App\Exceptions\AccountAccessDeniedException;
 use App\Models\User;
 use App\Services\Security\SecurityAuditLogger;
-use App\Support\MobileAgentSession;
 use App\Support\UserAccountStatus;
 
 class AgentAuthService
@@ -42,20 +41,9 @@ class AgentAuthService
         }
 
         $isRealAgent = $user->internal_role === 'agent' && $user->onboarding_status === 'active';
-        $isMobileManagement = $this->isEligibleMobileManagement($user);
 
-        if (! $isRealAgent && ! $isMobileManagement) {
+        if (! $isRealAgent || ! $this->hasAgentCompany($user)) {
             $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_AGENT_API, $user, $email, 'role_not_permitted');
-
-            return null;
-        }
-
-        $hasCompanyContext = $isRealAgent
-            ? $this->hasAgentCompany($user)
-            : $this->hasManagementCompany($user);
-
-        if (! $hasCompanyContext) {
-            $this->securityAudit->loginFailed(SecurityAuditLogger::CHANNEL_AGENT_API, $user, $email, 'no_company');
 
             return null;
         }
@@ -68,7 +56,7 @@ class AgentAuthService
 
         $token = $user->createToken(
             name: 'agent_auth_token',
-            abilities: $isRealAgent ? ['*'] : [MobileAgentSession::ABILITY],
+            abilities: ['*'],
             expiresAt: now()->addDays(30),
         );
 
@@ -82,38 +70,11 @@ class AgentAuthService
         ];
     }
 
-    /**
-     * Same people the web admin login already accepts. On the phone they
-     * receive an agent session, not a management session.
-     */
-    private function isEligibleMobileManagement(User $user): bool
-    {
-        $isSupervisor = $user->internal_role === 'supervisor' && $user->onboarding_status === 'active';
-        $isInternalAdmin = $user->internal_role === 'admin' && $user->onboarding_status === 'active';
-        $hasSelfServeOnboarding = ! $user->internal_role && $user->hasCompletedOnboarding();
-        $hasEnterpriseOnboarding = ! $user->internal_role && $user->hasCompletedEnterpriseOnboarding();
-
-        return $isSupervisor || $isInternalAdmin || $hasSelfServeOnboarding || $hasEnterpriseOnboarding;
-    }
-
     private function hasAgentCompany(User $user): bool
     {
         return $user->companies()
             ->where('companies.status', 'active')
             ->wherePivot('role', 'agent')
-            ->exists();
-    }
-
-    private function hasManagementCompany(User $user): bool
-    {
-        $isInternalManager = $user->internal_role === 'supervisor' || $user->internal_role === 'admin';
-        $allowedRoles = $isInternalManager
-            ? ['owner', 'admin', 'supervisor']
-            : ['owner', 'admin'];
-
-        return $user->companies()
-            ->where('companies.status', 'active')
-            ->wherePivotIn('role', $allowedRoles)
             ->exists();
     }
 }

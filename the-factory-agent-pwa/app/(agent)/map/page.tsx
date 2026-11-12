@@ -969,11 +969,9 @@ function MapContent() {
     }
   }, [liveTask?.status, liveTask?.arrivedAt]);
 
-  useEffect(() => {
-    if (phase !== 'activity_started') return;
-    if (distanceRemainingM == null) return;
-    setInitialDistanceRemainingM((prev) => prev ?? distanceRemainingM);
-  }, [phase, distanceRemainingM]);
+  if (phase === 'activity_started' && distanceRemainingM != null && initialDistanceRemainingM == null) {
+    setInitialDistanceRemainingM(distanceRemainingM);
+  }
 
   useEffect(() => {
     if (!isFromTrackingScreen || !trackingTaskId) return;
@@ -1842,8 +1840,11 @@ function MapContent() {
     if (phase !== 'activity_started') return;
     if (!trackingTask) return;
     if (!resolveCompletionRequirements(trackingTask).hasConfiguredRequirements) return;
-    autoOpenedCompleteRef.current = true;
-    setPhase('activity_ended');
+    const open = setTimeout(() => {
+      autoOpenedCompleteRef.current = true;
+      setPhase('activity_ended');
+    }, 0);
+    return () => clearTimeout(open);
   }, [hasArrived, phase, trackingTask]);
 
   const handleEndActivity = useCallback((): void => {

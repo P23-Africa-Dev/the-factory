@@ -318,6 +318,14 @@ export const taskApi = {
         requiredActions: [],
         minimumPhotosRequired: 0,
         visitVerificationRequired: false,
+        checklistSteps: (payload.subtasks ?? []).map((step, index) => ({
+          id: `temp-step-${index}`,
+          title: step.title,
+          assigneeId: step.assigned_user_id != null ? String(step.assigned_user_id) : '',
+          assigneeName: 'You',
+          dueAt: step.due_at ?? null,
+          done: false,
+        })),
       };
       if (companyId) {
         await putCachedTaskDetail(companyId, mockTask);
@@ -337,5 +345,56 @@ export const taskApi = {
       await putCachedTaskDetail(resolvedCompanyId, task).catch(() => {});
     }
     return task;
+  },
+
+  createSubtask: async (
+    taskId: string,
+    payload: { title: string; assigned_user_id?: number | string; due_at?: string | null },
+  ) => {
+    const companyId = getActiveCompanyId();
+    const response = await client.post(`/tasks/${taskId}/subtasks`, {
+      ...payload,
+      company_id: companyId ?? undefined,
+    });
+    return response.data?.data ?? response.data;
+  },
+
+  updateSubtask: async (
+    taskId: string,
+    subtaskId: string,
+    payload: { title?: string; assigned_user_id?: number | string | null; due_at?: string | null },
+  ) => {
+    const companyId = getActiveCompanyId();
+    const response = await client.patch(`/tasks/${taskId}/subtasks/${subtaskId}`, {
+      ...payload,
+      company_id: companyId ?? undefined,
+    });
+    return response.data?.data ?? response.data;
+  },
+
+  completeSubtask: async (taskId: string, subtaskId: string, isCompleted: boolean) => {
+    const companyId = getActiveCompanyId();
+    const response = await client.patch(`/tasks/${taskId}/subtasks/${subtaskId}/complete`, {
+      company_id: companyId ?? undefined,
+      is_completed: isCompleted,
+    });
+    return response.data?.data ?? response.data;
+  },
+
+  reorderSubtasks: async (taskId: string, subtaskIds: string[]) => {
+    const companyId = getActiveCompanyId();
+    const response = await client.patch(`/tasks/${taskId}/subtasks/reorder`, {
+      company_id: companyId ?? undefined,
+      subtask_ids: subtaskIds,
+    });
+    return response.data?.data ?? response.data;
+  },
+
+  deleteSubtask: async (taskId: string, subtaskId: string) => {
+    const companyId = getActiveCompanyId();
+    const response = await client.delete(`/tasks/${taskId}/subtasks/${subtaskId}`, {
+      params: { company_id: companyId ?? undefined },
+    });
+    return response.data?.data ?? response.data;
   },
 };

@@ -5,12 +5,18 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 
 import { AuthProvider } from '@/features/auth';
+import { useSessionRevalidation } from '@/session/useSessionRevalidation';
 import { queryClient } from '@/lib/queryClient';
 import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
 import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
 import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
 import '@/lib/pwa/installPromptStore';
 import './globals.css';
+
+function SessionRevalidator(): null {
+  useSessionRevalidation();
+  return null;
+}
 
 export default function RootLayout({
   children,
@@ -64,6 +70,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
+          <SessionRevalidator />
           <QueryClientProvider client={queryClient}>
             <PwaAccessGuard>
               <main className="flex flex-col flex-1 min-h-screen">

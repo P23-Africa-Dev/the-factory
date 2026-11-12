@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectChecklist, TaskOverview, useChecklistTasks } from '@/features/tasks/components/ProjectChecklist';
 import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -111,11 +112,6 @@ function formatRelativeTime(dateStr: string | null | undefined): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function isOverdue(dueDate: string | null | undefined): boolean {
-  if (!dueDate) return false;
-  return new Date(dueDate) < new Date();
-}
-
 function TaskCard({
   task,
   onPrimaryAction,
@@ -134,11 +130,9 @@ function TaskCard({
   const statusColor = STATUS_COLOR[task.status] ?? '#8F9098';
   const isPending = task.status === 'pending';
   const isActive = task.status === 'in_progress' || task.status === 'paused' || task.status === 'resumed';
-  const overdue = isOverdue(task.dueDate);
   const locationLabel = task.location ?? task.address;
 
-  const primaryLabel =
-    task.status === 'pending' ? 'Start' : isActive ? 'Continue' : 'View';
+  const primaryLabel = isPending ? 'Start' : isActive ? 'Continue' : 'View';
 
   return (
     <div
@@ -201,13 +195,9 @@ function TaskCard({
 
         <div className="flex items-center justify-between mt-1 text-[10px] font-sans">
           <span className="text-[#494A50]">{formatRelativeTime(task.assignedAt)}</span>
-          {task.dueDate && (
-            <span className={`font-medium ${overdue ? 'text-[#FD6046]' : 'text-[#F5A623]'}`}>
-              Due {new Date(task.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-            </span>
-          )}
         </div>
 
+        <ProjectChecklist task={task} compact />
         <div className="flex gap-2.5 mt-3">
           <button
             onClick={onPrimaryAction}
@@ -349,11 +339,6 @@ export default function TasksPage() {
   const [activeKpiFilter, setActiveKpiFilter] = useState<KpiStatus | 'all'>('all');
 
   // Tasks Queries
-  const listFilters = useMemo(
-    () => (activeFilter === 'all' ? undefined : { status: activeFilter }),
-    [activeFilter],
-  );
-
   const {
     data: listData,
     isLoading: isLoadingTasks,
@@ -363,9 +348,9 @@ export default function TasksPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useTaskList(listFilters);
+  } = useTaskList();
 
-  const tasks = useMemo(() => flattenTaskPages(listData), [listData]);
+  const { items: allTasks, visible: tasks } = useChecklistTasks(flattenTaskPages(listData), activeFilter);
   const { mutate: updateStatus, isPending: isDeclining } = useUpdateTaskStatus();
   const { mutate: updateTask, isPending: isSavingTask } = useUpdateTask();
   const { mutate: deleteTask, isPending: isDeletingTask } = useDeleteTask();
@@ -516,6 +501,7 @@ export default function TasksPage() {
           </div>
 
           <div className="flex-1 px-5 pb-6 overflow-y-auto">
+            <TaskOverview tasks={allTasks} />
             {isLoadingTasks ? (
               <div className="flex flex-col items-center justify-center py-16">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#75ADAF] border-t-transparent" />
@@ -582,17 +568,17 @@ export default function TasksPage() {
                   />
                 ))}
 
-                {hasNextPage && (
-                  <div className="py-4 text-center">
-                    <button
-                      onClick={() => fetchNextPage()}
-                      disabled={isFetchingNextPage}
-                      className="w-full h-10 rounded-xl border border-white/12 text-[#75ADAF] font-semibold text-xs transition-colors hover:bg-[#75ADAF]/10 disabled:opacity-50 active:scale-[0.98]"
-                    >
-                      {isFetchingNextPage ? 'Loading more...' : 'Load more tasks'}
-                    </button>
-                  </div>
-                )}
+              </div>
+            )}
+            {hasNextPage && (
+              <div className="py-4 text-center">
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="w-full h-10 rounded-xl border border-white/12 text-[#75ADAF] font-semibold text-xs transition-colors hover:bg-[#75ADAF]/10 disabled:opacity-50 active:scale-[0.98]"
+                >
+                  {isFetchingNextPage ? 'Loading more...' : 'Load more tasks'}
+                </button>
               </div>
             )}
           </div>

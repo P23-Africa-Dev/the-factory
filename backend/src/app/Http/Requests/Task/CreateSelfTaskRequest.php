@@ -47,6 +47,10 @@ class CreateSelfTaskRequest extends FormRequest
             'priority' => ['nullable', 'string', Rule::in(TaskPriority::values())],
             'minimum_photos_required' => ['nullable', 'integer', 'min:0', 'max:20'],
             'visit_verification_required' => ['nullable', 'boolean'],
+            'subtasks' => ['nullable', 'array', 'max:50'],
+            'subtasks.*.title' => ['required', 'string', 'min:1', 'max:255'],
+            'subtasks.*.assigned_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'subtasks.*.due_at' => ['nullable', 'date'],
         ];
     }
 
@@ -76,6 +80,21 @@ class CreateSelfTaskRequest extends FormRequest
                     'visit_verification_required',
                     'Visit verification requires a task destination location.',
                 );
+            }
+
+            $taskDue = $this->input('due_date');
+            $subtasks = $this->input('subtasks');
+            if (is_array($subtasks) && $taskDue) {
+                $taskDueAt = strtotime((string) $taskDue);
+                foreach ($subtasks as $index => $subtask) {
+                    $dueAt = is_array($subtask) ? ($subtask['due_at'] ?? null) : null;
+                    if ($dueAt && $taskDueAt !== false && strtotime((string) $dueAt) > $taskDueAt) {
+                        $validator->errors()->add(
+                            "subtasks.{$index}.due_at",
+                            'The task due date cannot be earlier than a subtask due date.',
+                        );
+                    }
+                }
             }
         });
     }

@@ -32,7 +32,7 @@ class UserAdminService
 
         $query->whereNull('internal_role')
             ->with([
-                'companies'      => fn ($q) => $q->select('companies.id', 'companies.name', 'companies.company_id'),
+                'companies' => fn ($q) => $q->select('companies.id', 'companies.name', 'companies.company_id'),
                 'ownedWorkspaces' => fn ($q) => $q->select('id', 'name', 'owner_id'),
             ]);
 
@@ -70,7 +70,7 @@ class UserAdminService
         $query->whereNotNull('internal_role')
             ->with([
                 'supervisor' => fn ($q) => $q->select('id', 'name', 'email'),
-                'companies'  => fn ($q) => $q->select('companies.id', 'companies.name', 'companies.company_id'),
+                'companies' => fn ($q) => $q->select('companies.id', 'companies.name', 'companies.company_id'),
             ]);
 
         $role = strtolower(trim((string) ($filters['role'] ?? '')));
@@ -99,6 +99,7 @@ class UserAdminService
 
         return $query->latest()->paginate(config('admin.users_per_page'))->withQueryString();
     }
+
     private function normalizeStatus(string $status): string
     {
         $s = strtolower(trim($status));
@@ -130,7 +131,7 @@ class UserAdminService
     public function setActiveStatus(User $user, bool $isActive): User
     {
         $user->update([
-            'is_active'      => $isActive,
+            'is_active' => $isActive,
             'deactivated_at' => $isActive ? null : now(),
         ]);
 
@@ -144,7 +145,7 @@ class UserAdminService
     {
         $user->update([
             'suspended_until' => $until,
-            'is_active'       => true,
+            'is_active' => true,
         ]);
 
         $fresh = $user->fresh();
@@ -168,8 +169,8 @@ class UserAdminService
     public function reactivate(User $user): User
     {
         $user->update([
-            'is_active'       => true,
-            'deactivated_at'  => null,
+            'is_active' => true,
+            'deactivated_at' => null,
             'suspended_until' => null,
         ]);
 
@@ -182,6 +183,7 @@ class UserAdminService
     public function delete(User $user): void
     {
         $this->logUser('users.deleted', $user);
+        $user->companies()->detach();
         $user->delete();
     }
 
@@ -231,4 +233,3 @@ class UserAdminService
         );
     }
 }
-

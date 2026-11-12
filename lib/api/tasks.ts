@@ -18,6 +18,33 @@ export type TaskAssignee = {
   role: TaskAssigneeRole;
 };
 
+export type TaskSubtaskAssignee = {
+  id: number;
+  name: string;
+  email?: string;
+  avatar_url?: string | null;
+};
+
+export type TaskSubtaskApiItem = {
+  id: number;
+  task_id: number;
+  title: string;
+  position: number;
+  due_at: string | null;
+  is_completed: boolean;
+  completed_at: string | null;
+  assignee: TaskSubtaskAssignee | null;
+  completed_by?: TaskSubtaskAssignee | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type TaskSubtaskInput = {
+  title: string;
+  assigned_user_id?: number | string;
+  due_at?: string | null;
+};
+
 export type TaskApiItem = {
   id: number;
   company_id: number | string;
@@ -46,6 +73,9 @@ export type TaskApiItem = {
   visit_verification_required?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+  comments_count?: number;
+  subtasks_summary?: { total: number; completed: number };
+  subtasks?: TaskSubtaskApiItem[];
   project?: {
     id: number;
     name: string;
@@ -176,10 +206,19 @@ export type CreateTaskPayload = {
   priority?: ApiTaskPriority;
   minimum_photos_required?: number;
   visit_verification_required?: boolean;
+  subtasks?: TaskSubtaskInput[];
 };
 
 export type TaskDetailData = {
   task: TaskApiItem;
+};
+
+export type TaskSubtaskMutationData = {
+  task: TaskApiItem;
+  subtask?: TaskSubtaskApiItem;
+  deleted_subtask_id?: number;
+  status_changed?: boolean;
+  completion_blocked_reason?: string | null;
 };
 
 export type AssignTaskPayload = {
@@ -551,6 +590,87 @@ export async function downloadTaskProof(
   }
 
   return response.blob();
+}
+
+export function createTaskSubtask(
+  taskId: number | string,
+  payload: {
+    company_id?: number | string;
+    title: string;
+    assigned_user_id?: number | string;
+    due_at?: string | null;
+  },
+  token: string,
+): Promise<ApiEnvelope<TaskSubtaskMutationData>> {
+  return apiRequest<TaskSubtaskMutationData>({
+    method: "POST",
+    path: `/tasks/${taskId}/subtasks`,
+    body: payload,
+    token,
+  });
+}
+
+export function updateTaskSubtask(
+  taskId: number | string,
+  subtaskId: number | string,
+  payload: {
+    company_id?: number | string;
+    title?: string;
+    assigned_user_id?: number | string | null;
+    due_at?: string | null;
+  },
+  token: string,
+): Promise<ApiEnvelope<TaskSubtaskMutationData>> {
+  return apiRequest<TaskSubtaskMutationData>({
+    method: "PATCH",
+    path: `/tasks/${taskId}/subtasks/${subtaskId}`,
+    body: payload,
+    token,
+  });
+}
+
+export function completeTaskSubtask(
+  taskId: number | string,
+  subtaskId: number | string,
+  payload: { company_id?: number | string; is_completed: boolean },
+  token: string,
+): Promise<ApiEnvelope<TaskSubtaskMutationData>> {
+  return apiRequest<TaskSubtaskMutationData>({
+    method: "PATCH",
+    path: `/tasks/${taskId}/subtasks/${subtaskId}/complete`,
+    body: payload,
+    token,
+  });
+}
+
+export function reorderTaskSubtasks(
+  taskId: number | string,
+  payload: { company_id?: number | string; subtask_ids: Array<number | string> },
+  token: string,
+): Promise<ApiEnvelope<TaskSubtaskMutationData>> {
+  return apiRequest<TaskSubtaskMutationData>({
+    method: "PATCH",
+    path: `/tasks/${taskId}/subtasks/reorder`,
+    body: payload,
+    token,
+  });
+}
+
+export function deleteTaskSubtask(
+  taskId: number | string,
+  subtaskId: number | string,
+  params: { company_id?: number | string },
+  token: string,
+): Promise<ApiEnvelope<TaskSubtaskMutationData>> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  return apiRequest<TaskSubtaskMutationData>({
+    method: "DELETE",
+    path: `/tasks/${taskId}/subtasks/${subtaskId}${query}`,
+    token,
+  });
 }
 
 /** Trigger a browser download from an authenticated proof blob. */

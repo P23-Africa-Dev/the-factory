@@ -44,8 +44,6 @@ import {
   composeSearchGeoCaption,
   entityModeLabel,
   isInsufficientIcpSearchBrief,
-  withEntityModeCue,
-  withProspectCountCue,
   type GenerateEntityMode,
   type GenerateProspectCount,
 } from "@/lib/sales-engine/icp-search-brief";
@@ -57,6 +55,7 @@ import {
   isForegroundChatWaiting,
   isMissingActiveIcp,
   mapApiMessagesToUi,
+  mergeServerHistoryWithLocal,
   SALES_ENGINE_CHAT_KEYS,
   useChatHistory,
   useClearChatHistory,
@@ -90,9 +89,14 @@ import { leadScoreBreakdown } from "@/lib/icp-advisory-leads";
 import {
   formatLeadContactLine,
   formatLeadRoleLine,
+  isLeadContactPending,
+  isLeadPartialMatch,
+  leadContactSourceChip,
   leadEntityBadge,
+  leadFitTooltip,
   primaryProfileUrl,
   primaryWebsiteUrl,
+  type ContactSourceChip,
 } from "@/lib/enriched-lead-card";
 import {
   cancelDiscoveryRun,
@@ -176,6 +180,8 @@ type ChatMessage = {
   /** True when the outbound send for this user prompt failed and can be retried. */
   failed?: boolean;
   feedback?: "up" | "down";
+  /** Client-only until the server echoes it back; survives history refreshes (see mergeServerHistoryWithLocal). */
+  localOnly?: boolean;
 };
 
 type OutreachPreviewState = {
@@ -214,6 +220,24 @@ function leadLocationCaption(lead: ChatLead): string | null {
   if (lead.location_status === "outside_territory") return "Outside territory";
   if (lead.location_status === "unknown") return "Location not confirmed.";
   return null;
+}
+
+function ContactSourceBadge({ chip }: { chip: ContactSourceChip | null }) {
+  if (!chip) return null;
+  const className =
+    "inline-flex w-fit items-center rounded-full bg-[#eef6f2] px-1 py-px text-[6.5px] font-semibold text-[#087652]";
+  if (chip.href) {
+    return (
+      <a href={chip.href} target="_blank" rel="noopener noreferrer" className={`${className} hover:underline`} title={chip.title}>
+        {chip.label}
+      </a>
+    );
+  }
+  return (
+    <span className={className} title={chip.title}>
+      {chip.label}
+    </span>
+  );
 }
 
 function formatPostedDate(iso: string | null | undefined): string {
@@ -330,11 +354,11 @@ const salesEngineTabs: Array<{ id: SalesEngineTab; label: string }> = [
 ];
 
 const SOURCE_SETTING_OPTIONS = [
-  { key: "linkedin_public", label: "LinkedIn public index" },
-  { key: "x_mentions", label: "X/Twitter mentions" },
-  { key: "reddit", label: "Reddit communities" },
-  { key: "meta_pages", label: "Meta business pages" },
-  { key: "meta_graph_pages", label: "Meta pages (direct monitoring)" },
+  { key: "linkedin_public", label: "LinkedIn" },
+  { key: "x_mentions", label: "X (Twitter)" },
+  { key: "reddit", label: "Reddit" },
+  { key: "meta_pages", label: "Facebook & Instagram pages" },
+  { key: "meta_graph_pages", label: "Specific Facebook pages you choose" },
 ] as const;
 
 const INTENT_SETTING_OPTIONS = [
@@ -355,15 +379,17 @@ const sourceFilterOptions: SelectOption[] = [
   { value: "LinkedIn Post", label: "LinkedIn Post" },
   { value: "X/Twitter Post", label: "X/Twitter Post" },
   { value: "Reddit Post", label: "Reddit Post" },
-  { value: "Google Search", label: "Google Search" },
   { value: "Meta Page Post", label: "Meta Page Post" },
+  { value: "YouTube", label: "YouTube" },
 ];
 
 const legacySignalTypeFilterOptions: SelectOption[] = [
   { value: "all", label: "All Signal Type" },
   { value: "Recommendation", label: "Recommendation" },
   { value: "Switching", label: "Switching" },
+  { value: "Pain Point", label: "Pain Point" },
   { value: "Price", label: "Price" },
+  { value: "Hiring / Expansion", label: "Hiring / Expansion" },
   { value: "Investment Opportunity", label: "Investment Opportunity" },
   { value: "Funding Event", label: "Funding Event" },
   { value: "Market Signal", label: "Market Signal" },
@@ -374,9 +400,10 @@ const legacySignalTypeFilterOptions: SelectOption[] = [
 
 const intentFilterOptions: SelectOption[] = [
   { value: "all", label: "All Intent" },
+  { value: "Awareness", label: "Awareness" },
   { value: "Consideration", label: "Consideration" },
   { value: "Vendor Evaluation", label: "Vendor Evaluation" },
-  { value: "Research", label: "Research" },
+  { value: "Decision", label: "Decision" },
 ];
 
 const initialMessages: ChatMessage[] = [
@@ -936,6 +963,8 @@ function LeadInlineResults({
             const roleLine = formatLeadRoleLine(lead);
             const contactLine = formatLeadContactLine(lead);
             const entityBadge = leadEntityBadge(lead);
+            const locationCaption = leadLocationCaption(lead);
+            const showLocation = locationCaption != null && locationCaption !== roleLine;
 
             return (
               <div
@@ -950,14 +979,18 @@ function LeadInlineResults({
                     </span>
                     <span
                       className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
-                      title={
-                        lead.icp_relevance_reason
-                          ? `Score: ${overall}%. ${lead.icp_relevance_reason}`
-                          : "Overall priority score"
-                      }
+                      title={leadFitTooltip(lead, overall)}
                     >
-                      Overall {overall}%
+                      ICP fit {overall}%
                     </span>
+                    {isLeadPartialMatch(lead) && (
+                      <span
+                        className="rounded-full bg-[#fff4e5] px-1.5 py-0.5 text-[7px] font-semibold text-[#b45309]"
+                        title="Matches some, but not all, of your ICP criteria"
+                      >
+                        Partial match
+                      </span>
+                    )}
                     {lead.low_confidence && (
                       <span className="text-[7px] font-medium text-[#b45309]">Lower confidence</span>
                     )}
@@ -975,13 +1008,13 @@ function LeadInlineResults({
                           {roleLine}
                         </span>
                       )}
-                      {!roleLine && contactLine && (
+                      {contactLine && (
                         <span className="truncate max-w-[300px] font-medium text-[#09232d]/70">
                           {contactLine}
                         </span>
                       )}
-                      {leadLocationCaption(lead) && (
-                        <span className="text-[#09232d]/50">· {leadLocationCaption(lead)}</span>
+                      {showLocation && (
+                        <span className="text-[#09232d]/50">· {locationCaption}</span>
                       )}
                       {lead.email && (
                         <a
@@ -993,6 +1026,7 @@ function LeadInlineResults({
                           <span className="truncate max-w-[150px]">{lead.email}</span>
                         </a>
                       )}
+                      {lead.email && <ContactSourceBadge chip={leadContactSourceChip(lead, "email")} />}
                       {lead.phone && (
                         <a
                           href={`tel:${lead.phone}`}
@@ -1003,7 +1037,8 @@ function LeadInlineResults({
                           <span>{lead.phone}</span>
                         </a>
                       )}
-                      {!lead.email && !lead.phone && lead.contact_status === "not_attempted" && (
+                      {lead.phone && <ContactSourceBadge chip={leadContactSourceChip(lead, "phone")} />}
+                      {!lead.email && !lead.phone && isLeadContactPending(lead) && (
                         <span className="font-medium text-[#09232d]/45">Looking up…</span>
                       )}
                       {!lead.email && !lead.phone && lead.contact_status === "not_found" && (
@@ -1012,11 +1047,7 @@ function LeadInlineResults({
                       {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
                         <span
                           className="inline-flex w-fit rounded-full bg-[#eef6f2] px-1 py-0.2 text-[6.5px] font-semibold text-[#087652]"
-                          title={
-                            lead.contact_enrichment_provider
-                              ? `Contact via ${lead.contact_enrichment_provider}`
-                              : "Contact enrichment source"
-                          }
+                          title="How we found these contact details"
                         >
                           {lead.contact_enrichment_tier === "tier1"
                             ? "Web"
@@ -1051,6 +1082,8 @@ function LeadInlineResults({
             const roleLine = formatLeadRoleLine(lead);
             const contactLine = formatLeadContactLine(lead);
             const entityBadge = leadEntityBadge(lead);
+            const locationCaption = leadLocationCaption(lead);
+            const showLocation = locationCaption != null && locationCaption !== roleLine;
 
             return (
               <div
@@ -1066,14 +1099,18 @@ function LeadInlineResults({
                       </span>
                       <span
                         className="rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[7px] font-bold text-[#087652]"
-                        title={
-                          lead.icp_relevance_reason
-                            ? `Score: ${overall}%. ${lead.icp_relevance_reason}`
-                            : "Overall priority score"
-                        }
+                        title={leadFitTooltip(lead, overall)}
                       >
-                        Overall {overall}%
+                        ICP fit {overall}%
                       </span>
+                      {isLeadPartialMatch(lead) && (
+                        <span
+                          className="rounded-full bg-[#fff4e5] px-1.5 py-0.5 text-[7px] font-semibold text-[#b45309]"
+                          title="Matches some, but not all, of your ICP criteria"
+                        >
+                          Partial match
+                        </span>
+                      )}
                     </div>
                   </div>
                   {roleLine && (
@@ -1082,8 +1119,8 @@ function LeadInlineResults({
                   {contactLine && (
                     <p className="mt-0.5 line-clamp-1 text-[8px] font-medium text-[#09232d]/65">{contactLine}</p>
                   )}
-                  {leadLocationCaption(lead) && (
-                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{leadLocationCaption(lead)}</p>
+                  {showLocation && (
+                    <p className="mt-0.5 text-[8px] text-[#09232d]/55">{locationCaption}</p>
                   )}
                   {(lead.email || lead.phone) && (
                     <div className="mt-1 flex flex-col gap-0.5">
@@ -1097,6 +1134,7 @@ function LeadInlineResults({
                           <span className="truncate">{lead.email}</span>
                         </a>
                       )}
+                      {lead.email && <ContactSourceBadge chip={leadContactSourceChip(lead, "email")} />}
                       {lead.phone && (
                         <a
                           href={`tel:${lead.phone}`}
@@ -1107,14 +1145,11 @@ function LeadInlineResults({
                           <span className="truncate">{lead.phone}</span>
                         </a>
                       )}
+                      {lead.phone && <ContactSourceBadge chip={leadContactSourceChip(lead, "phone")} />}
                       {lead.contact_enrichment_tier && lead.contact_enrichment_tier !== "seed" && (
                         <span
                           className="mt-0.5 inline-flex w-fit rounded-full bg-[#eef6f2] px-1.5 py-0.5 text-[7px] font-semibold text-[#087652]"
-                          title={
-                            lead.contact_enrichment_provider
-                              ? `Contact via ${lead.contact_enrichment_provider}`
-                              : "Contact enrichment source"
-                          }
+                          title="How we found these contact details"
                         >
                           {lead.contact_enrichment_tier === "tier1"
                             ? "Contact from web"
@@ -1125,10 +1160,13 @@ function LeadInlineResults({
                       )}
                     </div>
                   )}
-                  {lead.contact_ready === false && (
+                  {!lead.email && !lead.phone && isLeadContactPending(lead) && (
+                    <p className="mt-1 text-[7px] font-medium text-[#09232d]/45">Looking up…</p>
+                  )}
+                  {!isLeadContactPending(lead) && lead.contact_ready === false && (
                     <p className="mt-1 text-[7px] font-medium text-[#616263]">No direct contact yet</p>
                   )}
-                  {lead.contact_ready !== false && !lead.email && !lead.phone && (
+                  {!isLeadContactPending(lead) && lead.contact_ready !== false && !lead.email && !lead.phone && (
                     <p className="mt-1 text-[7px] font-medium text-[#616263]">
                       Profile found. Email or phone still missing
                     </p>
@@ -1510,6 +1548,7 @@ function ChatWorkspace({
   const timersRef = useRef<number[]>([]);
   const nextMessageIdRef = useRef(2);
   const pendingUserMessageIdRef = useRef<number | null>(null);
+  const messagesIcpRef = useRef<string | undefined>(undefined);
   function nextMessageId() {
     return nextMessageIdRef.current++;
   }
@@ -1529,17 +1568,30 @@ function ChatWorkspace({
   useEffect(() => {
     if (!activeIcpId || isHistoryLoading) return;
 
-    /* eslint-disable react-hooks/set-state-in-effect -- hydrate chat from query result */
+    // Local-only messages (confirm card, just-sent prompts) belong to the ICP they were typed under.
+    const sameIcp = messagesIcpRef.current === activeIcpId;
+    messagesIcpRef.current = activeIcpId;
+
     if (!chatHistory || chatHistory.messages.length === 0) {
-      setMessages(initialMessages);
-      nextMessageIdRef.current = 2;
+      setMessages((current) => {
+        const local = sameIcp ? mergeServerHistoryWithLocal<ChatMessage>([], current) : [];
+        return local.length > 0 ? [...initialMessages, ...local] : initialMessages;
+      });
+      nextMessageIdRef.current = Math.max(sameIcp ? nextMessageIdRef.current : 0, 2);
 
       return;
     }
 
-    setMessages(mapApiMessagesToUi(chatHistory.messages));
-    nextMessageIdRef.current = chatHistory.messages.length + 2;
-    /* eslint-enable react-hooks/set-state-in-effect */
+    const serverMessages: ChatMessage[] = mapApiMessagesToUi(chatHistory.messages);
+    setMessages((current) =>
+      sameIcp ? mergeServerHistoryWithLocal(serverMessages, current) : serverMessages
+    );
+    const maxServerId = serverMessages.reduce((max, message) => Math.max(max, message.id), 0);
+    nextMessageIdRef.current = Math.max(
+      sameIcp ? nextMessageIdRef.current : 0,
+      maxServerId + 1,
+      chatHistory.messages.length + 2
+    );
   }, [activeIcpId, chatHistory, isHistoryLoading]);
 
   const hasPendingDiscovery = useMemo(
@@ -1688,7 +1740,11 @@ function ChatWorkspace({
     inputRef.current?.focus();
   }
 
-  function handleSend(prompt: string, intent: ChatIntent = selectedIntent) {
+  function handleSend(
+    prompt: string,
+    intent: ChatIntent = selectedIntent,
+    leadGenOptions?: { entityMode?: GenerateEntityMode; count?: number }
+  ) {
     const trimmed = prompt.trim();
     if (!trimmed || isThinking) return;
 
@@ -1696,7 +1752,7 @@ function ChatWorkspace({
     if (USAGE_QUESTION_PATTERN.test(trimmed)) {
       setMessages((current) => [
         ...current,
-        { id: nextMessageId(), role: "user", body: trimmed, intent },
+        { id: nextMessageId(), role: "user", body: trimmed, intent, localOnly: true },
       ]);
       setDraft("");
       setIsSyntheticThinking(true);
@@ -1709,6 +1765,7 @@ function ChatWorkspace({
             id: nextMessageId(),
             role: "assistant",
             body: `You've used ${searchUsage.used} of ${searchUsage.limit} searches this billing cycle. ${remaining} remaining.`,
+            localOnly: true,
           },
         ]);
       }, 900);
@@ -1731,8 +1788,9 @@ function ChatWorkspace({
           body: trimmed,
           intent: "generate_leads",
           ...(targetCount != null ? { targetCount } : {}),
+          localOnly: true,
         },
-        { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp" },
+        { id: nextMessageId(), role: "assistant", body: "", kind: "confirm-icp", localOnly: true },
       ]);
       setDraft("");
       setPendingGenerateRequest({ prompt: trimmed });
@@ -1753,23 +1811,45 @@ function ChatWorkspace({
           searchCaption: trimmed,
           entityMode: "both",
           ...(targetCount != null ? { targetCount } : {}),
+          localOnly: true,
         },
       ]);
       setDraft("");
       setSelectedIntent("freeform");
       void queryClient.invalidateQueries({ queryKey: ["sales-engine", "usage"] });
-      sendMessage.mutate({ body: apiBody, intent: "generate_leads" });
+      sendMessage.mutate({
+        body: apiBody,
+        intent: "generate_leads",
+        entityMode: "both",
+        ...(targetCount != null ? { count: targetCount } : {}),
+      });
       return;
     }
 
+    // generate_leads returned above, so only "Generate more" reaches here with lead-gen options.
+    const isLeadGenIntent = intent === "generate_more_leads";
+    const entityMode = isLeadGenIntent ? leadGenOptions?.entityMode : undefined;
+    const count = isLeadGenIntent ? leadGenOptions?.count : undefined;
     const userMessageId = nextMessageId();
     pendingUserMessageIdRef.current = userMessageId;
     setMessages((current) => [
       ...current,
-      { id: userMessageId, role: "user", body: trimmed, intent },
+      {
+        id: userMessageId,
+        role: "user",
+        body: trimmed,
+        intent,
+        ...(entityMode ? { entityMode } : {}),
+        localOnly: true,
+      },
     ]);
     setDraft("");
-    sendMessage.mutate({ body: trimmed, intent });
+    sendMessage.mutate({
+      body: trimmed,
+      intent,
+      ...(entityMode ? { entityMode } : {}),
+      ...(count != null ? { count } : {}),
+    });
   }
 
   function handleRetryFailedPrompt(message: ChatMessage) {
@@ -1783,7 +1863,13 @@ function ChatWorkspace({
       intent === "generate_leads"
         ? resolveGenerateLeadsPrompt(message.body).apiBody
         : message.body;
-    sendMessage.mutate({ body, intent });
+    const isLeadGenIntent = intent === "generate_leads" || intent === "generate_more_leads";
+    sendMessage.mutate({
+      body,
+      intent,
+      ...(isLeadGenIntent && message.entityMode ? { entityMode: message.entityMode } : {}),
+      ...(isLeadGenIntent && message.targetCount != null ? { count: message.targetCount } : {}),
+    });
   }
 
   function confirmGenerateLeads() {
@@ -1795,8 +1881,11 @@ function ChatWorkspace({
     }
 
     const { apiBody, targetCount } = resolveGenerateLeadsPrompt(pendingGenerateRequest.prompt);
-    const countedBody = withProspectCountCue(apiBody, generateProspectCount);
-    const modeAwareBody = withEntityModeCue(countedBody, generateEntityMode);
+    // Typed counts the card can't represent (e.g. "find 30") win unless the user picked another option.
+    const requestedCount =
+      targetCount != null && targetCount !== 25 && targetCount !== 40 && generateProspectCount === 12
+        ? targetCount
+        : generateProspectCount;
     const searchBrief = composeIcpSearchBrief({
       customPrompt: activeIcp.config.customPrompt,
       description: activeIcp.description || activeIcp.config.description,
@@ -1823,6 +1912,7 @@ function ChatWorkspace({
             ...message,
             entityMode: generateEntityMode,
             searchCaption: searchBrief,
+            targetCount: requestedCount,
           };
         }
         if (message.kind === "confirm-icp") {
@@ -1842,7 +1932,12 @@ function ChatWorkspace({
     setSelectedIntent("freeform");
     void queryClient.invalidateQueries({ queryKey: ["sales-engine", "usage"] });
 
-    sendMessage.mutate({ body: modeAwareBody, intent: "generate_leads" });
+    sendMessage.mutate({
+      body: apiBody,
+      intent: "generate_leads",
+      entityMode: generateEntityMode,
+      count: requestedCount,
+    });
   }
 
   function scrollTranscriptToBottom() {
@@ -2200,11 +2295,10 @@ function ChatWorkspace({
                     <button
                       type="button"
                       onClick={() => {
-                        const moreBody = withEntityModeCue(
-                          "Generate more prospects for the same ICP",
-                          generateEntityMode
-                        );
-                        handleSend(moreBody, "generate_more_leads");
+                        handleSend("Generate more prospects for the same ICP", "generate_more_leads", {
+                          entityMode: generateEntityMode,
+                          count: generateProspectCount,
+                        });
                       }}
                       className="rounded-full border border-[#c8f0ff] bg-[#e4faff] px-3 py-1.5 text-[10px] font-semibold text-[#09232d] transition hover:bg-[#d6f5ff]"
                     >
@@ -4006,7 +4100,7 @@ function ListeningSettingsModal({
   const [metaPageIdsText, setMetaPageIdsText] = useState("");
   const [cadenceDays, setCadenceDays] = useState<14 | 30>(14);
   const [minScore, setMinScore] = useState(70);
-  const [freshnessWindowDays, setFreshnessWindowDays] = useState<FreshnessWindowDays>(180);
+  const [freshnessWindowDays, setFreshnessWindowDays] = useState<FreshnessWindowDays>(30);
   const [intentFilters, setIntentFilters] = useState<string[]>([]);
   const [crmDestination, setCrmDestination] = useState<SocialListeningSettings["crm_destination"]>("qualified_pipeline");
   const [outreachChannel, setOutreachChannel] = useState<SocialListeningSettings["outreach_channel_default"]>("email");
@@ -4019,7 +4113,7 @@ function ListeningSettingsModal({
     setMetaPageIdsText((settings.meta_page_ids ?? []).join("\n"));
     setCadenceDays(settings.cadence_days ?? 14);
     setMinScore(settings.min_score ?? 70);
-    setFreshnessWindowDays((settings.freshness_window_days ?? 180) as FreshnessWindowDays);
+    setFreshnessWindowDays(Math.min(settings.freshness_window_days ?? 30, 30) as FreshnessWindowDays);
     setIntentFilters(settings.intent_filters ?? []);
     setCrmDestination(settings.crm_destination ?? "qualified_pipeline");
     setOutreachChannel(settings.outreach_channel_default ?? "email");
@@ -4110,28 +4204,37 @@ function ListeningSettingsModal({
               <section className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-[13px] font-semibold">Sources monitored</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {SOURCE_SETTING_OPTIONS.map((sourceOption) => (
-                    <label
-                      key={sourceOption.key}
-                      className="flex items-center gap-2 rounded-[12px] bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={enabledSources.includes(sourceOption.key)}
-                        onChange={() => toggleSource(sourceOption.key)}
-                        className="accent-[#8dec66]"
-                      />
-                      {sourceOption.label}
-                    </label>
-                  ))}
+                  {SOURCE_SETTING_OPTIONS.filter(
+                    (sourceOption) =>
+                      settings?.source_availability?.find((item) => item.key === sourceOption.key)?.offered !== false
+                  ).map((sourceOption) => {
+                    const availability = settings?.source_availability?.find((item) => item.key === sourceOption.key);
+                    const temporarilyDown =
+                      enabledSources.includes(sourceOption.key) && availability?.available === false;
+                    return (
+                      <label
+                        key={sourceOption.key}
+                        className="flex items-center gap-2 rounded-[12px] bg-white/[0.05] px-3 py-2 text-[12px] text-white/75"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={enabledSources.includes(sourceOption.key)}
+                          onChange={() => toggleSource(sourceOption.key)}
+                          className="accent-[#8dec66]"
+                        />
+                        <span className="min-w-0 flex-1">{sourceOption.label}</span>
+                        {temporarilyDown && (
+                          <span
+                            className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/55"
+                            title="We'll keep scanning your other sources and pick this one up again automatically."
+                          >
+                            Temporarily unavailable
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
-                {(settings?.source_health ?? []).length > 0 && (
-                  <ul className="mt-3 space-y-1 text-[11px] text-white/70">
-                    {settings?.source_health?.map((item) => (
-                      <li key={item.key}>{item.label}: {item.status}{item.reason ? ` · ${item.reason}` : ""}</li>
-                    ))}
-                  </ul>
-                )}
                 {enabledSources.includes("meta_graph_pages") && (
                   <div className="mt-4">
                     <label
@@ -4141,7 +4244,7 @@ function ListeningSettingsModal({
                       Meta Pages to monitor
                     </label>
                     <p className="mt-1 text-[11px] leading-[15px] text-white/45">
-                      Page ID or @username, one per line. Direct Graph API monitoring of these pages.
+                      Page name, @username or ID — one per line. We&apos;ll watch these pages for new posts.
                     </p>
                     <textarea
                       id="meta-page-ids"
@@ -4207,8 +4310,6 @@ function ListeningSettingsModal({
                     { label: "Last 7 days", value: 7 as const },
                     { label: "Last 14 days", value: 14 as const },
                     { label: "Last 30 days", value: 30 as const },
-                    { label: "Last 3 months", value: 90 as const },
-                    { label: "Last 6 months", value: 180 as const },
                   ].map((option) => (
                     <label
                       key={option.value}
@@ -4409,7 +4510,13 @@ function SocialListeningTab({
       label: type.label,
     }));
     if (discrete.length === 0) return legacySignalTypeFilterOptions;
-    return [{ value: "all", label: "All Signal Type" }, ...discrete];
+    // Most signals come from the general opportunity search and carry no
+    // discrete type key, so their labels must stay filterable alongside packs.
+    const discreteLabels = new Set(discrete.map((option) => option.label.toLowerCase()));
+    const general = legacySignalTypeFilterOptions.filter(
+      (option) => option.value !== "all" && !discreteLabels.has(option.label.toLowerCase())
+    );
+    return [{ value: "all", label: "All Signal Type" }, ...general, ...discrete];
   }, [discreteSignalTypes]);
 
   const visibleSelectedIds = useMemo(
@@ -4461,7 +4568,7 @@ function SocialListeningTab({
         signalType !== "all"
           ? signalTypeOptions.find((option) => option.value === signalType)?.label ?? signalType
           : null,
-      freshnessWindowDays: listenSettings?.freshness_window_days ?? 180,
+      freshnessWindowDays: listenSettings?.freshness_window_days ?? 30,
     }
   );
 

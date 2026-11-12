@@ -1,5 +1,6 @@
 'use client';
 
+import { ProjectChecklist, useChecklistTasks } from '@/features/tasks/components/ProjectChecklist';
 import React from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, MapPin, Calendar, User, ShieldAlert } from 'lucide-react';
@@ -76,6 +77,8 @@ export default function TaskDetailPage() {
   const id = (routeParams?.id as string) || '';
 
   const { data: task, isLoading, error } = useTask(id);
+  const { items: checklistTasks } = useChecklistTasks(task ? [task] : []);
+  const checklistTask = checklistTasks[0];
   const { goToTracking, goToContinueTracking, goToTaskComplete } = useTaskNavigation();
   const { mutate: updateStatus, isPending: isUpdatingStatus } = useUpdateTaskStatus();
   const liveTask = useTrackingStore((s) => s.liveTaskMap[Number(id)]);
@@ -93,6 +96,7 @@ export default function TaskDetailPage() {
                 ? 'Task completed'
                 : 'Task cancelled',
           );
+          if (status === 'cancelled') router.back();
         },
         onError: (err: unknown) => {
           toast.error(err instanceof Error ? err.message : 'Failed to update task status');
@@ -125,7 +129,7 @@ export default function TaskDetailPage() {
     );
   }
 
-  const statusColor = STATUS_COLOR[task.status] || '#8F9098';
+  const statusColor = STATUS_COLOR[checklistTask.status] || '#8F9098';
   const isActive = isResumeTrackingStatus(task.status);
   const isPending = task.status === 'pending';
   const hasMapLocation = taskHasMapLocation(task);
@@ -151,7 +155,7 @@ export default function TaskDetailPage() {
           style={{ backgroundColor: `${statusColor}22` }}
         >
           <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
-          <span style={{ color: statusColor }}>{STATUS_LABEL[task.status]}</span>
+          <span style={{ color: statusColor }}>{STATUS_LABEL[checklistTask.status]}</span>
         </div>
 
         <h3 className="font-sans font-bold text-xl text-white mb-2.5 leading-snug">
@@ -208,6 +212,7 @@ export default function TaskDetailPage() {
         />
         {task.instructions && <Section title="Instructions" body={task.instructions} />}
 
+        <ProjectChecklist key={task.id} task={checklistTask} />
         <TaskComments taskId={task.id} />
 
         <div className="h-[0.5px] bg-white/6 my-6" />

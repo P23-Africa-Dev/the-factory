@@ -14,11 +14,8 @@ export function TrackingConnectionStatus({ className }: { className?: string }) 
   const [showConnecting, setShowConnecting] = useState(false);
 
   useEffect(() => {
-    if (wsStatus !== 'connecting') {
-      setShowConnecting(false);
-      return;
-    }
-    const timer = setTimeout(() => setShowConnecting(true), 4000);
+    const connecting = wsStatus === 'connecting';
+    const timer = setTimeout(() => setShowConnecting(connecting), connecting ? 4000 : 0);
     return () => clearTimeout(timer);
   }, [wsStatus]);
 

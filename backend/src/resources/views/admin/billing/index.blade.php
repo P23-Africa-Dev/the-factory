@@ -89,8 +89,10 @@
                 </div>
 
                 <p style="font-size:.82rem;color:var(--text-secondary)">
-                    When enabled, only companies with an <strong>active</strong> subscription can access the dashboard.
-                    Grace, past due, and suspended orgs are blocked until they renew. When disabled, all accounts under every org work freely regardless of subscription state.
+                    When enabled, companies need an <strong>active</strong> subscription to use the dashboard.
+                    Grace still has access. Past due and suspended orgs are blocked until they renew.
+                    Demo accounts and long-lived grace are not limited by plan caps. A short grace period after a subscription ends keeps that plan's limits.
+                    When disabled, all accounts under every org work freely regardless of subscription state.
                 </p>
 
                 @if (!empty($enforcementSnapshot['updated_at']))

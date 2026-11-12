@@ -34,6 +34,13 @@ Authenticated via `auth:sanctum`:
 6. `POST /api/v1/tasks/{task}/proofs`
 7. `GET /api/v1/tasks/{task}/proofs/{proof}`
 8. `POST /api/v1/agent/tasks/self`
+9. `POST /api/v1/tasks/{task}/subtasks`
+10. `PATCH /api/v1/tasks/{task}/subtasks/{subtask}`
+11. `PATCH /api/v1/tasks/{task}/subtasks/{subtask}/complete`
+12. `PATCH /api/v1/tasks/{task}/subtasks/reorder`
+13. `DELETE /api/v1/tasks/{task}/subtasks/{subtask}`
+
+The same subtask routes are also registered under `/api/v1/admin/tasks/...` and `/api/v1/agent/tasks/...`.
 
 ## Authentication
 
@@ -56,11 +63,13 @@ Company role is resolved from `company_users` membership.
 
 2. Agent:
 
-- Can list and view only tasks where they are a current assignee
+- Can list and view tasks where they are a current or historical assignee, or where they are assigned a subtask
 - Can upload proof for assigned tasks only
 - Can update status for assigned tasks only
 - Can create self-tasks only through `POST /api/v1/agent/tasks/self`
 - Cannot create management tasks or assign tasks to other users
+- Can complete or uncomplete subtasks assigned to them
+- Cannot add, edit, reorder, or delete subtasks unless they created the task
 
 3. Proof access:
    - Proof metadata is returned on task detail responses
@@ -131,6 +140,30 @@ Proof uploads and verification metadata:
 10. `metadata`
 
 > **Note:** `disk` and `file_path` remain internal storage fields. Proofs are stored on the private local disk and the API only exposes protected `file_url` download links for authorized users.
+
+### task_subtasks
+
+Checklist items belonging to a task:
+
+1. `company_id`
+2. `task_id`
+3. `assigned_user_id` nullable
+4. `created_by_user_id`
+5. `completed_by_user_id` nullable
+6. `title`
+7. `due_at` nullable
+8. `position` zero-based order within the task
+9. `is_completed`
+10. `completed_at` nullable
+
+Rules:
+
+1. Only the task creator can add, edit, reorder, or delete subtasks
+2. The subtask assignee or the task creator can complete or uncomplete an item
+3. Cancelled tasks reject every subtask write with `422`
+4. Completing or deleting subtasks can move the parent task through the existing status timestamps
+5. If photo or GPS proof requirements block completion, the parent stays `in_progress` and the response includes `completion_blocked_reason`
+6. Task list and detail payloads always include `subtasks`, `subtasks_summary`, and `comments_count`
 
 ## Lifecycle Rules
 

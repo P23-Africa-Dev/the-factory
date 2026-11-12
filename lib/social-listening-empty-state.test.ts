@@ -55,7 +55,7 @@ describe("social-listening-empty-state", () => {
     expect(state?.showActions).toBe(true);
   });
 
-  it("returns scan_failed with run error message", () => {
+  it("returns scan_failed without echoing system error text", () => {
     const latestRun: SocialListeningRunStatus = {
       id: 2,
       status: "failed",
@@ -65,35 +65,23 @@ describe("social-listening-empty-state", () => {
     const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
 
     expect(state?.variant).toBe("scan_failed");
-    expect(state?.description).toContain("Serper quota exceeded");
+    expect(state?.description).not.toContain("Serper");
+    expect(state?.description).toContain("couldn't finish this scan");
     expect(state?.showActions).toBe(true);
   });
 
-  it("explains why a completed scan kept nothing", () => {
+  it("keeps a completed empty scan human, without rejection counts", () => {
     const latestRun: SocialListeningRunStatus = {
       id: 3,
       status: "completed",
       signals_created: 0,
-      result_summary: {
-        totalChecked: 4,
-        qualified: 0,
-        rejected: {
-          icpMismatch: 2,
-          missingSourceUrl: 0,
-          missingSourceDate: 0,
-          stale: 0,
-          belowMinScore: 0,
-          duplicate: 0,
-          total: 2,
-        },
-      },
+      result_summary: { totalChecked: 4, qualified: 0 },
     };
 
     const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
 
-    expect(state?.title).toBe("No opportunities kept");
-    expect(state?.description).toContain("checked 4 recent posts");
-    expect(state?.description).toContain("2 outside the ICP");
+    expect(state?.title).toBe("Nothing new worth your time yet");
+    expect(state?.description).not.toMatch(/\d/);
   });
 
   it("never returns empty title or description", () => {
@@ -124,5 +112,37 @@ describe("social-listening-empty-state", () => {
     expect(message).toBe(
       "We monitor public posts for buying signals that fit your active ICP."
     );
+  });
+  it("does not list why posts were dropped", () => {
+    const latestRun: SocialListeningRunStatus = {
+      id: 4,
+      status: "completed",
+      signals_created: 0,
+      result_summary: { totalChecked: 12, qualified: 0 },
+    };
+
+    const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
+
+    expect(state?.title).toBe("Nothing new worth your time yet");
+    expect(state?.description).toContain("We'll keep listening");
+    expect(state?.description).not.toMatch(/vendors|rejected|dropped|\d+ were/i);
+  });
+
+  it("says when the qualifying model was unavailable", () => {
+    const latestRun: SocialListeningRunStatus = {
+      id: 5,
+      status: "completed",
+      signals_created: 0,
+      result_summary: {
+        totalChecked: 6,
+        qualified: 0,
+        model_unavailable: true,
+      },
+    };
+
+    const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
+
+    expect(state?.description).toContain("couldn't review new posts");
+    expect(state?.description).not.toContain("AI");
   });
 });

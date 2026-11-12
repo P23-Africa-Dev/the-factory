@@ -1,3 +1,5 @@
+import type { ProjectChecklist } from "@/lib/tasks/project-checklist";
+
 export type TaskCategory = 'all' | 'agent' | 'attendance';
 
 export interface DndItem {
@@ -15,6 +17,8 @@ export interface DndItem {
   icon?: string;
   category?: TaskCategory;
   dueDate?: string;
+  projectChecklist?: ProjectChecklist;
+  commentCount?: number;
   assignedBy?: string;
   addedDescription?: string;
   statusLabel?: string;

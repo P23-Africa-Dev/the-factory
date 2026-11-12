@@ -63,11 +63,14 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   const { data: pipelines = [] } = useCrmPipelines();
   const { data: labels = [] } = useCrmLabels();
   const { data: assignees = [] } = useCrmAssignees();
-  const { data: leadFields = [] } = useLeadFields();
+  const { data: leadFieldData } = useLeadFields();
+  const leadFields = leadFieldData ?? [];
 
-  useEffect(() => {
+  const [previousLeadFields, setPreviousLeadFields] = useState(leadFieldData);
+  if (previousLeadFields !== leadFieldData) {
+    setPreviousLeadFields(leadFieldData);
     setCustomFields((current) => ({ ...formValuesFromLead(leadFields, {}), ...current }));
-  }, [leadFields]);
+  }
 
   const { mutate: createLead, isPending } = useCreateLead({
     onSuccess: () => {
