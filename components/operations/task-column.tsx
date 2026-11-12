@@ -63,7 +63,8 @@ export function TaskColumn({
       label: form.label.trim(),
       description: form.description.trim() || "No description",
       location: form.location.trim() || "Location not set",
-      time: "Just now",
+      time: "",
+      createdAt: new Date().toISOString(),
     });
     setForm({ label: "", description: "", location: "" });
     setError("");

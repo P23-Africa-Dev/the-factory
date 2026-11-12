@@ -881,7 +881,7 @@ function mapTaskToDnd(apiTask: BoardTask): DndItem {
     latitude: apiTask.latitude ?? null,
     longitude: apiTask.longitude ?? null,
     hasTrackableLocation: hasTrackableTaskLocation(apiTask),
-    time: "Just now",
+    time: "",
     avatar: apiTask.assignee?.avatar_url || undefined,
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
