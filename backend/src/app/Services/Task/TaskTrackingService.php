@@ -625,7 +625,7 @@ class TaskTrackingService
 
         return DB::transaction(function () use ($user, $task, $context, $session, $data, $latitude, $longitude, $accuracy, $accuracyForProximity, $recordedAt): array {
             $proofs = [];
-            foreach ($data['files'] as $file) {
+            foreach ($data['files'] ?? [] as $file) {
                 if (! $file instanceof UploadedFile) {
                     continue;
                 }

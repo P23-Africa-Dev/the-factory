@@ -53,76 +53,71 @@ class TaskDescriptionValidationTest extends TestCase
             ->assertJsonPath('data.task.description', 'Check stock levels at the store.');
     }
 
-    public function test_task_creation_fails_without_description(): void
+    public function test_task_creation_succeeds_without_description(): void
     {
         $this->createAsAdmin([])
-            ->assertUnprocessable()
-            ->assertJsonPath('errors.description.0', 'Task description is required.');
+            ->assertCreated()
+            ->assertJsonPath('data.task.description', null);
 
         $this->createSelfAsAgent([])
+            ->assertCreated()
+            ->assertJsonPath('data.task.description', null);
+
+        $this->assertSame(2, Task::query()->count());
+    }
+
+    public function test_task_creation_accepts_empty_null_or_whitespace_description(): void
+    {
+        foreach (['', null, '   ', "\n\t \n"] as $description) {
+            $this->createAsAdmin(['description' => $description])
+                ->assertCreated()
+                ->assertJsonPath('data.task.description', null);
+
+            $this->createSelfAsAgent(['description' => $description])
+                ->assertCreated()
+                ->assertJsonPath('data.task.description', null);
+        }
+    }
+
+    public function test_task_creation_accepts_short_description(): void
+    {
+        $this->createAsAdmin(['description' => 'Go'])
+            ->assertCreated()
+            ->assertJsonPath('data.task.description', 'Go');
+    }
+
+    public function test_task_creation_rejects_description_over_max_length(): void
+    {
+        $this->createAsAdmin(['description' => str_repeat('a', 5001)])
             ->assertUnprocessable()
-            ->assertJsonPath('errors.description.0', 'Task description is required.');
-
-        $this->assertSame(0, Task::query()->count());
+            ->assertJsonValidationErrors(['description']);
     }
 
-    public function test_task_creation_fails_with_empty_or_null_description(): void
-    {
-        foreach (['', null] as $description) {
-            $this->createAsAdmin(['description' => $description])
-                ->assertUnprocessable()
-                ->assertJsonPath('errors.description.0', 'Task description is required.');
-
-            $this->createSelfAsAgent(['description' => $description])
-                ->assertUnprocessable()
-                ->assertJsonPath('errors.description.0', 'Task description is required.');
-        }
-
-        $this->assertSame(0, Task::query()->count());
-    }
-
-    public function test_task_creation_fails_with_whitespace_only_description(): void
-    {
-        foreach (['   ', "\n\t \n"] as $description) {
-            $this->createAsAdmin(['description' => $description])
-                ->assertUnprocessable()
-                ->assertJsonPath('errors.description.0', 'Task description is required.');
-
-            $this->createSelfAsAgent(['description' => $description])
-                ->assertUnprocessable()
-                ->assertJsonPath('errors.description.0', 'Task description is required.');
-        }
-
-        $this->assertSame(0, Task::query()->count());
-    }
-
-    public function test_update_cannot_clear_description_but_can_omit_it(): void
+    public function test_update_can_clear_or_omit_description(): void
     {
         $task = Task::create([
             'company_id' => $this->company->id,
             'created_by_user_id' => $this->admin->id,
-            'title' => 'Legacy task without description',
-            'description' => null,
+            'title' => 'Task with description',
+            'description' => 'Original description',
             'status' => 'pending',
         ]);
 
-        // Legacy tasks with no description can still be edited without supplying one.
         $this->withToken($this->tokenFor($this->admin))
             ->patchJson("/api/v1/tasks/{$task->id}", [
                 'company_id' => $this->company->id,
-                'title' => 'Legacy task renamed',
+                'title' => 'Task renamed',
             ])
             ->assertOk()
-            ->assertJsonPath('data.task.description', null);
+            ->assertJsonPath('data.task.description', 'Original description');
 
-        // But an explicit blank description is rejected.
         $this->withToken($this->tokenFor($this->admin))
             ->patchJson("/api/v1/tasks/{$task->id}", [
                 'company_id' => $this->company->id,
                 'description' => '   ',
             ])
-            ->assertUnprocessable()
-            ->assertJsonPath('errors.description.0', 'Task description is required.');
+            ->assertOk()
+            ->assertJsonPath('data.task.description', null);
 
         $this->assertNull($task->fresh()->description);
     }

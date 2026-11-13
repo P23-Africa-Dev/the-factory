@@ -276,10 +276,10 @@ export default function TaskCompletePage() {
         <div>
           <div className="flex items-center justify-between mb-1">
             <h4 className="text-xs font-bold text-[#75ADAF] uppercase tracking-wider font-sans">
-              Proof photos * (min {requirements.minPhotos})
+              Proof photos (optional)
             </h4>
             <span className="text-[11px] text-[#8F9098]">
-              {photos.length}/{requirements.minPhotos}
+              {photos.length} added
             </span>
           </div>
           <p className="text-xs text-[#8F9098] leading-relaxed mb-4 font-sans">

@@ -81,10 +81,17 @@ class ActionToolRegistry
         $role = (string) $this->companyContextService->resolve($user, $companyId)['role'];
         $isAgent = $role === 'agent';
 
+        // Optional fields may arrive as blank strings from the assistant form;
+        // treat them as absent so enum casts (type, priority) never see "".
+        $args = array_map(
+            static fn (mixed $value): mixed => is_string($value) && trim($value) === '' ? null : $value,
+            $args,
+        );
+
         $validated = Validator::make($args, [
-            'title' => ['required', 'string', 'min:3', 'max:255'],
-            'type' => ['required', 'string', Rule::in(TaskType::values())],
-            'description' => ['required', 'string', 'min:10', 'max:5000'],
+            'title' => ['required', 'string', 'max:255'],
+            'type' => ['nullable', 'string', Rule::in(TaskType::values())],
+            'description' => ['nullable', 'string', 'max:5000'],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'assigned_agent_id' => $isAgent
                 ? ['prohibited']
@@ -93,11 +100,11 @@ class ActionToolRegistry
                 ? ['prohibited']
                 : ['nullable', 'array', 'max:20'],
             'assigned_agent_ids.*' => ['integer', 'exists:users,id'],
-            'location' => ['nullable', 'string', 'min:2', 'max:255'],
-            'address' => ['nullable', 'string', 'min:5', 'max:1000'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
-            'due_date' => ['required', 'date', 'after:now'],
+            'due_date' => ['nullable', 'date', 'after:now'],
             'required_actions' => ['nullable', 'array', 'max:20'],
             'required_actions.*' => ['string', 'max:255'],
             'priority' => ['nullable', 'string', Rule::in(TaskPriority::values())],

@@ -31,11 +31,11 @@ class UpdateTaskRequest extends FormRequest
     {
         return [
             'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'title' => ['sometimes', 'string', 'min:3', 'max:255'],
+            'title' => ['sometimes', 'required', 'string', 'max:255'],
             'type' => ['sometimes', 'nullable', 'string', Rule::in(TaskType::values())],
-            'description' => ['sometimes', 'required', 'string', 'min:10', 'max:5000'],
-            'location' => ['sometimes', 'nullable', 'string', 'min:2', 'max:255'],
-            'address' => ['sometimes', 'nullable', 'string', 'min:5', 'max:1000'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'location' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'address' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
             'due_date' => ['sometimes', 'nullable', 'date'],
@@ -49,10 +49,7 @@ class UpdateTaskRequest extends FormRequest
 
     public function messages(): array
     {
-        return [
-            'description.required' => 'Task description is required.',
-            'description.min' => 'Task description must be at least 10 characters.',
-        ];
+        return [];
     }
 
     public function withValidator(Validator $validator): void

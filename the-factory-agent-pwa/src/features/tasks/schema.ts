@@ -144,17 +144,13 @@ export const completionSchema = z.object({
 export const createSelfTaskSchema = z.object({
   title: z
     .string()
-    .min(3, 'Title must be at least 3 characters')
-    .max(255, 'Title must be at most 255 characters'),
-  type: z.enum(['sales_visit', 'inspection', 'delivery', 'collection', 'awareness']),
-  description: z
-    .string({ error: 'Task description is required.' })
     .trim()
-    .min(1, 'Task description is required.')
-    .min(10, 'Task description must be at least 10 characters.')
-    .max(5000),
-  location: z.string().min(2).max(255).optional().nullable(),
-  address: z.string().min(5).max(1000).optional().nullable(),
+    .min(1, 'Task title is required')
+    .max(255, 'Title must be at most 255 characters'),
+  type: z.enum(['sales_visit', 'inspection', 'delivery', 'collection', 'awareness']).optional(),
+  description: z.string().trim().max(5000).optional().nullable(),
+  location: z.string().max(255).optional().nullable(),
+  address: z.string().max(1000).optional().nullable(),
   latitude: z.union([z.number(), z.string(), z.null()]).optional(),
   longitude: z.union([z.number(), z.string(), z.null()]).optional(),
   due_date: z.string().optional().nullable(),

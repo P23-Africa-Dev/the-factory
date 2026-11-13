@@ -332,6 +332,11 @@ class TaskService
                     : null,
             ], static fn (mixed $value): bool => $value !== null);
 
+            // Description is optional, so an explicit empty value clears it.
+            if (array_key_exists('description', $data) && $data['description'] === null) {
+                $payload['description'] = null;
+            }
+
             if ($payload !== []) {
                 $task->update($payload);
             }
@@ -427,15 +432,9 @@ class TaskService
 
         $this->assertValidStatusTransition($current, $status);
 
+        // Photo uploads are optional; minimum_photos_required is a hint only.
+        // Visit verification stays an opt-in check per task.
         if ($status === TaskStatus::COMPLETED->value) {
-            $proofsCount = $task->proofs()->count();
-
-            if ($proofsCount < $task->minimum_photos_required) {
-                throw ValidationException::withMessages([
-                    'status' => ["Minimum {$task->minimum_photos_required} proof image(s) required before completion."],
-                ]);
-            }
-
             if ($task->visit_verification_required) {
                 $hasGpsProof = $task->proofs()
                     ->whereNotNull('latitude')
@@ -805,12 +804,6 @@ class TaskService
 
     private function completionBlockedReason(Task $task): ?string
     {
-        $proofsCount = $task->proofs()->count();
-
-        if ($proofsCount < $task->minimum_photos_required) {
-            return "Minimum {$task->minimum_photos_required} proof image(s) required before completion.";
-        }
-
         if ($task->visit_verification_required) {
             $hasGpsProof = $task->proofs()
                 ->whereNotNull('latitude')

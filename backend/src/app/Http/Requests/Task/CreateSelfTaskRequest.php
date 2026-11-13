@@ -32,13 +32,13 @@ class CreateSelfTaskRequest extends FormRequest
         return [
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'project_id' => ['prohibited'],
-            'title' => ['required', 'string', 'min:3', 'max:255'],
+            'title' => ['required', 'string', 'max:255'],
             'type' => ['nullable', 'string', Rule::in(TaskType::values())],
-            'description' => ['required', 'string', 'min:10', 'max:5000'],
+            'description' => ['nullable', 'string', 'max:5000'],
             'assigned_agent_id' => ['prohibited'],
             'assigned_agent_ids' => ['prohibited'],
-            'location' => ['nullable', 'string', 'min:2', 'max:255'],
-            'address' => ['nullable', 'string', 'min:5', 'max:1000'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'due_date' => ['nullable', 'date', 'after:now'],
@@ -58,8 +58,6 @@ class CreateSelfTaskRequest extends FormRequest
     {
         return [
             'company_id.required' => 'Company context is required to create a self task.',
-            'description.required' => 'Task description is required.',
-            'description.min' => 'Task description must be at least 10 characters.',
         ];
     }
 

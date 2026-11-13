@@ -2,7 +2,7 @@ import type { Task } from '@/features/tasks/types';
 
 export type CompletionRequirements = {
   requiredActions: string[];
-  /** API tracked-complete requires ≥1 file; honor task minimum when higher. */
+  /** Suggested photo count from the task. A hint only; never blocks completion. */
   minPhotos: number;
   notesRequired: boolean;
   visitVerificationRequired: boolean;
@@ -24,7 +24,7 @@ export function resolveCompletionRequirements(
 
   return {
     requiredActions,
-    minPhotos: Math.max(1, configuredMin),
+    minPhotos: configuredMin,
     notesRequired: requiredActions.length > 0,
     visitVerificationRequired,
     hasConfiguredRequirements,
@@ -36,13 +36,11 @@ export function validateCompletionRequirements(input: {
   notes: string;
   requirements: CompletionRequirements;
 }): { ok: boolean; photoError?: string; notesError?: string } {
-  const { photosCount, notes, requirements } = input;
-  let photoError: string | undefined;
+  // Photos are optional, so the photo count never blocks completion.
+  const { notes, requirements } = input;
+  const photoError: string | undefined = undefined;
   let notesError: string | undefined;
 
-  if (photosCount < requirements.minPhotos) {
-    photoError = `Attach at least ${requirements.minPhotos} photo${requirements.minPhotos === 1 ? '' : 's'}.`;
-  }
   if (requirements.notesRequired && !notes.trim()) {
     notesError = 'Add a completion note covering the required actions.';
   }

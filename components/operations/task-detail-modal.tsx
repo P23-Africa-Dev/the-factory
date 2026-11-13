@@ -470,13 +470,6 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
       return;
     }
 
-    const minPhotos = detailQuery.data?.minimum_photos_required ?? 0;
-    const proofCount = detailQuery.data?.proofs?.length ?? 0;
-    if (minPhotos > 0 && proofCount < minPhotos) {
-      toast.error(`Upload at least ${minPhotos} photo(s) before completing.`);
-      return;
-    }
-
     updateTaskStatus('completed');
   };
 
@@ -937,7 +930,6 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
         <CompleteTaskSheet
           taskId={taskId}
           companyId={companyId}
-          minimumPhotos={detailQuery.data?.minimum_photos_required ?? 1}
           onSuccess={handleCompleteSuccess}
           onClose={() => setShowCompleteSheet(false)}
         />

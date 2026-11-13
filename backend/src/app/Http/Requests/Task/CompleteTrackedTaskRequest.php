@@ -32,8 +32,8 @@ class CompleteTrackedTaskRequest extends FormRequest
             'accuracy_meters' => ['nullable', 'numeric', 'min:0', 'max:10000'],
             'recorded_at' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:500'],
-            'files' => ['required', 'array', 'min:1', 'max:10'],
-            'files.*' => ['required', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
+            'files' => ['nullable', 'array', 'max:10'],
+            'files.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
         ];
     }
 }

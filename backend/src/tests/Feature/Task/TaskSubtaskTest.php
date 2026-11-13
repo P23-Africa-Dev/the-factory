@@ -219,23 +219,21 @@ class TaskSubtaskTest extends TestCase
         $this->assertNotNull($fresh->completed_at);
     }
 
-    public function test_completion_blocked_when_proofs_missing(): void
+    public function test_completion_not_blocked_when_proofs_missing(): void
     {
         $task = $this->makeTaskWithSubtasks(count: 1, minimumPhotos: 1);
         $subtask = $task->subtasks()->firstOrFail();
 
+        // Photo uploads are optional, so finishing every subtask completes the task.
         $this->withToken($this->tokenFor($this->creator))
             ->patchJson("/api/v1/tasks/{$task->id}/subtasks/{$subtask->id}/complete", [
                 'company_id' => $this->company->id,
                 'is_completed' => true,
             ])
             ->assertOk()
-            ->assertJsonPath('data.task.status', 'in_progress')
+            ->assertJsonPath('data.task.status', 'completed')
             ->assertJsonPath('data.subtask.is_completed', true)
-            ->assertJsonPath(
-                'data.completion_blocked_reason',
-                'Minimum 1 proof image(s) required before completion.',
-            );
+            ->assertJsonPath('data.completion_blocked_reason', null);
     }
 
     public function test_cancelled_task_rejects_subtask_writes(): void

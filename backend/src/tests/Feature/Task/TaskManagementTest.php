@@ -1051,7 +1051,7 @@ class TaskManagementTest extends TestCase
             ->assertJsonValidationErrors(['company_id']);
     }
 
-    public function test_agent_cannot_complete_task_without_required_proofs(): void
+    public function test_agent_can_complete_task_without_photos_even_when_minimum_is_set(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
@@ -1078,8 +1078,9 @@ class TaskManagementTest extends TestCase
                 'status' => 'completed',
             ]);
 
-        $response->assertUnprocessable()
-            ->assertJson(['success' => false]);
+        // Photo uploads are optional; the minimum is a hint, not a gate.
+        $response->assertOk()
+            ->assertJsonPath('data.task.status', 'completed');
     }
 
     public function test_agent_can_cancel_only_from_allowed_states(): void
