@@ -23,7 +23,7 @@ final class ActionFieldCatalog
                     'latitude', 'longitude',
                 ],
                 'preview' => ['title', 'type', 'due_date', 'location', 'address', 'assigned_agent_id'],
-                'required' => ['title', 'type', 'description', 'due_date'],
+                'required' => ['title'],
             ],
             'tasks.reassign' => [
                 'editable' => ['task_id', 'to_user_id', 'reason'],

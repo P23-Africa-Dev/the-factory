@@ -96,19 +96,18 @@ describe('task comments', () => {
 });
 
 describe('task description validation', () => {
-  it.each([undefined, null, '', '   ', '\n\t '])('requires a description (%j)', (value) => {
-    expect(validateTaskDescription(value)).toBe('Task description is required.');
+  it.each([undefined, null, '', '   ', '\n\t '])('allows an empty description (%j)', (value) => {
+    expect(validateTaskDescription(value)).toBeNull();
   });
 
-  it('enforces the minimum length after trimming', () => {
-    expect(validateTaskDescription('  short  ')).toBe('Task description must be at least 10 characters.');
-    expect(validateTaskDescription('Check stock at the store')).toBeNull();
+  it('allows a short description and rejects an overly long one', () => {
+    expect(validateTaskDescription('Go')).toBeNull();
+    expect(validateTaskDescription('a'.repeat(5001))).toMatch(/may not be longer than 5000/);
   });
 
-  it('rejects missing or blank descriptions in the self-task schema', () => {
-    const base = { title: 'Visit store', type: 'inspection' as const };
-    expect(createSelfTaskSchema.safeParse(base).success).toBe(false);
-    expect(createSelfTaskSchema.safeParse({ ...base, description: '    ' }).success).toBe(false);
-    expect(createSelfTaskSchema.safeParse({ ...base, description: 'Check stock levels' }).success).toBe(true);
+  it('only requires a title in the self-task schema', () => {
+    expect(createSelfTaskSchema.safeParse({ title: 'Visit store' }).success).toBe(true);
+    expect(createSelfTaskSchema.safeParse({ title: 'Go', description: '    ' }).success).toBe(true);
+    expect(createSelfTaskSchema.safeParse({ title: '   ' }).success).toBe(false);
   });
 });

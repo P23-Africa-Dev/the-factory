@@ -998,7 +998,6 @@ export default function TrackingPage({
         <CompleteTaskSheet
           taskId={taskId}
           companyId={companyId}
-          minimumPhotos={task?.minimum_photos_required ?? 1}
           onSuccess={handleCompleteSuccess}
           onClose={() => setShowCompleteSheet(false)}
         />

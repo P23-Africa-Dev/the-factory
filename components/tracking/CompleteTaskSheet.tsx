@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Camera, CheckCircle, Loader2, ImageIcon } from "lucide-react";
+import { X, Camera, CheckCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getCurrentPosition } from "@/lib/tracking/geolocation";
 import { completeTaskTracking } from "@/lib/api/tracking";
@@ -11,7 +11,6 @@ import { ApiRequestError } from "@/lib/api/onboarding";
 interface CompleteTaskSheetProps {
   taskId: number;
   companyId: number | string;
-  minimumPhotos?: number;
   onSuccess: () => void;
   onClose: () => void;
 }
@@ -19,7 +18,6 @@ interface CompleteTaskSheetProps {
 export function CompleteTaskSheet({
   taskId,
   companyId,
-  minimumPhotos = 1,
   onSuccess,
   onClose,
 }: CompleteTaskSheetProps) {
@@ -41,7 +39,8 @@ export function CompleteTaskSheet({
     };
   }, []);
 
-  const canSubmit = files.length >= minimumPhotos && !submitting;
+  // Photos are optional; agents can complete without uploading any.
+  const canSubmit = !submitting;
 
   const handleFiles = (incoming: FileList | null) => {
     if (!incoming) return;
@@ -129,10 +128,7 @@ export function CompleteTaskSheet({
             <div className="flex items-center justify-between mb-2">
               <p className="text-[13px] font-bold text-dash-dark">
                 Proof Photos
-                <span className="text-red-400 ml-0.5">*</span>
-              </p>
-              <p className="text-[11px] text-gray-400">
-                {files.length}/{minimumPhotos} minimum
+                <span className="text-[11px] font-normal text-gray-400 ml-1">(optional)</span>
               </p>
             </div>
 
@@ -185,14 +181,6 @@ export function CompleteTaskSheet({
             />
           </div>
 
-          {files.length < minimumPhotos && (
-            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
-              <ImageIcon size={14} className="text-amber-500 shrink-0" />
-              <p className="text-[11px] text-amber-700">
-                {minimumPhotos - files.length} more photo{minimumPhotos - files.length !== 1 ? "s" : ""} required before submitting.
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Submit */}

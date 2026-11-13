@@ -427,17 +427,25 @@ class ProjectTaskIntegrationTest extends TestCase
     // Edge Case Tests
     // ─────────────────────────────────────────────
 
-    public function test_task_title_minimum_length_is_enforced(): void
+    public function test_task_title_is_required_but_has_no_minimum_length(): void
     {
         [$company, $admin] = $this->seedCompany();
+        $token = $admin->createToken('token', ['*'])->plainTextToken;
 
-        $response = $this->withToken($admin->createToken('token', ['*'])->plainTextToken)
+        $this->withToken($token)
             ->postJson('/api/v1/tasks', [
                 'company_id' => $company->id,
-                'title' => 'ab', // too short
-            ]);
+                'title' => 'ab',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.task.title', 'ab');
 
-        $response->assertUnprocessable()
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks', [
+                'company_id' => $company->id,
+                'title' => '',
+            ])
+            ->assertUnprocessable()
             ->assertJsonStructure(['errors' => ['title']]);
     }
 

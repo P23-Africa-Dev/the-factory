@@ -175,7 +175,7 @@ describe("CreateTaskModal task assignees", () => {
   });
 });
 
-describe("CreateTaskModal description validation", () => {
+describe("CreateTaskModal required fields", () => {
   beforeEach(() => {
     mocks.createTask.mockReset();
     mocks.createSelfTask.mockReset();
@@ -184,46 +184,56 @@ describe("CreateTaskModal description validation", () => {
   it.each([
     ["owner", 7],
     ["agent", 10],
-  ] as const)("blocks %s submission when the description is missing", (role, id) => {
+  ] as const)("lets %s submit with only a title", (role, id) => {
     setUser(id, role);
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
     fillTitle("Visit the client office");
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
-    expect(screen.getByText("Task description is required.")).not.toBeNull();
-    expect(mocks.createTask).not.toHaveBeenCalled();
-    expect(mocks.createSelfTask).not.toHaveBeenCalled();
-  });
-
-  it("rejects whitespace-only descriptions", () => {
-    setUser(7, "owner");
-    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
-
-    fillTitle("Visit the client office");
-    fillDescription("    \n   ");
-    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
-
-    expect(screen.getByText("Task description is required.")).not.toBeNull();
-    expect(mocks.createTask).not.toHaveBeenCalled();
-  });
-
-  it("clears the error once a valid description is entered and sends it trimmed", () => {
-    setUser(7, "owner");
-    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
-
-    fillTitle("Visit the client office");
-    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
-    expect(screen.getByText("Task description is required.")).not.toBeNull();
-
-    fillDescription("  Meet the operations lead and collect feedback.  ");
-    expect(screen.queryByText("Task description is required.")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
-    expect(mocks.createTask).toHaveBeenCalledWith(
-      expect.objectContaining({ description: "Meet the operations lead and collect feedback." }),
+    const submit = role === "agent" ? mocks.createSelfTask : mocks.createTask;
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Visit the client office", description: "" }),
       expect.any(Object),
     );
+  });
+
+  it("accepts a short description and sends it trimmed", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fillDescription("  Go  ");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(mocks.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Go" }),
+      expect.any(Object),
+    );
+  });
+
+  it("blocks submission without a title", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(screen.getByText("Task title is required")).not.toBeNull();
+    expect(mocks.createTask).not.toHaveBeenCalled();
+  });
+
+  it("blocks manager submission without an assignee", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fireEvent.change(screen.getByRole("combobox", { name: "Select user" }), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(screen.getByText("Select who this task is assigned to")).not.toBeNull();
+    expect(mocks.createTask).not.toHaveBeenCalled();
   });
 
   it("opens the right-hand subtask modal on Add Subtask, preselects the parent task assignee, and adds the subtask on submit", () => {

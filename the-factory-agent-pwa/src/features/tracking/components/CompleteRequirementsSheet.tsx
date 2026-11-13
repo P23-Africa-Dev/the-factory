@@ -281,10 +281,10 @@ export function CompleteRequirementsSheet({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[#75ADAF]">
-                Proof photos * (min {requirements.minPhotos})
+                Proof photos (optional)
               </p>
               <p className="text-[11px] text-white/50">
-                {photos.length}/{requirements.minPhotos}
+                {photos.length} added
               </p>
             </div>
 

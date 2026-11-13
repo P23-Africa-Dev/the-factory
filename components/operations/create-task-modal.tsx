@@ -209,7 +209,7 @@ export function CreateTaskModal({
     dueDate: initialValues?.dueDate ?? "",
     requiredActions: initialValues?.requiredActions ?? "",
     priority: (initialValues?.priority ?? "") as Priority | "",
-    minPhotos: initialValues?.minPhotos ?? "2",
+    minPhotos: initialValues?.minPhotos ?? "0",
     visitVerification: initialValues?.visitVerification ?? false,
     status: (initialValues?.status ?? "pending") as StatusType,
     category: "all" as TaskCategory,
@@ -263,6 +263,7 @@ export function CreateTaskModal({
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!form.title.trim()) errs.title = "Task title is required";
+    if (mode === "create" && canManageTasks && !form.assignTo) errs.assignTo = "Select who this task is assigned to";
     const descriptionError = validateTaskDescription(form.description);
     if (descriptionError) errs.description = descriptionError;
     if (usesProjectDueDate && form.dueDate && (projectSubtasks ?? subtasks).some((item) => item.dueAt && Date.parse(item.dueAt) > Date.parse(form.dueDate))) {
@@ -472,7 +473,7 @@ export function CreateTaskModal({
 
           {/* Task Type */}
           <div>
-            <FieldLabel required>Task Type</FieldLabel>
+            <FieldLabel>Task Type</FieldLabel>
             <SearchableSelect
               value={form.taskType}
               onChange={(v) => set("taskType", v)}
@@ -487,15 +488,13 @@ export function CreateTaskModal({
 
           {/* Description */}
           <div>
-            <FieldLabel required>Description</FieldLabel>
+            <FieldLabel>Description</FieldLabel>
             <textarea
               placeholder="e.g. Check stock and speak to manager"
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               rows={2}
-              required
               maxLength={TASK_DESCRIPTION_MAX_LENGTH}
-              aria-required="true"
               aria-invalid={!!errors.description}
               className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
@@ -643,7 +642,7 @@ export function CreateTaskModal({
           {/* Due Date + Priority */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <FieldLabel required={!usesProjectDueDate}>Due Date</FieldLabel>
+              <FieldLabel>Due Date</FieldLabel>
               <InputWrap icon={<Calendar size={13} />}>
                 <input
                   type={usesProjectDueDate ? "datetime-local" : "date"}
@@ -661,7 +660,7 @@ export function CreateTaskModal({
             </div>
 
             <div>
-              <FieldLabel required>Priority</FieldLabel>
+              <FieldLabel>Priority</FieldLabel>
               <SearchableSelect
                 value={form.priority}
                 onChange={(v) => set("priority", v as Priority)}
@@ -714,7 +713,7 @@ export function CreateTaskModal({
                 />
               </InputWrap>
               <p className="text-[10px] text-gray-400 mt-1">
-                Minimum photos required
+                Optional. Not needed to complete the task
               </p>
             </div>
 

@@ -145,10 +145,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       toast.error('Task title is required.');
       return;
     }
-    if (!type) {
-      toast.error('Task type is required.');
-      return;
-    }
     const descriptionValidation = validateTaskDescription(description);
     if (descriptionValidation) {
       setDescriptionError(descriptionValidation);
@@ -166,9 +162,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     }
 
     const payload = {
-      title,
-      type,
-      description: description.trim(),
+      title: title.trim(),
+      type: type || undefined,
+      description: description.trim() || undefined,
       location: locationName || undefined,
       address: address || undefined,
       latitude: coords?.lat ?? undefined,
@@ -275,11 +271,10 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             </label>
             <select
               value={type}
-              required
               onChange={(e) => setType(e.target.value as typeof type)}
               className="bg-[#0B1E26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
             >
-              <option value="" disabled />
+              <option value="" />
               {TASK_TYPES.map((t) => (
                 <option key={t.value} value={t.value} className="bg-[#0B1E26] text-white">
                   {t.label}
@@ -291,7 +286,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
           {/* Description */}
           <div className="flex flex-col">
             <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
-              Description <span className="text-red-400">*</span>
+              Description
             </label>
             <textarea
               value={description}
@@ -300,7 +295,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                 if (descriptionError) setDescriptionError('');
               }}
               rows={2}
-              aria-required="true"
               aria-invalid={!!descriptionError}
               aria-describedby={descriptionError ? 'create-task-description-error' : undefined}
               maxLength={TASK_DESCRIPTION_MAX_LENGTH}

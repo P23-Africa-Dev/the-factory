@@ -6,18 +6,18 @@ import {
 } from './completionRequirements';
 
 describe('resolveCompletionRequirements', () => {
-  it('defaults to at least one photo', () => {
+  it('does not require photos by default', () => {
     const req = resolveCompletionRequirements({
       requiredActions: [],
       minimumPhotosRequired: 0,
       visitVerificationRequired: false,
     });
-    expect(req.minPhotos).toBe(1);
+    expect(req.minPhotos).toBe(0);
     expect(req.notesRequired).toBe(false);
     expect(req.hasConfiguredRequirements).toBe(false);
   });
 
-  it('honors configured minimum photos and required actions', () => {
+  it('keeps the configured photo count as a suggestion', () => {
     const req = resolveCompletionRequirements({
       requiredActions: ['Take meter reading'],
       minimumPhotosRequired: 3,
@@ -36,23 +36,23 @@ describe('validateCompletionRequirements', () => {
     visitVerificationRequired: false,
   });
 
-  it('fails when photos or notes are missing', () => {
+  it('passes without photos when the note is present', () => {
+    const result = validateCompletionRequirements({
+      photosCount: 0,
+      notes: 'Inspected and sealed.',
+      requirements,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.photoError).toBeUndefined();
+  });
+
+  it('still asks for a note when required actions are set', () => {
     expect(
       validateCompletionRequirements({
-        photosCount: 1,
+        photosCount: 2,
         notes: '',
         requirements,
       }).ok,
     ).toBe(false);
-  });
-
-  it('passes when min photos and notes are satisfied', () => {
-    expect(
-      validateCompletionRequirements({
-        photosCount: 2,
-        notes: 'Inspected and sealed.',
-        requirements,
-      }).ok,
-    ).toBe(true);
   });
 });
