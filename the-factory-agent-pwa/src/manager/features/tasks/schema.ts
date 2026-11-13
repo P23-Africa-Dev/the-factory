@@ -74,6 +74,8 @@ const rawTaskSchema = z
     assigned_to: z.union([z.string(), z.number(), z.null(), rawAssigneeSchema]).optional(),
     assignee: rawAssigneeSchema.nullable().optional(),
     assignees: z.array(rawAssigneeSchema).nullable().optional(),
+    /** Everyone currently assigned, as the API sends it. */
+    assigned_users: z.array(rawAssigneeSchema).nullable().optional(),
     proofs: z.array(rawProofSchema).nullable().optional(),
     completion_proofs: z.array(rawProofSchema).nullable().optional(),
     project: z
@@ -133,8 +135,12 @@ const rawTaskSchema = z
   })
   .passthrough()
   .transform((data) => {
-    const assigneesList = Array.isArray(data.assignees)
-      ? data.assignees.map((a) => ({
+    const listedAssignees =
+      Array.isArray(data.assigned_users) && data.assigned_users.length > 0
+        ? data.assigned_users
+        : data.assignees;
+    const assigneesListRaw = Array.isArray(listedAssignees)
+      ? listedAssignees.map((a) => ({
           id: Number(a.id),
           name: a.name ?? 'Agent',
           email: a.email ?? '',
@@ -159,6 +165,16 @@ const rawTaskSchema = z
               },
             ]
           : [];
+    // Primary assignee first, so single-assignee displays keep working.
+    const primaryId =
+      data.assigned_agent_id != null && data.assigned_agent_id !== '' ? Number(data.assigned_agent_id) : null;
+    const assigneesList =
+      primaryId != null
+        ? [
+            ...assigneesListRaw.filter((a) => a.id === primaryId),
+            ...assigneesListRaw.filter((a) => a.id !== primaryId),
+          ]
+        : assigneesListRaw;
 
     const primaryAssignee = assigneesList[0] ?? null;
     const resolvedAgentId =

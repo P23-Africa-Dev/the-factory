@@ -753,6 +753,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
                 minPhotos: editingTask.minPhotosRequired != null ? String(editingTask.minPhotosRequired) : "0",
                 visitVerification: editingTask.visitVerificationRequired ?? false,
                 observerIds: (editingTask.observers ?? []).map((observer) => String(observer.id)),
+                assigneeIds: editingTask.assigneeIds ?? [],
               }
             : undefined
         }
@@ -776,6 +777,9 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
               latitude: payload.latitude,
               longitude: payload.longitude,
               observer_ids: payload.observerIds,
+              ...(payload.assigneeIds && payload.assigneeIds.length > 0
+                ? { assigned_agent_ids: payload.assigneeIds }
+                : {}),
             },
           });
         }}
@@ -867,6 +871,14 @@ function buildContainers(tasks: BoardTask[]): DndContainer[] {
   ];
 }
 
+/** Current assignee ids with the primary assignee first. */
+function orderedAssigneeIds(apiTask: BoardTask): string[] {
+  const ids = (apiTask.assigned_users ?? []).map((user) => String(user.id));
+  const primary = apiTask.assigned_agent_id != null ? String(apiTask.assigned_agent_id) : null;
+  if (primary && !ids.includes(primary)) ids.unshift(primary);
+  return primary ? [primary, ...ids.filter((id) => id !== primary)] : ids;
+}
+
 function mapTaskToDnd(apiTask: BoardTask): DndItem {
   const statusLabel = mapStatusToLabel(apiTask.status);
   const assigneeLabel =
@@ -900,6 +912,7 @@ function mapTaskToDnd(apiTask: BoardTask): DndItem {
     priority: apiTask.priority ?? undefined,
     observers: apiTask.observers ?? [],
     isObserver: Boolean(apiTask.is_observer),
+    assigneeIds: orderedAssigneeIds(apiTask),
     createdByUserId: apiTask.created_by_user_id != null ? String(apiTask.created_by_user_id) : undefined,
     statusLabel,
   };

@@ -14,7 +14,7 @@ import {
   taskHasMapLocation,
 } from '@/features/tasks';
 import { TaskComments } from '@/features/tasks/components/TaskComments';
-import { ObserverList } from '@/components/shared/Observers';
+import { AssigneeList, ObserverList } from '@/components/shared/Observers';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 
@@ -214,6 +214,11 @@ export default function TaskDetailPage() {
           muted={!task.description?.trim()}
         />
         {task.instructions && <Section title="Instructions" body={task.instructions} />}
+        {task.assignees.length > 1 && (
+          <div className="mb-4">
+            <AssigneeList assignees={task.assignees} />
+          </div>
+        )}
         {(isObserver || task.observers.length > 0) && (
           <div className="mb-4">
             <ObserverList observers={task.observers} isObserver={isObserver} />

@@ -7,18 +7,21 @@ namespace App\Http\Requests\Task;
 use App\Enums\TaskPriority;
 use App\Enums\TaskType;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
+use App\Http\Requests\Task\Concerns\NormalizesTaskAssignees;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class CreateTaskRequest extends FormRequest
 {
+    use NormalizesTaskAssignees;
     use ResolvesCompanyContextId;
 
     protected function prepareForValidation(): void
     {
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
+            ...$this->normalizedAssigneeInput(),
         ]);
     }
 
@@ -36,6 +39,8 @@ class CreateTaskRequest extends FormRequest
             'type' => ['nullable', 'string', Rule::in(TaskType::values())],
             'description' => ['nullable', 'string', 'max:5000'],
             'assigned_agent_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assigned_agent_ids' => ['nullable', 'array', 'max:20'],
+            'assigned_agent_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'location' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:1000'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],

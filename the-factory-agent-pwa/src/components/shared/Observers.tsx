@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, Eye, Search, X } from 'lucide-react';
 
 export type ObserverPerson = {
@@ -110,6 +110,30 @@ export function ObservingBadge({ label = 'Observing' }: { label?: string }) {
   );
 }
 
+/** A labelled list of everyone a task is assigned to, for task detail screens. */
+export function AssigneeList({ assignees }: { assignees: ObserverPerson[] }) {
+  if (assignees.length === 0) return null;
+
+  return (
+    <div className="bg-[#1F2E35] border border-white/10 rounded-xl p-4">
+      <h4 className="text-xs font-bold text-[#75ADAF] mb-2 uppercase tracking-wider">
+        Assigned to
+      </h4>
+      <ul className="flex flex-wrap gap-2">
+        {assignees.map((person) => (
+          <li
+            key={person.id}
+            className="inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 py-1 pl-1 pr-3 text-sm text-[#D0D0D0]"
+          >
+            <ObserverAvatar person={person} size={22} ringClassName="" />
+            {person.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** A labelled list of observers for task detail screens. */
 export function ObserverList({ observers, isObserver }: { observers: ObserverPerson[]; isObserver?: boolean }) {
   return (
@@ -139,20 +163,32 @@ export function ObserverList({ observers, isObserver }: { observers: ObserverPer
   );
 }
 
-/** Multi-select for task observers: removable chips plus an inline searchable checklist. */
+/**
+ * Multi-select of people, used for task observers and assignees: removable chips
+ * plus an inline searchable checklist.
+ */
 export function ObserverPicker({
   people,
   value,
   onChange,
   excludeIds = [],
   loading = false,
+  ariaLabel = 'Select observers',
+  placeholder = 'Add people to observe this task',
+  icon,
 }: {
   people: ObserverPerson[];
   value: string[];
   onChange: (ids: string[]) => void;
-  /** Ids that cannot be observers, such as the task's assignee. */
+  /** Ids that cannot be picked, such as the task's assignee when choosing observers. */
   excludeIds?: string[];
   loading?: boolean;
+  /** Accessible name of the toggle button. */
+  ariaLabel?: string;
+  /** Text shown when nobody is selected. */
+  placeholder?: string;
+  /** Icon at the start of the field. Defaults to an eye, for observers. */
+  icon?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -175,12 +211,12 @@ export function ObserverPicker({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Select observers"
+        aria-label={ariaLabel}
         className="w-full flex items-center gap-2 px-3 py-2 min-h-[42px] text-left"
       >
-        <Eye size={13} className="text-white/40 shrink-0" aria-hidden="true" />
+        {icon ?? <Eye size={13} className="text-white/40 shrink-0" aria-hidden="true" />}
         {selected.length === 0 ? (
-          <span className="flex-1 text-sm text-white/40">{loading ? 'Loading…' : 'Add people to observe this task'}</span>
+          <span className="flex-1 text-sm text-white/40">{loading ? 'Loading…' : placeholder}</span>
         ) : (
           <span className="flex-1 flex flex-wrap gap-1.5">
             {selected.map((person) => (
@@ -228,7 +264,7 @@ export function ObserverPicker({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search people…"
-              aria-label="Search observers"
+              aria-label={`Search: ${ariaLabel}`}
               className="flex-1 text-sm text-white placeholder:text-white/30 outline-none bg-transparent"
             />
           </div>

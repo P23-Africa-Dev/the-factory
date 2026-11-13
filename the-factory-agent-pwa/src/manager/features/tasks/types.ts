@@ -21,6 +21,8 @@ export type UpdateTaskPayload = {
   project_id?: number | null;
   assigned_to?: number | number[] | null;
   observer_ids?: number[];
+  /** Replaces everyone the task is assigned to; the first is the primary assignee. */
+  assigned_agent_ids?: number[];
 };
 export type TaskFilters = z.infer<typeof taskFiltersSchema> | undefined;
 export type CreateSelfTaskPayload = z.infer<typeof createSelfTaskSchema>;

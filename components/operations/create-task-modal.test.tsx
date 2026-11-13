@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CreateTaskModal } from "@/components/operations/create-task-modal";
@@ -89,6 +89,30 @@ function fillTitle(value: string) {
   });
 }
 
+/** The assignee picker's root, so its checkboxes are not confused with the observer picker's. */
+function assigneePicker() {
+  return screen.getByRole("button", { name: "Select assignees" }).parentElement as HTMLElement;
+}
+
+function openAssignees() {
+  fireEvent.click(screen.getByRole("button", { name: "Select assignees" }));
+}
+
+function assigneeCheckbox(name: string) {
+  return within(assigneePicker()).getByRole("checkbox", { name }) as HTMLInputElement;
+}
+
+function checkedAssignees() {
+  return within(assigneePicker())
+    .getAllByRole("checkbox")
+    .filter((box) => (box as HTMLInputElement).checked)
+    .map((box) => box.getAttribute("aria-label"));
+}
+
+function observerPicker() {
+  return screen.getByRole("button", { name: "Select observers" }).parentElement as HTMLElement;
+}
+
 describe("CreateTaskModal task assignees", () => {
   beforeEach(() => {
     mocks.createTask.mockReset();
@@ -96,20 +120,19 @@ describe("CreateTaskModal task assignees", () => {
   });
 
   it.each([
-    ["owner", 7],
-    ["admin", 8],
-    ["supervisor", 9],
-  ] as const)("preselects the logged-in %s from all company users", (role, id) => {
+    ["owner", 7, "Olivia Owner"],
+    ["admin", 8, "Adam Admin"],
+    ["supervisor", 9, "Sasha Supervisor"],
+  ] as const)("preselects the logged-in %s from all company users", (role, id, name) => {
     setUser(id, role);
 
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+    openAssignees();
 
-    const select = screen.getByRole("combobox", { name: "Select user" }) as HTMLSelectElement;
-    expect(select.value).toBe(String(id));
-    expect(screen.getByRole("option", { name: "Olivia Owner" })).not.toBeNull();
-    expect(screen.getByRole("option", { name: "Adam Admin" })).not.toBeNull();
-    expect(screen.getByRole("option", { name: "Sasha Supervisor" })).not.toBeNull();
-    expect(screen.getByRole("option", { name: "Amara Agent" })).not.toBeNull();
+    expect(checkedAssignees()).toEqual([name]);
+    for (const person of ["Olivia Owner", "Adam Admin", "Sasha Supervisor", "Amara Agent"]) {
+      expect(assigneeCheckbox(person)).not.toBeNull();
+    }
   });
 
   it("preserves an explicit edit-mode assignee", () => {
@@ -123,9 +146,25 @@ describe("CreateTaskModal task assignees", () => {
         onClose={vi.fn()}
       />,
     );
+    openAssignees();
 
-    const select = screen.getByRole("combobox", { name: "Select user" }) as HTMLSelectElement;
-    expect(select.value).toBe("10");
+    expect(checkedAssignees()).toEqual(["Amara Agent"]);
+  });
+
+  it("preserves several edit-mode assignees", () => {
+    setUser(7, "owner");
+
+    render(
+      <CreateTaskModal
+        isOpen
+        mode="edit"
+        initialValues={{ assigneeIds: ["9", "10"] }}
+        onClose={vi.fn()}
+      />,
+    );
+    openAssignees();
+
+    expect(checkedAssignees()).toEqual(["Sasha Supervisor", "Amara Agent"]);
   });
 
   it("preserves a selection while open and restores the default on reopen", () => {
@@ -133,17 +172,33 @@ describe("CreateTaskModal task assignees", () => {
     const onClose = vi.fn();
     const { rerender } = render(<CreateTaskModal isOpen onClose={onClose} />);
 
-    const select = screen.getByRole("combobox", { name: "Select user" }) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "8" } });
+    openAssignees();
+    fireEvent.click(assigneeCheckbox("Adam Admin"));
     rerender(<CreateTaskModal isOpen onClose={onClose} />);
-    expect(select.value).toBe("8");
+    expect(checkedAssignees()).toEqual(["Olivia Owner", "Adam Admin"]);
 
     rerender(<CreateTaskModal isOpen={false} onClose={onClose} />);
     rerender(<CreateTaskModal isOpen onClose={onClose} />);
+    openAssignees();
 
-    expect(
-      (screen.getByRole("combobox", { name: "Select user" }) as HTMLSelectElement).value,
-    ).toBe("7");
+    expect(checkedAssignees()).toEqual(["Olivia Owner"]);
+  });
+
+  it("assigns a task to several people, primary first", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Joint site visit");
+    openAssignees();
+    fireEvent.click(assigneeCheckbox("Olivia Owner"));
+    fireEvent.click(assigneeCheckbox("Amara Agent"));
+    fireEvent.click(assigneeCheckbox("Sasha Supervisor"));
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(mocks.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ assigned_agent_id: 10, assigned_agent_ids: [10, 9] }),
+      expect.any(Object),
+    );
   });
 
   it("submits the selected management user through assigned_agent_id", () => {
@@ -157,7 +212,7 @@ describe("CreateTaskModal task assignees", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(mocks.createTask).toHaveBeenCalledWith(
-      expect.objectContaining({ company_id: 12, assigned_agent_id: 7 }),
+      expect.objectContaining({ company_id: 12, assigned_agent_id: 7, assigned_agent_ids: [7] }),
       expect.any(Object),
     );
   });
@@ -166,7 +221,7 @@ describe("CreateTaskModal task assignees", () => {
     setUser(10, "agent");
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
-    expect(screen.queryByRole("combobox", { name: "Select user" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Select assignees" })).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
       target: { value: "Agent field visit" },
@@ -231,9 +286,8 @@ describe("CreateTaskModal required fields", () => {
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
     fillTitle("Visit the client office");
-    fireEvent.change(screen.getByRole("combobox", { name: "Select user" }), {
-      target: { value: "" },
-    });
+    openAssignees();
+    fireEvent.click(assigneeCheckbox("Olivia Owner"));
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(screen.getByText("Select who this task is assigned to")).not.toBeNull();
@@ -250,8 +304,11 @@ describe("CreateTaskModal required fields", () => {
       />,
     );
 
-    const parentAssigneeSelect = screen.getByRole("combobox", { name: "Select user" }) as HTMLSelectElement;
-    fireEvent.change(parentAssigneeSelect, { target: { value: "9" } });
+    openAssignees();
+    fireEvent.click(assigneeCheckbox("Olivia Owner"));
+    fireEvent.click(assigneeCheckbox("Sasha Supervisor"));
+    // Close the picker so only the subtask list shows these people.
+    openAssignees();
 
     const subtaskInput = screen.getByPlaceholderText("Input your task title");
     expect(screen.queryByLabelText("Assign to")).toBeNull();
@@ -291,10 +348,12 @@ describe("CreateTaskModal observers", () => {
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
     fillTitle("Visit the client office");
-    fireEvent.change(screen.getByRole("combobox", { name: "Select user" }), { target: { value: "10" } });
+    openAssignees();
+    fireEvent.click(assigneeCheckbox("Olivia Owner"));
+    fireEvent.click(assigneeCheckbox("Amara Agent"));
     openObserverList();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sasha Supervisor" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Adam Admin" }));
+    fireEvent.click(within(observerPicker()).getByRole("checkbox", { name: "Sasha Supervisor" }));
+    fireEvent.click(within(observerPicker()).getByRole("checkbox", { name: "Adam Admin" }));
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(mocks.createTask).toHaveBeenCalledWith(
@@ -307,11 +366,13 @@ describe("CreateTaskModal observers", () => {
     setUser(7, "owner");
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Select user" }), { target: { value: "10" } });
+    openAssignees();
+    fireEvent.click(assigneeCheckbox("Olivia Owner"));
+    fireEvent.click(assigneeCheckbox("Amara Agent"));
     openObserverList();
 
-    expect(screen.queryByRole("checkbox", { name: "Amara Agent" })).toBeNull();
-    expect(screen.getByRole("checkbox", { name: "Olivia Owner" })).not.toBeNull();
+    expect(within(observerPicker()).queryByRole("checkbox", { name: "Amara Agent" })).toBeNull();
+    expect(within(observerPicker()).getByRole("checkbox", { name: "Olivia Owner" })).not.toBeNull();
   });
 
   it("lets an agent add observers to their own task, excluding themselves", () => {
@@ -320,8 +381,8 @@ describe("CreateTaskModal observers", () => {
 
     fillTitle("Agent field visit");
     openObserverList();
-    expect(screen.queryByRole("checkbox", { name: "Amara Agent" })).toBeNull();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sasha Supervisor" }));
+    expect(within(observerPicker()).queryByRole("checkbox", { name: "Amara Agent" })).toBeNull();
+    fireEvent.click(within(observerPicker()).getByRole("checkbox", { name: "Sasha Supervisor" }));
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(mocks.createSelfTask).toHaveBeenCalledWith(

@@ -214,7 +214,9 @@ function ManagerTasksContent() {
   const [newDueDate, setNewDueDate] = useState('');
   const { user } = useAuth();
   const [subtasks, setSubtasks] = useState<ChecklistStep[]>([]);
-  const [newAssigneeId, setNewAssigneeId] = useState<string>('');
+  // Everyone the new task is assigned to; the first is the primary assignee.
+  const [newAssigneeIds, setNewAssigneeIds] = useState<string[]>([]);
+  const newAssigneeId = newAssigneeIds[0] ?? '';
   const [newObserverIds, setNewObserverIds] = useState<string[]>([]);
   const [newProjectId, setNewProjectId] = useState<string>('');
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
@@ -225,6 +227,7 @@ function ManagerTasksContent() {
   const [editDesc, setEditDesc] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editObserverIds, setEditObserverIds] = useState<string[]>([]);
+  const [editAssigneeIds, setEditAssigneeIds] = useState<string[]>([]);
 
   // Reassign Task modal state
   const [reassignModalTask, setReassignModalTask] = useState<Task | null>(null);
@@ -295,7 +298,7 @@ function ManagerTasksContent() {
     setNewPriority('medium');
     setNewDueDate('');
     setSubtasks([]);
-    setNewAssigneeId('');
+    setNewAssigneeIds([]);
     setNewObserverIds([]);
     setNewProjectId('');
     setCreateErrors({});
@@ -306,7 +309,7 @@ function ManagerTasksContent() {
       e.preventDefault();
       const errs: Record<string, string> = {};
       if (!newTitle.trim()) errs.title = 'Task title is required';
-      if (!newAssigneeId) errs.assignee = 'Select who this task is assigned to';
+      if (newAssigneeIds.length === 0) errs.assignee = 'Select who this task is assigned to';
       if (newDueDate && subtasks.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(newDueDate))) {
         toast.error('The task deadline cannot be earlier than a subtask deadline.');
         return;
@@ -328,11 +331,11 @@ function ManagerTasksContent() {
           priority: newPriority,
           due_date: newDueDate ? new Date(newDueDate).toISOString() : null,
           assigned_to: newAssigneeId ? Number(newAssigneeId) : null,
-          assignee_ids: newAssigneeId ? [Number(newAssigneeId)] : undefined,
+          assignee_ids: newAssigneeIds.length > 0 ? newAssigneeIds.map(Number) : undefined,
           project_id: newProjectId ? Number(newProjectId) : null,
           // The assignee cannot also observe the task.
           ...(newObserverIds.length > 0
-            ? { observer_ids: newObserverIds.filter((id) => id !== newAssigneeId).map(Number) }
+            ? { observer_ids: newObserverIds.filter((id) => !newAssigneeIds.includes(id)).map(Number) }
             : {}),
           ...(subtasks.length > 0
             ? {
@@ -362,6 +365,7 @@ function ManagerTasksContent() {
       subtasks,
       user,
       newAssigneeId,
+      newAssigneeIds,
       newObserverIds,
       newProjectId,
       createTask,
@@ -377,6 +381,7 @@ function ManagerTasksContent() {
     setEditDesc(task.description ?? '');
     setEditAddress(task.address === '—' ? '' : task.address);
     setEditObserverIds(task.observers.map((observer) => observer.id));
+    setEditAssigneeIds(task.assignees.map((person) => String(person.id)));
   }, []);
 
   const handleSaveEdit = useCallback(
@@ -390,7 +395,9 @@ function ManagerTasksContent() {
           description: editDesc.trim() || undefined,
           address: editAddress.trim() || undefined,
           location: editAddress.trim() || undefined,
-          observer_ids: editObserverIds.map(Number),
+          observer_ids: editObserverIds.filter((id) => !editAssigneeIds.includes(id)).map(Number),
+          // Only sent when filled, so older unassigned tasks can still be edited.
+          ...(editAssigneeIds.length > 0 && { assigned_agent_ids: editAssigneeIds.map(Number) }),
         });
         toast.success('Task updated');
         setEditTask(null);
@@ -399,7 +406,7 @@ function ManagerTasksContent() {
         toast.error('Failed to update task');
       }
     },
-    [editTask, editTitle, editDesc, editAddress, editObserverIds, updateTask, refetchTasks],
+    [editTask, editTitle, editDesc, editAddress, editObserverIds, editAssigneeIds, updateTask, refetchTasks],
   );
 
   const handleConfirmReassign = useCallback(async () => {
@@ -690,8 +697,12 @@ function ManagerTasksContent() {
                             </span>
                           )}
                           {task.assigneeName ? (
-                            <span className="px-2 py-0.5 rounded-full bg-[#75ADAF]/15 text-[#75ADAF] text-[9px] font-bold">
+                            <span
+                              className="px-2 py-0.5 rounded-full bg-[#75ADAF]/15 text-[#75ADAF] text-[9px] font-bold"
+                              title={task.assignees.map((person) => person.name).join(', ')}
+                            >
                               👤 {task.assigneeName}
+                              {task.assignees.length > 1 ? ` +${task.assignees.length - 1}` : ''}
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full bg-[#FD6046]/15 text-[#FD6046] text-[9px] font-bold">
@@ -1177,18 +1188,21 @@ function ManagerTasksContent() {
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
                     Assign to *
                   </label>
-                  <select
-                    value={newAssigneeId}
-                    onChange={(e) => setNewAssigneeId(e.target.value)}
-                    className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
-                  >
-                    <option value="">Select an assignee</option>
-                    {assignees.map((agent) => (
-                      <option key={agent.id} value={String(agent.id)}>
-                        {agent.name} ({agent.email})
-                      </option>
-                    ))}
-                  </select>
+                  <ObserverPicker
+                    people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                    value={newAssigneeIds}
+                    onChange={(ids) => {
+                      setNewAssigneeIds(ids);
+                      // Someone who performs the task cannot also observe it.
+                      setNewObserverIds((current) => current.filter((id) => !ids.includes(id)));
+                    }}
+                    ariaLabel="Select assignees"
+                    placeholder="Select one or more people"
+                    icon={<UserPlus size={13} className="text-white/40 shrink-0" aria-hidden="true" />}
+                  />
+                  <p className="text-[10px] text-white/40 mt-1">
+                    Everyone picked works on the same task. The first person is the primary assignee.
+                  </p>
                   {createErrors.assignee && (
                     <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.assignee}</p>
                   )}
@@ -1203,7 +1217,7 @@ function ManagerTasksContent() {
                     people={observerCandidates}
                     value={newObserverIds}
                     onChange={setNewObserverIds}
-                    excludeIds={newAssigneeId ? [newAssigneeId] : []}
+                    excludeIds={newAssigneeIds}
                     loading={loadingObserverCandidates}
                   />
                   <p className="text-[10px] text-white/40 mt-1">
@@ -1666,13 +1680,30 @@ function ManagerTasksContent() {
 
                 <div>
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                    Assigned to
+                  </label>
+                  <ObserverPicker
+                    people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                    value={editAssigneeIds}
+                    onChange={(ids) => {
+                      setEditAssigneeIds(ids);
+                      setEditObserverIds((current) => current.filter((id) => !ids.includes(id)));
+                    }}
+                    ariaLabel="Select assignees"
+                    placeholder="Select one or more people"
+                    icon={<UserPlus size={13} className="text-white/40 shrink-0" aria-hidden="true" />}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
                     Observers
                   </label>
                   <ObserverPicker
                     people={observerCandidates}
                     value={editObserverIds}
                     onChange={setEditObserverIds}
-                    excludeIds={editTask?.assignedAgentId != null ? [String(editTask.assignedAgentId)] : []}
+                    excludeIds={editAssigneeIds}
                     loading={loadingObserverCandidates}
                   />
                 </div>
