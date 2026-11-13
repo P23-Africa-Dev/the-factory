@@ -245,3 +245,14 @@ export function useCreateTaskComment(taskId: string) {
     },
   });
 }
+
+export function useTaskObserverCandidates(enabled = true) {
+  const isAuthenticated =
+    typeof window !== 'undefined' && Boolean(appStore.getString('auth_token'));
+  return useQuery({
+    queryKey: [...taskKeys.all, 'observer-candidates'],
+    queryFn: () => taskApi.getObserverCandidates(),
+    enabled: isAuthenticated && enabled,
+    staleTime: 5 * 60_000,
+  });
+}

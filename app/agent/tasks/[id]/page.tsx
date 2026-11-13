@@ -2,13 +2,14 @@
 
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, MapPin, Calendar, User, ChevronRight, ClipboardList } from 'lucide-react';
+import { ArrowLeft, MapPin, Calendar, User, ChevronRight, ClipboardList, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { useTaskDetail, useUpdateTaskStatus } from '@/hooks/use-tasks';
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from '@/lib/tasks/location';
 import { TaskComments } from '@/components/operations/task-comments';
+import { ObserverAvatar } from '@/components/operations/observer-avatars';
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: 'bg-red-100 text-red-600',
@@ -66,6 +67,9 @@ export default function AgentTaskDetailPage({
   const isInProgress = task.status === 'in_progress';
   const isCompleted = task.status === 'completed';
   const isCancelled = task.status === 'cancelled';
+  // Observers follow the task and comment on it, but do not perform it.
+  const isObserver = Boolean(task.is_observer);
+  const observers = task.observers ?? [];
 
   const updateTaskStatus = (status: 'in_progress' | 'completed' | 'cancelled') => {
     updateStatus(
@@ -139,6 +143,34 @@ export default function AgentTaskDetailPage({
             </div>
           )}
 
+          {observers.length > 0 && (
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-[#E6F1F0] flex items-center justify-center shrink-0">
+                <Eye size={14} className="text-[#094B5C]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] text-gray-400 font-semibold">Observers</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {observers.map((observer) => (
+                    <li
+                      key={observer.id}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 border border-gray-100 py-0.5 pl-0.5 pr-2.5 text-[12px] text-dash-dark font-semibold"
+                    >
+                      <ObserverAvatar person={observer} size={20} className="ring-0" />
+                      {observer.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {isObserver && (
+            <p className="rounded-xl bg-[#E6F1F0] px-3 py-2 text-[12px] text-[#094B5C]">
+              You&apos;re observing this task. You can follow its progress and comment, but it isn&apos;t assigned to you.
+            </p>
+          )}
+
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
               <MapPin size={14} className="text-rose-500" />
@@ -203,7 +235,7 @@ export default function AgentTaskDetailPage({
         />
       </div>
 
-      {(isPending || isInProgress) && !isCompleted && !isCancelled && (
+      {(isPending || isInProgress) && !isCompleted && !isCancelled && !isObserver && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-5 py-4 pb-safe space-y-2">
           {isPending && hasMapLocation && (
             <button

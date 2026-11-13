@@ -16,6 +16,8 @@ export type UpdateTaskPayload = {
   description?: string;
   location?: string;
   address?: string;
+  /** Only applied when the agent created the task. */
+  observer_ids?: number[];
 };
 export type TaskFilters = z.infer<typeof taskFiltersSchema> | undefined;
 export type CreateSelfTaskPayload = z.infer<typeof createSelfTaskSchema>;

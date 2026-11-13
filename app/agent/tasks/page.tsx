@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Clock, CheckCircle2, ChevronRight, AlertCircle, Plus } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle2, ChevronRight, AlertCircle, Plus, Eye } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
 import { useAgentTasks } from '@/hooks/use-tracking';
 import type { ApiTaskStatus } from '@/lib/api/tasks';
 import { hasTrackableTaskLocation } from '@/lib/tasks/location';
 import { CreateTaskModal } from '@/components/operations/create-task-modal';
+import { ObserverAvatars } from '@/components/operations/observer-avatars';
 
 type Tab = 'pending' | 'in_progress' | 'completed';
 
@@ -115,14 +116,19 @@ export default function AgentTasksPage() {
         {tasks.map((task) => {
           const overdue = isOverdue(task.due_date);
           const hasMap = hasTrackableTaskLocation(task);
-          const action =
-            task.status === 'pending'
+          // Observers follow the task; they never start, track or complete it.
+          const isObserver = Boolean(task.is_observer);
+          const observers = task.observers ?? [];
+          const action = isObserver
+            ? 'View'
+            : task.status === 'pending'
               ? hasMap ? 'Start' : 'Open'
               : task.status === 'in_progress'
               ? hasMap ? 'Continue' : 'Manage'
               : 'View';
-          const actionColor =
-            task.status === 'pending'
+          const actionColor = isObserver
+            ? 'bg-gray-100 text-gray-500'
+            : task.status === 'pending'
               ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
               : task.status === 'in_progress'
               ? 'bg-blue-50 text-blue-600 border border-blue-200'
@@ -148,6 +154,12 @@ export default function AgentTasksPage() {
                       Overdue
                     </span>
                   )}
+                  {isObserver && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E6F1F0] text-[#094B5C]">
+                      <Eye size={10} aria-hidden="true" />
+                      Observing
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-[14px] font-bold text-dash-dark leading-snug truncate">
@@ -165,12 +177,18 @@ export default function AgentTasksPage() {
                     Due {new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 )}
+
+                {observers.length > 0 && (
+                  <div className="mt-2">
+                    <ObserverAvatars observers={observers} size={20} />
+                  </div>
+                )}
               </div>
 
               <button
                 onClick={() =>
                   router.push(
-                    task.status === 'in_progress' && hasMap
+                    task.status === 'in_progress' && hasMap && !isObserver
                       ? `/agent/tasks/${task.id}/tracking`
                       : `/agent/tasks/${task.id}`
                   )

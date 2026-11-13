@@ -89,6 +89,18 @@ const rawTaskSchema = z
     visit_verification_required: z.boolean().optional().nullable(),
     created_by_user_id: z.union([z.string(), z.number()]).nullish(),
     comments_count: z.number().nullish(),
+    observers: z
+      .array(
+        z
+          .object({
+            id: z.union([z.string(), z.number()]),
+            name: z.string(),
+            avatar_url: z.string().nullish(),
+          })
+          .passthrough(),
+      )
+      .nullish(),
+    is_observer: z.boolean().nullish(),
     subtasks: z
       .array(
         z
@@ -198,6 +210,13 @@ const rawTaskSchema = z
       priority: data.priority ?? undefined,
       ...((data.created_by_user_id ?? data.creator?.id) != null && { creatorId: String(data.created_by_user_id ?? data.creator?.id) }),
       ...(data.comments_count != null && { commentCount: data.comments_count }),
+      observers: (data.observers ?? []).map((observer) => ({
+        id: String(observer.id),
+        name: observer.name,
+        avatarUrl: observer.avatar_url ?? null,
+      })),
+      // True when the signed-in user follows, rather than performs, this task.
+      isObserver: Boolean(data.is_observer),
       assignedBy: data.assigned_by ?? data.creator?.name ?? undefined,
       assignedAgentId: resolvedAgentId,
       assigneeName: primaryAssignee?.name ?? null,
@@ -264,6 +283,7 @@ export const createSelfTaskSchema = z.object({
   priority: z.enum(['low', 'medium', 'high', 'urgent']).optional().nullable(),
   minimum_photos_required: z.number().min(0).max(20).optional().nullable(),
   visit_verification_required: z.boolean().optional().nullable(),
+  observer_ids: z.array(z.number()).optional(),
   assigned_to: z.union([z.number(), z.array(z.number()), z.null()]).optional(),
   assignee_ids: z.array(z.number()).optional(),
   project_id: z.number().optional().nullable(),

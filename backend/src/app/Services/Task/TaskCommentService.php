@@ -88,6 +88,17 @@ class TaskCommentService
 
         $comment->load('author:id,name,avatar,gender');
 
+        try {
+            app(TaskObserverService::class)->notifyComment($task, $user, $comment);
+        } catch (\Throwable $exception) {
+            // A failed notification must never lose the comment the user just posted.
+            Log::error('Task comment notification failed.', [
+                'task_id' => $task->id,
+                'comment_id' => $comment->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+
         return [
             'comment' => $comment,
             'roles' => $this->authorRoles($task->company_id, [$user->id]),
@@ -125,13 +136,16 @@ class TaskCommentService
             return true;
         }
 
-        return $task->assignments()
+        $isAssignmentParticipant = $task->assignments()
             ->where('is_current', true)
             ->where(function ($query) use ($userId): void {
                 $query->where('assigned_agent_id', $userId)
                     ->orWhere('assigned_by_user_id', $userId);
             })
             ->exists();
+
+        // Observers follow the task and may ask questions on it.
+        return $isAssignmentParticipant || app(TaskObserverService::class)->isObserver($task, $user);
     }
 
     /**

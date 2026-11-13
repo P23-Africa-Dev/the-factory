@@ -19,6 +19,12 @@ import { urlPageKey } from '@/lib/offline/cacheKeys';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+export type TaskObserverCandidate = {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
 export type TaskPagination = {
   nextPageUrl: string | null;
   prevPageUrl: string | null;
@@ -85,6 +91,22 @@ function parseTaskList(items: unknown[]): Task[] {
 }
 
 export const taskApi = {
+  /** Every active company member, any role, who can be added as a task observer. */
+  getObserverCandidates: async (): Promise<TaskObserverCandidate[]> => {
+    const companyId = getActiveCompanyId();
+    const response = await client.get('/tasks/observer-candidates', {
+      params: { company_id: companyId ?? undefined },
+    });
+    const items = (response.data?.data?.items ?? response.data?.items ?? []) as Array<{
+      id: number | string;
+      name: string;
+      avatar_url?: string | null;
+    }>;
+    return Array.isArray(items)
+      ? items.map((item) => ({ id: String(item.id), name: item.name, avatarUrl: item.avatar_url ?? null }))
+      : [];
+  },
+
   list: async (filters?: TaskFilters): Promise<TaskListResult> => {
     const companyId = getActiveCompanyId();
     if (isDev) {
@@ -231,7 +253,7 @@ export const taskApi = {
     });
   },
 
-  update: async ({ id, title, description, location, address }: UpdateTaskPayload): Promise<void> => {
+  update: async ({ id, title, description, location, address, observer_ids }: UpdateTaskPayload): Promise<void> => {
     const companyId = getActiveCompanyId();
     await client.patch(`/agent/tasks/${id}`, {
       company_id: companyId ?? undefined,
@@ -239,6 +261,7 @@ export const taskApi = {
       description,
       location,
       address,
+      ...(observer_ids !== undefined && { observer_ids }),
     });
   },
 
@@ -318,6 +341,8 @@ export const taskApi = {
         requiredActions: [],
         minimumPhotosRequired: 0,
         visitVerificationRequired: false,
+        observers: [],
+        isObserver: false,
         checklistSteps: (payload.subtasks ?? []).map((step, index) => ({
           id: `temp-step-${index}`,
           title: step.title,

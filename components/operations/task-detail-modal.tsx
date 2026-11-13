@@ -29,6 +29,7 @@ import { LocationPermissionGate } from '@/components/tracking/LocationPermission
 import { CompleteTaskSheet } from '@/components/tracking/CompleteTaskSheet';
 import { TaskProofGallery } from '@/components/operations/task-proof-gallery';
 import { TaskComments } from '@/components/operations/task-comments';
+import { ObserverAvatar } from '@/components/operations/observer-avatars';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
@@ -346,6 +347,9 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   const isInProgress = boardStatus === 'in-progress';
   const isCompleted = boardStatus === 'completed';
   const isCancelled = boardStatus === 'cancelled';
+  const observers = detailQuery.data?.observers ?? task.observers ?? [];
+  // Observers follow the task and comment on it; the assignee's actions are not theirs.
+  const isObserver = Boolean(detailQuery.data?.is_observer ?? task.isObserver);
   const canDownloadProofs = role === 'owner' || role === 'admin';
   const canOpenManagementMap =
     role === 'owner' ||
@@ -684,6 +688,30 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                   {assignedByText}
                 </p>
               </section>
+
+              <section>
+                <h3 className="text-[15px] font-bold text-dash-dark mb-2">Observers</h3>
+                {observers.length > 0 ? (
+                  <ul className="flex flex-wrap gap-2">
+                    {observers.map((observer) => (
+                      <li
+                        key={observer.id}
+                        className="inline-flex items-center gap-2 rounded-full border border-gray-100 bg-gray-50 py-1 pl-1 pr-3 text-[13px] text-gray-600"
+                      >
+                        <ObserverAvatar person={observer} size={24} className="ring-0" />
+                        {observer.name}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[14px] text-gray-400">No observers</p>
+                )}
+                {isObserver && (
+                  <p className="mt-3 rounded-xl bg-[#E6F1F0] px-3 py-2 text-[12px] text-[#094B5C]">
+                    You&apos;re observing this task. You can follow its progress and comment, but it isn&apos;t assigned to you.
+                  </p>
+                )}
+              </section>
               {checklist && onToggleSubtask && onSaveSubtasks && (
                 <ProjectChecklistSection
                   key={task.id}
@@ -726,7 +754,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
               </section>
 
               {/* In-progress: note + actions */}
-              {isInProgress && (
+              {isInProgress && !isObserver && (
                 <div className="space-y-4 mt-1">
                   <section>
                     <h3 className="text-[15px] font-bold text-dash-dark mb-2">Add Note</h3>
@@ -767,7 +795,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
               )}
 
               {/* Pending: commence or status-only */}
-              {isPending && hasTrackableLocation && (
+              {isPending && hasTrackableLocation && !isObserver && (
                 <div className="mt-auto pt-6">
                   <button
                     onClick={handleCommenceAndTrack}
@@ -788,7 +816,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                 </div>
               )}
 
-              {isPending && !hasTrackableLocation && (
+              {isPending && !hasTrackableLocation && !isObserver && (
                 <div className="mt-auto pt-6 space-y-2">
                   <button
                     onClick={() => updateTaskStatus('in_progress')}
@@ -844,7 +872,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                   className="mt-6 pt-5 border-t border-gray-100"
                 />
               )}
-              <div className="mt-4 p-3 border border-gray-100 rounded-lg space-y-2">
+              <div className={`mt-4 p-3 border border-gray-100 rounded-lg space-y-2 ${isObserver ? 'hidden' : ''}`}>
                 <p className="text-[12px] font-bold text-dash-dark">Reassign Task</p>
                 {hasPendingReassignment ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">

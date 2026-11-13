@@ -45,13 +45,28 @@ export type TaskSubtaskInput = {
   due_at?: string | null;
 };
 
+export type TaskObserver = {
+  id: number;
+  name: string;
+  avatar_url?: string | null;
+};
+
+export type TaskObserverCandidate = TaskObserver & {
+  email?: string;
+  role?: string;
+};
+
 export type TaskApiItem = {
   id: number;
   company_id: number | string;
   project_id?: number | string | null;
   assigned_agent_id: number | string | null;
   assigned_agent_ids?: Array<number | string>;
-  assigned_users?: Array<{ id: number; name: string }>;
+  assigned_users?: Array<{ id: number; name: string; avatar_url?: string | null }>;
+  /** People following the task who may comment on it but do not perform it. */
+  observers?: TaskObserver[];
+  /** True when the signed-in user observes this task. */
+  is_observer?: boolean;
   created_by_user_id?: number | string;
   title: string;
   type?: string;
@@ -206,6 +221,7 @@ export type CreateTaskPayload = {
   priority?: ApiTaskPriority;
   minimum_photos_required?: number;
   visit_verification_required?: boolean;
+  observer_ids?: number[];
   subtasks?: TaskSubtaskInput[];
 };
 
@@ -266,6 +282,7 @@ export type UpdateTaskPayload = {
   priority?: ApiTaskPriority;
   minimum_photos_required?: number;
   visit_verification_required?: boolean;
+  observer_ids?: number[];
 };
 
 export type CreateSelfTaskPayload = Omit<
@@ -301,6 +318,19 @@ export function listTaskAssignees(
   return apiRequest<TaskAssigneesData>({
     method: "GET",
     path: `/tasks/assignees?${query.toString()}`,
+    token,
+  });
+}
+
+export function listTaskObserverCandidates(
+  params: { company_id: number | string },
+  token: string
+): Promise<ApiEnvelope<{ items: TaskObserverCandidate[] }>> {
+  const query = new URLSearchParams({ company_id: String(params.company_id) });
+
+  return apiRequest<{ items: TaskObserverCandidate[] }>({
+    method: "GET",
+    path: `/tasks/observer-candidates?${query.toString()}`,
     token,
   });
 }

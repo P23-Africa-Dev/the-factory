@@ -34,6 +34,11 @@ export interface DndItem {
   requiredActions?: string[];
   visitVerificationRequired?: boolean;
   minPhotosRequired?: number;
+  /** People following the task who may comment on it but do not perform it. */
+  observers?: Array<{ id: number | string; name: string; avatar_url?: string | null }>;
+  /** True when the signed-in user observes, rather than performs, this task. */
+  isObserver?: boolean;
+  createdByUserId?: string;
 }
 
 export interface DndContainer {

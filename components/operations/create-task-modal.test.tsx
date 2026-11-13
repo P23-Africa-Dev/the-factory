@@ -19,6 +19,10 @@ vi.mock("@/hooks/use-tasks", () => ({
   useCreateTask: () => ({ mutate: mocks.createTask, isPending: false }),
   useCreateSelfTask: () => ({ mutate: mocks.createSelfTask, isPending: false }),
   useTaskAssignees: () => ({ data: mocks.assignees, isLoading: false }),
+  useTaskObserverCandidates: () => ({
+    data: mocks.assignees.map(({ id, name }) => ({ id, name, avatar_url: null })),
+    isLoading: false,
+  }),
 }));
 
 vi.mock("@/hooks/use-projects", () => ({
@@ -269,5 +273,70 @@ describe("CreateTaskModal required fields", () => {
     expect(screen.queryByLabelText("Assign to")).toBeNull();
     expect(screen.getByText("Confirm delivery manifest")).not.toBeNull();
     expect(screen.getByTitle("Amara Agent")).not.toBeNull();
+  });
+});
+
+describe("CreateTaskModal observers", () => {
+  beforeEach(() => {
+    mocks.createTask.mockReset();
+    mocks.createSelfTask.mockReset();
+  });
+
+  function openObserverList() {
+    fireEvent.click(screen.getByRole("button", { name: "Select observers" }));
+  }
+
+  it("sends the selected observers when a manager creates a task", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fireEvent.change(screen.getByRole("combobox", { name: "Select user" }), { target: { value: "10" } });
+    openObserverList();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sasha Supervisor" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Adam Admin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(mocks.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ assigned_agent_id: 10, observer_ids: [9, 8] }),
+      expect.any(Object),
+    );
+  });
+
+  it("does not offer the assignee as an observer", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Select user" }), { target: { value: "10" } });
+    openObserverList();
+
+    expect(screen.queryByRole("checkbox", { name: "Amara Agent" })).toBeNull();
+    expect(screen.getByRole("checkbox", { name: "Olivia Owner" })).not.toBeNull();
+  });
+
+  it("lets an agent add observers to their own task, excluding themselves", () => {
+    setUser(10, "agent");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Agent field visit");
+    openObserverList();
+    expect(screen.queryByRole("checkbox", { name: "Amara Agent" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Sasha Supervisor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(mocks.createSelfTask).toHaveBeenCalledWith(
+      expect.objectContaining({ observer_ids: [9] }),
+      expect.any(Object),
+    );
+  });
+
+  it("omits observers when none are picked", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} />);
+
+    fillTitle("Visit the client office");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(mocks.createTask.mock.calls[0][0].observer_ids).toBeUndefined();
   });
 });

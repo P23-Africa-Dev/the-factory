@@ -25,6 +25,9 @@ import {
   type KpiStatus,
 } from '@/features/kpis';
 import { toast } from '@/lib/toast';
+import { useAuth } from '@/features/auth/hooks/useAuth';
+import { useTaskObserverCandidates } from '@/features/tasks/queries';
+import { ObserverAvatars, ObserverPicker, ObservingBadge } from '@/components/shared/Observers';
 
 type FilterKey = 'all' | 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
@@ -131,8 +134,10 @@ function TaskCard({
   const isPending = task.status === 'pending';
   const isActive = task.status === 'in_progress' || task.status === 'paused' || task.status === 'resumed';
   const locationLabel = task.location ?? task.address;
+  // Observers follow the task; starting, declining, editing or deleting it is not theirs to do.
+  const isObserver = task.isObserver;
 
-  const primaryLabel = isPending ? 'Start' : isActive ? 'Continue' : 'View';
+  const primaryLabel = isObserver ? 'View' : isPending ? 'Start' : isActive ? 'Continue' : 'View';
 
   return (
     <div
@@ -147,18 +152,24 @@ function TaskCard({
             {task.title}
           </h4>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onEdit}
-              className="h-7 w-7 rounded-full border border-white/15 text-[#75ADAF] flex items-center justify-center"
-            >
-              <Pencil size={13} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="h-7 w-7 rounded-full border border-white/15 text-[#FD6046] flex items-center justify-center"
-            >
-              <Trash2 size={13} />
-            </button>
+            {!isObserver && (
+              <>
+                <button
+                  onClick={onEdit}
+                  aria-label="Edit task"
+                  className="h-7 w-7 rounded-full border border-white/15 text-[#75ADAF] flex items-center justify-center"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={onDelete}
+                  aria-label="Delete task"
+                  className="h-7 w-7 rounded-full border border-white/15 text-[#FD6046] flex items-center justify-center"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </>
+            )}
             <span
               className="px-2.5 py-1 rounded-full text-[10px] font-semibold flex-shrink-0 font-sans"
               style={{ backgroundColor: `${statusColor}22`, color: statusColor }}
@@ -197,15 +208,29 @@ function TaskCard({
           <span className="text-[#494A50]">{formatRelativeTime(task.assignedAt)}</span>
         </div>
 
+        {(isObserver || task.observers.length > 0) && (
+          <div className="flex items-center justify-between gap-2 mt-1">
+            {isObserver ? <ObservingBadge /> : <span className="text-[10px] font-semibold text-white/40">Observers</span>}
+            <ObserverAvatars observers={task.observers} size={20} showIcon={!isObserver} />
+          </div>
+        )}
+
         <ProjectChecklist task={task} compact />
         <div className="flex gap-2.5 mt-3">
           <button
-            onClick={onPrimaryAction}
+            onClick={
+              isObserver
+                ? (e) => {
+                    e.stopPropagation();
+                    onPress();
+                  }
+                : onPrimaryAction
+            }
             className="flex-1 h-9 rounded-xl bg-[#75ADAF] text-white font-semibold text-xs transition-opacity hover:opacity-95 active:scale-[0.98]"
           >
             {primaryLabel}
           </button>
-          {isPending && (
+          {isPending && !isObserver && (
             <button
               onClick={onDecline}
               className="flex-1 h-9 rounded-xl border border-[#FD6046] text-[#FD6046] font-semibold text-xs bg-transparent transition-colors hover:bg-[#FD6046]/10 active:scale-[0.98]"
@@ -333,7 +358,19 @@ export default function TasksPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
-  const [editForm, setEditForm] = useState({ title: '', description: '', location: '', address: '' });
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    location: '',
+    address: '',
+    observerIds: [] as string[],
+  });
+  const { user } = useAuth();
+  // Agents may only change observers on tasks they created themselves.
+  const canEditObservers = Boolean(taskToEdit && user?.id != null && taskToEdit.creatorId === String(user.id));
+  const { data: observerCandidates = [], isLoading: loadingObserverCandidates } = useTaskObserverCandidates(
+    canEditObservers,
+  );
 
   // KPIs States
   const [activeKpiFilter, setActiveKpiFilter] = useState<KpiStatus | 'all'>('all');
@@ -542,7 +579,7 @@ export default function TasksPage() {
                     key={task.id}
                     task={task}
                     onPress={() =>
-                      isResumeTrackingStatus(task.status) && taskHasMapLocation(task)
+                      !task.isObserver && isResumeTrackingStatus(task.status) && taskHasMapLocation(task)
                         ? goToContinueTracking(task.id)
                         : goToTaskDetail(task.id)
                     }
@@ -559,6 +596,7 @@ export default function TasksPage() {
                         description: task.description ?? '',
                         location: task.location ?? '',
                         address: task.address ?? '',
+                        observerIds: task.observers.map((observer) => observer.id),
                       });
                     }}
                     onDelete={(e) => {
@@ -760,6 +798,18 @@ export default function TasksPage() {
                   <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans block">Address</label>
                   <input className="w-full h-10 rounded-xl bg-white/5 border border-white/10 px-3 text-sm" value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} />
                 </div>
+                {canEditObservers && (
+                  <div>
+                    <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans block">Observers</label>
+                    <ObserverPicker
+                      people={observerCandidates}
+                      value={editForm.observerIds}
+                      onChange={(ids) => setEditForm((p) => ({ ...p, observerIds: ids }))}
+                      excludeIds={user?.id != null ? [String(user.id)] : []}
+                      loading={loadingObserverCandidates}
+                    />
+                  </div>
+                )}
               </div>
               <div className="mt-5 flex gap-3">
                 <button className="flex-1 h-10 rounded-full border border-white/15 text-xs font-semibold" onClick={() => setTaskToEdit(null)}>Cancel</button>
@@ -774,6 +824,7 @@ export default function TasksPage() {
                         description: editForm.description || undefined,
                         location: editForm.location || undefined,
                         address: editForm.address || undefined,
+                        ...(canEditObservers && { observer_ids: editForm.observerIds.map(Number) }),
                       },
                       {
                         onSuccess: () => {

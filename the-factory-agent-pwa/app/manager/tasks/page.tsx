@@ -26,6 +26,8 @@ import {
   Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTaskObserverCandidates } from '@/manager/features/tasks/queries';
+import { ObserverAvatars, ObserverPicker, ObservingBadge } from '@/components/shared/Observers';
 
 import {
   useTaskList,
@@ -163,6 +165,7 @@ function ManagerTasksContent() {
   const { items: allTasks, visible: tasks } = useChecklistTasks(flattenTaskPages(taskPages), taskFilter);
 
   const { data: assignees = [] } = useTaskAssignees();
+  const { data: observerCandidates = [], isLoading: loadingObserverCandidates } = useTaskObserverCandidates();
   const { data: reassignments = [], isLoading: reassignmentsLoading } = useTaskReassignmentsInbox();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
 
@@ -212,6 +215,7 @@ function ManagerTasksContent() {
   const { user } = useAuth();
   const [subtasks, setSubtasks] = useState<ChecklistStep[]>([]);
   const [newAssigneeId, setNewAssigneeId] = useState<string>('');
+  const [newObserverIds, setNewObserverIds] = useState<string[]>([]);
   const [newProjectId, setNewProjectId] = useState<string>('');
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
 
@@ -220,6 +224,7 @@ function ManagerTasksContent() {
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editAddress, setEditAddress] = useState('');
+  const [editObserverIds, setEditObserverIds] = useState<string[]>([]);
 
   // Reassign Task modal state
   const [reassignModalTask, setReassignModalTask] = useState<Task | null>(null);
@@ -291,6 +296,7 @@ function ManagerTasksContent() {
     setNewDueDate('');
     setSubtasks([]);
     setNewAssigneeId('');
+    setNewObserverIds([]);
     setNewProjectId('');
     setCreateErrors({});
   }, []);
@@ -299,8 +305,8 @@ function ManagerTasksContent() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       const errs: Record<string, string> = {};
-      if (newTitle.trim().length < 3) errs.title = 'Title must be at least 3 characters';
-      if (newDesc.trim().length < 5) errs.description = 'Description must be at least 5 characters';
+      if (!newTitle.trim()) errs.title = 'Task title is required';
+      if (!newAssigneeId) errs.assignee = 'Select who this task is assigned to';
       if (newDueDate && subtasks.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(newDueDate))) {
         toast.error('The task deadline cannot be earlier than a subtask deadline.');
         return;
@@ -314,7 +320,7 @@ function ManagerTasksContent() {
         await createTask.mutateAsync({
           title: newTitle.trim(),
           type: newType,
-          description: newDesc.trim(),
+          description: newDesc.trim() || undefined,
           address: newAddress.trim() || null,
           location: newAddress.trim() || null,
           latitude: newPlaceCoords?.latitude ?? null,
@@ -324,6 +330,10 @@ function ManagerTasksContent() {
           assigned_to: newAssigneeId ? Number(newAssigneeId) : null,
           assignee_ids: newAssigneeId ? [Number(newAssigneeId)] : undefined,
           project_id: newProjectId ? Number(newProjectId) : null,
+          // The assignee cannot also observe the task.
+          ...(newObserverIds.length > 0
+            ? { observer_ids: newObserverIds.filter((id) => id !== newAssigneeId).map(Number) }
+            : {}),
           ...(subtasks.length > 0
             ? {
                 subtasks: subtasks.map((step) => ({
@@ -352,6 +362,7 @@ function ManagerTasksContent() {
       subtasks,
       user,
       newAssigneeId,
+      newObserverIds,
       newProjectId,
       createTask,
       resetCreateForm,
@@ -365,12 +376,13 @@ function ManagerTasksContent() {
     setEditTitle(task.title);
     setEditDesc(task.description ?? '');
     setEditAddress(task.address === '—' ? '' : task.address);
+    setEditObserverIds(task.observers.map((observer) => observer.id));
   }, []);
 
   const handleSaveEdit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!editTask || editTitle.trim().length < 3) return;
+      if (!editTask || !editTitle.trim()) return;
       try {
         await updateTask.mutateAsync({
           id: editTask.id,
@@ -378,6 +390,7 @@ function ManagerTasksContent() {
           description: editDesc.trim() || undefined,
           address: editAddress.trim() || undefined,
           location: editAddress.trim() || undefined,
+          observer_ids: editObserverIds.map(Number),
         });
         toast.success('Task updated');
         setEditTask(null);
@@ -386,7 +399,7 @@ function ManagerTasksContent() {
         toast.error('Failed to update task');
       }
     },
-    [editTask, editTitle, editDesc, editAddress, updateTask, refetchTasks],
+    [editTask, editTitle, editDesc, editAddress, editObserverIds, updateTask, refetchTasks],
   );
 
   const handleConfirmReassign = useCallback(async () => {
@@ -685,6 +698,7 @@ function ManagerTasksContent() {
                               Unassigned
                             </span>
                           )}
+                          {task.isObserver && <ObservingBadge />}
                         </div>
 
                         <button
@@ -706,6 +720,13 @@ function ManagerTasksContent() {
                         <p className="text-xs text-white/55 line-clamp-2 mb-2.5">
                           {task.description}
                         </p>
+                      )}
+
+                      {task.observers.length > 0 && (
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] font-semibold text-white/40">Observers</span>
+                          <ObserverAvatars observers={task.observers} size={20} />
+                        </div>
                       )}
 
                       <ProjectChecklist task={task} compact />
@@ -1154,20 +1175,40 @@ function ManagerTasksContent() {
                 {/* Assignee selector */}
                 <div>
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Assign to Field Agent
+                    Assign to *
                   </label>
                   <select
                     value={newAssigneeId}
                     onChange={(e) => setNewAssigneeId(e.target.value)}
                     className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
                   >
-                    <option value="">Unassigned (Assign later)</option>
+                    <option value="">Select an assignee</option>
                     {assignees.map((agent) => (
                       <option key={agent.id} value={String(agent.id)}>
                         {agent.name} ({agent.email})
                       </option>
                     ))}
                   </select>
+                  {createErrors.assignee && (
+                    <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.assignee}</p>
+                  )}
+                </div>
+
+                {/* Observers — follow the task and can comment, but do not perform it */}
+                <div>
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                    Observers
+                  </label>
+                  <ObserverPicker
+                    people={observerCandidates}
+                    value={newObserverIds}
+                    onChange={setNewObserverIds}
+                    excludeIds={newAssigneeId ? [newAssigneeId] : []}
+                    loading={loadingObserverCandidates}
+                  />
+                  <p className="text-[10px] text-white/40 mt-1">
+                    Observers can see this task and comment on it, but it is not assigned to them.
+                  </p>
                 </div>
 
                 {/* Project selector */}
@@ -1231,7 +1272,7 @@ function ManagerTasksContent() {
 
                 <div>
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Description *
+                    Description
                   </label>
                   <textarea
                     rows={3}
@@ -1620,6 +1661,19 @@ function ManagerTasksContent() {
                     value={editAddress}
                     onChange={(e) => setEditAddress(e.target.value)}
                     className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                    Observers
+                  </label>
+                  <ObserverPicker
+                    people={observerCandidates}
+                    value={editObserverIds}
+                    onChange={setEditObserverIds}
+                    excludeIds={editTask?.assignedAgentId != null ? [String(editTask.assignedAgentId)] : []}
+                    loading={loadingObserverCandidates}
                   />
                 </div>
 

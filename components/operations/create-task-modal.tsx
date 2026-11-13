@@ -16,7 +16,8 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
-import { useCreateTask, useCreateSelfTask, useTaskAssignees } from "@/hooks/use-tasks";
+import { useCreateTask, useCreateSelfTask, useTaskAssignees, useTaskObserverCandidates } from "@/hooks/use-tasks";
+import { ObserverPicker } from "@/components/operations/observer-picker";
 import type { DndItem, TaskCategory } from "@/types/operations";
 import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -51,6 +52,7 @@ interface CreateTaskModalProps {
     minPhotos: string;
     visitVerification: boolean;
     status: StatusType;
+    observerIds: string[];
   }>;
   submitLabel?: string;
   onSubmitTask?: (payload: {
@@ -66,6 +68,7 @@ interface CreateTaskModalProps {
     visitVerification?: boolean;
     latitude?: number;
     longitude?: number;
+    observerIds?: number[];
   }) => void;
 }
 
@@ -171,6 +174,9 @@ export function CreateTaskModal({
   const { data: assignees = [], isLoading: loadingAssignees } = useTaskAssignees(
     canManageTasks ? companyId ?? undefined : undefined,
   );
+  const { data: observerCandidates = [], isLoading: loadingObserverCandidates } = useTaskObserverCandidates(
+    companyId ?? undefined,
+  );
 
   const [subtasks, setSubtasks] = useState<ProjectSubtask[]>([]);
   const [editingSubtask, setEditingSubtask] = useState<ProjectSubtask | null>(null);
@@ -211,6 +217,7 @@ export function CreateTaskModal({
     priority: (initialValues?.priority ?? "") as Priority | "",
     minPhotos: initialValues?.minPhotos ?? "0",
     visitVerification: initialValues?.visitVerification ?? false,
+    observerIds: initialValues?.observerIds ?? ([] as string[]),
     status: (initialValues?.status ?? "pending") as StatusType,
     category: "all" as TaskCategory,
   }));
@@ -238,6 +245,13 @@ export function CreateTaskModal({
     }));
     initializedOpenAssigneeRef.current = true;
   }, [canManageTasks, initialValues?.assignTo, isOpen, mode, user]);
+
+  // The person doing the task cannot also observe it: the chosen assignee, or the agent creating their own task.
+  const observerExcludeIds = canManageTasks
+    ? (form.assignTo ? [form.assignTo] : [])
+    : user?.id != null
+      ? [String(user.id)]
+      : [];
 
   const set = <K extends keyof typeof form>(key: K, val: (typeof form)[K]) => {
     setForm((p) => {
@@ -276,6 +290,11 @@ export function CreateTaskModal({
   const handleSubmit = () => {
     if (!validate()) return;
 
+    // The person doing the task cannot also observe it.
+    const observerIds = form.observerIds
+      .filter((id) => !observerExcludeIds.includes(id))
+      .map(Number);
+
     const payload = {
       title: form.title,
       taskType: form.taskType || undefined,
@@ -291,6 +310,7 @@ export function CreateTaskModal({
       visitVerification: coords?.lat != null && coords?.lng != null ? form.visitVerification : false,
       latitude: coords?.lat,
       longitude: coords?.lng,
+      observerIds,
     };
 
     if (mode === "edit" && onSubmitTask) {
@@ -329,6 +349,7 @@ export function CreateTaskModal({
         minimum_photos_required: form.minPhotos ? Number(form.minPhotos) : undefined,
         visit_verification_required:
           coords?.lat != null && coords?.lng != null ? form.visitVerification : false,
+        observer_ids: observerIds.length > 0 ? observerIds : undefined,
         ...(nestedSubtasks && nestedSubtasks.length > 0 ? { subtasks: nestedSubtasks } : {}),
       };
       const onError = (err: unknown) => {
@@ -407,8 +428,9 @@ export function CreateTaskModal({
       dueDate: "",
       requiredActions: "",
       priority: "",
-      minPhotos: "2",
+      minPhotos: "0",
       visitVerification: false,
+      observerIds: [],
       status: "pending",
       category: "all",
     });
@@ -529,6 +551,24 @@ export function CreateTaskModal({
               )}
             </div>
           )}
+
+          {/* Observers — follow the task and can comment, but do not perform it */}
+          <div>
+            <FieldLabel>Observers</FieldLabel>
+            <ObserverPicker
+              people={observerCandidates}
+              value={form.observerIds}
+              onChange={(ids) => set("observerIds", ids)}
+              excludeIds={observerExcludeIds}
+              loading={loadingObserverCandidates}
+            />
+            <p className="text-[10px] text-gray-400 mt-1">
+              Observers can see this task and comment on it, but it is not assigned to them.
+            </p>
+            {errors.observer_ids && (
+              <p className="text-red-400 text-[11px] mt-1">{errors.observer_ids}</p>
+            )}
+          </div>
 
           {/* Location + Address */}
           <div className="relative">

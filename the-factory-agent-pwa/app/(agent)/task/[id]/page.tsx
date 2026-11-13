@@ -14,6 +14,7 @@ import {
   taskHasMapLocation,
 } from '@/features/tasks';
 import { TaskComments } from '@/features/tasks/components/TaskComments';
+import { ObserverList } from '@/components/shared/Observers';
 import { useTrackingStore } from '@/store/tracking';
 import { toast } from '@/lib/toast';
 
@@ -130,8 +131,10 @@ export default function TaskDetailPage() {
   }
 
   const statusColor = STATUS_COLOR[checklistTask.status] || '#8F9098';
-  const isActive = isResumeTrackingStatus(task.status);
-  const isPending = task.status === 'pending';
+  // Observers follow the task and comment on it; the assignee's actions are not theirs.
+  const isObserver = task.isObserver;
+  const isActive = isResumeTrackingStatus(task.status) && !isObserver;
+  const isPending = task.status === 'pending' && !isObserver;
   const hasMapLocation = taskHasMapLocation(task);
   const locationLabel = formatTaskLocationLabel(task);
 
@@ -211,6 +214,11 @@ export default function TaskDetailPage() {
           muted={!task.description?.trim()}
         />
         {task.instructions && <Section title="Instructions" body={task.instructions} />}
+        {(isObserver || task.observers.length > 0) && (
+          <div className="mb-4">
+            <ObserverList observers={task.observers} isObserver={isObserver} />
+          </div>
+        )}
 
         <ProjectChecklist key={task.id} task={checklistTask} />
         <TaskComments taskId={task.id} />

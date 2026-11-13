@@ -7,10 +7,12 @@ import { CSS } from '@dnd-kit/utilities';
 import type { DndItem } from '@/types/operations';
 import { ChecklistRows } from './project-checklist';
 import { formatChecklistDate, isOverdue, type ProjectSubtask } from '@/lib/tasks/project-checklist';
+import { ObserverAvatars } from './observer-avatars';
 import {
   Calendar,
   ChevronRight,
   ChevronUp,
+  Eye,
   ListChecks,
   MessageSquare,
   Pencil,
@@ -54,7 +56,11 @@ export function TaskCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id });
+  } = useSortable({
+    id: item.id,
+    // Observers follow a task but cannot move it between status columns.
+    disabled: Boolean(item.isObserver),
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -155,6 +161,20 @@ export function TaskCard({
         <h4 className="text-[#0B1215] font-bold text-[17px] tracking-tight">{item.label}</h4>
         <p className="text-gray-400 text-[13px] mt-1">{item.description}</p>
       </div>
+
+      {(item.isObserver || (item.observers?.length ?? 0) > 0) && (
+        <div className="flex items-center justify-between gap-2 -mt-2">
+          {item.isObserver ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#E6F1F0] px-2.5 py-1 text-[10px] font-bold text-[#094B5C]">
+              <Eye size={11} aria-hidden="true" />
+              You&apos;re observing
+            </span>
+          ) : (
+            <span className="text-[11px] font-semibold text-gray-400">Observers</span>
+          )}
+          <ObserverAvatars observers={item.observers ?? []} showIcon={!item.isObserver} />
+        </div>
+      )}
 
       <div className="space-y-2.5">
         <span className="text-[#0B1215] font-bold text-[15px] block">
