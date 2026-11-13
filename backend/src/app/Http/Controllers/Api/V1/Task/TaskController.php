@@ -11,7 +11,9 @@ use App\Http\Requests\Task\UpdateTaskRequest;
 use App\Http\Resources\TaskAssigneeResource;
 use App\Http\Resources\TaskResource;
 use App\Models\Task;
+use App\Services\Task\TaskObserverService;
 use App\Services\Task\TaskService;
+use App\Support\AvatarUrlResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -66,6 +68,28 @@ class TaskController extends Controller
         return $this->success(
             message: 'Task assignees fetched successfully.',
             data: ['items' => TaskAssigneeResource::collection($users)],
+        );
+    }
+
+    /**
+     * People who can be added as observers: every active company member, any role.
+     */
+    public function observerCandidates(Request $request, TaskObserverService $observerService): JsonResponse
+    {
+        $users = $observerService->listCandidates(
+            $request->user(),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Task observer candidates fetched successfully.',
+            data: ['items' => $users->map(static fn ($user): array => [
+                'id' => (int) $user->id,
+                'name' => (string) $user->name,
+                'email' => (string) $user->email,
+                'role' => (string) $user->company_role,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($user->avatar, $user->gender),
+            ])->values()->all()],
         );
     }
 

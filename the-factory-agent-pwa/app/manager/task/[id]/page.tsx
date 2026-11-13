@@ -31,6 +31,7 @@ import {
   taskHasMapLocation,
 } from '@/manager/features/tasks';
 import { TaskComments } from '@/manager/features/tasks/components/TaskComments';
+import { ObserverList } from '@/components/shared/Observers';
 import { toast } from '@/lib/toast';
 
 function getStatusBadge(status: string): { bg: string; text: string; label: string } {
@@ -361,6 +362,10 @@ export default function ManagerTaskDetailScreen() {
               Cancel Task
             </button>
           </div>
+        </div>
+
+        <div className="mt-4">
+          <ObserverList observers={task.observers} isObserver={task.isObserver} />
         </div>
 
         {/* Task Comments */}

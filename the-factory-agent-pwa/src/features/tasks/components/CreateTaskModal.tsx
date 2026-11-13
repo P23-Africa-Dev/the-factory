@@ -15,7 +15,8 @@ import {
   Loader2,
   CheckCircle,
 } from 'lucide-react';
-import { useCreateSelfTask } from '../queries';
+import { useCreateSelfTask, useTaskObserverCandidates } from '../queries';
+import { ObserverPicker } from '@/components/shared/Observers';
 import { PlaceAutocompleteField } from '@/features/locations/components/PlaceAutocompleteField';
 import type { RetrievedPlace } from '@/lib/map/place-search';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
@@ -62,6 +63,10 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
   const [dueDate, setDueDate] = useState('');
   const [visitVerification, setVisitVerification] = useState(false);
   const [minPhotos, setMinPhotos] = useState(0);
+  const [observerIds, setObserverIds] = useState<string[]>([]);
+  const { data: observerCandidates = [], isLoading: loadingObserverCandidates } = useTaskObserverCandidates(isOpen);
+  // Agents create tasks for themselves, so they cannot also observe them.
+  const observerExcludeIds = user?.id != null ? [String(user.id)] : [];
 
   // Required actions list builder
   const [actionInput, setActionInput] = useState('');
@@ -174,6 +179,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       required_actions: requiredActions.length > 0 ? requiredActions : undefined,
       minimum_photos_required: minPhotos || undefined,
       visit_verification_required: visitVerification,
+      ...(observerIds.length > 0
+        ? { observer_ids: observerIds.filter((id) => !observerExcludeIds.includes(id)).map(Number) }
+        : {}),
       ...(subtasks.length > 0
         ? {
             subtasks: subtasks.map((step) => ({
@@ -219,6 +227,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
     setSubtasks([]);
     setVisitVerification(false);
     setMinPhotos(0);
+    setObserverIds([]);
   };
 
   if (!isOpen) return null;
@@ -334,6 +343,23 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                 );
               })}
             </div>
+          </div>
+
+          {/* Observers — follow the task and can comment, but do not perform it */}
+          <div className="flex flex-col">
+            <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
+              Observers
+            </label>
+            <ObserverPicker
+              people={observerCandidates}
+              value={observerIds}
+              onChange={setObserverIds}
+              excludeIds={observerExcludeIds}
+              loading={loadingObserverCandidates}
+            />
+            <p className="text-[10px] text-white/40 mt-1">
+              Observers can see this task and comment on it, but it is not assigned to them.
+            </p>
           </div>
 
           {/* Location & Address Autocomplete */}

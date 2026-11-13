@@ -132,3 +132,38 @@ describe("TaskCard checklist UI", () => {
     expect(reordered.map((s: { id: string }) => s.id)).toEqual(["sub-2", "sub-1", "sub-3"]);
   });
 });
+
+describe("TaskCard observers", () => {
+  const observers = [
+    { id: 1, name: "Grace Hopper", avatar_url: null },
+    { id: 2, name: "Alan Turing", avatar_url: "https://cdn.example.com/avatar/custom/alan.png" },
+    { id: 3, name: "Ada Lovelace", avatar_url: "https://cdn.example.com/avatar/default/ghost.svg" },
+    { id: 4, name: "Linus Torvalds", avatar_url: null },
+  ];
+
+  it("shows observer avatars with initials, photos and an overflow count", () => {
+    render(<TaskCard item={buildChecklistItem({ observers })} />);
+
+    expect(screen.getByText("Observers")).not.toBeNull();
+    expect(screen.getByText("GH")).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Alan Turing" })).not.toBeNull();
+    // The backend's ghost placeholder is not a real photo, so initials show instead.
+    expect(screen.getByText("AL")).not.toBeNull();
+    expect(screen.getByText("+1")).not.toBeNull();
+    expect(screen.getByLabelText(/Observers: Grace Hopper, Alan Turing, Ada Lovelace, Linus Torvalds/)).not.toBeNull();
+  });
+
+  it("marks the card when the viewer is an observer", () => {
+    render(<TaskCard item={buildChecklistItem({ observers, isObserver: true })} />);
+
+    expect(screen.getByText("You're observing")).not.toBeNull();
+  });
+
+  it("shows no observer row when a task has none", () => {
+    render(<TaskCard item={buildChecklistItem()} />);
+
+    expect(screen.queryByText("Observers")).toBeNull();
+    expect(screen.queryByText("You're observing")).toBeNull();
+  });
+});
+

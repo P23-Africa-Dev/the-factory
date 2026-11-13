@@ -443,6 +443,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
                 Route::get('/assignees', [TaskController::class, 'assignees'])->name('assignees.index');
+                Route::get('/observer-candidates', [TaskController::class, 'observerCandidates'])->name('observer-candidates.index');
                 Route::post('/', [TaskController::class, 'store'])
                     ->middleware('throttle:api')
                     ->name('store');
@@ -847,6 +848,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
             Route::prefix('tasks')->name('tasks.')->group(function (): void {
                 Route::get('/', [TaskController::class, 'index'])->name('index');
+                Route::get('/observer-candidates', [TaskController::class, 'observerCandidates'])->name('observer-candidates.index');
                 Route::post('/self', [AgentTaskController::class, 'storeSelf'])
                     ->middleware('throttle:api')
                     ->name('self.store');
@@ -1095,6 +1097,7 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
     Route::prefix('tasks')->name('tasks.')->group(function (): void {
         Route::get('/', [TaskController::class, 'index'])->name('index');
         Route::get('/assignees', [TaskController::class, 'assignees'])->name('assignees.index');
+                Route::get('/observer-candidates', [TaskController::class, 'observerCandidates'])->name('observer-candidates.index');
         Route::post('/', [TaskController::class, 'store'])
             ->middleware('throttle:api')
             ->name('store');

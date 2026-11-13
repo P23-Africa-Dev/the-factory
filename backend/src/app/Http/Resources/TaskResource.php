@@ -13,7 +13,12 @@ class TaskResource extends JsonResource
     public function toArray(Request $request): array
     {
         $requestUser = $request->user();
-        $isAgentRequester = $requestUser !== null && $requestUser->internal_role === 'agent';
+        $isObserverRequester = $requestUser !== null
+            && $this->relationLoaded('observers')
+            && $this->observers->contains('id', (int) $requestUser->id);
+        // Agents only see themselves among assignees, unless they observe the task:
+        // an observer needs to know who the task is for.
+        $isAgentRequester = $requestUser !== null && $requestUser->internal_role === 'agent' && ! $isObserverRequester;
 
         return [
             'id' => $this->id,
@@ -119,6 +124,15 @@ class TaskResource extends JsonResource
             'proofs_count' => $this->whenCounted('proofs'),
             'proofs' => TaskProofResource::collection($this->whenLoaded('proofs')),
             'comments_count' => (int) ($this->comments_count ?? 0),
+            'observers' => $this->whenLoaded('observers', fn (): array => $this->observers
+                ->map(fn ($u) => [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($u->avatar, $u->gender),
+                ])
+                ->values()
+                ->all()),
+            'is_observer' => $isObserverRequester,
             'subtasks_summary' => [
                 'total' => $this->relationLoaded('subtasks')
                     ? $this->subtasks->count()

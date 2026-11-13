@@ -750,8 +750,9 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
                       | "Medium"
                       | "Low"
                   : "",
-                minPhotos: editingTask.minPhotosRequired != null ? String(editingTask.minPhotosRequired) : "2",
+                minPhotos: editingTask.minPhotosRequired != null ? String(editingTask.minPhotosRequired) : "0",
                 visitVerification: editingTask.visitVerificationRequired ?? false,
+                observerIds: (editingTask.observers ?? []).map((observer) => String(observer.id)),
               }
             : undefined
         }
@@ -774,6 +775,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
               visit_verification_required: payload.visitVerification,
               latitude: payload.latitude,
               longitude: payload.longitude,
+              observer_ids: payload.observerIds,
             },
           });
         }}
@@ -896,6 +898,9 @@ function mapTaskToDnd(apiTask: BoardTask): DndItem {
     minPhotosRequired: apiTask.minimum_photos_required ?? undefined,
     visitVerificationRequired: apiTask.visit_verification_required ?? undefined,
     priority: apiTask.priority ?? undefined,
+    observers: apiTask.observers ?? [],
+    isObserver: Boolean(apiTask.is_observer),
+    createdByUserId: apiTask.created_by_user_id != null ? String(apiTask.created_by_user_id) : undefined,
     statusLabel,
   };
 }

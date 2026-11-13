@@ -41,6 +41,7 @@ class TaskService
         'latestReassignment.respondedBy',
         'subtasks.assignee',
         'subtasks.completer',
+        'observers',
     ];
 
     private const DETAIL_RELATIONS = [
@@ -55,6 +56,7 @@ class TaskService
         'proofs.uploader',
         'subtasks.assignee',
         'subtasks.completer',
+        'observers',
     ];
 
     public function __construct(
@@ -92,7 +94,8 @@ class TaskService
                 $q->where('assigned_agent_id', $user->id)
                     ->orWhereHas('currentAssignees', function (Builder $assigneeQuery) use ($user): void {
                         $assigneeQuery->where('users.id', $user->id);
-                    });
+                    })
+                    ->orWhereExists($this->observedBy($user));
             });
         } elseif ($context->isAgent()) {
             // Agents see currently owned tasks, historical tasks they previously owned,
@@ -117,7 +120,8 @@ class TaskService
                             ->from('task_subtasks')
                             ->whereColumn('task_subtasks.task_id', 'tasks.id')
                             ->where('task_subtasks.assigned_user_id', $user->id);
-                    });
+                    })
+                    ->orWhereExists($this->observedBy($user));
             });
         }
 
@@ -161,7 +165,9 @@ class TaskService
 
         $primaryAgentId = $agentIds[0] ?? null;
 
-        $task = DB::transaction(function () use ($context, $user, $data, $agentIds, $primaryAgentId): Task {
+        $addedObserverIds = [];
+
+        $task = DB::transaction(function () use ($context, $user, $data, $agentIds, $primaryAgentId, &$addedObserverIds): Task {
             $latitude = isset($data['latitude']) ? (float) $data['latitude'] : null;
             $longitude = isset($data['longitude']) ? (float) $data['longitude'] : null;
             $trackable = (new Task([
@@ -205,11 +211,14 @@ class TaskService
                 app(TaskSubtaskService::class)->createMany($task, $user, $data['subtasks']);
             }
 
+            $addedObserverIds = app(TaskObserverService::class)->sync($task, $user, $data['observer_ids'] ?? []);
+
             return $this->loadTask($task, $context);
         });
 
         $this->notifyCurrentAssignees($task, $user, false);
         $this->notifyTaskAssignedInApp($task, $user, false);
+        app(TaskObserverService::class)->notifyAdded($task, $user, $addedObserverIds);
 
         return $task;
     }
@@ -227,7 +236,9 @@ class TaskService
             ]);
         }
 
-        $task = DB::transaction(function () use ($context, $user, $data): Task {
+        $addedObserverIds = [];
+
+        $task = DB::transaction(function () use ($context, $user, $data, &$addedObserverIds): Task {
             $latitude = isset($data['latitude']) ? (float) $data['latitude'] : null;
             $longitude = isset($data['longitude']) ? (float) $data['longitude'] : null;
             $trackable = (new Task([
@@ -269,11 +280,14 @@ class TaskService
                 app(TaskSubtaskService::class)->createMany($task, $user, $data['subtasks'], selfAssignedFlow: true);
             }
 
+            $addedObserverIds = app(TaskObserverService::class)->sync($task, $user, $data['observer_ids'] ?? []);
+
             return $this->loadTask($task, $context);
         });
 
         $this->notifyCurrentAssignees($task, $user, true);
         $this->notifyTaskAssignedInApp($task, $user, true);
+        app(TaskObserverService::class)->notifyAdded($task, $user, $addedObserverIds);
 
         return $task;
     }
@@ -291,6 +305,11 @@ class TaskService
 
         if (! $context->canManageTasks()) {
             unset($data['project_id'], $data['assigned_agent_id'], $data['assigned_agent_ids']);
+
+            // Agents may only manage observers on tasks they created themselves.
+            if ((int) $task->created_by_user_id !== (int) $user->id) {
+                unset($data['observer_ids']);
+            }
         }
 
         if (! empty($data['project_id']) && $context->canManageTasks()) {
@@ -301,7 +320,9 @@ class TaskService
             $this->assertTaskDueDateNotBeforeSubtasks($task, $data['due_date']);
         }
 
-        $updatedTask = DB::transaction(function () use ($task, $data, $context): Task {
+        $addedObserverIds = [];
+
+        $updatedTask = DB::transaction(function () use ($task, $data, $context, $user, &$addedObserverIds): Task {
             $latitude = array_key_exists('latitude', $data)
                 ? ($data['latitude'] !== null ? (float) $data['latitude'] : null)
                 : $task->latitude;
@@ -341,8 +362,14 @@ class TaskService
                 $task->update($payload);
             }
 
+            if (array_key_exists('observer_ids', $data)) {
+                $addedObserverIds = app(TaskObserverService::class)->sync($task, $user, $data['observer_ids'] ?? []);
+            }
+
             return $this->loadTask($task, $context);
         });
+
+        app(TaskObserverService::class)->notifyAdded($updatedTask, $user, $addedObserverIds);
 
         return $updatedTask;
     }
@@ -914,9 +941,24 @@ class TaskService
             return true;
         }
 
-        return $task->subtasks()
-            ->where('assigned_user_id', $user->id)
-            ->exists();
+        if ($task->subtasks()->where('assigned_user_id', $user->id)->exists()) {
+            return true;
+        }
+
+        return app(TaskObserverService::class)->isObserver($task, $user);
+    }
+
+    /**
+     * Subquery matching tasks the user observes.
+     */
+    private function observedBy(User $user): \Closure
+    {
+        return static function ($sub) use ($user): void {
+            $sub->selectRaw('1')
+                ->from('task_observers')
+                ->whereColumn('task_observers.task_id', 'tasks.id')
+                ->where('task_observers.user_id', $user->id);
+        };
     }
 
     private function canMutateTask(TaskAccessContext $context, User $user, Task $task): bool

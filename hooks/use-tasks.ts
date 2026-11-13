@@ -38,6 +38,8 @@ import {
   type UpdateTaskPayload,
   type TaskAssignee,
   type TaskSubtaskMutationData,
+  listTaskObserverCandidates,
+  type TaskObserverCandidate,
 } from "@/lib/api/tasks";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { ApiRequestError } from "@/lib/api/onboarding";
@@ -48,6 +50,8 @@ export const TASK_KEYS = {
   all: ["tasks"] as const,
   list: (params: ListTasksParams) => ["tasks", params] as const,
   assignees: (companyId: number | string) => ["tasks", "assignees", companyId] as const,
+  observerCandidates: (companyId: number | string) =>
+    ["tasks", "observer-candidates", companyId] as const,
   detail: (taskId: number | string, companyId?: number | string) =>
     ["tasks", "detail", taskId, companyId] as const,
   comments: (taskId: number | string, companyId?: number | string) =>
@@ -68,6 +72,19 @@ export function useTaskAssignees(companyId?: number | string) {
     queryKey: TASK_KEYS.assignees(companyId ?? ""),
     queryFn: async (): Promise<TaskAssignee[]> =>
       (await listTaskAssignees({ company_id: companyId! }, token)).data.items,
+    enabled: hasActiveApiSession(token) && companyId != null && companyId !== "",
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+/** Every active company member, any role, who can be added as a task observer. */
+export function useTaskObserverCandidates(companyId?: number | string) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: TASK_KEYS.observerCandidates(companyId ?? ""),
+    queryFn: async (): Promise<TaskObserverCandidate[]> =>
+      (await listTaskObserverCandidates({ company_id: companyId! }, token)).data.items,
     enabled: hasActiveApiSession(token) && companyId != null && companyId !== "",
     staleTime: 1000 * 60 * 5,
   });

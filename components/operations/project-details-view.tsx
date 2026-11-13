@@ -538,6 +538,9 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
+    observers: apiTask.observers ?? [],
+    isObserver: Boolean(apiTask.is_observer),
+    createdByUserId: apiTask.created_by_user_id != null ? String(apiTask.created_by_user_id) : undefined,
     statusLabel,
   };
 }

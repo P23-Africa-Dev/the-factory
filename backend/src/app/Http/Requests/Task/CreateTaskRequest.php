@@ -46,6 +46,8 @@ class CreateTaskRequest extends FormRequest
             'priority' => ['nullable', 'string', Rule::in(TaskPriority::values())],
             'minimum_photos_required' => ['nullable', 'integer', 'min:0', 'max:20'],
             'visit_verification_required' => ['nullable', 'boolean'],
+            'observer_ids' => ['nullable', 'array', 'max:50'],
+            'observer_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'subtasks' => ['nullable', 'array', 'max:50'],
             'subtasks.*.title' => ['required', 'string', 'min:1', 'max:255'],
             'subtasks.*.assigned_user_id' => ['nullable', 'integer', 'exists:users,id'],
