@@ -16,9 +16,16 @@ class TaskResource extends JsonResource
         $isObserverRequester = $requestUser !== null
             && $this->relationLoaded('observers')
             && $this->observers->contains('id', (int) $requestUser->id);
-        // Agents only see themselves among assignees, unless they observe the task:
-        // an observer needs to know who the task is for.
-        $isAgentRequester = $requestUser !== null && $requestUser->internal_role === 'agent' && ! $isObserverRequester;
+        $isAssigneeRequester = $requestUser !== null && (
+            (int) $this->assigned_agent_id === (int) $requestUser->id
+            || ($this->relationLoaded('currentAssignees') && $this->currentAssignees->contains('id', (int) $requestUser->id))
+        );
+        // Agents only see themselves among assignees, unless they work on or observe
+        // the task: co-assignees and observers need to know who the task is for.
+        $isAgentRequester = $requestUser !== null
+            && $requestUser->internal_role === 'agent'
+            && ! $isObserverRequester
+            && ! $isAssigneeRequester;
 
         return [
             'id' => $this->id,

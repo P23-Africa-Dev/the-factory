@@ -316,13 +316,26 @@ class TaskService
             $this->ensureProjectBelongsToCompany($context->company->id, (int) $data['project_id']);
         }
 
+        if (array_key_exists('assigned_agent_ids', $data)) {
+            if ($this->isTerminalStatus($task->status?->value)) {
+                throw ValidationException::withMessages([
+                    'assigned_agent_ids' => ['Assignees cannot be changed on a completed or cancelled task.'],
+                ]);
+            }
+
+            foreach (array_map('intval', $data['assigned_agent_ids']) as $agentId) {
+                $this->ensureAssigneeBelongsToCompany($context->company->id, $agentId, $user);
+            }
+        }
+
         if (array_key_exists('due_date', $data) && $data['due_date'] !== null) {
             $this->assertTaskDueDateNotBeforeSubtasks($task, $data['due_date']);
         }
 
         $addedObserverIds = [];
+        $addedAssigneeIds = [];
 
-        $updatedTask = DB::transaction(function () use ($task, $data, $context, $user, &$addedObserverIds): Task {
+        $updatedTask = DB::transaction(function () use ($task, $data, $context, $user, &$addedObserverIds, &$addedAssigneeIds): Task {
             $latitude = array_key_exists('latitude', $data)
                 ? ($data['latitude'] !== null ? (float) $data['latitude'] : null)
                 : $task->latitude;
@@ -362,12 +375,22 @@ class TaskService
                 $task->update($payload);
             }
 
+            // Assignees first: observer sync drops anyone who now performs the task.
+            if (array_key_exists('assigned_agent_ids', $data)) {
+                $addedAssigneeIds = $this->syncAssignees($task, $user, array_map('intval', $data['assigned_agent_ids']));
+            }
+
             if (array_key_exists('observer_ids', $data)) {
                 $addedObserverIds = app(TaskObserverService::class)->sync($task, $user, $data['observer_ids'] ?? []);
             }
 
             return $this->loadTask($task, $context);
         });
+
+        if ($addedAssigneeIds !== []) {
+            $this->notifyCurrentAssignees($updatedTask, $user, false, $addedAssigneeIds);
+            $this->notifyTaskAssignedInApp($updatedTask, $user, false, 'task.assigned', $addedAssigneeIds);
+        }
 
         app(TaskObserverService::class)->notifyAdded($updatedTask, $user, $addedObserverIds);
 
@@ -970,7 +993,65 @@ class TaskService
         return $context->isAgent() && $this->isUserAssignedToTask($task, $user);
     }
 
-    private function notifyCurrentAssignees(Task $task, User $actor, bool $selfAssignedFlow): void
+    /**
+     * Replace the task's current assignees. Removed people keep their history row
+     * (is_current = false); the first id becomes the primary assignee.
+     *
+     * @param  array<int, int>  $agentIds
+     * @return array<int, int> ids of users newly assigned
+     */
+    private function syncAssignees(Task $task, User $actor, array $agentIds): array
+    {
+        $agentIds = array_values(array_unique(array_filter($agentIds, static fn (int $id): bool => $id > 0)));
+
+        $currentIds = TaskAssignment::query()
+            ->where('task_id', $task->id)
+            ->where('is_current', true)
+            ->pluck('assigned_agent_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $removed = array_values(array_diff($currentIds, $agentIds));
+        $added = array_values(array_diff($agentIds, $currentIds));
+
+        if ($removed !== []) {
+            TaskAssignment::query()
+                ->where('task_id', $task->id)
+                ->where('is_current', true)
+                ->whereIn('assigned_agent_id', $removed)
+                ->update(['is_current' => false, 'unassigned_at' => now()]);
+        }
+
+        foreach ($added as $agentId) {
+            TaskAssignment::create([
+                'task_id' => $task->id,
+                'assigned_by_user_id' => $actor->id,
+                'assigned_agent_id' => $agentId,
+                'assigned_at' => now(),
+                'is_current' => true,
+            ]);
+        }
+
+        if ((int) $task->assigned_agent_id !== $agentIds[0]) {
+            $task->update(['assigned_agent_id' => $agentIds[0]]);
+        }
+
+        // Someone who performs the task is no longer just an observer of it.
+        DB::table('task_observers')
+            ->where('task_id', $task->id)
+            ->whereIn('user_id', $agentIds)
+            ->delete();
+
+        $task->unsetRelation('currentAssignees');
+        $task->unsetRelation('assignedAgent');
+
+        return $added;
+    }
+
+    /**
+     * @param  array<int, int>|null  $onlyUserIds  limit to these assignees, e.g. people just added
+     */
+    private function notifyCurrentAssignees(Task $task, User $actor, bool $selfAssignedFlow, ?array $onlyUserIds = null): void
     {
         $assigneeIds = TaskAssignment::query()
             ->where('task_id', $task->id)
@@ -984,6 +1065,10 @@ class TaskService
 
         if ($assigneeIds === [] && $task->assigned_agent_id !== null) {
             $assigneeIds = [(int) $task->assigned_agent_id];
+        }
+
+        if ($onlyUserIds !== null) {
+            $assigneeIds = array_values(array_intersect($assigneeIds, $onlyUserIds));
         }
 
         if ($assigneeIds === []) {
@@ -1016,7 +1101,10 @@ class TaskService
         }
     }
 
-    private function notifyTaskAssignedInApp(Task $task, User $actor, bool $selfAssignedFlow, string $eventType = 'task.assigned'): void
+    /**
+     * @param  array<int, int>|null  $onlyUserIds  limit to these assignees, e.g. people just added
+     */
+    private function notifyTaskAssignedInApp(Task $task, User $actor, bool $selfAssignedFlow, string $eventType = 'task.assigned', ?array $onlyUserIds = null): void
     {
         $assigneeIds = TaskAssignment::query()
             ->where('task_id', $task->id)
@@ -1030,6 +1118,10 @@ class TaskService
 
         if ($assigneeIds === [] && $task->assigned_agent_id !== null) {
             $assigneeIds = [(int) $task->assigned_agent_id];
+        }
+
+        if ($onlyUserIds !== null) {
+            $assigneeIds = array_values(array_intersect($assigneeIds, $onlyUserIds));
         }
 
         foreach ($assigneeIds as $assigneeId) {

@@ -40,3 +40,19 @@ describe('task observers', () => {
     expect(parsed.success && parsed.data.observer_ids).toEqual([3, 4]);
   });
 });
+
+describe('task assignees', () => {
+  it('reads every assignee from the API, primary assignee first', () => {
+    const task = taskSchema.parse({
+      ...baseTask,
+      assigned_agent_id: 4,
+      assigned_users: [
+        { id: 3, name: 'Ada Lovelace' },
+        { id: 4, name: 'Alan Turing' },
+      ],
+    });
+
+    expect(task.assignees.map((person) => person.id)).toEqual([4, 3]);
+    expect(task.assigneeName).toBe('Alan Turing');
+  });
+});

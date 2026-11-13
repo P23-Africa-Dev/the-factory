@@ -57,6 +57,17 @@ const rawTaskSchema = z
       )
       .nullish(),
     is_observer: z.boolean().nullish(),
+    assigned_users: z
+      .array(
+        z
+          .object({
+            id: z.union([z.string(), z.number()]),
+            name: z.string(),
+            avatar_url: z.string().nullish(),
+          })
+          .passthrough(),
+      )
+      .nullish(),
     subtasks: z
       .array(
         z
@@ -118,6 +129,12 @@ const rawTaskSchema = z
     })),
     // True when the signed-in user follows, rather than performs, this task.
     isObserver: Boolean(data.is_observer),
+    // Everyone working on the task, including co-assignees.
+    assignees: (data.assigned_users ?? []).map((person) => ({
+      id: String(person.id),
+      name: person.name,
+      avatarUrl: person.avatar_url ?? null,
+    })),
     assignedBy: data.assigned_by ?? data.creator?.name ?? undefined,
     assignedAgentId:
       data.assigned_agent_id != null && data.assigned_agent_id !== ''

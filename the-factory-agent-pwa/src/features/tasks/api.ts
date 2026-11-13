@@ -343,6 +343,7 @@ export const taskApi = {
         visitVerificationRequired: false,
         observers: [],
         isObserver: false,
+        assignees: [],
         checklistSteps: (payload.subtasks ?? []).map((step, index) => ({
           id: `temp-step-${index}`,
           title: step.title,

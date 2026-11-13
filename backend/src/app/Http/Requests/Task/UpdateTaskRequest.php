@@ -7,18 +7,21 @@ namespace App\Http\Requests\Task;
 use App\Enums\TaskPriority;
 use App\Enums\TaskType;
 use App\Http\Requests\Concerns\ResolvesCompanyContextId;
+use App\Http\Requests\Task\Concerns\NormalizesTaskAssignees;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class UpdateTaskRequest extends FormRequest
 {
+    use NormalizesTaskAssignees;
     use ResolvesCompanyContextId;
 
     protected function prepareForValidation(): void
     {
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
+            ...$this->normalizedAssigneeInput(),
         ]);
     }
 
@@ -44,6 +47,8 @@ class UpdateTaskRequest extends FormRequest
             'priority' => ['sometimes', 'nullable', 'string', Rule::in(TaskPriority::values())],
             'minimum_photos_required' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:20'],
             'visit_verification_required' => ['sometimes', 'nullable', 'boolean'],
+            'assigned_agent_ids' => ['sometimes', 'array', 'min:1', 'max:20'],
+            'assigned_agent_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             'observer_ids' => ['sometimes', 'nullable', 'array', 'max:50'],
             'observer_ids.*' => ['integer', 'distinct', 'exists:users,id'],
         ];
@@ -57,7 +62,7 @@ class UpdateTaskRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if (! $this->hasAny(['title', 'type', 'description', 'location', 'address', 'latitude', 'longitude', 'due_date', 'required_actions', 'priority', 'minimum_photos_required', 'visit_verification_required', 'observer_ids'])) {
+            if (! $this->hasAny(['title', 'type', 'description', 'location', 'address', 'latitude', 'longitude', 'due_date', 'required_actions', 'priority', 'minimum_photos_required', 'visit_verification_required', 'observer_ids', 'assigned_agent_ids'])) {
                 $validator->errors()->add('task', 'At least one updatable field is required.');
             }
 
