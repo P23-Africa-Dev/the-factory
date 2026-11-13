@@ -91,6 +91,7 @@ import {
   formatLeadRoleLine,
   isLeadContactPending,
   isLeadPartialMatch,
+  withCompanyContactFallback,
   leadContactSourceChip,
   leadEntityBadge,
   leadFitTooltip,
@@ -290,12 +291,12 @@ function resolveGenerateLeadsPrompt(prompt: string): { body: string; targetCount
 }
 
 type ActionIntent = Exclude<ChatIntent, "freeform">;
-type SalesEngineTab = "smart-lead" | "social-listening";
+type SalesEngineTab = "smart-lead" | "social-listening" | "opportunities";
 
 const SALES_ENGINE_TAB_STORAGE_KEY = "sales-engine-active-tab";
 
 function isSalesEngineTab(value: string | null): value is SalesEngineTab {
-  return value === "smart-lead" || value === "social-listening";
+  return value === "smart-lead" || value === "social-listening" || value === "opportunities";
 }
 type SocialSignal = SocialSignalApi;
 
@@ -308,6 +309,7 @@ type SocialStatCard = {
 };
 
 import { useSalesEngineCrmPipelines } from "@/hooks/use-sales-engine-pipelines";
+import { OpportunitiesView } from "@/components/sales-engine/opportunities-view";
 
 const INTENT_PLACEHOLDERS: Record<ChatIntent, string> = {
   freeform: "Ask or search anything",
@@ -351,6 +353,7 @@ const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
 const salesEngineTabs: Array<{ id: SalesEngineTab; label: string }> = [
   { id: "smart-lead", label: "Smart Lead" },
   { id: "social-listening", label: "Social Listening" },
+  { id: "opportunities", label: "Opportunities" },
 ];
 
 const SOURCE_SETTING_OPTIONS = [
@@ -735,7 +738,7 @@ function LeadInlineResults({
   const unsavedIds = leads
     .filter((lead) => !lead.crm_synced && !lead.crm_duplicate && lead.save_status !== "saved")
     .map((lead) => lead.id);
-  const visibleLeads = leads.slice(0, displayCount);
+  const visibleLeads = leads.slice(0, displayCount).map(withCompanyContactFallback);
   const hasMore = displayCount < leads.length;
   const remaining = Math.max(leads.length - displayCount, 0);
 
@@ -2883,6 +2886,8 @@ const TAB_TRUST_MODE_COPY: Record<SalesEngineTab, string> = {
     "Follows your question first. Results may include strong matches outside your saved ICP, with an explanation for each.",
   "social-listening":
     "Strictly follows your saved ICP filters. Nothing outside your filter criteria will appear here.",
+  opportunities:
+    "Verified, dated company events from companies that fit your ICP, with the person to contact.",
 };
 
 function SalesEngineTabs({
@@ -3306,6 +3311,14 @@ function SocialSignalRow({
       </td>
       <td className="px-1.5 py-2.5 align-middle">
         <ScoreGauge score={signal.score} dark={isActive} />
+        {signal.opportunityTier === "possible" && (
+          <span
+            className="mt-1 block text-center text-[8px] font-medium text-[#9a6b00]"
+            title="A real opening that scored below your minimum. Worth a look."
+          >
+            Possible opening
+          </span>
+        )}
       </td>
       <td className="rounded-r-[20px] px-2.5 py-2.5 align-middle">
         <div className="flex items-center justify-center gap-1.5">
@@ -4983,7 +4996,9 @@ export function SalesEngineView() {
           />
         )}
 
-        {activeTab === "social-listening" && !chatExpanded ? (
+        {activeTab === "opportunities" && !chatExpanded ? (
+          <OpportunitiesView />
+        ) : activeTab === "social-listening" && !chatExpanded ? (
           <SocialListeningTab
             onOpenIcpBuilder={handleOpenIcpBuilder}
             onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
