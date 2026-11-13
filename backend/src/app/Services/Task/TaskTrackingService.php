@@ -108,8 +108,17 @@ class TaskTrackingService
                 ->first();
 
             if ($activeSession) {
+                // With several assignees, only one person can track the task at a time.
+                // Keep "already tracking" / "already active" out of this message: clients
+                // read those phrases as "your own session is running" and try to resume it.
+                $tracker = (int) $activeSession->started_by_user_id !== (int) $user->id
+                    ? User::query()->find($activeSession->started_by_user_id)
+                    : null;
+
                 throw ValidationException::withMessages([
-                    'tracking' => ['Tracking is already active for this task.'],
+                    'tracking' => [$tracker
+                        ? "{$tracker->name} is tracking this task right now. Only one person can track it at a time."
+                        : 'Tracking is already active for this task.'],
                 ]);
             }
 

@@ -208,6 +208,13 @@ function TaskCard({
           <span className="text-[#494A50]">{formatRelativeTime(task.assignedAt)}</span>
         </div>
 
+        {task.assignees.length > 1 && (
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <span className="text-[10px] font-semibold text-white/40">Shared with</span>
+            <ObserverAvatars observers={task.assignees} size={20} showIcon={false} />
+          </div>
+        )}
+
         {(isObserver || task.observers.length > 0) && (
           <div className="flex items-center justify-between gap-2 mt-1">
             {isObserver ? <ObservingBadge /> : <span className="text-[10px] font-semibold text-white/40">Observers</span>}

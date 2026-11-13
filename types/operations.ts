@@ -39,6 +39,8 @@ export interface DndItem {
   /** True when the signed-in user observes, rather than performs, this task. */
   isObserver?: boolean;
   createdByUserId?: string;
+  /** Everyone the task is assigned to, primary assignee first. */
+  assigneeIds?: string[];
 }
 
 export interface DndContainer {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, Eye, Search, X } from "lucide-react";
 import { ObserverAvatar, type ObserverPerson } from "@/components/operations/observer-avatars";
 
@@ -13,13 +13,31 @@ type ObserverPickerProps = {
   /** Ids that cannot be observers, such as the task's assignee. */
   excludeIds?: string[];
   loading?: boolean;
+  /** Accessible name of the toggle button. */
+  ariaLabel?: string;
+  /** Text shown when nobody is selected. */
+  placeholder?: string;
+  /** Icon at the start of the field. Defaults to an eye, for observers. */
+  icon?: ReactNode;
+  invalid?: boolean;
 };
 
 /**
- * Multi-select for task observers. Selected people show as removable chips;
- * the list expands inline with a search box and a checkbox per person.
+ * Multi-select of people, used for task observers and assignees. Selected people
+ * show as removable chips; the list expands inline with a search box and a
+ * checkbox per person.
  */
-export function ObserverPicker({ people, value, onChange, excludeIds = [], loading = false }: ObserverPickerProps) {
+export function ObserverPicker({
+  people,
+  value,
+  onChange,
+  excludeIds = [],
+  loading = false,
+  ariaLabel = "Select observers",
+  placeholder = "Add people to observe this task",
+  icon,
+  invalid = false,
+}: ObserverPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -41,18 +59,22 @@ export function ObserverPicker({ people, value, onChange, excludeIds = [], loadi
   };
 
   return (
-    <div className="rounded-xl border-2 border-gray-200 bg-gray-50 focus-within:border-[#094B5C] transition-colors">
+    <div
+      className={`rounded-xl border-2 bg-gray-50 focus-within:border-[#094B5C] transition-colors ${
+        invalid ? "border-red-300" : "border-gray-200"
+      }`}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Select observers"
+        aria-label={ariaLabel}
         className="w-full flex items-center gap-2 px-3 py-2 min-h-[42px] text-left cursor-pointer"
       >
-        <Eye size={13} className="text-gray-400 shrink-0" aria-hidden="true" />
+        {icon ?? <Eye size={13} className="text-gray-400 shrink-0" aria-hidden="true" />}
         {selected.length === 0 ? (
           <span className="flex-1 text-[13px] text-gray-400">
-            {loading ? "Loading…" : "Add people to observe this task"}
+            {loading ? "Loading…" : placeholder}
           </span>
         ) : (
           <span className="flex-1 flex flex-wrap gap-1.5">
@@ -101,7 +123,7 @@ export function ObserverPicker({ people, value, onChange, excludeIds = [], loadi
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search people…"
-              aria-label="Search observers"
+              aria-label={`Search: ${ariaLabel}`}
               className="flex-1 text-[12px] text-gray-700 placeholder:text-gray-400 outline-none bg-transparent"
             />
           </div>

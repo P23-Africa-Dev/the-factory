@@ -31,7 +31,7 @@ import {
   taskHasMapLocation,
 } from '@/manager/features/tasks';
 import { TaskComments } from '@/manager/features/tasks/components/TaskComments';
-import { ObserverList } from '@/components/shared/Observers';
+import { AssigneeList, ObserverList } from '@/components/shared/Observers';
 import { toast } from '@/lib/toast';
 
 function getStatusBadge(status: string): { bg: string; text: string; label: string } {
@@ -363,6 +363,18 @@ export default function ManagerTaskDetailScreen() {
             </button>
           </div>
         </div>
+
+        {task.assignees.length > 1 && (
+          <div className="mt-4">
+            <AssigneeList
+              assignees={task.assignees.map((person) => ({
+                id: String(person.id),
+                name: person.name,
+                avatarUrl: person.avatarUrl,
+              }))}
+            />
+          </div>
+        )}
 
         <div className="mt-4">
           <ObserverList observers={task.observers} isObserver={task.isObserver} />

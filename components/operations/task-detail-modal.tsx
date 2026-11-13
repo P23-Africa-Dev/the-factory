@@ -348,6 +348,12 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   const isCompleted = boardStatus === 'completed';
   const isCancelled = boardStatus === 'cancelled';
   const observers = detailQuery.data?.observers ?? task.observers ?? [];
+  const taskAssignees =
+    detailQuery.data?.assigned_users && detailQuery.data.assigned_users.length > 0
+      ? detailQuery.data.assigned_users
+      : detailQuery.data?.assignee
+        ? [detailQuery.data.assignee]
+        : [];
   // Observers follow the task and comment on it; the assignee's actions are not theirs.
   const isObserver = Boolean(detailQuery.data?.is_observer ?? task.isObserver);
   const canDownloadProofs = role === 'owner' || role === 'admin';
@@ -688,6 +694,23 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                   {assignedByText}
                 </p>
               </section>
+
+              {taskAssignees.length > 0 && (
+                <section>
+                  <h3 className="text-[15px] font-bold text-dash-dark mb-2">Assigned To</h3>
+                  <ul className="flex flex-wrap gap-2">
+                    {taskAssignees.map((person) => (
+                      <li
+                        key={person.id}
+                        className="inline-flex items-center gap-2 rounded-full border border-gray-100 bg-gray-50 py-1 pl-1 pr-3 text-[13px] text-gray-600"
+                      >
+                        <ObserverAvatar person={person} size={24} className="ring-0" />
+                        {person.name}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               <section>
                 <h3 className="text-[15px] font-bold text-dash-dark mb-2">Observers</h3>

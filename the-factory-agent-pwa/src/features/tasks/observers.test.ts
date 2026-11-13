@@ -40,3 +40,20 @@ describe('task observers', () => {
     expect(parsed.success && parsed.data.observer_ids).toEqual([3, 4]);
   });
 });
+
+describe('task assignees', () => {
+  it('maps every assignee so co-assignees can see each other', () => {
+    const task = taskSchema.parse({
+      ...baseTask,
+      assigned_users: [
+        { id: 3, name: 'Ada Lovelace', avatar_url: null },
+        { id: 4, name: 'Alan Turing', avatar_url: 'https://cdn.example.com/b.png' },
+      ],
+    });
+
+    expect(task.assignees).toEqual([
+      { id: '3', name: 'Ada Lovelace', avatarUrl: null },
+      { id: '4', name: 'Alan Turing', avatarUrl: 'https://cdn.example.com/b.png' },
+    ]);
+  });
+});

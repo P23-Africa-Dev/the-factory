@@ -283,6 +283,8 @@ export type UpdateTaskPayload = {
   minimum_photos_required?: number;
   visit_verification_required?: boolean;
   observer_ids?: number[];
+  /** Replaces the current assignees; managers only. */
+  assigned_agent_ids?: number[];
 };
 
 export type CreateSelfTaskPayload = Omit<

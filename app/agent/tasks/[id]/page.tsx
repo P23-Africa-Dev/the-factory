@@ -70,6 +70,7 @@ export default function AgentTaskDetailPage({
   // Observers follow the task and comment on it, but do not perform it.
   const isObserver = Boolean(task.is_observer);
   const observers = task.observers ?? [];
+  const assignees = task.assigned_users ?? [];
 
   const updateTaskStatus = (status: 'in_progress' | 'completed' | 'cancelled') => {
     updateStatus(
@@ -139,6 +140,28 @@ export default function AgentTaskDetailPage({
               <div>
                 <p className="text-[11px] text-gray-400 font-semibold">Assigned By</p>
                 <p className="text-[13px] text-dash-dark font-semibold">{task.creator.name}</p>
+              </div>
+            </div>
+          )}
+
+          {assignees.length > 1 && (
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                <User size={14} className="text-blue-500" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] text-gray-400 font-semibold">Assigned To</p>
+                <ul className="mt-1 flex flex-wrap gap-1.5">
+                  {assignees.map((person) => (
+                    <li
+                      key={person.id}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 border border-gray-100 py-0.5 pl-0.5 pr-2.5 text-[12px] text-dash-dark font-semibold"
+                    >
+                      <ObserverAvatar person={person} size={20} className="ring-0" />
+                      {person.name}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}

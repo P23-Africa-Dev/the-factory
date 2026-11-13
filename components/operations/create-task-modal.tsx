@@ -44,6 +44,8 @@ interface CreateTaskModalProps {
     taskType: string;
     description: string;
     assignTo: string;
+    /** Everyone the task is assigned to; the first is the primary assignee. */
+    assigneeIds: string[];
     location: string;
     address: string;
     dueDate: string;
@@ -69,6 +71,7 @@ interface CreateTaskModalProps {
     latitude?: number;
     longitude?: number;
     observerIds?: number[];
+    assigneeIds?: number[];
   }) => void;
 }
 
@@ -105,6 +108,12 @@ const TASK_TYPES: Record<string, string> = {
   "Collection": "collection",
   "Awareness": "awareness",
 };
+
+/** Assignees passed in by the caller: a list, or the older single assignee field. */
+function initialAssigneeIds(initialValues?: { assigneeIds?: string[]; assignTo?: string }): string[] {
+  if (initialValues?.assigneeIds?.length) return initialValues.assigneeIds;
+  return initialValues?.assignTo ? [initialValues.assignTo] : [];
+}
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 type Priority = (typeof PRIORITY_OPTIONS)[number];
@@ -206,10 +215,10 @@ export function CreateTaskModal({
     title: initialValues?.title ?? "",
     taskType: initialValues?.taskType ?? "",
     description: initialValues?.description ?? "",
-    assignTo:
+    assigneeIds:
       mode === "create" && canManageTasks && user?.id
-        ? String(user.id)
-        : initialValues?.assignTo ?? "",
+        ? [String(user.id)]
+        : initialAssigneeIds(initialValues),
     location: initialValues?.location ?? "",
     address: initialValues?.address ?? "",
     dueDate: initialValues?.dueDate ?? "",
@@ -236,19 +245,21 @@ export function CreateTaskModal({
 
     setForm((current) => ({
       ...current,
-      assignTo:
+      assigneeIds:
         mode === "edit"
-          ? initialValues?.assignTo ?? current.assignTo
+          ? (initialValues?.assigneeIds || initialValues?.assignTo ? initialAssigneeIds(initialValues) : current.assigneeIds)
           : canManageTasks && user?.id
-            ? String(user.id)
-            : initialValues?.assignTo ?? "",
+            ? [String(user.id)]
+            : initialAssigneeIds(initialValues),
     }));
     initializedOpenAssigneeRef.current = true;
-  }, [canManageTasks, initialValues?.assignTo, isOpen, mode, user]);
+  }, [canManageTasks, initialValues, isOpen, mode, user]);
+
+  const primaryAssigneeId = form.assigneeIds[0] ?? "";
 
   // The person doing the task cannot also observe it: the chosen assignee, or the agent creating their own task.
   const observerExcludeIds = canManageTasks
-    ? (form.assignTo ? [form.assignTo] : [])
+    ? form.assigneeIds
     : user?.id != null
       ? [String(user.id)]
       : [];
@@ -277,7 +288,9 @@ export function CreateTaskModal({
   const validate = () => {
     const errs: Record<string, string> = {};
     if (!form.title.trim()) errs.title = "Task title is required";
-    if (mode === "create" && canManageTasks && !form.assignTo) errs.assignTo = "Select who this task is assigned to";
+    if (mode === "create" && canManageTasks && form.assigneeIds.length === 0) {
+      errs.assignTo = "Select who this task is assigned to";
+    }
     const descriptionError = validateTaskDescription(form.description);
     if (descriptionError) errs.description = descriptionError;
     if (usesProjectDueDate && form.dueDate && (projectSubtasks ?? subtasks).some((item) => item.dueAt && Date.parse(item.dueAt) > Date.parse(form.dueDate))) {
@@ -311,6 +324,8 @@ export function CreateTaskModal({
       latitude: coords?.lat,
       longitude: coords?.lng,
       observerIds,
+      // Only sent when filled, so older unassigned tasks can still be edited.
+      assigneeIds: canManageTasks && form.assigneeIds.length > 0 ? form.assigneeIds.map(Number) : undefined,
     };
 
     if (mode === "edit" && onSubmitTask) {
@@ -360,6 +375,7 @@ export function CreateTaskModal({
           const ERROR_MAP: Record<string, string> = {
             type: "taskType",
             assigned_agent_id: "assignTo",
+            assigned_agent_ids: "assignTo",
             due_date: "dueDate",
             required_actions: "requiredActions",
             minimum_photos_required: "minPhotos",
@@ -391,7 +407,8 @@ export function CreateTaskModal({
         {
           ...payload,
           project_id: projectId ?? undefined,
-          assigned_agent_id: form.assignTo ? Number(form.assignTo) : undefined,
+          assigned_agent_id: primaryAssigneeId ? Number(primaryAssigneeId) : undefined,
+          assigned_agent_ids: form.assigneeIds.length > 0 ? form.assigneeIds.map(Number) : undefined,
         },
         { onError },
       );
@@ -422,7 +439,7 @@ export function CreateTaskModal({
       title: "",
       taskType: "",
       description: "",
-      assignTo: "",
+      assigneeIds: [],
       location: "",
       address: "",
       dueDate: "",
@@ -531,21 +548,19 @@ export function CreateTaskModal({
           {canManageTasks && (
             <div>
               <FieldLabel required>Assign To</FieldLabel>
-              <SearchableSelect
-                value={form.assignTo}
-                onChange={(v) => set("assignTo", v)}
-                options={
-                  loadingAssignees
-                    ? []
-                    : assignees.map((assignee) => ({
-                        value: assignee.id.toString(),
-                        label: assignee.name,
-                      }))
-                }
-                placeholder={loadingAssignees ? "Loading…" : "Select user"}
-                leftIcon={<User size={13} className="text-gray-400" />}
-                className={`${INPUT_CLS(errors.assignTo)} pl-9 pr-4 cursor-pointer`}
+              <ObserverPicker
+                people={assignees.map((assignee) => ({ id: assignee.id, name: assignee.name }))}
+                value={form.assigneeIds}
+                onChange={(ids) => set("assigneeIds", ids)}
+                loading={loadingAssignees}
+                ariaLabel="Select assignees"
+                placeholder="Select one or more people"
+                icon={<User size={13} className="text-gray-400 shrink-0" aria-hidden="true" />}
+                invalid={Boolean(errors.assignTo)}
               />
+              <p className="text-[10px] text-gray-400 mt-1">
+                Everyone picked works on the same task. The first person is the primary assignee.
+              </p>
               {errors.assignTo && (
                 <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
               )}
@@ -629,9 +644,9 @@ export function CreateTaskModal({
               <SubtaskEditor
                 dueAt={form.dueDate || null}
                 assignee={{
-                  id: form.assignTo || String(user?.id ?? ""),
+                  id: primaryAssigneeId || String(user?.id ?? ""),
                   name:
-                    assignees.find((agent) => String(agent.id) === form.assignTo)?.name ??
+                    assignees.find((agent) => String(agent.id) === primaryAssigneeId)?.name ??
                     user?.name ??
                     "Current user",
                 }}
@@ -660,9 +675,9 @@ export function CreateTaskModal({
                   initial={editingSubtask}
                   dueAt={form.dueDate || null}
                   assignee={{
-                    id: form.assignTo || String(user?.id ?? ""),
+                    id: primaryAssigneeId || String(user?.id ?? ""),
                     name:
-                      assignees.find((agent) => String(agent.id) === form.assignTo)?.name ??
+                      assignees.find((agent) => String(agent.id) === primaryAssigneeId)?.name ??
                       user?.name ??
                       "Current user",
                   }}
