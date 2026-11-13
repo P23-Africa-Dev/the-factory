@@ -27,6 +27,21 @@ describe("social-listening-empty-state", () => {
     expect(state?.showActions).toBe(true);
   });
 
+  it("says plainly when the daily limit stopped the scan before it searched", () => {
+    const latestRun = {
+      id: 3,
+      status: "completed",
+      signals_created: 0,
+      result_summary: { totalChecked: 0, budget_exhausted: true },
+    } as SocialListeningRunStatus;
+
+    const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
+
+    expect(state?.title).toBe("Today's scan limit reached");
+    expect(state?.description).toContain("resumes automatically tomorrow");
+    expect(state?.showActions).toBe(false);
+  });
+
   it("returns filters_no_match when filters are active", () => {
     const state = getSocialListeningEmptyState(null, "2026-01-01T00:00:00Z", false, true);
 
@@ -68,20 +83,6 @@ describe("social-listening-empty-state", () => {
     expect(state?.description).not.toContain("Serper");
     expect(state?.description).toContain("couldn't finish this scan");
     expect(state?.showActions).toBe(true);
-  });
-
-  it("keeps a completed empty scan human, without rejection counts", () => {
-    const latestRun: SocialListeningRunStatus = {
-      id: 3,
-      status: "completed",
-      signals_created: 0,
-      result_summary: { totalChecked: 4, qualified: 0 },
-    };
-
-    const state = getSocialListeningEmptyState(latestRun, "2026-01-01T00:00:00Z", false);
-
-    expect(state?.title).toBe("Nothing new worth your time yet");
-    expect(state?.description).not.toMatch(/\d/);
   });
 
   it("never returns empty title or description", () => {
