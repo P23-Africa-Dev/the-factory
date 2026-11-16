@@ -6,6 +6,7 @@ import { formatDriveBytes } from "@/lib/api/drive";
 import { canPreviewDriveFile, getDrivePreviewKind } from "@/lib/drive-preview";
 import { useDriveFileBlobUrl } from "@/hooks/use-drive-preview";
 import { DrivePreviewContent } from "./drive-preview-content";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type DrivePreviewModalProps = {
   file: DriveFile;
@@ -23,7 +24,8 @@ export function DrivePreviewModal({ file, companyId, onClose, onDownload }: Driv
   );
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 sm:p-6">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
 
       <div
@@ -103,5 +105,6 @@ export function DrivePreviewModal({ file, companyId, onClose, onDownload }: Driv
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

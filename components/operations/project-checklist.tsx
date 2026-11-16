@@ -10,6 +10,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   SortableContext,
   arrayMove,
@@ -118,8 +119,9 @@ export function SubtaskEditor({ assignee, agents, onSave, initial, onCancel }: {
   }
 
   return (
+    <ModalPortal>
     <div
-      className="fixed inset-0 z-[110]"
+      className="fixed inset-0 z-[9999]"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -250,6 +252,7 @@ export function SubtaskEditor({ assignee, agents, onSave, initial, onCancel }: {
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

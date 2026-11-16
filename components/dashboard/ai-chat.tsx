@@ -29,6 +29,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { useCrmLabels } from "@/hooks/use-crm";
 import { useCompanyZones } from "@/hooks/use-internal-users";
 import { CreateZoneModal } from "@/components/zones/create-zone-modal";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { listMeetingAttendeeCandidates, type MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import { listLeads } from "@/lib/api/crm";
 import {
@@ -2870,7 +2871,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
             />
 
             {isConfirmClearOpen && (
-              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+              <ModalPortal>
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <button className="absolute inset-0 bg-black/40" onClick={() => setIsConfirmClearOpen(false)} aria-label="Close" />
                 <div className="relative w-full max-w-md bg-[#0F2A2F] border border-white/10 rounded-2xl p-5">
                   <h3 className="text-white text-[16px] font-semibold mb-2">Clear Chat?</h3>
@@ -2881,11 +2883,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               </div>
+              </ModalPortal>
             )}
 
             {/* Transcript Summary Input Modal */}
             {isTranscriptModalOpen && (
-              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+              <ModalPortal>
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <button className="absolute inset-0 bg-black/40" onClick={() => setIsTranscriptModalOpen(false)} aria-label="Close" />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6">
                   <h3 className="text-white text-[18px] font-semibold mb-2">Summarize Meeting Transcript</h3>
@@ -2919,11 +2923,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               </div>
+              </ModalPortal>
             )}
 
             {/* Voice Transcription Preview Modal */}
             {isVoicePreviewOpen && (
-              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+              <ModalPortal>
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <button className="absolute inset-0 bg-black/40" onClick={handleCloseVoiceModal} aria-label="Close" />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
                   <div className="flex items-center gap-3 mb-4">
@@ -3005,11 +3011,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               </div>
+              </ModalPortal>
             )}
 
             {/* File Analysis Preview Modal */}
             {isAnalyzeFilePreviewOpen && (
-              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+              <ModalPortal>
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <button
                   className="absolute inset-0 bg-black/40"
                   onClick={handleCloseFileAnalysisModal}
@@ -3077,11 +3085,13 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               </div>
+              </ModalPortal>
             )}
 
             {/* Forecast Overview Modal */}
             {isForecastModalOpen && (
-              <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+              <ModalPortal>
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
                 <button className="absolute inset-0 bg-black/40" onClick={handleCloseForecastModal} aria-label="Close" />
                 <div className="relative w-full max-w-2xl bg-[#0F2A2F] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
                   <div className="flex items-center gap-3 mb-4">
@@ -3221,6 +3231,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   </div>
                 </div>
               </div>
+              </ModalPortal>
             )}
 
             {/* Landing panel — only visible before the first message */}

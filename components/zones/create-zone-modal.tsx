@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { getCountries } from "@/lib/api/enterprise";
 import { useCreateCompanyZone } from "@/hooks/use-internal-users";
 import {
@@ -98,7 +99,8 @@ export function CreateZoneModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[220] flex items-center justify-center p-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative bg-white w-full max-w-lg rounded-[24px] shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
@@ -162,5 +164,6 @@ export function CreateZoneModal({
         </form>
       </div>
     </div>
+    </ModalPortal>
   );
 }

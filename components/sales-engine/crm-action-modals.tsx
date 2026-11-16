@@ -17,6 +17,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 export type CrmPipelineOption = { id: string; name: string };
 
@@ -61,6 +62,7 @@ export function AddToCrmPipelineModal({
   );
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
@@ -257,6 +259,7 @@ export function AddToCrmPipelineModal({
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }
 
@@ -290,6 +293,7 @@ function ConfirmActionShell({
   onConfirm: () => void;
 }) {
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
@@ -373,6 +377,7 @@ function ConfirmActionShell({
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }
 

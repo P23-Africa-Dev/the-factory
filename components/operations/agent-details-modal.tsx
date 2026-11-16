@@ -6,6 +6,7 @@ import { SectionDivider } from "@/components/payroll/payroll/section-divider";
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { listAvatars } from "@/lib/api/internal-onboarding";
 
 const AVATAR_PAGE_SIZE = 4;
@@ -146,7 +147,8 @@ export function AgentDetailsModal({
     onDetailsChange({ ...details, [key]: val });
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6 pointer-events-none">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[10000] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6 pointer-events-none">
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs pointer-events-auto sm:hidden"
       />
@@ -264,5 +266,6 @@ export function AgentDetailsModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

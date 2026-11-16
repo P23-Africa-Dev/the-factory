@@ -23,6 +23,7 @@ import {
 import { useOutreachSenderSettings, useUpdateOutreachSenderSettings } from "@/hooks/use-sales-engine-outreach-sender";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import type { OutreachDnsRecord, OutreachIntegrityCheck, OutreachSenderMode } from "@/lib/api/sales-engine";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 export type OutreachSettingsModalProps = {
   open: boolean;
@@ -334,6 +335,7 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
   };
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -827,5 +829,6 @@ export function OutreachSettingsModal({ open, onClose }: OutreachSettingsModalPr
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

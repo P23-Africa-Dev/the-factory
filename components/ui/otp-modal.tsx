@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const otpSchema = z.object({
   otp_code: z.string().length(6, "Enter a 6-digit verification code."),
@@ -79,8 +80,8 @@ export default function OtpModal({ email, maskedEmail, onClose }: Props) {
   }
 
   return (
-    /* Backdrop */
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
       {/* Card */}
       <div className="relative w-full max-w-105 mx-4 bg-white rounded-3xl px-8 py-10 shadow-xl flex flex-col items-center gap-6">
         {/* Close */}
@@ -146,5 +147,6 @@ export default function OtpModal({ email, maskedEmail, onClose }: Props) {
         </form>
       </div>
     </div>
+    </ModalPortal>
   );
 }

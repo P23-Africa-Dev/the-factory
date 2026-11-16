@@ -11,6 +11,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
 import type { RetrievedPlace } from "@/lib/utils/place-search";
 import type { TaskApiItem } from "@/lib/api/tasks";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type ScheduleTaskModalProps = {
     isOpen: boolean;
@@ -215,7 +216,8 @@ export function ScheduleTaskModal({
     }
 
     return (
-        <div className="fixed inset-0 z-50">
+        <ModalPortal>
+        <div className="fixed inset-0 z-[9999]">
             <div className="absolute inset-0 bg-black/25" onClick={onClose} />
 
             <div className="absolute inset-0 flex items-center justify-center p-4">
@@ -335,5 +337,6 @@ export function ScheduleTaskModal({
                 </div>
             </div>
         </div>
+        </ModalPortal>
     );
 }

@@ -20,6 +20,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils/sample";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { useAuthStore } from "@/store/auth";
 import { getAuthTokenFromDocument, getCompanyId } from "@/lib/auth/session";
 import {
@@ -296,12 +297,13 @@ function AvatarModal({
   }
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
       >
         {/* Backdrop */}
         <motion.div
@@ -541,6 +543,7 @@ function AvatarModal({
         </motion.div>
       </motion.div>
     </AnimatePresence>
+    </ModalPortal>
   );
 }
 

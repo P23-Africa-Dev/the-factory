@@ -12,6 +12,7 @@ import {
 } from "@/components/attendance/attendance-timezone-select";
 import { endOfMonth, endOfWeek, format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { AddAgentModal } from "./add-agent-modal";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { OpsTableRow, OpsTableNameCol, OpsTableCol, OpsTableStatus, OpsTableContainer } from "./ops-table";
 import { useAttendanceMetrics, useAttendanceRecords, useAgentAttendanceHistory } from "@/hooks/use-attendance";
 import { useAuthStore } from "@/store/auth";
@@ -360,7 +361,8 @@ function AttendanceSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-200 flex items-center justify-end">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-end">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
 
@@ -494,6 +496,7 @@ function AttendanceSettingsModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

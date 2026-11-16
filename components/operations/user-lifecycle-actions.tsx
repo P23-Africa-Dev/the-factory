@@ -10,6 +10,7 @@ import {
   useSuspendInternalUser,
 } from "@/hooks/use-internal-user-lifecycle";
 import { useUserManagementPermissions } from "@/hooks/use-user-management-permissions";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type UserLifecycleBaseProps = {
   userId: number | string;
@@ -115,7 +116,8 @@ export function DeleteUserIconButton({
       </LifecycleIconButton>
 
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <ModalPortal>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-bold text-dash-dark">Delete user</h3>
             <p className="mt-2 text-sm text-gray-500">
@@ -145,6 +147,7 @@ export function DeleteUserIconButton({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -732,9 +733,10 @@ export function SalesEnginePendingReviewView() {
       </AnimatePresence>
 
       {/* Inspect Lead Drawer / Detail Modal */}
+      <ModalPortal>
       <AnimatePresence>
         {inspectingLead && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -878,6 +880,7 @@ export function SalesEnginePendingReviewView() {
           </div>
         )}
       </AnimatePresence>
+      </ModalPortal>
 
       {/* Add To CRM Pipeline Modal */}
       <AddToCrmPipelineModal

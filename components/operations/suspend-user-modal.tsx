@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Loader2, X } from "lucide-react";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type SuspendType = "duration" | "date" | "permanent";
 
@@ -43,7 +44,8 @@ export function SuspendUserModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
@@ -126,5 +128,6 @@ export function SuspendUserModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
