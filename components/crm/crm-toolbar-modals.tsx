@@ -283,10 +283,10 @@ export function PipelineManagerModal({
                         saveEdit(pipeline.id);
                       }
                     }}
-                    className={`flex-1 min-w-0 rounded-lg px-3 py-2 text-[13px] font-semibold text-dash-dark placeholder:text-gray-400 outline-none transition-colors ${
+                    className={`flex-1 min-w-0 rounded-lg text-[13px] font-semibold text-dash-dark placeholder:text-gray-400 outline-none transition-colors ${
                       canManage && isEditing
-                        ? "border border-gray-200 bg-white focus:border-dash-dark"
-                        : "border border-transparent bg-transparent cursor-pointer pointer-events-none"
+                        ? "border border-gray-200 bg-white px-3 py-2 focus:border-dash-dark"
+                        : "border border-transparent bg-transparent px-0 py-1 cursor-pointer pointer-events-none"
                     }`}
                   />
                   <div
