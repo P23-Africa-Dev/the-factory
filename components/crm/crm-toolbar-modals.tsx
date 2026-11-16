@@ -52,7 +52,7 @@ export function ModalShell({
         onClick={onClose}
         aria-label="Close modal"
       />
-      <div className="relative w-full max-w-3xl max-h-[88vh] overflow-auto bg-white rounded-2xl shadow-2xl border border-gray-100">
+      <div className="relative w-full max-w-3xl max-h-[88vh] overflow-auto bg-white text-dash-dark rounded-2xl shadow-2xl border border-gray-100">
         <div className="sticky top-0 bg-white z-10 border-b border-gray-100 px-5 py-4 flex items-center justify-between">
           <h3 className="text-[16px] font-bold text-dash-dark">{title}</h3>
           <button
@@ -283,9 +283,9 @@ export function PipelineManagerModal({
                         saveEdit(pipeline.id);
                       }
                     }}
-                    className={`flex-1 min-w-0 rounded-lg px-3 py-2 text-[13px] transition-colors ${
+                    className={`flex-1 min-w-0 rounded-lg px-3 py-2 text-[13px] font-semibold text-dash-dark placeholder:text-gray-400 outline-none transition-colors ${
                       canManage && isEditing
-                        ? "border border-gray-200 bg-white"
+                        ? "border border-gray-200 bg-white focus:border-dash-dark"
                         : "border border-transparent bg-transparent cursor-pointer pointer-events-none"
                     }`}
                   />
@@ -376,7 +376,7 @@ export function PipelineManagerModal({
               value={newPipelineName}
               onChange={(e) => setNewPipelineName(e.target.value)}
               placeholder="Create new pipeline"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
             />
             <button
               onClick={saveNew}
@@ -563,7 +563,7 @@ export function LabelManagerModal({
                       [label.id]: { ...draft, name: e.target.value },
                     }))
                   }
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
                 />
                 <input
                   type="color"
@@ -614,7 +614,7 @@ export function LabelManagerModal({
           value={newLabelName}
           onChange={(e) => setNewLabelName(e.target.value)}
           placeholder="Add new label"
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px]"
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
         />
         <input
           type="color"
