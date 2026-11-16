@@ -20,6 +20,7 @@ use App\Support\AvatarUrlResolver;
 use App\Support\LeadCustomFieldValues;
 use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -1844,6 +1845,19 @@ class LeadService
 
         if (! empty($filters['assigned_to_user_id'])) {
             $query->where('assigned_to_user_id', (int) $filters['assigned_to_user_id']);
+        }
+
+        if (! empty($filters['created_by_user_id'])) {
+            $query->where('created_by_user_id', (int) $filters['created_by_user_id']);
+        }
+
+        // Instants from the client, so a picked day matches the viewer's timezone.
+        if (! empty($filters['created_from'])) {
+            $query->where('created_at', '>=', Carbon::parse((string) $filters['created_from'])->utc());
+        }
+
+        if (! empty($filters['created_to'])) {
+            $query->where('created_at', '<=', Carbon::parse((string) $filters['created_to'])->utc());
         }
 
         if (! empty($filters['source'])) {

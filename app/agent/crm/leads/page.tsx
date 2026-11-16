@@ -315,6 +315,7 @@ export default function AllLeadsPage() {
             pipelines={pipelines}
             labels={labels}
             selectedPipelineId={selectedPipelineId}
+            defaultPipelineId={defaultPipelineId}
             onPipelineChange={(pipelineId) => {
               setSelectedPipelineId(pipelineId);
               resetPageSelection();

@@ -856,6 +856,50 @@ class LeadManagementTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_leads_can_be_filtered_by_creator_and_created_date_range(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-25 12:00:00'));
+
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $baseLead = [
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ];
+
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Admin Early', 'created_by_user_id' => $admin->id]), '2026-06-10 10:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Admin Mid', 'created_by_user_id' => $admin->id]), '2026-06-20 10:00:00');
+        $this->createLeadAt(array_merge($baseLead, ['name' => 'Agent Mid', 'created_by_user_id' => $agent->id]), '2026-06-21 10:00:00');
+
+        $token = $admin->createToken('admin-lead-filters', ['*'])->plainTextToken;
+        $base = '/api/v1/crm/leads?company_id=' . $company->id;
+
+        $byCreator = $this->withToken($token)->getJson($base . '&created_by_user_id=' . $agent->id);
+        $byCreator->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Agent Mid');
+
+        $range = '&created_from=' . urlencode('2026-06-15T00:00:00Z') . '&created_to=' . urlencode('2026-06-25T23:59:59Z');
+        $byRange = $this->withToken($token)->getJson($base . $range);
+        $byRange->assertOk()->assertJsonPath('data.pagination.total', 2);
+
+        $both = $this->withToken($token)->getJson($base . $range . '&created_by_user_id=' . $admin->id);
+        $both->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.name', 'Admin Mid');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/crm/leads/analytics?company_id=' . $company->id . $range)
+            ->assertOk()
+            ->assertJsonPath('data.total_leads', 2);
+
+        $this->withToken($token)
+            ->getJson($base . '&created_from=2026-06-20&created_to=2026-06-10')
+            ->assertUnprocessable();
+
+        Carbon::setTestNow();
+    }
+
     public function test_crm_leads_analytics_scopes_agent_visible_leads(): void
     {
         [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();

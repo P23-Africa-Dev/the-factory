@@ -116,6 +116,11 @@ export type ListLeadsParams = {
     source?: string;
     search?: string;
     assigned_to_user_id?: number | string;
+    /** Who added the lead. */
+    created_by_user_id?: number | string;
+    /** ISO instants bounding when the lead was added (inclusive). */
+    created_from?: string;
+    created_to?: string;
     per_page?: number;
     page?: number;
     uncategorized?: boolean;
@@ -425,7 +430,14 @@ export type CrmLeadsAnalytics = {
 
 export type CrmLeadsAnalyticsParams = Pick<
     ListLeadsParams,
-    "company_id" | "pipeline_id" | "status" | "source" | "search"
+    | "company_id"
+    | "pipeline_id"
+    | "status"
+    | "source"
+    | "search"
+    | "created_by_user_id"
+    | "created_from"
+    | "created_to"
 >;
 
 function buildQuery(params: Record<string, string | number | undefined>) {
@@ -472,6 +484,9 @@ export function listLeads(
         source: params.source,
         search: params.search,
         assigned_to_user_id: params.assigned_to_user_id,
+        created_by_user_id: params.created_by_user_id,
+        created_from: params.created_from,
+        created_to: params.created_to,
         per_page: params.per_page,
         page: params.page,
         uncategorized: params.uncategorized ? 1 : undefined,
@@ -1003,6 +1018,9 @@ export function getCrmLeadsAnalytics(
         status: params.status,
         source: params.source,
         search: params.search,
+        created_by_user_id: params.created_by_user_id,
+        created_from: params.created_from,
+        created_to: params.created_to,
     });
 
     return apiRequest<CrmLeadsAnalytics>({

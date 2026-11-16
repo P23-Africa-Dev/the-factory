@@ -8,7 +8,7 @@ import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm"
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
-import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
+import { useAgentUploadsOverview, useCrmAssignees, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
@@ -16,7 +16,7 @@ import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-to
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
 import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
-import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
+import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { useDroppable } from "@dnd-kit/core";
 import {
@@ -48,6 +48,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Loader2,
   Search,
   SlidersHorizontal,
   Tag,
@@ -885,6 +886,8 @@ export default function CRMPage() {
   const [prevDefaultPipelineId, setPrevDefaultPipelineId] = useState<number | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
+  const [createdBy, setCreatedBy] = useState("");
+  const [dateRange, setDateRange] = useState<CrmDateRange>(EMPTY_DATE_RANGE);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
@@ -894,6 +897,7 @@ export default function CRMPage() {
   const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
   const { data: agentUploadsOverview } = useAgentUploadsOverview(companyId ?? undefined, apiBasePath);
+  const { data: people = [], isLoading: loadingPeople } = useCrmAssignees(companyId ?? undefined, apiBasePath);
 
   const defaultPipelineId = useMemo(
     () =>
@@ -926,10 +930,20 @@ export default function CRMPage() {
       : selectedStages;
   }, [selectedLabel, stages]);
 
+  // Wait for a pause in typing before querying, so each keystroke doesn't hit the API.
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Picked days are local; send the instants that bound them so "today" means the viewer's today.
+  const createdFrom = dateRange.from ? new Date(`${dateRange.from}T00:00:00`).toISOString() : undefined;
+  const createdTo = dateRange.to ? new Date(`${dateRange.to}T23:59:59.999`).toISOString() : undefined;
+  const creatorAndDateFilters = {
+    created_by_user_id: createdBy || undefined,
+    created_from: createdFrom,
+    created_to: createdTo,
+  };
 
   const stageQuery = useLeadStagePages(
     boardStageDefinitions,
@@ -938,6 +952,7 @@ export default function CRMPage() {
       search: debouncedSearch || undefined,
       pipeline_id: selectedPipelineId ?? undefined,
       source: effectiveSourceFilter,
+      ...creatorAndDateFilters,
       per_page: 20,
     },
     apiBasePath,
@@ -950,9 +965,17 @@ export default function CRMPage() {
       pipeline_id: selectedPipelineId ?? undefined,
       status: selectedLabel === "all" ? undefined : selectedLabel,
       source: effectiveSourceFilter,
+      ...creatorAndDateFilters,
     },
     apiBasePath
   );
+
+  const activeFilterCount =
+    (selectedPipelineId !== defaultPipelineId ? 1 : 0) +
+    (selectedLabel !== "all" ? 1 : 0) +
+    (createdBy ? 1 : 0) +
+    (dateRange.from || dateRange.to ? 1 : 0);
+  const isSearchPending = search.trim() !== debouncedSearch || (Boolean(debouncedSearch) && stageQuery.isRefreshing);
 
   const isSalesEngineLead = (lead: LeadApiItem): boolean => {
     const s = (lead.source ?? "").toLowerCase().trim();
@@ -1079,12 +1102,34 @@ export default function CRMPage() {
               size={18}
             />
             <input
-              type="text"
+              type="search"
+              aria-label="Search leads"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                // Searching is live; Enter must never submit or reload anything.
+                if (e.key === "Enter") e.preventDefault();
+              }}
               placeholder="Search for Leads"
-              className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
+              className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-12 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm [&::-webkit-search-cancel-button]:hidden"
             />
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
+              {isSearchPending ? (
+                <Loader2 size={15} className="animate-spin text-gray-400" aria-label="Searching" />
+              ) : search ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setSearch("");
+                    setDebouncedSearch("");
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -1103,9 +1148,19 @@ export default function CRMPage() {
               <Tag size={13} />
               Label
             </button>
-            <button onClick={() => setShowFilter((prev) => !prev)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button
+              type="button"
+              aria-expanded={showFilter}
+              onClick={() => setShowFilter((prev) => !prev)}
+              className={`se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${showFilter ? "ring-1 ring-[#2ae9c9]/60" : ""}`}
+            >
               <SlidersHorizontal size={13} />
               Filter
+              {activeFilterCount > 0 && (
+                <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#2ae9c9] px-1 text-[10px] font-bold text-[#022228]">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
             <CrmImportExportButton
               companyId={companyId}
@@ -1159,12 +1214,21 @@ export default function CRMPage() {
             pipelines={pipelines}
             labels={labels}
             selectedPipelineId={selectedPipelineId}
+            defaultPipelineId={defaultPipelineId}
             onPipelineChange={setSelectedPipelineId}
             selectedLabel={selectedLabel}
             onLabelChange={setSelectedLabel}
+            people={people}
+            loadingPeople={loadingPeople}
+            createdBy={createdBy}
+            onCreatedByChange={setCreatedBy}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
             onClear={() => {
               setSelectedPipelineId(defaultPipelineId);
               setSelectedLabel("all");
+              setCreatedBy("");
+              setDateRange(EMPTY_DATE_RANGE);
             }}
           />
         )}

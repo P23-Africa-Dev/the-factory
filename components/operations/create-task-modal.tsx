@@ -512,39 +512,60 @@ export function CreateTaskModal({
             )}
           </div>
 
-          {/* Task Type */}
-          <div>
-            <FieldLabel>Task Type</FieldLabel>
-            <SearchableSelect
-              value={form.taskType}
-              onChange={(v) => set("taskType", v)}
-              options={Object.keys(TASK_TYPES).map((t) => ({ value: t, label: t }))}
-              placeholder="Select task type"
-              className={`${INPUT_CLS(errors.taskType)} px-4 cursor-pointer`}
-            />
-            {errors.taskType && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
-            )}
-          </div>
-
-          {/* Description */}
-          <div>
-            <FieldLabel>Description</FieldLabel>
-            <textarea
-              placeholder="e.g. Check stock and speak to manager"
-              value={form.description}
-              onChange={(e) => set("description", e.target.value)}
-              rows={2}
-              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
-              aria-invalid={!!errors.description}
-              className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
-            />
-            {errors.description && (
-              <p className="text-red-400 text-[11px] mt-1">
-                {errors.description}
-              </p>
-            )}
-          </div>
+          {/* Subtasks — right after the title */}
+          {onProjectChecklistCreated && (
+            <section className="space-y-2.5">
+              <FieldLabel>Subtasks</FieldLabel>
+              <SubtaskEditor
+                assignee={{
+                  id: primaryAssigneeId || String(user?.id ?? ""),
+                  name:
+                    assignees.find((agent) => String(agent.id) === primaryAssigneeId)?.name ??
+                    user?.name ??
+                    "Current user",
+                }}
+                agents={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                onSave={(item) => setSubtasks((current) => [...current, item])}
+              />
+              {subtasks.length > 0 && (
+                <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-[#F4F7F9]">
+                  <ChecklistRows
+                    subtasks={subtasks}
+                    userId=""
+                    creatorId=""
+                    locked={false}
+                    onEdit={setEditingSubtask}
+                    onReorder={setSubtasks}
+                    onRemove={(id) => {
+                      setSubtasks((current) => current.filter((item) => item.id !== id));
+                      if (editingSubtask?.id === id) setEditingSubtask(null);
+                    }}
+                  />
+                </div>
+              )}
+              {editingSubtask && (
+                <SubtaskEditor
+                  key={editingSubtask.id}
+                  initial={editingSubtask}
+                    assignee={{
+                    id: primaryAssigneeId || String(user?.id ?? ""),
+                    name:
+                      assignees.find((agent) => String(agent.id) === primaryAssigneeId)?.name ??
+                      user?.name ??
+                      "Current user",
+                  }}
+                  agents={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                  onCancel={() => setEditingSubtask(null)}
+                  onSave={(item) => {
+                    setSubtasks((current) =>
+                      current.map((existing) => (existing.id === item.id ? item : existing)),
+                    );
+                    setEditingSubtask(null);
+                  }}
+                />
+              )}
+            </section>
+          )}
 
           {/* Assign To — managers only */}
           {canManageTasks && (
@@ -584,6 +605,40 @@ export function CreateTaskModal({
             </p>
             {errors.observer_ids && (
               <p className="text-red-400 text-[11px] mt-1">{errors.observer_ids}</p>
+            )}
+          </div>
+
+          {/* Task Type */}
+          <div>
+            <FieldLabel>Task Type</FieldLabel>
+            <SearchableSelect
+              value={form.taskType}
+              onChange={(v) => set("taskType", v)}
+              options={Object.keys(TASK_TYPES).map((t) => ({ value: t, label: t }))}
+              placeholder="Select task type"
+              className={`${INPUT_CLS(errors.taskType)} px-4 cursor-pointer`}
+            />
+            {errors.taskType && (
+              <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
+            )}
+          </div>
+
+          {/* Description */}
+          <div>
+            <FieldLabel>Description</FieldLabel>
+            <textarea
+              placeholder="e.g. Check stock and speak to manager"
+              value={form.description}
+              onChange={(e) => set("description", e.target.value)}
+              rows={2}
+              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
+              aria-invalid={!!errors.description}
+              className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
+            />
+            {errors.description && (
+              <p className="text-red-400 text-[11px] mt-1">
+                {errors.description}
+              </p>
             )}
           </div>
 
@@ -638,63 +693,6 @@ export function CreateTaskModal({
               </p>
             ) : null}
           </div>
-
-          {/* Subtasks — placed right after Address */}
-          {onProjectChecklistCreated && (
-            <section className="space-y-2.5">
-              <FieldLabel>Subtasks</FieldLabel>
-              <SubtaskEditor
-                dueAt={form.dueDate || null}
-                assignee={{
-                  id: primaryAssigneeId || String(user?.id ?? ""),
-                  name:
-                    assignees.find((agent) => String(agent.id) === primaryAssigneeId)?.name ??
-                    user?.name ??
-                    "Current user",
-                }}
-                agents={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
-                onSave={(item) => setSubtasks((current) => [...current, item])}
-              />
-              {subtasks.length > 0 && (
-                <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-[#F4F7F9]">
-                  <ChecklistRows
-                    subtasks={subtasks}
-                    userId=""
-                    creatorId=""
-                    locked={false}
-                    onEdit={setEditingSubtask}
-                    onReorder={setSubtasks}
-                    onRemove={(id) => {
-                      setSubtasks((current) => current.filter((item) => item.id !== id));
-                      if (editingSubtask?.id === id) setEditingSubtask(null);
-                    }}
-                  />
-                </div>
-              )}
-              {editingSubtask && (
-                <SubtaskEditor
-                  key={editingSubtask.id}
-                  initial={editingSubtask}
-                  dueAt={form.dueDate || null}
-                  assignee={{
-                    id: primaryAssigneeId || String(user?.id ?? ""),
-                    name:
-                      assignees.find((agent) => String(agent.id) === primaryAssigneeId)?.name ??
-                      user?.name ??
-                      "Current user",
-                  }}
-                  agents={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
-                  onCancel={() => setEditingSubtask(null)}
-                  onSave={(item) => {
-                    setSubtasks((current) =>
-                      current.map((existing) => (existing.id === item.id ? item : existing)),
-                    );
-                    setEditingSubtask(null);
-                  }}
-                />
-              )}
-            </section>
-          )}
 
           {/* Due Date + Priority */}
           <div className="grid grid-cols-2 gap-3">
