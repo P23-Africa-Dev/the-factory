@@ -29,6 +29,7 @@ import {
   useUpdateCrmPipeline,
 } from "@/hooks/use-crm";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type BaseModalProps = {
   companyId: number | string;
@@ -46,25 +47,27 @@ export function ModalShell({
   children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-      <button
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-        aria-label="Close modal"
-      />
-      <div className="relative w-full max-w-3xl max-h-[88vh] overflow-auto bg-white text-dash-dark rounded-2xl shadow-2xl border border-gray-100">
-        <div className="sticky top-0 bg-white z-10 border-b border-gray-100 px-5 py-4 flex items-center justify-between">
-          <h3 className="text-[16px] font-bold text-dash-dark">{title}</h3>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md text-gray-400 hover:text-gray-600"
-          >
-            <X size={17} />
-          </button>
+    <ModalPortal>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+        <button
+          className="absolute inset-0 bg-black/40"
+          onClick={onClose}
+          aria-label="Close modal"
+        />
+        <div className="relative w-full max-w-3xl max-h-[88vh] overflow-auto bg-white text-dash-dark rounded-2xl shadow-2xl border border-gray-100">
+          <div className="sticky top-0 bg-white z-10 border-b border-gray-100 px-5 py-4 flex items-center justify-between">
+            <h3 className="text-[16px] font-bold text-dash-dark">{title}</h3>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md text-gray-400 hover:text-gray-600"
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <div className="p-5">{children}</div>
         </div>
-        <div className="p-5">{children}</div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
 

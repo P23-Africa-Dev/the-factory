@@ -13,6 +13,7 @@ import type { PayrollAgentProfileView } from "@/components/payroll/payroll-sideb
 import { toast } from "sonner";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 interface EditAgentPayrollModalProps {
     isOpen: boolean;
@@ -99,7 +100,8 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
     };
 
     return (
-        <div className="fixed inset-0 z-50">
+        <ModalPortal>
+        <div className="fixed inset-0 z-[9999]">
             <div className="absolute inset-0 bg-white/40" onClick={onClose} />
             <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden">
                 <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7">
@@ -154,5 +156,6 @@ export function EditAgentPayrollModal({ isOpen, onClose, agent, companyId }: Edi
                 </form>
             </div>
         </div>
+        </ModalPortal>
     );
 }

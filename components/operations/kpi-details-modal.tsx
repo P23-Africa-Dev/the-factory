@@ -3,6 +3,7 @@
 import React from 'react';
 import { X, BarChart3 } from 'lucide-react';
 import type { KpiItem } from '@/lib/api/kpi';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface KpiDetailsModalProps {
   kpi: KpiItem | null;
@@ -27,7 +28,8 @@ export function KpiDetailsModal({ kpi, onClose, onEdit }: KpiDetailsModalProps) 
   const assigneeName = kpi.assignee?.name ?? 'Unassigned';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
         onClick={onClose}
@@ -128,5 +130,6 @@ export function KpiDetailsModal({ kpi, onClose, onEdit }: KpiDetailsModalProps) 
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

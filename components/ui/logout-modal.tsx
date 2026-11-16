@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { LogOut } from "lucide-react";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type LogoutModalProps = {
   isOpen: boolean;
@@ -11,6 +12,7 @@ type LogoutModalProps = {
 
 export default function LogoutModal({ isOpen, onClose, onConfirm }: LogoutModalProps) {
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -60,5 +62,6 @@ export default function LogoutModal({ isOpen, onClose, onConfirm }: LogoutModalP
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

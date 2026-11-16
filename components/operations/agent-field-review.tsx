@@ -9,6 +9,7 @@ import {
   useAgentPendingReview,
   useClassifyAgentFieldStop,
 } from "@/hooks/use-agent-field-review";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const OPTIONS = [
   { value: "customer_visit", label: "Customer" },
@@ -233,7 +234,8 @@ export function AgentDayReviewModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -312,6 +314,7 @@ export function AgentDayReviewModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -328,7 +331,8 @@ export function AgentPileInboxPanel({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 px-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -397,6 +401,7 @@ export function AgentPileInboxPanel({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

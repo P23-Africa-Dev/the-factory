@@ -6,6 +6,7 @@ import Supercluster from "supercluster";
 import { MarkerClusterer } from "@googlemaps/markerclusterer";
 import { Crosshair, Move, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 import {
   useCreateSavedLocation,
@@ -953,6 +954,7 @@ function DeleteConfirm({
 }) {
   if (typeof document === "undefined") return null;
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={busy ? undefined : onCancel} />
       <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
@@ -978,5 +980,6 @@ function DeleteConfirm({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

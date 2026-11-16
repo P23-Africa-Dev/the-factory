@@ -37,6 +37,7 @@ import {
   researchSourcesFromMeta,
 } from "./research-sources-list";
 import { SearchableSelect, type SelectOption } from "@/components/ui/searchable-select";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { useActivateIcpProfile, useActiveIcpProfile, useIcpProfiles } from "@/hooks/use-sales-engine-icp";
 import {
   composeIcpQualifySummary,
@@ -2782,7 +2783,7 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
       {openingId != null &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9998] grid place-items-center bg-black/40 backdrop-blur-[2px]">
+          <div className="fixed inset-0 z-[9999] grid place-items-center bg-black/40 backdrop-blur-[2px]">
             <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[#09232d] shadow-lg">
               <Loader2 size={16} className="animate-spin" />
               <span className="text-[12px] font-medium">Opening draft…</span>
@@ -4173,6 +4174,7 @@ function ListeningSettingsModal({
   };
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -4421,6 +4423,7 @@ function ListeningSettingsModal({
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }
 

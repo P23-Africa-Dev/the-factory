@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SignalTypeEditor } from "@/components/sales-engine/signal-type-editor";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   X,
   Sparkles,
@@ -855,7 +856,8 @@ export function IcpBuilderModal({
   const isSavingForm = createProfile.isPending || updateProfile.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
@@ -1997,5 +1999,6 @@ export function IcpBuilderModal({
 
       </div>
     </div>
+    </ModalPortal>
   );
 }

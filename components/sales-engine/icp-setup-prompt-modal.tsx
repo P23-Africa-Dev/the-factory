@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, Target, X } from "lucide-react";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 type IcpSetupPromptModalProps = {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export function IcpSetupPromptModal({
   onCreateIcp,
 }: IcpSetupPromptModalProps) {
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
@@ -116,5 +118,6 @@ export function IcpSetupPromptModal({
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

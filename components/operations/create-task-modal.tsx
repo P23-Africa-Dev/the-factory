@@ -23,6 +23,7 @@ import type { ApiTaskPriority } from "@/lib/api/tasks";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { validateTaskDescription, TASK_DESCRIPTION_MAX_LENGTH } from "@/lib/tasks/description";
 import type { RetrievedPlace } from "@/lib/utils/place-search";
 
@@ -461,7 +462,8 @@ export function CreateTaskModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999]">
       <div className="absolute inset-0 bg-white/40" onClick={handleClose} />
 
       <div className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)]">
@@ -879,5 +881,6 @@ export function CreateTaskModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

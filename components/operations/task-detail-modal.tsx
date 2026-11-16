@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { X, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
 import { DEFAULT_AVATAR } from '@/lib/avatar';
+import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   useTaskDetail,
   useAssignTask,
@@ -587,7 +588,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
         onClick={onClose}
@@ -986,6 +988,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
         />
       )}
     </div>
+    </ModalPortal>
   );
 }
 

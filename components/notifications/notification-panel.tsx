@@ -18,6 +18,7 @@ import {
   Trash2,
   ChevronRight,
 } from "lucide-react";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { formatDistanceToNowStrict, parseISO, isToday, isYesterday } from "date-fns";
 import { useNotifications, useMarkRead, useMarkAllRead, useDeleteNotification } from "@/hooks/use-notifications";
 import type { AppNotification, NotificationCategory } from "@/lib/api/notifications";
@@ -465,6 +466,7 @@ export function NotificationPanel({
 
   return (
     <>
+    <ModalPortal>
     <AnimatePresence>
       {open && (
         <>
@@ -474,7 +476,7 @@ export function NotificationPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-90 bg-black/20 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[9999] bg-black/20 backdrop-blur-[2px]"
           />
 
           {/* Panel */}
@@ -484,7 +486,7 @@ export function NotificationPanel({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: "100%", opacity: 0 }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed top-0 right-0 bottom-0 z-100 w-full max-w-105 bg-white shadow-2xl flex flex-col"
+            className="fixed top-0 right-0 bottom-0 z-[10000] w-full max-w-105 bg-white shadow-2xl flex flex-col"
             style={{ borderRadius: "24px 0 0 24px" }}
           >
             {/* Header */}
@@ -601,6 +603,7 @@ export function NotificationPanel({
         </>
       )}
     </AnimatePresence>
+    </ModalPortal>
 
     <ConfirmDeleteModal
       isOpen={deleteTargetId !== null}

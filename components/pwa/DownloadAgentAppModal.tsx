@@ -13,6 +13,7 @@ import {
   ScanLine,
   Download,
 } from 'lucide-react';
+import { ModalPortal } from '@/components/ui/modal-portal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { AgentApkQrCode, AgentInstallQrCode } from '@/components/pwa/AgentInstallQrCode';
@@ -204,9 +205,10 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
   };
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -380,5 +382,6 @@ export function DownloadAgentAppModal({ isOpen, onClose }: DownloadAgentAppModal
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

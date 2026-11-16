@@ -10,6 +10,7 @@ import {
 } from "@stripe/react-stripe-js";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   useBillingPaymentMethodSetup,
   useSetDefaultPaymentMethod,
@@ -128,7 +129,8 @@ export function AddPaymentMethodModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
@@ -155,5 +157,6 @@ export function AddPaymentMethodModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

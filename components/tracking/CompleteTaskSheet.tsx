@@ -7,6 +7,7 @@ import { getCurrentPosition } from "@/lib/tracking/geolocation";
 import { completeTaskTracking } from "@/lib/api/tracking";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { ApiRequestError } from "@/lib/api/onboarding";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 interface CompleteTaskSheetProps {
   taskId: number;
@@ -101,7 +102,8 @@ export function CompleteTaskSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end justify-center">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[10000] flex items-end justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full max-w-lg bg-white rounded-t-[32px] shadow-2xl z-10 max-h-[90vh] flex flex-col">
@@ -210,5 +212,6 @@ export function CompleteTaskSheet({
         onChange={(e) => handleFiles(e.target.files)}
       />
     </div>
+    </ModalPortal>
   );
 }

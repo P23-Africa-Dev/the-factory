@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Zap, X } from "lucide-react";
 import { toast } from "sonner";
 import { useCreditTopupCheckout } from "@/hooks/use-map-credits";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const PRESET_AMOUNTS = [5, 10, 25, 50];
 
@@ -40,6 +41,7 @@ export function TopupModal({
   };
 
   return (
+    <ModalPortal>
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -137,5 +139,6 @@ export function TopupModal({
         </div>
       )}
     </AnimatePresence>
+    </ModalPortal>
   );
 }

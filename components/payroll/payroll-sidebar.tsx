@@ -10,6 +10,7 @@ import { useApprovePayrollAgent } from "@/hooks/use-payroll";
 import type { ApprovalAction } from "@/lib/api/payroll";
 import { CheckCircle2, XCircle, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 export type PayrollAgentProfileView = PayrollAgent & {
   email: string;
@@ -77,8 +78,9 @@ function ApprovalModal({
   const canRevoke = isApproved;
 
   return (
+    <ModalPortal>
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ backgroundColor: "rgba(9,35,45,0.55)", backdropFilter: "blur(4px)" }}
     >
@@ -210,6 +212,7 @@ function ApprovalModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

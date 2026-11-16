@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/auth";
 import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib/api/projects";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ModalPortal } from "@/components/ui/modal-portal";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 const STATUS_OPTIONS = ["In progress", "Pending", "Completed"] as const;
@@ -212,7 +213,8 @@ export function CreateProjectDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
+    <ModalPortal>
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
       <div 
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer" 
         onClick={onClose} 
@@ -441,5 +443,6 @@ export function CreateProjectDrawer({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

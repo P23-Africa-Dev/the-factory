@@ -18,6 +18,7 @@ import { useAuthStore } from "@/store/auth";
 import type { PayrollSettings } from "@/lib/api/payroll";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { toast } from "sonner";
+import { ModalPortal } from "@/components/ui/modal-portal";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { formatPayrollMoney, PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
 
@@ -244,7 +245,8 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
+      <ModalPortal>
+      <div className="fixed inset-0 z-[9999] flex items-end sm:items-end justify-center sm:justify-end p-0 sm:p-6">
         <div
           className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
           onClick={onClose}
@@ -392,6 +394,7 @@ export function SetPayrollModal({ isOpen, onClose, existingPayroll }: SetPayroll
           </form>
         </div>
       </div>
+      </ModalPortal>
 
       <CommissionModal
         isOpen={commissionModalOpen}
