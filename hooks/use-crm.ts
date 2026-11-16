@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import { hasActiveApiSession } from "@/lib/auth/support-session";
@@ -264,13 +264,26 @@ export function useLeadStagePages(
         [resetKey, setPageState],
     );
 
+    // A new search or filter is a new set of queries with nothing cached yet. Keep showing the
+    // last loaded board until it arrives, so only the first load counts as "loading".
+    // Compared by content, not identity: `stagePages` is rebuilt whenever the caller passes new params.
+    const [settled, setSettled] = useState<{ signature: string; stages: LeadStagePage[] } | null>(null);
+    const isPending = stagePages.some((stage) => stage.isLoading);
+    const signature = `${resetKey}#${querySignature}`;
+    if (!isPending && settled?.signature !== signature) {
+        setSettled({ signature, stages: stagePages });
+    }
+    const settledStages = settled?.stages ?? null;
+    const isRefreshing = isPending || queries.some((query, index) => query.isFetching && specs[index]?.page === 1);
+
     return useMemo(
         () => ({
-            stages: stagePages,
-            isLoading: stagePages.some((stage) => stage.isLoading),
+            stages: isPending && settledStages ? settledStages : stagePages,
+            isLoading: isPending && !settledStages,
+            isRefreshing,
             loadMore,
         }),
-        [stagePages, loadMore],
+        [isPending, settledStages, stagePages, isRefreshing, loadMore],
     );
 }
 
@@ -521,6 +534,8 @@ export function useCrmLeadsAnalytics(
         },
         enabled: hasActiveApiSession(token) && !!params.company_id,
         staleTime: 1000 * 60,
+        // Keep the cards steady while a new search or filter loads.
+        placeholderData: keepPreviousData,
     });
 }
 
