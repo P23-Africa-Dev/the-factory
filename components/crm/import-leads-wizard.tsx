@@ -153,7 +153,8 @@ export function ImportLeadsWizard({
     const previewMutation = usePreviewImportCrmLeads(apiBasePath);
 
     const downloadTemplate = () => {
-        const exampleStatus = labels[0]?.name ?? "New Lead";
+        const defaultLabel = labels.find((label) => label.is_default) ?? labels[0];
+        const exampleStatus = defaultLabel?.name ?? "New Lead";
         const content = toCsvContent(
             [
                 "name",
@@ -489,7 +490,11 @@ export function ImportLeadsWizard({
                         </div>
 
                         <div className="text-[12px] text-gray-500 bg-white border border-gray-100 rounded-lg px-3 py-2">
-                            Available statuses: {labels.map((label) => label.name).join(", ") || "New Lead"}
+                            Available statuses (name or slug):{" "}
+                            {labels.length > 0
+                                ? labels.map((label) => `${label.name} / ${label.slug}`).join(", ")
+                                : "New Lead / newly_lead"}
+                            . Blank status defaults to your pipeline&apos;s default label.
                         </div>
 
                         <div className="flex justify-end">
@@ -699,7 +704,12 @@ export function ImportLeadsWizard({
                                                 <td className="px-3 py-2">{row.name || "—"}</td>
                                                 <td className="px-3 py-2">{row.email || "—"}</td>
                                                 <td className="px-3 py-2">{row.phone || "—"}</td>
-                                                <td className="px-3 py-2">{row.status || labels[0]?.name || "New Lead"}</td>
+                                                <td className="px-3 py-2">
+                                                    {row.status
+                                                        || labels.find((label) => label.is_default)?.name
+                                                        || labels[0]?.name
+                                                        || "New Lead"}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>

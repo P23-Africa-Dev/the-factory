@@ -1457,6 +1457,7 @@ class LeadService
 
         $duplicatePolicy = (string) ($payload['duplicate_policy'] ?? 'create');
         $labelLookup = $this->buildLabelLookup($companyId);
+        $defaultStatusSlug = $this->defaultLabelSlug($companyId);
         $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
@@ -1466,7 +1467,7 @@ class LeadService
         $skippedRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1, $defaultStatusSlug);
 
             if ($validation['errors'] !== []) {
                 $failedRows[] = [
@@ -1573,6 +1574,7 @@ class LeadService
         $this->assertPipelineInCompany($companyId, $pipelineId);
 
         $labelLookup = $this->buildLabelLookup($companyId);
+        $defaultStatusSlug = $this->defaultLabelSlug($companyId);
         $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
@@ -1581,7 +1583,7 @@ class LeadService
         $duplicateRows = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1, $defaultStatusSlug);
 
             if ($validation['errors'] !== []) {
                 $errorRows[] = [
@@ -2075,21 +2077,134 @@ class LeadService
     }
 
     /**
-     * Lookup of lowercase label slugs AND display names to their canonical slug,
-     * so import rows can reference a status either way (e.g. "New Lead" or "newly_lead").
+     * Lookup of lowercase label slugs, display names, and common aliases to their
+     * canonical slug so import rows accept "New Lead", "new_lead", or "newly_lead".
      *
      * @return array<string, string>
      */
     private function buildLabelLookup(int $companyId): array
     {
         $lookup = [];
+        $labels = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->get(['slug', 'name', 'is_default']);
 
-        foreach (LeadLabel::query()->where('company_id', $companyId)->get(['slug', 'name']) as $label) {
-            $lookup[Str::lower(trim((string) $label->slug))] = (string) $label->slug;
-            $lookup[Str::lower(trim((string) $label->name))] = (string) $label->slug;
+        foreach ($labels as $label) {
+            $slug = (string) $label->slug;
+            foreach ($this->labelLookupKeys($slug, (string) $label->name) as $key) {
+                $lookup[$key] = $slug;
+            }
+        }
+
+        // Seeded companies use newly_lead; labels created/renamed via API slug to new_lead.
+        // Cross-link both (and plain "new") only onto the company's New Lead label.
+        $newLeadSlug = null;
+        foreach ($labels as $label) {
+            $slugLower = Str::lower(trim((string) $label->slug));
+            $nameLower = Str::lower(trim((string) $label->name));
+            if (in_array($slugLower, ['newly_lead', 'new_lead'], true) || $nameLower === 'new lead') {
+                $newLeadSlug = (string) $label->slug;
+                break;
+            }
+        }
+
+        if ($newLeadSlug !== null) {
+            foreach (['newly_lead', 'new_lead', 'new lead', 'new'] as $alias) {
+                $lookup[$this->normalizeLabelKey($alias)] = $newLeadSlug;
+                $lookup[Str::lower(trim($alias))] = $newLeadSlug;
+            }
         }
 
         return $lookup;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, LeadLabel>  $labels
+     */
+    private function defaultLabelSlugFromCollection($labels): ?string
+    {
+        $default = $labels->firstWhere('is_default', true)
+            ?? $labels->first(static fn($label): bool => Str::lower(trim((string) $label->name)) === 'new lead')
+            ?? $labels->first();
+
+        if ($default === null) {
+            return null;
+        }
+
+        $slug = trim((string) $default->slug);
+
+        return $slug !== '' ? $slug : null;
+    }
+
+    private function defaultLabelSlug(int $companyId): string
+    {
+        $labels = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->get(['slug', 'name', 'is_default']);
+
+        return $this->defaultLabelSlugFromCollection($labels) ?? 'newly_lead';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function labelLookupKeys(string $slug, string $name): array
+    {
+        $keys = [];
+        $candidates = [
+            $slug,
+            $name,
+            Str::slug($name, '_'),
+            Str::slug($name, '-'),
+            str_replace(['_', '-'], ' ', $slug),
+            str_replace(['_', '-'], ' ', $name),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $lower = Str::lower(trim((string) $candidate));
+            if ($lower !== '') {
+                $keys[$lower] = true;
+            }
+
+            $normalized = $this->normalizeLabelKey((string) $candidate);
+            if ($normalized !== '') {
+                $keys[$normalized] = true;
+            }
+        }
+
+        return array_keys($keys);
+    }
+
+    private function normalizeLabelKey(string $value): string
+    {
+        return (string) Str::of($value)
+            ->lower()
+            ->replaceMatches('/[\s_\-]+/', '_')
+            ->trim('_');
+    }
+
+    /**
+     * @param  array<string, string>  $labelLookup
+     */
+    private function resolveLabelSlug(array $labelLookup, string $status): ?string
+    {
+        $trimmed = trim($status);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $lower = Str::lower($trimmed);
+        if (isset($labelLookup[$lower])) {
+            return $labelLookup[$lower];
+        }
+
+        $normalized = $this->normalizeLabelKey($trimmed);
+
+        return $labelLookup[$normalized] ?? null;
     }
 
     /**
@@ -2097,19 +2212,27 @@ class LeadService
      */
     private function suggestClosestLabel(array $labelLookup, string $status): ?string
     {
-        $needle = Str::lower(trim($status));
-        $bestKey = null;
+        $needles = array_values(array_unique(array_filter([
+            Str::lower(trim($status)),
+            $this->normalizeLabelKey($status),
+        ])));
+        $bestSlug = null;
         $bestDistance = PHP_INT_MAX;
 
         foreach (array_keys($labelLookup) as $candidate) {
-            $distance = levenshtein($needle, $candidate);
-            if ($distance < $bestDistance) {
-                $bestDistance = $distance;
-                $bestKey = $candidate;
+            foreach ($needles as $needle) {
+                if ($needle === '') {
+                    continue;
+                }
+                $distance = levenshtein($needle, $candidate);
+                if ($distance < $bestDistance) {
+                    $bestDistance = $distance;
+                    $bestSlug = $labelLookup[$candidate];
+                }
             }
         }
 
-        return ($bestKey !== null && $bestDistance <= 4) ? $labelLookup[$bestKey] : null;
+        return ($bestSlug !== null && $bestDistance <= 4) ? $bestSlug : null;
     }
 
     /**
@@ -2752,7 +2875,7 @@ class LeadService
     {
         return array_merge(
             self::LEAD_EXPORT_HEADERS,
-            $exportFields->map(static fn (LeadFieldDefinition $field): string => $field->label)->all(),
+            $exportFields->map(static fn(LeadFieldDefinition $field): string => $field->label)->all(),
         );
     }
 
@@ -2787,8 +2910,13 @@ class LeadService
      * @param  Collection<string, LeadFieldDefinition>  $fieldDefinitions
      * @return array{normalized:array<string,mixed>,errors:array<int,string>}
      */
-    private function validateImportRow(array $labelLookup, Collection $fieldDefinitions, mixed $row, int $rowIndex): array
-    {
+    private function validateImportRow(
+        array $labelLookup,
+        Collection $fieldDefinitions,
+        mixed $row,
+        int $rowIndex,
+        string $defaultStatusSlug = 'newly_lead',
+    ): array {
         if (! is_array($row)) {
             return [
                 'normalized' => [],
@@ -2805,7 +2933,8 @@ class LeadService
         $position = trim((string) ($row['position'] ?? ''));
         $profileUrlsRaw = $row['profile_urls'] ?? null;
         $source = trim((string) ($row['source'] ?? ''));
-        $status = trim((string) ($row['status'] ?? 'newly_lead'));
+        $statusRaw = trim((string) ($row['status'] ?? ''));
+        $status = $statusRaw !== '' ? $statusRaw : $defaultStatusSlug;
         $priority = strtolower(trim((string) ($row['priority'] ?? 'medium')));
         $budgetAmountRaw = trim((string) ($row['budget_amount'] ?? ''));
         $budgetCurrency = strtoupper(trim((string) ($row['budget_currency'] ?? '')));
@@ -2851,7 +2980,7 @@ class LeadService
             $errors[] = 'Budget currency must be a 3-letter ISO code.';
         }
 
-        $resolvedStatus = $labelLookup[Str::lower($status)] ?? null;
+        $resolvedStatus = $this->resolveLabelSlug($labelLookup, $status);
         if ($resolvedStatus === null) {
             $suggestion = $this->suggestClosestLabel($labelLookup, $status);
             $errors[] = $suggestion !== null

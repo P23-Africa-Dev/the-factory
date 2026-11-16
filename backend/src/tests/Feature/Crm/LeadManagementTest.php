@@ -6,6 +6,7 @@ namespace Tests\Feature\Crm;
 
 use App\Models\Company;
 use App\Models\Lead;
+use App\Models\LeadLabel;
 use App\Models\LeadPipeline;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1557,6 +1558,54 @@ class LeadManagementTest extends TestCase
         $this->assertDatabaseHas('leads', [
             'name' => 'By Display Name',
             'status' => 'proposal_sent',
+        ]);
+    }
+
+    public function test_import_resolves_new_lead_status_aliases_when_company_uses_new_lead_slug(): void
+    {
+        [$company, $admin,, $pipelineId] = $this->seedCompanyUsers();
+
+        $token = $admin->createToken('admin-import-new-lead-alias', ['*'])->plainTextToken;
+
+        $this->withToken($token)
+            ->getJson('/api/v1/crm/labels?company_id=' . $company->id)
+            ->assertOk();
+
+        // Simulate companies whose "New Lead" label was created/renamed via API (slug = new_lead).
+        LeadLabel::query()
+            ->where('company_id', $company->id)
+            ->where('slug', 'newly_lead')
+            ->update(['slug' => 'new_lead']);
+
+        $importResponse = $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'rows' => [
+                    ['name' => 'Alias Slug Row', 'status' => 'newly_lead'],
+                    ['name' => 'Display Name Row', 'status' => 'New Lead'],
+                    ['name' => 'Blank Status Row'],
+                ],
+            ]);
+
+        $importResponse->assertOk()
+            ->assertJsonPath('data.imported_count', 3)
+            ->assertJsonPath('data.failed_rows', []);
+
+        $this->assertDatabaseHas('leads', [
+            'company_id' => $company->id,
+            'name' => 'Alias Slug Row',
+            'status' => 'new_lead',
+        ]);
+        $this->assertDatabaseHas('leads', [
+            'company_id' => $company->id,
+            'name' => 'Display Name Row',
+            'status' => 'new_lead',
+        ]);
+        $this->assertDatabaseHas('leads', [
+            'company_id' => $company->id,
+            'name' => 'Blank Status Row',
+            'status' => 'new_lead',
         ]);
     }
 
