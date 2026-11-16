@@ -991,6 +991,7 @@ export default function CRMPage() {
             pipelines={pipelines}
             labels={labels}
             selectedPipelineId={selectedPipelineId}
+            defaultPipelineId={defaultPipelineId}
             onPipelineChange={setSelectedPipelineId}
             selectedLabel={selectedLabel}
             onLabelChange={setSelectedLabel}
