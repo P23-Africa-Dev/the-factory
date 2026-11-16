@@ -18,13 +18,16 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Calendar, Check, CheckCircle, FileText, GripVertical, Pencil, Plus, Trash2, User, X } from "lucide-react";
-import { formatChecklistDate, isOverdue, toLocalChecklistDate, type ProjectChecklist, type ProjectSubtask } from "@/lib/tasks/project-checklist";
+import { Check, CheckCircle, FileText, GripVertical, Pencil, Plus, Trash2, User, X } from "lucide-react";
+import { formatChecklistDate, isOverdue, type ProjectChecklist, type ProjectSubtask } from "@/lib/tasks/project-checklist";
 
 type Assignee = { id: string; name: string };
 
-export function SubtaskEditor({ dueAt, assignee, agents, onSave, initial, onCancel }: {
-  dueAt: string | null;
+/**
+ * Adds subtasks straight to the list (title only, assigned to the task's primary assignee),
+ * or, when given `initial`, opens the edit popup for that subtask's title and assignee.
+ */
+export function SubtaskEditor({ assignee, agents, onSave, initial, onCancel }: {
   assignee: Assignee;
   agents: Assignee[];
   onSave: (item: ProjectSubtask) => void;
@@ -33,58 +36,46 @@ export function SubtaskEditor({ dueAt, assignee, agents, onSave, initial, onCanc
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [assignedId, setAssignedId] = useState(initial?.assigneeId ?? "");
-  const [date, setDate] = useState(() => toLocalChecklistDate(initial?.dueAt));
   const [error, setError] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(Boolean(initial));
   const selectedId = assignedId || assignee.id;
   const options = [...new Map([assignee, ...(initial ? [{ id: initial.assigneeId, name: initial.assigneeName }] : []), ...agents].map((agent) => [agent.id, agent])).values()].filter((agent) => agent.id);
 
-  function openSubtaskModal() {
-    if (!title.trim()) {
-      setError("Enter a subtask title.");
-      return;
-    }
+  function addSubtask() {
+    if (!title.trim()) return setError("Enter a subtask title.");
+    if (!assignee.id) return setError("Choose who the task is assigned to first.");
+    onSave({
+      id: crypto.randomUUID(),
+      title: title.trim(),
+      assigneeId: assignee.id,
+      assigneeName: assignee.name,
+      dueAt: null,
+      isCompleted: false,
+      completedAt: null,
+    });
+    setTitle("");
     setError("");
-    if (!assignedId && assignee.id) {
-      setAssignedId(assignee.id);
-    }
-    setIsModalOpen(true);
   }
 
   function closeModal() {
-    setIsModalOpen(false);
     setError("");
-    if (initial && onCancel) {
-      onCancel();
-    }
+    onCancel?.();
   }
 
-  function confirmSave() {
+  function confirmEdit() {
+    if (!initial) return;
     if (!title.trim()) return setError("Enter a subtask title.");
     if (!selectedId) return setError("Choose an assignee for the subtask.");
-    const subtaskDue = date ? new Date(date).toISOString() : null;
-    if (subtaskDue && dueAt && Date.parse(subtaskDue) > Date.parse(dueAt)) {
-      return setError("Subtask due date must be on or before the task due date.");
-    }
     onSave({
-      id: initial?.id ?? crypto.randomUUID(),
+      ...initial,
       title: title.trim(),
       assigneeId: selectedId,
       assigneeName: options.find((agent) => agent.id === selectedId)?.name ?? assignee.name,
-      dueAt: subtaskDue,
-      isCompleted: initial?.isCompleted ?? false,
-      completedAt: initial?.completedAt ?? null,
     });
-    setTitle("");
-    setDate("");
-    setAssignedId("");
-    setError("");
-    setIsModalOpen(false);
   }
 
-  return (
-    <div className="space-y-2">
-      {!initial && (
+  if (!initial) {
+    return (
+      <div className="space-y-2">
         <div className="flex gap-2">
           <div className="relative flex-1 min-w-0">
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
@@ -103,7 +94,7 @@ export function SubtaskEditor({ dueAt, assignee, agents, onSave, initial, onCanc
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  openSubtaskModal();
+                  addSubtask();
                 }
               }}
             />
@@ -111,176 +102,153 @@ export function SubtaskEditor({ dueAt, assignee, agents, onSave, initial, onCanc
           <button
             type="button"
             className="inline-flex items-center gap-1.5 rounded-xl bg-[#094B5C] px-4 py-2.5 text-xs font-semibold text-white hover:opacity-90 transition-opacity shrink-0 cursor-pointer"
-            onClick={openSubtaskModal}
+            onClick={addSubtask}
           >
             <Plus size={14} strokeWidth={2.5} aria-hidden="true" />
             <span>Multiple Tasks</span>
           </button>
         </div>
-      )}
+        {error && (
+          <p role="alert" className="text-xs text-red-500">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
 
-      {!isModalOpen && error && (
-        <p role="alert" className="text-xs text-red-500">
-          {error}
-        </p>
-      )}
+  return (
+    <div
+      className="fixed inset-0 z-[110]"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          closeModal();
+        }
+      }}
+    >
+      <div
+        className="absolute inset-0 bg-black/25 backdrop-blur-[1px]"
+        onClick={closeModal}
+      />
 
-      {isModalOpen && (
-        <div
-          className="fixed inset-0 z-[110]"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              closeModal();
-            }
-          }}
-        >
-          <div
-            className="absolute inset-0 bg-black/25 backdrop-blur-[1px]"
-            onClick={closeModal}
-          />
-
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="subtask-modal-heading"
-            className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)] animate-in fade-in slide-in-from-right-4 duration-200"
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="subtask-modal-heading"
+        className="absolute right-12 bottom-3.25 bg-white rounded-[28px] w-full max-w-100 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col max-h-[calc(100vh-120px)] animate-in fade-in slide-in-from-right-4 duration-200"
+      >
+        <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
+          <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
+            <svg
+              viewBox="0 0 200 72"
+              fill="none"
+              className="w-full h-full"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M0 0 C60 24, 20 48, 190 72 L200 92 L200 0 Z"
+                fill="#09232D"
+              />
+            </svg>
+          </div>
+          <h2
+            id="subtask-modal-heading"
+            className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight"
           >
-            <div className="bg-transparent h-18 relative overflow-hidden flex items-center px-7 shrink-0">
-              <div className="absolute top-0 right-0 w-[50%] h-full pointer-events-none">
-                <svg
-                  viewBox="0 0 200 72"
-                  fill="none"
-                  className="w-full h-full"
-                  preserveAspectRatio="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M0 0 C60 24, 20 48, 190 72 L200 92 L200 0 Z"
-                    fill="#09232D"
-                  />
-                </svg>
+            Edit
+            <br />
+            Subtask
+          </h2>
+          <button
+            type="button"
+            aria-label="Close subtask modal"
+            onClick={closeModal}
+            className="absolute right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors z-10 cursor-pointer"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+          <div>
+            <label
+              htmlFor="subtask-title"
+              className="text-[11px] font-bold text-[#0B1215] uppercase tracking-wide block mb-1.5"
+            >
+              Subtask Title<span className="text-red-400 ml-0.5">*</span>
+            </label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <FileText size={13} />
               </div>
-              <h2
-                id="subtask-modal-heading"
-                className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight"
-              >
-                {initial ? "Edit" : "Assign"}
-                <br />
-                Subtask
-              </h2>
-              <button
-                type="button"
-                aria-label="Close subtask modal"
-                onClick={closeModal}
-                className="absolute right-5 top-1/2 -translate-y-1/2 text-white/60 hover:text-white transition-colors z-10 cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
-              <div className="rounded-2xl bg-[#F4F7F9] border border-gray-100 px-4 py-3">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 block mb-0.5">
-                  Subtask Title
-                </span>
-                {initial ? (
-                  <input
-                    type="text"
-                    aria-label="Subtask title"
-                    value={title}
-                    onChange={(event) => {
-                      setTitle(event.target.value);
-                      if (error) setError("");
-                    }}
-                    className="w-full bg-transparent text-sm font-semibold text-[#0B1215] outline-none"
-                  />
-                ) : (
-                  <p className="text-sm font-semibold text-[#0B1215] break-words">
-                    {title}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label
-                  htmlFor="subtask-assign-to"
-                  className="text-[11px] font-bold text-[#0B1215] uppercase tracking-wide block mb-1.5"
-                >
-                  Assign To<span className="text-red-400 ml-0.5">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                    <User size={13} />
-                  </div>
-                  <select
-                    id="subtask-assign-to"
-                    aria-label="Assign to"
-                    value={selectedId}
-                    onChange={(event) => {
-                      setAssignedId(event.target.value);
-                      if (error) setError("");
-                    }}
-                    className="w-full bg-gray-50 rounded-xl py-2.5 pl-9 pr-4 text-sm text-[#0B1215] outline-none border border-gray-200 focus:border-[#094B5C] transition-colors cursor-pointer"
-                  >
-                    <option value="" disabled>
-                      Select assignee
-                    </option>
-                    {options.map((agent) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="subtask-due-datetime"
-                  className="text-[11px] font-bold text-[#0B1215] uppercase tracking-wide block mb-1.5"
-                >
-                  Due Date &amp; Time
-                </label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                    <Calendar size={13} />
-                  </div>
-                  <input
-                    id="subtask-due-datetime"
-                    aria-label="Subtask due date and time"
-                    type="datetime-local"
-                    value={date}
-                    onChange={(event) => {
-                      setDate(event.target.value);
-                      if (error) setError("");
-                    }}
-                    className="w-full bg-gray-50 rounded-xl py-2.5 pl-9 pr-4 text-sm text-[#0B1215] outline-none border border-gray-200 focus:border-[#094B5C] transition-colors"
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <p role="alert" className="text-xs text-red-500 font-medium">
-                  {error}
-                </p>
-              )}
-            </div>
-
-            <div className="px-7 py-5 shrink-0 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={confirmSave}
-                className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer flex items-center gap-2"
-              >
-                <CheckCircle size={15} />
-                {initial ? "Save Subtask" : "Submit"}
-              </button>
+              <input
+                id="subtask-title"
+                type="text"
+                aria-label="Subtask title"
+                value={title}
+                onChange={(event) => {
+                  setTitle(event.target.value);
+                  if (error) setError("");
+                }}
+                className="w-full bg-gray-50 rounded-xl py-2.5 pl-9 pr-4 text-sm text-[#0B1215] outline-none border border-gray-200 focus:border-[#094B5C] transition-colors"
+              />
             </div>
           </div>
+
+          <div>
+            <label
+              htmlFor="subtask-assign-to"
+              className="text-[11px] font-bold text-[#0B1215] uppercase tracking-wide block mb-1.5"
+            >
+              Assign To<span className="text-red-400 ml-0.5">*</span>
+            </label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <User size={13} />
+              </div>
+              <select
+                id="subtask-assign-to"
+                aria-label="Assign to"
+                value={selectedId}
+                onChange={(event) => {
+                  setAssignedId(event.target.value);
+                  if (error) setError("");
+                }}
+                className="w-full bg-gray-50 rounded-xl py-2.5 pl-9 pr-4 text-sm text-[#0B1215] outline-none border border-gray-200 focus:border-[#094B5C] transition-colors cursor-pointer"
+              >
+                <option value="" disabled>
+                  Select assignee
+                </option>
+                {options.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {error && (
+            <p role="alert" className="text-xs text-red-500 font-medium">
+              {error}
+            </p>
+          )}
         </div>
-      )}
+
+        <div className="px-7 py-5 shrink-0 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={confirmEdit}
+            className="w-fit px-9.25 py-[8.5px] bg-[#0B1215] text-white rounded-[10px] text-[14px] font-semibold hover:opacity-90 transition-colors cursor-pointer flex items-center gap-2"
+          >
+            <CheckCircle size={15} />
+            Save Subtask
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -553,7 +521,6 @@ export function ProjectChecklistSection({ checklist, userId, locked, agents, onT
       <h3 className="text-[15px] font-bold text-dash-dark">Subtasks ({subtasks.filter((item) => item.isCompleted).length}/{subtasks.length})</h3>
       {canManage && (
         <SubtaskEditor
-          dueAt={checklist.dueAt}
           assignee={{
             id: checklist.assigneeId || userId,
             name: checklist.assigneeId ? checklist.assigneeName : "Task creator",
@@ -587,7 +554,6 @@ export function ProjectChecklistSection({ checklist, userId, locked, agents, onT
         <SubtaskEditor
           key={editing.id}
           initial={editing}
-          dueAt={checklist.dueAt}
           assignee={{
             id: checklist.assigneeId || userId,
             name: checklist.assigneeId ? checklist.assigneeName : "Task creator",

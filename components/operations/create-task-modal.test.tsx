@@ -294,7 +294,7 @@ describe("CreateTaskModal required fields", () => {
     expect(mocks.createTask).not.toHaveBeenCalled();
   });
 
-  it("opens the right-hand subtask modal on Add Subtask, preselects the parent task assignee, and adds the subtask on submit", () => {
+  it("adds a subtask straight to the list for the primary assignee, with no popup", () => {
     setUser(7, "owner");
     render(
       <CreateTaskModal
@@ -310,26 +310,44 @@ describe("CreateTaskModal required fields", () => {
     // Close the picker so only the subtask list shows these people.
     openAssignees();
 
-    const subtaskInput = screen.getByPlaceholderText("Input your task title");
-    expect(screen.queryByLabelText("Assign to")).toBeNull();
-    expect(screen.queryByLabelText("Subtask due date and time")).toBeNull();
-
-    fireEvent.change(subtaskInput, { target: { value: "Confirm delivery manifest" } });
+    fireEvent.change(screen.getByPlaceholderText("Input your task title"), {
+      target: { value: "Confirm delivery manifest" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Multiple Tasks" }));
 
-    const subtaskAssigneeSelect = screen.getByLabelText("Assign to") as HTMLSelectElement;
-    expect(subtaskAssigneeSelect.value).toBe("9");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const row = screen.getByText("Confirm delivery manifest").closest("li") as HTMLElement;
+    expect(within(row).getByTitle("Sasha Supervisor")).not.toBeNull();
+    expect((screen.getByPlaceholderText("Input your task title") as HTMLInputElement).value).toBe("");
+  });
 
-    fireEvent.change(subtaskAssigneeSelect, { target: { value: "10" } });
-    fireEvent.change(screen.getByLabelText("Subtask due date and time"), {
-      target: { value: "2026-11-12T14:30" },
+  it("opens the edit popup with only title and assignee, and saves the changes", () => {
+    setUser(7, "owner");
+    render(
+      <CreateTaskModal
+        isOpen
+        onClose={vi.fn()}
+        onProjectChecklistCreated={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Input your task title"), {
+      target: { value: "Confirm delivery manifest" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Multiple Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Confirm delivery manifest" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByLabelText("Subtask due date and time")).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Subtask title"), {
+      target: { value: "Check delivery manifest" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Assign to"), { target: { value: "10" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Subtask" }));
 
-    expect(screen.queryByLabelText("Assign to")).toBeNull();
-    expect(screen.getByText("Confirm delivery manifest")).not.toBeNull();
-    expect(screen.getByTitle("Amara Agent")).not.toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const row = screen.getByText("Check delivery manifest").closest("li") as HTMLElement;
+    expect(within(row).getByTitle("Amara Agent")).not.toBeNull();
   });
 });
 

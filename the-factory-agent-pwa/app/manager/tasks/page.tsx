@@ -310,10 +310,6 @@ function ManagerTasksContent() {
       const errs: Record<string, string> = {};
       if (!newTitle.trim()) errs.title = 'Task title is required';
       if (newAssigneeIds.length === 0) errs.assignee = 'Select who this task is assigned to';
-      if (newDueDate && subtasks.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(newDueDate))) {
-        toast.error('The task deadline cannot be earlier than a subtask deadline.');
-        return;
-      }
       if (Object.keys(errs).length > 0) {
         setCreateErrors(errs);
         return;
@@ -1183,6 +1179,26 @@ function ManagerTasksContent() {
               <h3 className="text-lg font-bold text-white mb-4">Create &amp; Assign Task</h3>
 
               <form onSubmit={handleCreateTask} className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="e.g. Client site inspection"
+                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
+                  />
+                  {createErrors.title && (
+                    <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.title}</p>
+                  )}
+                </div>
+
+                {/* Subtasks — right after the title */}
+                <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} agents={assignees}
+                  defaultAssignee={{ id: newAssigneeId || String(user?.id ?? ""), name: assignees.find((agent) => String(agent.id) === newAssigneeId)?.name ?? user?.name ?? "You" }} />
+
                 {/* Assignee selector */}
                 <div>
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
@@ -1245,22 +1261,6 @@ function ManagerTasksContent() {
                     </select>
                   </div>
                 )}
-
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Title *
-                  </label>
-                  <input
-                    type="text"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g. Client site inspection"
-                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
-                  />
-                  {createErrors.title && (
-                    <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.title}</p>
-                  )}
-                </div>
 
                 <div>
                   <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
@@ -1400,9 +1400,6 @@ function ManagerTasksContent() {
                     className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
                   />
                 </div>
-
-                <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} dueDate={newDueDate} agents={assignees}
-                  defaultAssignee={{ id: newAssigneeId || String(user?.id ?? ""), name: assignees.find((agent) => String(agent.id) === newAssigneeId)?.name ?? user?.name ?? "You" }} />
 
                 <div className="flex gap-3 pt-2">
                   <button

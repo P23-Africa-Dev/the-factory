@@ -161,11 +161,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
       return;
     }
 
-    if (dueDate && subtasks.some((step) => step.dueAt && Date.parse(step.dueAt) > Date.parse(dueDate))) {
-      toast.error('The task deadline cannot be earlier than a subtask deadline.');
-      return;
-    }
-
     const payload = {
       title: title.trim(),
       type: type || undefined,
@@ -273,6 +268,27 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             />
           </div>
 
+          {/* Subtasks — right after the title */}
+          <ChecklistDraftFields steps={subtasks} onChange={setSubtasks}
+            defaultAssignee={{ id: String(user?.id ?? ""), name: user?.name ?? "You" }} />
+
+          {/* Observers — follow the task and can comment, but do not perform it */}
+          <div className="flex flex-col">
+            <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
+              Observers
+            </label>
+            <ObserverPicker
+              people={observerCandidates}
+              value={observerIds}
+              onChange={setObserverIds}
+              excludeIds={observerExcludeIds}
+              loading={loadingObserverCandidates}
+            />
+            <p className="text-[10px] text-white/40 mt-1">
+              Observers can see this task and comment on it, but it is not assigned to them.
+            </p>
+          </div>
+
           {/* Task Type */}
           <div className="flex flex-col">
             <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
@@ -343,23 +359,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                 );
               })}
             </div>
-          </div>
-
-          {/* Observers — follow the task and can comment, but do not perform it */}
-          <div className="flex flex-col">
-            <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
-              Observers
-            </label>
-            <ObserverPicker
-              people={observerCandidates}
-              value={observerIds}
-              onChange={setObserverIds}
-              excludeIds={observerExcludeIds}
-              loading={loadingObserverCandidates}
-            />
-            <p className="text-[10px] text-white/40 mt-1">
-              Observers can see this task and comment on it, but it is not assigned to them.
-            </p>
           </div>
 
           {/* Location & Address Autocomplete */}
@@ -437,9 +436,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
               />
             </div>
           </div>
-
-          <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} dueDate={dueDate}
-            defaultAssignee={{ id: String(user?.id ?? ""), name: user?.name ?? "You" }} />
 
           {/* Required Actions Checklist */}
           <div className="flex flex-col border-t border-white/5 pt-3">
