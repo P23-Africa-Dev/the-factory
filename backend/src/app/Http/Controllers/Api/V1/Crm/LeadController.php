@@ -30,6 +30,8 @@ class LeadController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $this->validateLeadListFilters($request);
+
         $leads = $this->leadService->listForUser($request->user(), [
             'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
             'search' => $request->string('search')->toString(),
@@ -38,6 +40,7 @@ class LeadController extends Controller
             'pipeline_id' => $request->input('pipeline_id'),
             'source' => $request->string('source')->toString(),
             'assigned_to_user_id' => $request->input('assigned_to_user_id'),
+            ...$this->creatorAndDateFilters($request),
             'per_page' => $request->input('per_page'),
             'uncategorized' => $request->boolean('uncategorized'),
         ]);
@@ -335,6 +338,8 @@ class LeadController extends Controller
 
     public function leadsAnalytics(Request $request): JsonResponse
     {
+        $this->validateLeadListFilters($request);
+
         $analytics = $this->leadService->leadsAnalytics(
             $request->user(),
             $this->resolveCompanyContextId($request->input('company_id')),
@@ -343,6 +348,7 @@ class LeadController extends Controller
                 'status' => $request->string('status')->toString(),
                 'pipeline_id' => $request->input('pipeline_id'),
                 'source' => $request->string('source')->toString(),
+                ...$this->creatorAndDateFilters($request),
             ],
         );
 
@@ -573,5 +579,27 @@ class LeadController extends Controller
                 'X-Content-Type-Options' => 'nosniff',
             ],
         );
+    }
+
+    /** Who added the lead and when, shared by the lead list and its analytics. */
+    private function validateLeadListFilters(Request $request): void
+    {
+        $request->validate([
+            'created_by_user_id' => ['nullable', 'integer', 'min:1'],
+            'created_from' => ['nullable', 'date'],
+            'created_to' => ['nullable', 'date', 'after_or_equal:created_from'],
+        ]);
+    }
+
+    /**
+     * @return array{created_by_user_id: mixed, created_from: string, created_to: string}
+     */
+    private function creatorAndDateFilters(Request $request): array
+    {
+        return [
+            'created_by_user_id' => $request->input('created_by_user_id'),
+            'created_from' => $request->string('created_from')->toString(),
+            'created_to' => $request->string('created_to')->toString(),
+        ];
     }
 }

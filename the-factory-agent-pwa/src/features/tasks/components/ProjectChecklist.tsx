@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -41,46 +42,128 @@ export function saveCreatedChecklist(
   return;
 }
 
-export function ChecklistDraftFields({ steps, onChange, dueDate, defaultAssignee, agents = [] }: {
+/**
+ * Subtasks on the create form: typing a title and pressing "Multiple Tasks" adds it straight
+ * to the list for the task's primary assignee. The edit sheet changes only title and assignee.
+ */
+export function ChecklistDraftFields({ steps, onChange, defaultAssignee, agents = [] }: {
   steps: ChecklistStep[];
   onChange: (steps: ChecklistStep[]) => void;
-  dueDate: string;
   defaultAssignee: { id: string; name: string };
   agents?: { id: number; name: string }[];
 }) {
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
-  const [assigned, setAssigned] = useState('');
   const [error, setError] = useState('');
-  const options = [...new Map([defaultAssignee, ...agents.map((agent) => ({ id: String(agent.id), name: agent.name }))].map((agent) => [agent.id, agent.name])).entries()];
-  const assigneeId = assigned || defaultAssignee.id;
+  const [editing, setEditing] = useState<ChecklistStep | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAssignee, setEditAssignee] = useState('');
+  const [editError, setEditError] = useState('');
+  const options = [...new Map([
+    defaultAssignee,
+    ...(editing ? [{ id: editing.assigneeId, name: editing.assigneeName }] : []),
+    ...agents.map((agent) => ({ id: String(agent.id), name: agent.name })),
+  ].filter((agent) => agent.id).map((agent) => [agent.id, agent.name])).entries()];
+
   function add() {
-    if (!title.trim() || !assigneeId) return setError('Enter a subtask and select an assignee.');
-    if (date && dueDate && Date.parse(date) > Date.parse(dueDate)) return setError('Subtask due date cannot be later than the task due date.');
-    onChange([...steps, { id: crypto.randomUUID(), title: title.trim(), assigneeId, assigneeName: options.find(([id]) => id === assigneeId)?.[1] ?? defaultAssignee.name, dueAt: date ? new Date(date).toISOString() : null, done: false }]);
-    setTitle(''); setDate(''); setAssigned(''); setError('');
+    if (!title.trim()) return setError('Enter a subtask title.');
+    if (!defaultAssignee.id) return setError('Choose who the task is assigned to first.');
+    onChange([...steps, { id: crypto.randomUUID(), title: title.trim(), assigneeId: defaultAssignee.id, assigneeName: defaultAssignee.name, dueAt: null, done: false }]);
+    setTitle(''); setError('');
   }
+
+  function openEdit(step: ChecklistStep) {
+    setEditing(step); setEditTitle(step.title); setEditAssignee(step.assigneeId); setEditError('');
+  }
+
+  function saveEdit() {
+    if (!editing) return;
+    if (!editTitle.trim()) return setEditError('Enter a subtask title.');
+    if (!editAssignee) return setEditError('Choose an assignee for the subtask.');
+    const assigneeName = options.find(([id]) => id === editAssignee)?.[1] ?? editing.assigneeName;
+    onChange(steps.map((step) => step.id === editing.id ? { ...step, title: editTitle.trim(), assigneeId: editAssignee, assigneeName } : step));
+    setEditing(null);
+  }
+
   return (
-    <section className="space-y-2 rounded-xl border border-white/10 p-3 text-xs text-white">
-      <h3 className="font-semibold">Subtasks</h3>
-      <input aria-label="Subtask" placeholder="Subtask" className="w-full rounded bg-white/10 p-2" value={title} onChange={(event) => setTitle(event.target.value)}
-        onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add(); } }} />
-      <label className="block">Subtask assignee
-        <select className="ml-2 rounded bg-[#0B3343] p-2" value={assigneeId} onChange={(event) => setAssigned(event.target.value)}>
-          {options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
+    <section className="space-y-2 text-white">
+      <label htmlFor="create-subtask-title" className="text-[10px] text-white/50 tracking-wider font-bold uppercase font-sans block">
+        Subtasks
       </label>
-      <label className="block">Subtask due date and time
-        <input type="datetime-local" className="mt-1 block w-full rounded bg-white/10 p-2" value={date} onChange={(event) => setDate(event.target.value)} />
-      </label>
-      <button type="button" className="rounded bg-[#75ADAF] px-3 py-2 font-semibold text-[#0A1D25]" onClick={add}>Add Subtask</button>
-      {error && <p role="alert" className="text-[#ff8774]">{error}</p>}
-      {steps.length > 0 && <ul className="space-y-2">
-        {steps.map((step) => <li key={step.id} className="flex justify-between gap-2">
-          <span>{step.title} · {step.assigneeName}{step.dueAt && ` · ${new Date(step.dueAt).toLocaleString()}`}</span>
-          <button type="button" aria-label={`Remove ${step.title}`} onClick={() => onChange(steps.filter((item) => item.id !== step.id))}>×</button>
-        </li>)}
-      </ul>}
+      <div className="flex gap-2">
+        <input id="create-subtask-title" aria-label="Subtask" placeholder="Input your task title"
+          className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]/60 transition-colors"
+          value={title}
+          onChange={(event) => { setTitle(event.target.value); if (error) setError(''); }}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add(); } }} />
+        <button type="button" onClick={add}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#75ADAF] px-3.5 py-2.5 text-xs font-semibold text-[#0A1D25] hover:opacity-90 transition-opacity cursor-pointer">
+          <Plus size={14} strokeWidth={2.5} aria-hidden="true" />
+          Multiple Tasks
+        </button>
+      </div>
+      {error && <p role="alert" className="text-xs text-[#ff8774]">{error}</p>}
+      {steps.length > 0 && (
+        <ul className="divide-y divide-white/5 overflow-hidden rounded-xl border border-white/10 bg-white/[0.03]">
+          {steps.map((step) => (
+            <li key={step.id} className="flex items-center gap-2 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium break-words">{step.title}</p>
+                <p className="text-[11px] text-white/55 truncate">{step.assigneeName}</p>
+              </div>
+              <button type="button" aria-label={`Edit ${step.title}`} onClick={() => openEdit(step)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 text-[#75ADAF] hover:bg-white/10 transition-colors cursor-pointer">
+                <Pencil size={12} aria-hidden="true" />
+              </button>
+              <button type="button" aria-label={`Remove ${step.title}`}
+                onClick={() => { onChange(steps.filter((item) => item.id !== step.id)); if (editing?.id === step.id) setEditing(null); }}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 text-[#ff8774] hover:bg-white/10 transition-colors cursor-pointer">
+                <Trash2 size={12} aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 z-[10010] flex items-end sm:items-center justify-center"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setEditing(null); } }}>
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditing(null)} />
+          <div role="dialog" aria-modal="true" aria-labelledby="edit-subtask-heading"
+            className="relative w-full max-w-md rounded-t-3xl sm:rounded-3xl border-t border-white/10 bg-[#0A1D25] px-5 pt-4 pb-8 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 id="edit-subtask-heading" className="text-lg font-bold text-white">Edit Subtask</h3>
+              <button type="button" aria-label="Close subtask editor" onClick={() => setEditing(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/70 hover:bg-white/10 hover:text-white cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="edit-subtask-title" className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
+                Subtask Title <span className="text-red-400">*</span>
+              </label>
+              <input id="edit-subtask-title" aria-label="Subtask title" value={editTitle}
+                onChange={(event) => { setEditTitle(event.target.value); if (editError) setEditError(''); }}
+                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60" />
+            </div>
+            <div className="flex flex-col">
+              <label htmlFor="edit-subtask-assignee" className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
+                Assign To <span className="text-red-400">*</span>
+              </label>
+              <select id="edit-subtask-assignee" aria-label="Assign to" value={editAssignee}
+                onChange={(event) => { setEditAssignee(event.target.value); if (editError) setEditError(''); }}
+                className="bg-[#0B1E26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60">
+                {options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+            {editError && <p role="alert" className="text-xs text-[#ff8774]">{editError}</p>}
+            <button type="button" onClick={saveEdit}
+              className="w-full h-11 rounded-xl bg-[#75ADAF] text-sm font-bold text-[#0A1D25] hover:opacity-90 cursor-pointer">
+              Save Subtask
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -137,7 +220,6 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
   const queryClient = useQueryClient();
   const userId = String(user?.id ?? '');
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
   const [assignee, setAssignee] = useState('');
   const [editing, setEditing] = useState<string>();
   const [error, setError] = useState('');
@@ -178,10 +260,13 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
     }
   }
 
+  function resetForm() {
+    setTitle(''); setAssignee(''); setEditing(undefined); setError('');
+  }
+
+  // New subtasks go to the task's assignee; only editing changes title and assignee.
   function saveStep() {
     if (!title.trim()) return setError('Enter a subtask title.');
-    const due = date ? new Date(date).toISOString() : null;
-    if (due && dueAt && Date.parse(due) > Date.parse(dueAt)) return setError('Subtask due date cannot be later than the task due date.');
     const id = assignee || defaultAssignee;
     const existing = steps.find((step) => step.id === editing);
     setError('');
@@ -190,17 +275,14 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
         return taskApi.updateSubtask(task.id, existing.id, {
           title: title.trim(),
           assigned_user_id: id || null,
-          due_at: due,
         });
       }
       return taskApi.createSubtask(task.id, {
         title: title.trim(),
-        assigned_user_id: id || undefined,
-        due_at: due,
+        assigned_user_id: defaultAssignee || undefined,
+        due_at: null,
       });
-    }).then(() => {
-      setTitle(''); setDate(''); setAssignee(''); setEditing(undefined);
-    });
+    }).then(resetForm);
   }
 
   if (compact && !steps.length && !dueAt && !task.commentCount && !canEdit) return null;
@@ -232,10 +314,8 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
               onClick={saveStep}>Add Subtask</button>
           </div>}
           {!compact && canEdit && <>
-            <button type="button" disabled={busy} onClick={() => {
-              const due = step.dueAt ? new Date(step.dueAt) : null;
-              setDate(due ? new Date(due.getTime() - due.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '');
-              setEditing(step.id); setTitle(step.title); setAssignee(step.assigneeId);
+            <button type="button" aria-label={`Edit ${step.title}`} disabled={busy} onClick={() => {
+              setEditing(step.id); setTitle(step.title); setAssignee(step.assigneeId); setError('');
             }}>Edit</button>
             <button type="button" aria-label={`Move ${step.title} up`} disabled={busy || !index} className="disabled:opacity-30" onClick={() => {
               const next = [...steps];
@@ -244,7 +324,7 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
             }}>↑</button>
             <button type="button" aria-label={`Remove ${step.title}`} disabled={busy} onClick={() => {
               void run(() => taskApi.deleteSubtask(task.id, step.id));
-              if (editing === step.id) { setEditing(undefined); setTitle(''); setDate(''); setAssignee(''); }
+              if (editing === step.id) resetForm();
             }}>×</button>
           </>}
         </div>
@@ -263,15 +343,15 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
         <div className="grid gap-2">
           <input aria-label="Subtask" placeholder="Subtask" className="rounded bg-black/30 p-2" value={title} onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
-          <label>Assign to
+          {editing && <label>Assign to
             <select className="ml-2 rounded bg-[#0B3343] p-2" value={assignee || defaultAssignee} onChange={(event) => setAssignee(event.target.value)}>
               {options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
-          </label>
-          <label>Subtask due date and time
-            <input type="datetime-local" className="mt-1 block w-full rounded bg-black/30 p-2" value={date} onChange={(event) => setDate(event.target.value)} />
-          </label>
-          <button type="button" disabled={busy} className="rounded bg-[#75ADAF] px-3 py-2 font-semibold text-[#0A1D25]" onClick={saveStep}>{editing ? 'Save subtask' : 'Add Subtask'}</button>
+          </label>}
+          <div className="flex gap-2">
+            <button type="button" disabled={busy} className="flex-1 rounded bg-[#75ADAF] px-3 py-2 font-semibold text-[#0A1D25]" onClick={saveStep}>{editing ? 'Save subtask' : 'Add Subtask'}</button>
+            {editing && <button type="button" disabled={busy} className="rounded bg-white/10 px-3 py-2 font-semibold" onClick={resetForm}>Cancel</button>}
+          </div>
           {error && <p role="alert" className="text-[#ff8774]">{error}</p>}
         </div>
       </>}
