@@ -28,6 +28,10 @@ export default async function DashboardLayout({
     redirect("/agent/login");
   }
 
+  if (session.role && session.role !== "agent") {
+    redirect("/dashboard");
+  }
+
   if (session.billingEnforced && !session.hasActiveSubscription) {
     redirect("/subscribe");
   }

@@ -282,7 +282,9 @@ class SupportAccessService
                 'name' => $session->company_name_snapshot,
                 'role' => $session->target_company_role_snapshot,
             ],
-            'dashboard_path' => '/dashboard',
+            'dashboard_path' => $session->target_company_role_snapshot === 'agent'
+                ? '/agent/dashboard'
+                : '/dashboard',
         ];
     }
 
