@@ -367,23 +367,23 @@ class CrmEmailService
         $syncedCount = 0;
 
         try {
-            do {
+        do {
                 $listing = $provider->listMessages($accountDTO, $query, $pageToken, 50);
-                $messages = $listing['messages'];
+            $messages = $listing['messages'];
 
-                foreach ($messages as $item) {
+            foreach ($messages as $item) {
                     $providerMessageId = (string) ($item['id'] ?? '');
 
                     if ($providerMessageId === '') {
-                        continue;
-                    }
+                    continue;
+                }
 
                     $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId, (int) $lead->id);
                     $syncedCount++;
-                }
+            }
 
-                $pageToken = $listing['nextPageToken'];
-            } while ($pageToken !== null && $pageToken !== '');
+            $pageToken = $listing['nextPageToken'];
+        } while ($pageToken !== null && $pageToken !== '');
 
             Log::info('CRM lead email sync completed.', [
                 'company_id' => $companyId,
@@ -640,7 +640,7 @@ class CrmEmailService
             $message->update(['is_read' => false]);
         }
         if (in_array('UNREAD', $removeLabelIds, true)) {
-            $message->update(['is_read' => true]);
+        $message->update(['is_read' => true]);
         }
 
         $this->logActivity($resolvedCompanyId, (int) $user->id, 'modify_labels', [
@@ -808,10 +808,10 @@ class CrmEmailService
         $resolvedCompanyId = (int) $context['company']->id;
 
         try {
-            $path = Storage::disk('local')->putFile(
-                'crm-email-attachments/company-' . $resolvedCompanyId . '/lead-' . $lead->id,
-                $file,
-            );
+        $path = Storage::disk('local')->putFile(
+            'crm-email-attachments/company-' . $resolvedCompanyId . '/lead-' . $lead->id,
+            $file,
+        );
         } catch (\Throwable $exception) {
             Log::error('CRM email attachment storage failed.', [
                 'company_id' => $resolvedCompanyId,
@@ -1235,7 +1235,7 @@ class CrmEmailService
             return $default;
         }
 
-        throw ValidationException::withMessages([
+                    throw ValidationException::withMessages([
             'email_account_id' => ['No active email account is connected. Connect an email account to send CRM emails.'],
         ]);
     }
@@ -1281,10 +1281,10 @@ class CrmEmailService
         // Try matching by the stored account email
         if ($accountEmail !== '') {
             $matched = EmailAccount::query()
-                ->where('company_id', $companyId)
-                ->where('status', 'active')
+            ->where('company_id', $companyId)
+            ->where('status', 'active')
                 ->whereRaw('LOWER(email) = ?', [$accountEmail])
-                ->first();
+            ->first();
 
             if ($matched !== null) {
                 return $matched;
@@ -1303,7 +1303,7 @@ class CrmEmailService
             return $userAccount;
         }
 
-        throw ValidationException::withMessages([
+            throw ValidationException::withMessages([
             'integration' => ['No active email account is connected. Connect an email account to manage CRM emails.'],
         ]);
     }

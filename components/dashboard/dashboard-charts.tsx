@@ -198,7 +198,7 @@ export function TotalLeadsChart() {
               {isLoading ? "—" : totalLeads.toLocaleString()}
             </span>
             <span className="text-dash-dark/40 text-sm font-bold mt-2">
-              {isAgent ? "My leads" : "Leads · all pipelines"}
+              {isAgent ? "My leads" : "Leads"}
             </span>
           </div>
         </div>
