@@ -133,34 +133,34 @@ class LeadService
         );
 
         $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source): Lead {
-            $lead = Lead::create([
-                'company_id' => $companyId,
-                'pipeline_id' => $pipelineId,
-                'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
-                'created_by_user_id' => $user->id,
-                'assigned_to_user_id' => $assignedToUserId,
-                'name' => $data['name'],
-                'email' => $data['email'] ?? null,
-                'phone' => $data['phone'] ?? null,
-                'location' => $data['location'] ?? null,
+        $lead = Lead::create([
+            'company_id' => $companyId,
+            'pipeline_id' => $pipelineId,
+            'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
+            'created_by_user_id' => $user->id,
+            'assigned_to_user_id' => $assignedToUserId,
+            'name' => $data['name'],
+            'email' => $data['email'] ?? null,
+            'phone' => $data['phone'] ?? null,
+            'location' => $data['location'] ?? null,
                 'company_name' => $data['company_name'] ?? null,
                 'company_email' => $data['company_email'] ?? null,
                 'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
                 'position' => $data['position'] ?? null,
                 'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
-                'source' => $source,
-                'status' => $data['status'],
-                'priority' => $data['priority'],
-                'budget_amount' => $data['budget_amount'] ?? null,
-                'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
-                    ? strtoupper((string) $data['budget_currency'])
-                    : null,
-                'next_action' => $data['next_action'] ?? null,
-                'last_interaction' => $data['last_interaction'] ?? null,
-                'last_interaction_at' => $data['last_interaction_at'] ?? null,
-                'meta' => $data['meta'] ?? null,
+            'source' => $source,
+            'status' => $data['status'],
+            'priority' => $data['priority'],
+            'budget_amount' => $data['budget_amount'] ?? null,
+            'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
+                ? strtoupper((string) $data['budget_currency'])
+                : null,
+            'next_action' => $data['next_action'] ?? null,
+            'last_interaction' => $data['last_interaction'] ?? null,
+            'last_interaction_at' => $data['last_interaction_at'] ?? null,
+            'meta' => $data['meta'] ?? null,
                 'custom_fields' => $this->resolvedCustomFields($companyId, $data, [], 'create') ?? [],
-            ]);
+        ]);
 
             $this->replaceContacts($lead, $this->contactPayloads($data));
 
@@ -550,9 +550,9 @@ class LeadService
             );
 
             $lead = DB::transaction(function () use ($lead, $data, $editsContacts, $customFields): Lead {
-                $lead->update([
-                    'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-                    'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
+            $lead->update([
+                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
                     'name' => $data['name'] ?? $lead->name,
                     'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
                     'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
@@ -596,15 +596,15 @@ class LeadService
         );
 
         $lead = DB::transaction(function () use ($lead, $data, $customFields): Lead {
-            $lead->update([
-                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-                'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
-                    ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
-                    : $lead->assigned_to_user_id,
-                'name' => $data['name'] ?? $lead->name,
-                'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
-                'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
-                'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+        $lead->update([
+            'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+            'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
+                ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
+                : $lead->assigned_to_user_id,
+            'name' => $data['name'] ?? $lead->name,
+            'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
+            'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
+            'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
                 'company_name' => array_key_exists('company_name', $data) ? $data['company_name'] : $lead->company_name,
                 'company_email' => array_key_exists('company_email', $data) ? $data['company_email'] : $lead->company_email,
                 'website' => array_key_exists('website', $data)
@@ -614,20 +614,20 @@ class LeadService
                 'profile_urls' => array_key_exists('profile_urls', $data)
                     ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
                     : $lead->profile_urls,
-                'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
-                'status' => $data['status'] ?? $lead->status,
-                'priority' => $data['priority'] ?? $lead->priority,
-                'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
-                'budget_currency' => array_key_exists('budget_currency', $data)
-                    ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
-                    : $lead->budget_currency,
-                'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
-                'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
-                'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
-                'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
+            'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
+            'status' => $data['status'] ?? $lead->status,
+            'priority' => $data['priority'] ?? $lead->priority,
+            'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
+            'budget_currency' => array_key_exists('budget_currency', $data)
+                ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
+                : $lead->budget_currency,
+            'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
+            'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
+            'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
+            'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
                 'custom_fields' => $customFields ?? $lead->custom_fields,
-                'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
-            ]);
+            'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
+        ]);
 
             if (array_key_exists('contacts', $data)) {
                 $this->replaceContacts($lead, $this->contactPayloads($data));
@@ -1876,9 +1876,9 @@ class LeadService
                     ->orWhere('custom_fields', 'like', '%' . $search . '%')
                     ->orWhereHas('contacts', function (Builder $contactQuery) use ($search): void {
                         $contactQuery->where('name', 'like', '%' . $search . '%')
-                            ->orWhere('email', 'like', '%' . $search . '%')
-                            ->orWhere('phone', 'like', '%' . $search . '%')
-                            ->orWhere('location', 'like', '%' . $search . '%');
+                    ->orWhere('email', 'like', '%' . $search . '%')
+                    ->orWhere('phone', 'like', '%' . $search . '%')
+                    ->orWhere('location', 'like', '%' . $search . '%');
                     });
             });
         }

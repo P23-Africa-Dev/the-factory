@@ -555,7 +555,6 @@ export function duplicateIcpProfile(id: string): Promise<IcpProfile> {
   });
 }
 
-<<<<<<< Updated upstream
 export type IcpSearchBriefSuggestMode = "generate" | "improve" | "regenerate";
 
 export type IcpSearchBriefSuggestResult = {
@@ -641,11 +640,6 @@ export type ChatLeadMeta = {
   contact_status?: string | null;
   [key: string]: unknown;
 };
-=======
-// ── Chat ─────────────────────────────────────────────────────────────────────
-
-export type ChatIntent = "freeform" | "quick_research" | "generate_leads" | "create_outreach";
->>>>>>> Stashed changes
 
 export type ChatLead = {
   id: number;
@@ -653,7 +647,6 @@ export type ChatLead = {
   source: string;
   score: number;
   summary: string;
-<<<<<<< Updated upstream
   entity_type?: "person" | "company" | null;
   title?: string | null;
   company?: string | null;
@@ -701,20 +694,10 @@ export type ChatMessageApi = {
   intent?: ChatIntent;
   leads?: ChatLead[] | null;
   meta?: Record<string, unknown> | null;
-=======
-};
-
-export type ChatMessage = {
-  id: number;
-  role: "user" | "assistant";
-  body: string;
-  leads?: ChatLead[];
->>>>>>> Stashed changes
   created_at?: string;
 };
 
 export type SendChatMessageResult = {
-<<<<<<< Updated upstream
   user_message: ChatMessageApi;
   assistant_message?: ChatMessageApi | null;
   discovery_run_id?: number | null;
@@ -852,27 +835,10 @@ export function createChatSession(icpProfileId?: string): Promise<ChatSessionApi
       method: "POST",
       path: "/chat/sessions",
       body: icpProfileId ? { icp_profile_id: Number(icpProfileId) } : {},
-=======
-  user_message: ChatMessage;
-  assistant_message: ChatMessage;
-  discovery_run_id?: number | null;
-};
-
-const DISCOVERY_INTENTS: ChatIntent[] = ["quick_research", "generate_leads"];
-const CHAT_DISCOVERY_TIMEOUT_MS = 60_000;
-
-export function createChatSession(title?: string): Promise<{ id: number }> {
-  return withSessionRetry(async () =>
-    seRequest<{ id: number }>({
-      method: "POST",
-      path: "/chat/sessions",
-      body: title ? { title } : {},
->>>>>>> Stashed changes
     })
   );
 }
 
-<<<<<<< Updated upstream
 export function fetchCurrentChatSession(icpProfileId?: string): Promise<ChatSessionApi | null> {
   return withSessionRetry(async () => {
     const query = icpProfileId ? `?icp_profile_id=${encodeURIComponent(icpProfileId)}` : "";
@@ -1023,18 +989,12 @@ function findLatestAssistantMessage(messages: ChatMessageApi[]): ChatMessageApi 
 export function listChatMessages(sessionId: number): Promise<ChatMessageApi[]> {
   return withSessionRetry(async () =>
     seRequest<ChatMessageApi[]>({
-=======
-export function listChatMessages(sessionId: number): Promise<ChatMessage[]> {
-  return withSessionRetry(async () =>
-    seRequest<ChatMessage[]>({
->>>>>>> Stashed changes
       method: "GET",
       path: `/chat/sessions/${sessionId}/messages`,
     })
   );
 }
 
-<<<<<<< Updated upstream
 export type SendChatMessagePayload = {
   body: string;
   intent: ChatIntent;
@@ -1147,34 +1107,17 @@ export async function sendChatMessage(
   }
 
   return initial;
-=======
-export function sendChatMessage(
-  sessionId: number,
-  payload: { body: string; intent: ChatIntent }
-): Promise<SendChatMessageResult> {
-  return withSessionRetry(async () =>
-    seRequest<SendChatMessageResult>({
-      method: "POST",
-      path: `/chat/sessions/${sessionId}/messages`,
-      body: payload,
-      timeoutMs: DISCOVERY_INTENTS.includes(payload.intent) ? CHAT_DISCOVERY_TIMEOUT_MS : undefined,
-    })
-  );
->>>>>>> Stashed changes
 }
 
 // ── Metrics ─────────────────────────────────────────────────────────────────
 
 export type SalesEngineMetrics = {
   leads_discovered: number;
-<<<<<<< Updated upstream
   leads_discovered_change_percent?: number;
   leads_pending_review: number;
   leads_pending_review_change_percent?: number;
   leads_in_crm: number;
   leads_in_crm_change_percent?: number;
-=======
->>>>>>> Stashed changes
   qualified_leads: number;
   companies_cached: number;
   outreach_drafts: number;
@@ -1187,7 +1130,6 @@ export function fetchMetrics(): Promise<SalesEngineMetrics> {
   );
 }
 
-<<<<<<< Updated upstream
 export type MetricsTrend = {
   points: Array<{ date: string; day: string; value: number }>;
   change_percent: number;
@@ -1283,10 +1225,6 @@ export type OutreachDeliveryStatus =
   | "unsubscribed"
   | null;
 
-=======
-// ── Outreach ────────────────────────────────────────────────────────────────
-
->>>>>>> Stashed changes
 export type OutreachActivity = {
   id: number;
   name: string;
@@ -1295,7 +1233,6 @@ export type OutreachActivity = {
   accentBg: string;
   accentIcon: string;
   occurred_at: string;
-<<<<<<< Updated upstream
   updated_at?: string | null;
   delivery_status?: OutreachDeliveryStatus;
   last_event_at?: string | null;
@@ -1311,17 +1248,12 @@ export function outreachActivitySortTime(item: Pick<OutreachActivity, "occurred_
   return times.length ? Math.max(...times) : 0;
 }
 
-=======
-};
-
->>>>>>> Stashed changes
 export function fetchRecentOutreach(): Promise<OutreachActivity[]> {
   return withSessionRetry(async () =>
     seRequest<OutreachActivity[]>({ method: "GET", path: "/outreach/recent" })
   );
 }
 
-<<<<<<< Updated upstream
 export function sendOutreachActivity(
   activityId: number,
   payload: {
@@ -1413,8 +1345,6 @@ export function normalizeOutreachSubjectBody(
   };
 }
 
-=======
->>>>>>> Stashed changes
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
@@ -1433,7 +1363,6 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString();
 }
-<<<<<<< Updated upstream
 
 /** True when posted_at is within the last 48 hours (fresh opportunity window). */
 export function isFreshSignal(iso: string | null | undefined, withinHours = 48): boolean {
@@ -2550,5 +2479,3 @@ export async function downloadOpportunitiesCsv(filters: OpportunityFilters = {})
 
   return { blob: await response.blob(), filename: "opportunities.csv" };
 }
-=======
->>>>>>> Stashed changes

@@ -9,26 +9,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-<<<<<<< Updated upstream
 import { ProcessingPanel } from "./processing-panel";
 import { ResearchProcessingPanel } from "./research-processing-panel";
 import { IcpBuilderModal, type IcpProfile } from "./icp-builder-modal";
 import { IcpSetupPromptModal } from "./icp-setup-prompt-modal";
 import { OutreachPreviewModal } from "./outreach-preview-modal";
 import { OutreachSettingsModal } from "./outreach-settings-modal";
-=======
-import { IcpBuilderModal } from "./icp-builder-modal";
-import { useActiveIcpProfile } from "@/hooks/use-sales-engine-icp";
-import { useSendChatMessage } from "@/hooks/use-sales-engine-chat";
-import { useSalesEngineMetrics } from "@/hooks/use-sales-engine-metrics";
-import { useSalesEngineOutreach } from "@/hooks/use-sales-engine-outreach";
-import {
-  SalesEngineApiError,
-  formatRelativeTime,
-  type ChatIntent,
-  type ChatLead,
-} from "@/lib/api/sales-engine";
->>>>>>> Stashed changes
 import {
   AddToCrmPipelineModal,
   CreateOutreachConfirmModal,
@@ -183,7 +169,6 @@ type ChatMessage = {
   id: number;
   role: "assistant" | "user";
   body: string;
-<<<<<<< Updated upstream
   intent?: ChatIntent;
   leads?: ChatLead[];
   meta?: Record<string, unknown> | null;
@@ -425,12 +410,6 @@ const intentFilterOptions: SelectOption[] = [
   { value: "Vendor Evaluation", label: "Vendor Evaluation" },
   { value: "Decision", label: "Decision" },
 ];
-=======
-  leads?: ChatLead[];
-};
-
-const weekDays = ["Mon", "Tues", "Weds", "Thurs", "Fri", "Sat"];
->>>>>>> Stashed changes
 
 const initialMessages: ChatMessage[] = [
   {
@@ -1301,7 +1280,6 @@ function ChatOutreachReviewCard({
   );
 }
 
-<<<<<<< Updated upstream
 function buildChatOutreachPreview(
   messageId: number,
   draft: OutreachDraft
@@ -1493,18 +1471,6 @@ function IcpConfirmationCard({
             ) : (
               <p className="mt-0.5 text-[10px] text-[#09232d]/55">{qualifySummary}</p>
             )}
-=======
-function LeadInlineResults({ leads }: { leads: ChatLead[] }) {
-  return (
-    <div className="mt-3 grid max-w-[640px] gap-2 sm:grid-cols-3">
-      {leads.map((lead) => (
-        <div key={lead.id ?? lead.name} className="rounded-[14px] border border-[#09232d]/10 bg-white px-3 py-2 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-[10px] font-bold text-[#09232d]">{lead.name}</p>
-            <span className="shrink-0 rounded-full bg-[#16b37d]/10 px-1.5 py-0.5 text-[8px] font-bold text-[#087652]">
-              {lead.score}
-            </span>
->>>>>>> Stashed changes
           </div>
         </div>
       )}
@@ -1558,26 +1524,18 @@ function ChatWorkspace({
   expanded,
   onToggleExpanded,
   onOpenIcpBuilder,
-<<<<<<< Updated upstream
   onOpenOutreachSettings,
 }: {
   expanded: boolean;
   onToggleExpanded: () => void;
   onOpenIcpBuilder: (opts?: { tightenProfileId?: string }) => void;
   onOpenOutreachSettings?: () => void;
-=======
-}: {
-  expanded: boolean;
-  onToggleExpanded: () => void;
-  onOpenIcpBuilder: () => void;
->>>>>>> Stashed changes
 }) {
   const queryClient = useQueryClient();
   const { data: activeProfile } = useActiveIcpProfile();
   const activeIcpId = activeProfile?.id;
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [draft, setDraft] = useState("");
-<<<<<<< Updated upstream
   const [selectedIntent, setSelectedIntent] = useState<ChatIntent>("freeform");
   const [isIcpMenuOpen, setIsIcpMenuOpen] = useState(false);
   const usageQuery = useQuery({ queryKey: ["sales-engine", "usage"], queryFn: fetchUsage, staleTime: 30_000 });
@@ -1590,13 +1548,9 @@ function ChatWorkspace({
   const [icpMenuPosition, setIcpMenuPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
   );
-=======
-  const [thinkingStage, setThinkingStage] = useState<string>(thinkingStages[0]);
->>>>>>> Stashed changes
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const timersRef = useRef<number[]>([]);
-<<<<<<< Updated upstream
   const nextMessageIdRef = useRef(2);
   const pendingUserMessageIdRef = useRef<number | null>(null);
   const messagesIcpRef = useRef<string | undefined>(undefined);
@@ -1606,11 +1560,6 @@ function ChatWorkspace({
   const [backgroundRunIds, setBackgroundRunIds] = useState<Set<number>>(new Set());
   const icpMenuRef = useRef<HTMLDivElement>(null);
   const icpTriggerRef = useRef<HTMLButtonElement>(null);
-=======
-  const sendMessage = useSendChatMessage();
-
-  const isThinking = sendMessage.isPending;
->>>>>>> Stashed changes
 
   const { data: icpProfiles = [], isLoading: isIcpProfilesLoading } = useIcpProfiles();
   const { data: chatHistory, isLoading: isHistoryLoading } = useChatHistory(activeIcpId);
@@ -2018,61 +1967,6 @@ function ChatWorkspace({
     []
   );
 
-<<<<<<< Updated upstream
-=======
-  useEffect(() => {
-    if (!isThinking) {
-      clearTimers();
-      setThinkingStage(thinkingStages[0]);
-      return;
-    }
-
-    setThinkingStage(thinkingStages[0]);
-    thinkingStages.forEach((stage, index) => {
-      if (index === 0) return;
-      const timer = window.setTimeout(() => {
-        setThinkingStage(stage);
-      }, index * 750);
-      timersRef.current.push(timer);
-    });
-  }, [isThinking]);
-
-  async function handleSend(prompt: string, intent: ChatIntent) {
-    const trimmed = prompt.trim();
-    if (!trimmed || isThinking) return;
-
-    const userMessageId = Date.now();
-    setMessages((current) => [...current, { id: userMessageId, role: "user", body: trimmed }]);
-    setDraft("");
-
-    try {
-      const result = await sendMessage.mutateAsync({ body: trimmed, intent });
-      const assistant = result.assistant_message;
-      setMessages((current) => [
-        ...current,
-        {
-          id: assistant.id ?? Date.now() + 1,
-          role: "assistant",
-          body: assistant.body,
-          leads: assistant.leads,
-        },
-      ]);
-    } catch (error) {
-      if (error instanceof SalesEngineApiError && error.status === 422) {
-        toast.error("Select an active ICP profile first.");
-        onOpenIcpBuilder();
-        return;
-      }
-      const message =
-        error instanceof SalesEngineApiError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : "Could not reach Sales Engine.";
-      toast.error(message);
-    }
-  }
->>>>>>> Stashed changes
 
   return (
     <>
@@ -2496,13 +2390,9 @@ function ChatWorkspace({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-<<<<<<< Updated upstream
               if (event.key !== "Enter" || event.shiftKey) return;
               event.preventDefault();
               if (draft.trim()) handleSend(draft, selectedIntent);
-=======
-              if (event.key === "Enter") handleSend(draft, "freeform");
->>>>>>> Stashed changes
             }}
             className="h-8 min-w-[120px] flex-1 bg-white text-[10px] text-[#09232d] outline-none placeholder:text-[#b5b5b5]"
             placeholder={INTENT_PLACEHOLDERS[selectedIntent]}
@@ -2510,15 +2400,9 @@ function ChatWorkspace({
           <button
             type="button"
             aria-label="Send message"
-<<<<<<< Updated upstream
             onClick={() => handleSend(draft, selectedIntent)}
             disabled={isThinking || !draft.trim()}
             className="se-primary grid size-[30px] shrink-0 place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
-=======
-            onClick={() => handleSend(draft, "freeform")}
-            disabled={isThinking}
-            className="grid size-[30px] place-items-center rounded-full bg-[#09232d] text-white disabled:opacity-60"
->>>>>>> Stashed changes
           >
             <Send size={15} fill="currentColor" />
           </button>
@@ -2527,50 +2411,25 @@ function ChatWorkspace({
           <PromptButton
             icon={<Globe2 size={17} />}
             label="Quick Research"
-<<<<<<< Updated upstream
             active={selectedIntent === "quick_research"}
             onSelect={() => selectIntent("quick_research")}
             tint={INTENT_MODE_CONFIG.quick_research.tint}
-=======
-            onClick={() =>
-              handleSend("Find FMCG distributors in Lagos with expansion signals", "quick_research")
-            }
-            tint="bg-[#fffbdc]"
->>>>>>> Stashed changes
             disabled={isThinking}
           />
           <PromptButton
             icon={<UsersRound size={17} />}
-<<<<<<< Updated upstream
             label="Generate New Prospects"
             active={selectedIntent === "generate_leads"}
             onSelect={() => selectIntent("generate_leads")}
             tint={INTENT_MODE_CONFIG.generate_leads.tint}
-=======
-            label="Generate New Leads"
-            onClick={() =>
-              handleSend(
-                "Generate qualified leads from web, LinkedIn index, Meta pages, and registries",
-                "generate_leads"
-              )
-            }
-            tint="bg-[#e4faff]"
->>>>>>> Stashed changes
             disabled={isThinking}
           />
           <PromptButton
             icon={<Lightbulb size={17} />}
             label="Create Outreach Message"
-<<<<<<< Updated upstream
             active={selectedIntent === "create_outreach"}
             onSelect={() => selectIntent("create_outreach")}
             tint={INTENT_MODE_CONFIG.create_outreach.tint}
-=======
-            onClick={() =>
-              handleSend("Create a compliant email and WhatsApp-safe follow-up plan", "create_outreach")
-            }
-            tint="bg-[#f2ffe9]"
->>>>>>> Stashed changes
             disabled={isThinking}
           />
         </div>
@@ -2748,12 +2607,7 @@ function OutreachActionMenu({
 
 function OutreachCard({
   color,
-<<<<<<< Updated upstream
   iconSrc,
-=======
-  icon,
-  iconColor,
->>>>>>> Stashed changes
   name,
   channel,
   preview,
@@ -2765,12 +2619,7 @@ function OutreachCard({
   isDeleting = false,
 }: {
   color: string;
-<<<<<<< Updated upstream
   iconSrc: string;
-=======
-  icon: string;
-  iconColor?: string;
->>>>>>> Stashed changes
   name: string;
   channel: string;
   preview: string;
@@ -2785,7 +2634,6 @@ function OutreachCard({
 
   return (
     <article
-<<<<<<< Updated upstream
       className={`${color} relative h-[108px] w-full shrink-0 overflow-hidden rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
       style={color.startsWith("#") ? { backgroundColor: color } : undefined}
     >
@@ -2807,25 +2655,6 @@ function OutreachCard({
             </p>
             <p className="mt-1 line-clamp-2 break-words text-[8px] font-light leading-[10px]">
               {channel.replace(/\s*draft$/i, "")}: {preview}
-=======
-      className={`${color} h-[108px] rounded-[20px] p-5 shadow-[0_6px_5px_rgba(0,0,0,0.15),0_2px_1.5px_rgba(0,0,0,0.3)]`}
-      style={color.startsWith("#") ? { backgroundColor: color } : undefined}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex gap-2">
-          <div className="grid size-10 shrink-0 place-items-center rounded-full bg-white">
-            <MessageCircle
-              size={21}
-              className={icon}
-              style={iconColor ? { color: iconColor } : undefined}
-              fill="currentColor"
-            />
-          </div>
-          <div className="min-w-0 text-[#09232d]">
-            <p className="text-[14px] font-bold leading-[18px]">{name}</p>
-            <p className="mt-1 max-w-[156px] text-[7px] font-light leading-[9px]">
-              {channel}: {preview}
->>>>>>> Stashed changes
             </p>
           </div>
         </div>
@@ -2846,7 +2675,6 @@ function OutreachCard({
   );
 }
 
-<<<<<<< Updated upstream
 const OUTREACH_CARD_PALETTE = [
   { bg: "#E3A5E9", iconSrc: "/message-01-purple.png" },
   { bg: "#7BB6B8", iconSrc: "/message-01-teal.png" },
@@ -2890,17 +2718,6 @@ function OutreachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
         toast.error(getApiErrorMessage(error, "Could not delete outreach activity.")),
     });
   };
-=======
-const OUTREACH_FALLBACK_COLORS = [
-  { color: "bg-[#df93e6]", icon: "text-[#9d25a8]" },
-  { color: "bg-[#8dc8c8]", icon: "text-[#6ab6b7]" },
-  { color: "bg-[#dbdbdb]", icon: "text-[#cfcfcf]" },
-  { color: "bg-[#f79787]", icon: "text-[#ef735f]" },
-] as const;
-
-function OutreachPanel() {
-  const { data: items = [] } = useSalesEngineOutreach();
->>>>>>> Stashed changes
 
   return (
     <div className="se-outreach-frame">
@@ -2919,7 +2736,6 @@ function OutreachPanel() {
           <Settings size={15} />
         </button>
       </header>
-<<<<<<< Updated upstream
       <p className="mb-6 text-center text-[10px] text-white/70">
         <Link
           href="/sales-engine/outreach"
@@ -2991,27 +2807,6 @@ function OutreachPanel() {
         }}
         onConfigureSender={onOpenSettings}
       />
-=======
-      <div className="absolute right-[22px] top-[97px] h-[18px] w-[3px] rounded-full bg-[#e5e5e5]" />
-      <div className="mx-auto flex h-[480px] max-w-[285px] flex-col gap-4 overflow-y-auto pr-2 max-xl:h-[400px]">
-        {items.map((item, index) => {
-          const fallback = OUTREACH_FALLBACK_COLORS[index % OUTREACH_FALLBACK_COLORS.length];
-          const useApiColors = item.accentBg?.startsWith("#");
-          return (
-            <OutreachCard
-              key={item.id}
-              color={useApiColors ? item.accentBg : fallback.color}
-              icon={useApiColors ? "" : fallback.icon}
-              iconColor={useApiColors ? item.accentIcon : undefined}
-              name={item.name}
-              channel={item.channel}
-              preview={item.preview}
-              time={formatRelativeTime(item.occurred_at)}
-            />
-          );
-        })}
-      </div>
->>>>>>> Stashed changes
     </aside>
     </div>
   );
@@ -5169,7 +4964,6 @@ export function SalesEngineView() {
   };
   const [icpSetupDismissed, setIcpSetupDismissed] = useState(false);
   const { data: activeProfile } = useActiveIcpProfile();
-<<<<<<< Updated upstream
   const {
     data: icpProfiles = [],
     isLoading: isIcpProfilesLoading,
@@ -5200,19 +4994,11 @@ export function SalesEngineView() {
     setIsIcpModalOpen(false);
     setTightenProfileId(null);
   };
-=======
-  const { data: metrics } = useSalesEngineMetrics();
-
-  const leadsDiscovered = metrics?.leads_discovered ?? 0;
-  const qualifiedLeads = metrics?.qualified_leads ?? 0;
-  const formatMetric = (value: number) => value.toLocaleString();
->>>>>>> Stashed changes
 
   return (
     <div className="se-workspace min-h-[calc(100vh-80px)] overflow-x-hidden bg-[#f8f8f8] px-6 py-8 text-[#09232d] max-sm:px-4">
       <div className="mx-auto flex w-full max-w-[1340px] flex-col gap-7">
         {!chatExpanded && (
-<<<<<<< Updated upstream
           <SalesEngineTabs
             activeTab={activeTab}
             onChange={selectTab}
@@ -5250,12 +5036,6 @@ export function SalesEngineView() {
               actionLabel="Review leads &rarr;"
             />
             <SafeSection name="trend" label="the trend" compact><TrendChart changePercent={trend?.change_percent} direction={trend?.direction} points={trend?.points} /></SafeSection>
-=======
-          <div className="grid grid-cols-[269px_269px_minmax(360px,1fr)_auto] items-start gap-[25px] max-xl:grid-cols-2 max-lg:grid-cols-1">
-            <MetricCard title="Lead Metrics" value={formatMetric(leadsDiscovered)} percent="—" active />
-            <MetricCard title="Qualified Lead Metrics" value={formatMetric(qualifiedLeads)} percent="—" />
-            <TrendChart />
->>>>>>> Stashed changes
             <div className="flex flex-col gap-2 pt-1 max-xl:col-span-2 max-lg:col-span-1 max-lg:pt-0">
               <div className="flex items-center gap-3">
                 <Link
@@ -5298,12 +5078,8 @@ export function SalesEngineView() {
           <ChatWorkspace
             expanded={chatExpanded}
             onToggleExpanded={() => setChatExpanded((current) => !current)}
-<<<<<<< Updated upstream
             onOpenIcpBuilder={handleOpenIcpBuilder}
             onOpenOutreachSettings={() => setIsOutreachSettingsOpen(true)}
-=======
-            onOpenIcpBuilder={() => setIsIcpModalOpen(true)}
->>>>>>> Stashed changes
           />
           </SafeSection>
           {!chatExpanded && (
