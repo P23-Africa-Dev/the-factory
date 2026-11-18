@@ -2,7 +2,7 @@
 
 import ArrowUp from "@/assets/images/arrow-57deg.png";
 import { useDashboardOverview } from "@/hooks/use-dashboard";
-import { useLeadPipeline, useLeads } from "@/hooks/use-crm";
+import { useLeadPipeline } from "@/hooks/use-crm";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import {
   buildCalibratedLeadsTrendChart,
@@ -153,7 +153,7 @@ export function TotalLeadsChart() {
   const basePath = role === "agent" ? "/agent" : "/admin";
   const isAgent = role === "agent";
 
-  const { data: overview } = useDashboardOverview({
+  const { data: overview, isLoading: overviewLoading } = useDashboardOverview({
     company_id: companyId ?? undefined,
     basePath,
   });
@@ -163,16 +163,13 @@ export function TotalLeadsChart() {
     basePath,
   );
 
-  const { data: agentLeads, isLoading: agentLeadsLoading } = useLeads(
-    isAgent && companyId ? { company_id: companyId, source: "agent_upload", per_page: 1 } : {},
-    basePath,
-  );
-
+  // Managers: every lead in the company, all pipelines.
+  // Agents: leads they created or are assigned to (same scope as the agent CRM page).
   const totalLeads = isAgent
-    ? (agentLeads?.pagination?.total ?? 0)
+    ? (overview?.kpis?.total_leads ?? 0)
     : (pipeline?.total ?? overview?.kpis?.total_leads ?? 0);
 
-  const isLoading = isAgent ? agentLeadsLoading : pipelineLoading;
+  const isLoading = isAgent ? overviewLoading : pipelineLoading;
 
   const leadsChartData = useMemo(
     () => buildCalibratedLeadsTrendChart(overview?.leads_trend ?? []),
@@ -201,7 +198,7 @@ export function TotalLeadsChart() {
               {isLoading ? "—" : totalLeads.toLocaleString()}
             </span>
             <span className="text-dash-dark/40 text-sm font-bold mt-2">
-              {isAgent ? "My uploads" : "Leads"}
+              {isAgent ? "My leads" : "Leads · all pipelines"}
             </span>
           </div>
         </div>

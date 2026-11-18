@@ -13,6 +13,7 @@ use App\Models\LeadLabel;
 use App\Models\LeadNote;
 use App\Models\LeadPipeline;
 use App\Models\User;
+use App\Services\Analytics\AggregateCacheService;
 use App\Services\Company\CompanyContextService;
 use App\Services\Security\SecurityAuditLogger;
 use App\Services\Notification\NotificationService;
@@ -59,6 +60,7 @@ class LeadService
         private readonly NotificationService $notificationService,
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
         private readonly SecurityAuditLogger $securityAudit,
+        private readonly AggregateCacheService $aggregateCache,
     ) {}
 
     public function listForUser(User $user, array $filters): Paginator
@@ -742,7 +744,7 @@ class LeadService
         $labels = LeadLabel::query()
             ->where('company_id', $resolvedCompanyId)
             ->orderBy('sort_order')
-            ->get(['slug', 'name', 'color']);
+            ->get(['slug', 'name', 'color', 'is_won']);
 
         $countsQuery = Lead::query()->where('company_id', $resolvedCompanyId);
         if ($role === 'agent') {
@@ -756,14 +758,18 @@ class LeadService
             ->all();
 
         $total = (int) array_sum(array_map(static fn($value): int => (int) $value, $counts));
+        $categorized = (int) $labels->sum(static fn(LeadLabel $label): int => (int) ($counts[$label->slug] ?? 0));
 
         return [
             'total' => $total,
+            // Leads whose status matches no current label; stages + uncategorized = total.
+            'uncategorized' => max(0, $total - $categorized),
             'stages' => $labels->map(static function (LeadLabel $label) use ($counts): array {
                 return [
                     'status' => $label->slug,
                     'name' => $label->name,
                     'color' => $label->color,
+                    'is_won' => (bool) $label->is_won,
                     'count' => (int) ($counts[$label->slug] ?? 0),
                 ];
             })->all(),
@@ -811,24 +817,6 @@ class LeadService
             }
         }
 
-        if ($topAgent === null) {
-            $fallbackAgent = $this->resolveFallbackAgentForUploadsOverview(
-                companyId: $resolvedCompanyId,
-                role: $role,
-                actor: $user,
-            );
-
-            if ($fallbackAgent !== null) {
-                $topAgent = [
-                    'id' => (int) $fallbackAgent->id,
-                    'name' => (string) $fallbackAgent->name,
-                    'email' => (string) $fallbackAgent->email,
-                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($fallbackAgent->avatar, $fallbackAgent->gender),
-                    'total_uploads' => 0,
-                ];
-            }
-        }
-
         $recentLeads = (clone $baseQuery)
             ->with(['creator:id,name,email,avatar,gender'])
             ->latest('id')
@@ -864,6 +852,7 @@ class LeadService
      * @param  array<string,mixed>  $filters
      * @return array{
      *     total_leads: int,
+     *     budget_total: float,
      *     week_growth_percent: int,
      *     week_growth_direction: string,
      *     daily_trend: array<int, array{day: string, value: int, date: string}>,
@@ -883,17 +872,20 @@ class LeadService
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
         $totalLeads = (int) (clone $query)->count();
+        // Sum of lead budgets in scope (same filters as total_leads). Currencies are not converted.
+        $budgetTotal = round((float) (clone $query)->sum('budget_amount'), 2);
 
-        $currentWeekStart = now()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
-        $currentWeekEnd = now()->endOfWeek(CarbonInterface::SUNDAY)->endOfDay();
+        $now = now();
+        $currentWeekStart = $now->copy()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
         $previousWeekStart = $currentWeekStart->copy()->subWeek();
-        $previousWeekEnd = $currentWeekEnd->copy()->subWeek();
+        // Compare like with like: this week so far vs. the same elapsed span of last week.
+        $previousWeekSameMoment = $now->copy()->subWeek();
 
         $currentWeekCreated = (int) (clone $query)
-            ->whereBetween('created_at', [$currentWeekStart, $currentWeekEnd])
+            ->whereBetween('created_at', [$currentWeekStart, $now])
             ->count();
         $previousWeekCreated = (int) (clone $query)
-            ->whereBetween('created_at', [$previousWeekStart, $previousWeekEnd])
+            ->whereBetween('created_at', [$previousWeekStart, $previousWeekSameMoment])
             ->count();
 
         if ($previousWeekCreated > 0) {
@@ -917,13 +909,14 @@ class LeadService
             4 => 'Thurs',
             5 => 'Fri',
             6 => 'Sat',
+            0 => 'Sun',
         ];
 
         $dailyTrend = [];
         $highlightDay = null;
         $highlightValue = -1;
 
-        for ($offset = 0; $offset < 6; $offset++) {
+        for ($offset = 0; $offset < 7; $offset++) {
             $day = $currentWeekStart->copy()->addDays($offset);
             $dayStart = $day->copy()->startOfDay();
             $dayEnd = $day->copy()->endOfDay();
@@ -938,7 +931,7 @@ class LeadService
                 'date' => $day->toDateString(),
             ];
 
-            if ($value > $highlightValue) {
+            if ($value > 0 && $value > $highlightValue) {
                 $highlightValue = $value;
                 $highlightDay = $label;
             }
@@ -951,6 +944,7 @@ class LeadService
 
         return [
             'total_leads' => $totalLeads,
+            'budget_total' => $budgetTotal,
             'week_growth_percent' => $weekGrowthPercent,
             'week_growth_direction' => $weekGrowthDirection,
             'daily_trend' => $dailyTrend,
@@ -958,25 +952,6 @@ class LeadService
             'month_label' => now()->format('F'),
             'highlight_day' => $highlightDay,
         ];
-    }
-
-    private function resolveFallbackAgentForUploadsOverview(int $companyId, string $role, User $actor): ?User
-    {
-        if ($role === 'agent') {
-            return $actor;
-        }
-
-        return User::query()
-            ->select('users.id', 'users.name', 'users.email', 'users.avatar', 'users.gender')
-            ->join('company_users', 'company_users.user_id', '=', 'users.id')
-            ->where('company_users.company_id', $companyId)
-            ->where(function (Builder $builder): void {
-                $builder->where('company_users.role', 'agent')
-                    ->orWhere('users.internal_role', 'agent');
-            })
-            ->orderBy('users.created_at')
-            ->orderBy('users.id')
-            ->first();
     }
 
     public function listPipelines(User $user, ?int $companyId = null): Collection
@@ -1319,6 +1294,7 @@ class LeadService
             'color' => (string) ($payload['color'] ?? '#2563EB'),
             'sort_order' => $maxSortOrder + 1,
             'is_default' => false,
+            'is_won' => (bool) ($payload['is_won'] ?? false),
         ]);
     }
 
@@ -1351,11 +1327,21 @@ class LeadService
                 ->update(['status' => $nextSlug]);
         }
 
+        $wasWon = (bool) $label->is_won;
+        $nextIsWon = array_key_exists('is_won', $payload) ? (bool) $payload['is_won'] : $wasWon;
+
         $label->update([
             'name' => $nextName,
             'slug' => $nextSlug,
             'color' => $nextColor,
+            'is_won' => $nextIsWon,
         ]);
+
+        if ($nextIsWon !== $wasWon) {
+            $this->syncConvertedAtForLabel($companyId, $nextSlug, $nextIsWon);
+        }
+
+        $this->aggregateCache->bumpCompanyVersion($companyId);
 
         return $label->fresh();
     }
@@ -1428,10 +1414,16 @@ class LeadService
                     ->where('company_id', $companyId)
                     ->where('status', $label->slug)
                     ->update(['status' => $fallbackLabel->slug]);
+
+                if ((bool) $label->is_won !== (bool) $fallbackLabel->is_won) {
+                    $this->syncConvertedAtForLabel($companyId, $fallbackLabel->slug, (bool) $fallbackLabel->is_won);
+                }
             }
 
             $label->delete();
         });
+
+        $this->aggregateCache->bumpCompanyVersion($companyId);
 
         return [
             'deleted_label_id' => (int) $label->id,
@@ -1853,11 +1845,11 @@ class LeadService
 
         // Instants from the client, so a picked day matches the viewer's timezone.
         if (! empty($filters['created_from'])) {
-            $query->where('created_at', '>=', Carbon::parse((string) $filters['created_from'])->utc());
+            $query->where('created_at', '>=', Carbon::parse((string) $filters['created_from'])->setTimezone(config('app.timezone')));
         }
 
         if (! empty($filters['created_to'])) {
-            $query->where('created_at', '<=', Carbon::parse((string) $filters['created_to'])->utc());
+            $query->where('created_at', '<=', Carbon::parse((string) $filters['created_to'])->setTimezone(config('app.timezone')));
         }
 
         if (! empty($filters['source'])) {
@@ -1865,6 +1857,8 @@ class LeadService
 
             if ($this->isAgentUploadSourceFilter($source)) {
                 $this->applyAgentUploadedSourceFilter($query);
+            } elseif ($this->isSalesEngineSourceFilter($source)) {
+                $this->applySalesEngineSourceFilter($query);
             } else {
                 $query->where('source', 'like', '%' . $source . '%');
             }
@@ -1923,6 +1917,24 @@ class LeadService
         }
     }
 
+    /**
+     * Bulk-align converted_at with a label's won flag (bulk updates skip the Lead observer).
+     */
+    private function syncConvertedAtForLabel(int $companyId, string $slug, bool $isWon): void
+    {
+        $query = Lead::query()
+            ->where('company_id', $companyId)
+            ->where('status', $slug);
+
+        if ($isWon) {
+            $query->whereNull('converted_at')->update(['converted_at' => DB::raw('updated_at')]);
+
+            return;
+        }
+
+        $query->whereNotNull('converted_at')->update(['converted_at' => null]);
+    }
+
     private function assertLabelExists(int $companyId, string $status): void
     {
         $exists = LeadLabel::query()
@@ -1971,20 +1983,36 @@ class LeadService
         ], true);
     }
 
+    /**
+     * "Uploaded by agents" = created by a member whose role in this company is agent,
+     * whatever source text the lead carries.
+     */
     private function applyAgentUploadedSourceFilter(Builder $query): void
     {
-        $accepted = [
-            'agent upload',
-            'agent uploaded',
-            'uploaded by agent',
-            'uploaded by agents',
-        ];
+        $query->whereExists(function ($subquery): void {
+            $subquery->selectRaw('1')
+                ->from('company_users')
+                ->whereColumn('company_users.user_id', 'leads.created_by_user_id')
+                ->whereColumn('company_users.company_id', 'leads.company_id')
+                ->where('company_users.role', 'agent');
+        });
+    }
 
-        $quoted = implode(',', array_map(static fn(string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
+    private function applySalesEngineSourceFilter(Builder $query): void
+    {
+        $query->where(function (Builder $builder): void {
+            $builder->whereRaw("LOWER(COALESCE(source, '')) LIKE ?", ['%sales%'])
+                ->orWhereRaw("LOWER(REPLACE(REPLACE(COALESCE(source, ''), '_', ' '), '-', ' ')) LIKE ?", ['%smart lead%'])
+                ->orWhereRaw("LOWER(COALESCE(location, '')) LIKE ?", ['%sales engine%'])
+                ->orWhereRaw("LOWER(COALESCE(company_name, '')) LIKE ?", ['%sales engine%']);
+        });
+    }
 
-        $query->whereRaw(
-            "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
-        );
+    private function isSalesEngineSourceFilter(string $source): bool
+    {
+        $normalized = Str::of($source)->replace(['-', '_'], ' ')->trim()->lower()->value();
+
+        return in_array($normalized, ['sales engine', 'smart lead', 'smart leads'], true);
     }
 
     private function ensureDefaultCrmSetup(int $companyId): void

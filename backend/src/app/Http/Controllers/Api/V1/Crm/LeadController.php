@@ -478,6 +478,7 @@ class LeadController extends Controller
             'company_id' => ['nullable'],
             'name' => ['required', 'string', 'max:120'],
             'color' => ['nullable', 'string', 'max:20'],
+            'is_won' => ['sometimes', 'boolean'],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
 
@@ -496,6 +497,7 @@ class LeadController extends Controller
             'company_id' => ['nullable'],
             'name' => ['sometimes', 'required', 'string', 'max:120'],
             'color' => ['sometimes', 'required', 'string', 'max:20'],
+            'is_won' => ['sometimes', 'boolean'],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
 

@@ -301,10 +301,12 @@ function LeadListView({
   containers,
   basePath = "/agent/crm",
   stageMeta,
+  budgetTotal,
 }: {
   containers: DndContainer[];
   basePath?: string;
-  stageMeta?: Record<string, { total: number }>;
+  stageMeta?: Record<string, { total: number; hasMore?: boolean }>;
+  budgetTotal?: number;
 }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -329,7 +331,8 @@ function LeadListView({
 
       {containers.map((container) => {
         const isOpen = !collapsed[container.id];
-        const total = container.items.reduce((s) => s + 40010, 0);
+        const total = container.items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0);
+        const stageHasMore = Boolean(stageMeta?.[container.id]?.hasMore);
 
         return (
           <div key={container.id} className="mb-2">
@@ -347,7 +350,8 @@ function LeadListView({
                 {(stageMeta?.[container.id]?.total ?? container.items.length).toLocaleString()} leads
               </span>
               <span className="text-[12px] font-semibold text-gray-500 mr-2">
-                $ {(total).toLocaleString()}
+                {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {stageHasMore ? " (loaded)" : ""}
               </span>
               <ChevronRight
                 size={14}
@@ -437,14 +441,17 @@ function LeadListView({
           ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          $ {(allLeads.length * 40010).toLocaleString()} pipeline value
+          {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}{" "}
+          pipeline value
         </span>
       </div>
     </div>
   );
 }
 
-function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, isLoading, stageMeta, onLoadMore }: {
+function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, isLoading, stageMeta, onLoadMore, budgetTotal }: {
   basePath?: string;
   leadListUrl?: string;
   boardKey: string;
@@ -454,6 +461,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
   isLoading?: boolean;
   stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
   onLoadMore?: (stageId: string) => void;
+  budgetTotal?: number;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -636,7 +644,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
 
       {viewMode === "list" ? (
         <div className="flex-1 overflow-y-auto">
-          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} />
+          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} budgetTotal={budgetTotal} />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
@@ -753,11 +761,7 @@ function AgentUploadsCard({
         </div>
         <p className="text-[#6B7280] text-[12px]">
           Uploaded by{" "}
-          {topAgentName ? (
-            <span className="font-bold text-[#0B1215]">{topAgentName}</span>
-          ) : (
-            "your Agents"
-          )}
+          <span className="font-bold text-[#0B1215]">{topAgentName ?? "you"}</span>
         </p>
         <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
@@ -1037,6 +1041,7 @@ export default function CRMPage() {
           isLoading={stageQuery.isLoading}
           stageMeta={stageMeta}
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
+          budgetTotal={leadsAnalytics?.budget_total}
         />
       </div>
 

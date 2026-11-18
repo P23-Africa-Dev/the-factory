@@ -98,6 +98,7 @@ const EMPTY_TREND: CrmDailyTrendPoint[] = [
   { day: "Thurs", value: 0, date: "" },
   { day: "Fri", value: 0, date: "" },
   { day: "Sat", value: 0, date: "" },
+  { day: "Sun", value: 0, date: "" },
 ];
 
 export function LeadsChart({

@@ -139,11 +139,14 @@ export type PipelineStage = {
     status: ApiLeadStatus;
     name?: string;
     color?: string;
+    is_won?: boolean;
     count: number;
 };
 
 export type PipelineSnapshot = {
     total: number;
+    /** Leads whose status matches no current label (stages + uncategorized = total). */
+    uncategorized?: number;
     stages: PipelineStage[];
 };
 
@@ -231,6 +234,8 @@ export type CrmLabel = {
     color: string;
     sort_order: number;
     is_default: boolean;
+    /** Leads in this stage count as won/converted. */
+    is_won?: boolean;
 };
 
 export type LeadFieldType =
@@ -420,6 +425,8 @@ export type CrmDailyTrendPoint = {
 
 export type CrmLeadsAnalytics = {
     total_leads: number;
+    /** Sum of budget_amount for the leads in scope (currencies not converted). */
+    budget_total?: number;
     week_growth_percent: number;
     week_growth_direction: "up" | "down" | "flat";
     daily_trend: CrmDailyTrendPoint[];
@@ -805,7 +812,7 @@ export function listCrmLabels(
 }
 
 export function createCrmLabel(
-    payload: { company_id: number | string; name: string; color: string },
+    payload: { company_id: number | string; name: string; color: string; is_won?: boolean },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ label: CrmLabel }>> {
@@ -819,7 +826,7 @@ export function createCrmLabel(
 
 export function updateCrmLabel(
     labelId: number | string,
-    payload: { company_id?: number | string; name?: string; color?: string },
+    payload: { company_id?: number | string; name?: string; color?: string; is_won?: boolean },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ label: CrmLabel }>> {

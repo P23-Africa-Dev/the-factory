@@ -757,7 +757,7 @@ export function useCreateCrmLabel(basePath: ApiRoleBasePath = "/admin") {
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string; name: string; color: string }) =>
+        mutationFn: (payload: { company_id: number | string; name: string; color: string; is_won?: boolean }) =>
             createCrmLabel(payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
@@ -775,7 +775,7 @@ export function useUpdateCrmLabel(basePath: ApiRoleBasePath = "/admin") {
             payload,
         }: {
             labelId: number | string;
-            payload: { company_id?: number | string; name?: string; color?: string };
+            payload: { company_id?: number | string; name?: string; color?: string; is_won?: boolean };
         }) => updateCrmLabel(labelId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });

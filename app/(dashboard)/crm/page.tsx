@@ -352,10 +352,12 @@ function LeadListView({
   containers,
   basePath = "/crm",
   stageMeta,
+  budgetTotal,
 }: {
   containers: DndContainer[];
   basePath?: string;
-  stageMeta?: Record<string, { total: number }>;
+  stageMeta?: Record<string, { total: number; hasMore?: boolean }>;
+  budgetTotal?: number;
 }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -380,7 +382,8 @@ function LeadListView({
 
       {containers.map((container) => {
         const isOpen = !collapsed[container.id];
-        const total = container.items.reduce((s) => s + 40010, 0);
+        const total = container.items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0);
+        const stageHasMore = Boolean(stageMeta?.[container.id]?.hasMore);
 
         return (
           <div key={container.id} className="mb-2">
@@ -398,7 +401,8 @@ function LeadListView({
                 {(stageMeta?.[container.id]?.total ?? container.items.length).toLocaleString()} leads
               </span>
               <span className="text-[12px] font-semibold text-gray-500 mr-2">
-                $ {(total).toLocaleString()}
+                {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {stageHasMore ? " (loaded)" : ""}
               </span>
               <ChevronRight
                 size={14}
@@ -443,12 +447,12 @@ function LeadListView({
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        $ {Number(item.location).toLocaleString()}
+                        {item.value || "$ 0"}
                       </span>
 
                       {/* Priority badge */}
-                      <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit">
-                        Medium
+                      <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit capitalize">
+                        {item.priority ?? "medium"}
                       </span>
 
                       {/* Assigned */}
@@ -488,7 +492,10 @@ function LeadListView({
           ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          $ {(allLeads.length * 40010).toLocaleString()} pipeline value
+          {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}{" "}
+          pipeline value
         </span>
       </div>
     </div>
@@ -507,6 +514,7 @@ function LeadBoard({
   isLoading,
   stageMeta,
   onLoadMore,
+  budgetTotal,
 }: {
   basePath?: string;
   leadListUrl?: string;
@@ -519,6 +527,7 @@ function LeadBoard({
   isLoading?: boolean;
   stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
   onLoadMore?: (stageId: string) => void;
+  budgetTotal?: number;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -702,7 +711,7 @@ function LeadBoard({
 
       {viewMode === "list" ? (
         <div className="flex-1 overflow-y-auto">
-          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} />
+          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} budgetTotal={budgetTotal} />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
@@ -780,12 +789,14 @@ function AgentUploadsCard({
   totalUploadedLeads = 0,
   topAgentAvatarUrl,
   topAgentName,
+  topAgentUploads,
 }: {
   basePath?: string;
   leadListUrl?: string;
   totalUploadedLeads?: number;
   topAgentAvatarUrl?: string | null;
   topAgentName?: string | null;
+  topAgentUploads?: number | null;
 }) {
   const router = useRouter();
 
@@ -819,14 +830,13 @@ function AgentUploadsCard({
           <span className="text-[36px] font-bold text-[#0B1215] leading-none">{totalUploadedLeads.toLocaleString()}</span>
           <span className="text-[#9CA3AF] text-[13px] font-medium">Leads</span>
         </div>
-        <p className="text-[#6B7280] text-[12px]">
-          Uploaded by{" "}
-          {topAgentName ? (
-            <span className="font-bold text-[#0B1215]">{topAgentName}</span>
-          ) : (
-            "your Agents"
-          )}
-        </p>
+        <p className="text-[#6B7280] text-[12px]">Uploaded by your agents</p>
+        {topAgentName ? (
+          <p className="text-[#6B7280] text-[11px]">
+            Top: <span className="font-bold text-[#0B1215]">{topAgentName}</span>
+            {typeof topAgentUploads === "number" ? ` (${topAgentUploads.toLocaleString()})` : ""}
+          </p>
+        ) : null}
         <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="se-stat-link flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
           <ChevronRight size={14} />
@@ -977,34 +987,15 @@ export default function CRMPage() {
     (dateRange.from || dateRange.to ? 1 : 0);
   const isSearchPending = search.trim() !== debouncedSearch || (Boolean(debouncedSearch) && stageQuery.isRefreshing);
 
-  const isSalesEngineLead = (lead: LeadApiItem): boolean => {
-    const s = (lead.source ?? "").toLowerCase().trim();
-    const loc = (lead.location ?? "").toLowerCase().trim();
-    const comp = (lead.company_name ?? "").toLowerCase().trim();
-    return (
-      s.includes("sales") ||
-      s.includes("smart_lead") ||
-      s.includes("smart lead") ||
-      loc.includes("sales engine") ||
-      comp.includes("sales engine")
-    );
-  };
-
-  const visibleStagePages = useMemo(() => {
-    const rawStages = stageQuery.stages.filter(
-      (stage) => stage.id !== "__uncategorized__" || stage.total > 0
-    );
-    if (!salesEngineScope) return rawStages;
-
-    return rawStages.map((stage) => {
-      const matchingLeads = stage.leads.filter(isSalesEngineLead);
-      return {
-        ...stage,
-        leads: matchingLeads,
-        total: matchingLeads.length,
-      };
-    });
-  }, [stageQuery.stages, salesEngineScope]);
+  // The sales-engine scope is filtered on the server (source=sales_engine), so stage totals,
+  // pagination and the summary cards all count the same leads.
+  const visibleStagePages = useMemo(
+    () =>
+      stageQuery.stages.filter(
+        (stage) => stage.id !== "__uncategorized__" || stage.total > 0
+      ),
+    [stageQuery.stages],
+  );
 
   const loadedLeads = useMemo(
     () => visibleStagePages.flatMap((stage) => stage.leads),
@@ -1035,13 +1026,13 @@ export default function CRMPage() {
         visibleStagePages.map((stage) => [
           stage.id,
           {
-            total: salesEngineScope ? stage.leads.length : stage.total,
-            hasMore: salesEngineScope ? false : stage.hasMore,
+            total: stage.total,
+            hasMore: stage.hasMore,
             isFetchingMore: stage.isFetchingMore,
           },
         ]),
       ),
-    [visibleStagePages, salesEngineScope],
+    [visibleStagePages],
   );
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
@@ -1254,6 +1245,7 @@ export default function CRMPage() {
             totalUploadedLeads={agentUploadsOverview?.total_uploaded_leads ?? 0}
             topAgentAvatarUrl={agentUploadsOverview?.top_agent?.avatar_url ?? null}
             topAgentName={agentUploadsOverview?.top_agent?.name ?? null}
+            topAgentUploads={agentUploadsOverview?.top_agent?.total_uploads ?? null}
           />
         </div>
 
@@ -1270,6 +1262,7 @@ export default function CRMPage() {
           isLoading={stageQuery.isLoading}
           stageMeta={stageMeta}
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
+          budgetTotal={leadsAnalytics?.budget_total}
         />
       </div>
 

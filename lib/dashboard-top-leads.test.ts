@@ -18,6 +18,16 @@ describe("dashboard-top-leads", () => {
     expect(getLeadStatusProgress("lost")).toBe(0);
   });
 
+  it("prefers the company's stage progress from the API over the fallback map", () => {
+    const stageProgress = { newly_lead: 25, discovery: 50, contacted: 75, closed: 100 };
+
+    expect(getLeadStatusProgress("discovery", stageProgress)).toBe(50);
+    expect(getLeadStatusProgress("closed", stageProgress)).toBe(100);
+    expect(getLeadStatusProgress("contacted", stageProgress)).toBe(75);
+    // Unknown to the company map -> fallback map.
+    expect(getLeadStatusProgress("qualified", stageProgress)).toBe(55);
+  });
+
   it("builds date ranges for weekly, monthly, and yearly filters", () => {
     const referenceDate = new Date("2026-06-25T12:00:00");
 
@@ -35,26 +45,14 @@ describe("dashboard-top-leads", () => {
     });
   });
 
-  it("derives conversion from pipeline won stages", () => {
-    expect(
-      getLeadConversionRate(
-        {
-          total: 8,
-          stages: [
-            { status: "newly_lead", count: 3 },
-            { status: "qualified", count: 3 },
-            { status: "won", count: 2 },
-          ],
-        },
-        { total_leads: 20, converted_leads: 10 },
-      ),
-    ).toBe(25);
+  it("derives conversion from converted (won-stage) leads over total leads", () => {
+    expect(getLeadConversionRate({ total_leads: 20, converted_leads: 5 })).toBe(25);
+    expect(getLeadConversionRate({ total_leads: 10, converted_leads: 4 })).toBe(40);
   });
 
-  it("falls back to KPI conversion when pipeline data is unavailable", () => {
-    expect(
-      getLeadConversionRate(undefined, { total_leads: 10, converted_leads: 4 }),
-    ).toBe(40);
+  it("returns 0 conversion when there are no leads", () => {
+    expect(getLeadConversionRate(undefined)).toBe(0);
+    expect(getLeadConversionRate({ total_leads: 0, converted_leads: 0 })).toBe(0);
   });
 
   it("builds chart data from top prospects instead of static placeholders", () => {
@@ -72,6 +70,16 @@ describe("dashboard-top-leads", () => {
       { id: "2", name: "Beta", value: 75, fill: "#146AFA" },
       { id: "3", name: "Gamma", value: 35, fill: "#FD6046" },
     ]);
+  });
+
+  it("uses company stage progress for prospect rings when provided", () => {
+    expect(
+      buildTopLeadsChartData(
+        [{ id: 7, name: "Delta", status: "closed", priority: "high", assigned_to_user_id: 1 }],
+        0,
+        { closed: 100 },
+      ),
+    ).toEqual([{ id: "7", name: "Delta", value: 100, fill: "#7BB6B8" }]);
   });
 
   it("uses the conversion rate for all rings when no prospects are available", () => {

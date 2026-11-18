@@ -472,6 +472,24 @@ export function LabelManagerModal({
     }
   };
 
+  const toggleWon = async (label: CrmLabel, isWon: boolean) => {
+    try {
+      await updateLabel.mutateAsync({
+        labelId: label.id,
+        payload: { company_id: companyId, is_won: isWon },
+      });
+      toast.success(
+        isWon
+          ? `Leads in ${label.name} now count as won`
+          : `Leads in ${label.name} no longer count as won`,
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update label",
+      );
+    }
+  };
+
   const createNew = async () => {
     if (!newLabelName.trim()) return;
     try {
@@ -604,9 +622,22 @@ export function LabelManagerModal({
                   Delete
                 </button>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                Key: {label.slug}
-              </p>
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-[11px] text-gray-400">Key: {label.slug}</p>
+                <label
+                  className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 cursor-pointer"
+                  title="Leads in this stage count as won/converted in CRM and dashboard stats"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(label.is_won)}
+                    disabled={updateLabel.isPending}
+                    onChange={(e) => toggleWon(label, e.target.checked)}
+                    className="accent-dash-dark"
+                  />
+                  Counts as won
+                </label>
+              </div>
             </div>
           );
         })}
