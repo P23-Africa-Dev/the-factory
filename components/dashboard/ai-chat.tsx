@@ -56,6 +56,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ElyActionReceipts, receiptsFromPayload } from "@/components/ely/action-receipts";
+import { MicRecordButton } from "@/components/ely/mic-record-button";
 import { resolveAvatarSrc } from "@/lib/avatar";
 
 type MessageAction = "liked" | "disliked" | null;
@@ -371,6 +373,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
     runTranscriptSummary,
     loadForecastOverview,
     searchAssignees,
+    undoAction,
   } = useCopilotChat();
 
   const canAnalyzeFile = user?.access_role ? user.access_role !== "agent" : true;
@@ -2212,6 +2215,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
     submitConfirmedAction(index, msg);
   }
 
+  // Agent engine: a plain "Cancel" withdraws the action waiting for confirmation.
+  function handleCancelAction() {
+    void sendCopilotMessage({
+      message: "Cancel",
+      companyId: companyId ?? undefined,
+    });
+  }
+
   function handleEditActionDetails(index: number) {
     const priorPrompt = findActionContextForConfirm(index);
     if (!priorPrompt.trim()) return;
@@ -3264,6 +3275,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     >
                       <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> {isVoiceTranscriptionLoading ? "Processing…" : "Voice Input"}</span>
                     </button>
+                    <MicRecordButton
+                      disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
+                      onRecorded={(file) => void handleVoiceFile(file)}
+                      onError={(message) => toast.error(message)}
+                    />
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isRunningQuickAction || isStreaming}
@@ -3653,8 +3669,33 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             >
                               Confirm Action
                             </button>
+                            {messagePayload(msg)?.engine === "agent" && (
+                              <button
+                                onClick={() => handleCancelAction()}
+                                disabled={isStreaming}
+                                className="rounded-full border border-white/20 px-3 py-2 text-[11px] font-semibold text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                            )}
                           </div>
                         </div>
+                      )}
+
+                      {msg.role === "assistant" && (
+                        <ElyActionReceipts
+                          receipts={receiptsFromPayload(msg.payload)}
+                          isAgent={isAgent}
+                          disabled={isStreaming}
+                          onUndo={async (auditId) => {
+                            try {
+                              return await undoAction(auditId, companyId ?? undefined);
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Could not undo that action.");
+                              return null;
+                            }
+                          }}
+                        />
                       )}
 
                       {/* Actions */}

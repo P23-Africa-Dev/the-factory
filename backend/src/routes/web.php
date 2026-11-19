@@ -64,6 +64,10 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::post('/intent-routing', [AiIntentRoutingSettingController::class, 'update'])
                 ->name('intent-routing.update')
                 ->middleware('admin.permission:manage_ai');
+            Route::get('/ely', [\App\Http\Controllers\Admin\AI\ElyAgentAdminController::class, 'index'])->name('ely');
+            Route::post('/ely/rollout', [\App\Http\Controllers\Admin\AI\ElyAgentAdminController::class, 'updateRollout'])
+                ->name('ely.rollout')
+                ->middleware('admin.permission:manage_ai');
         });
 
         // ── Users ──────────────────────────────────────────────

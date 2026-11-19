@@ -264,6 +264,42 @@ class ActionToolRegistry
             'action_url' => $validated['action_url'] ?? '/tasks',
         ];
 
+        // Supervisors may only notify the agents they supervise. A role
+        // broadcast becomes a message to their own team, and owner/admin
+        // recipients are refused.
+        $role = (string) $this->companyContextService->resolve($user, $companyId)['role'];
+        if ($role === 'supervisor') {
+            $teamIds = DB::table('users')
+                ->join('company_users', 'company_users.user_id', '=', 'users.id')
+                ->where('company_users.company_id', $companyId)
+                ->where('users.supervisor_user_id', $user->id)
+                ->pluck('users.id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+
+            if ($hasRoles && ! $hasUsers) {
+                if (array_diff($validated['roles'], ['agent']) !== []) {
+                    throw ValidationException::withMessages([
+                        'roles' => ['Supervisors can only send notifications to the agents they supervise.'],
+                    ]);
+                }
+                if ($teamIds === []) {
+                    throw ValidationException::withMessages([
+                        'roles' => ['You do not supervise any agents yet, so there is no one to notify.'],
+                    ]);
+                }
+                $validated['user_ids'] = $teamIds;
+                $hasUsers = true;
+            } elseif ($hasUsers) {
+                $outsideTeam = array_diff(array_map('intval', $validated['user_ids']), $teamIds);
+                if ($outsideTeam !== []) {
+                    throw ValidationException::withMessages([
+                        'user_ids' => ['Supervisors can only send notifications to the agents they supervise.'],
+                    ]);
+                }
+            }
+        }
+
         if ($hasUsers) {
             $userIds = array_map('intval', $validated['user_ids']);
             $count = DB::table('company_users')

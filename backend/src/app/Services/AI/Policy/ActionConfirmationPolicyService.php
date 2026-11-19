@@ -16,6 +16,7 @@ class ActionConfirmationPolicyService
         'crm.create_lead',
         'crm.send_email',
         'kpis.create',
+        'kpis.update',
         'org.users.create',
     ];
 

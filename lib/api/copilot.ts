@@ -2,6 +2,7 @@
 
 import { API_BASE_URL, apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
 import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
+import type { ElyPageContext } from "@/lib/ely/page-context";
 
 export type CopilotSource = string;
 
@@ -62,6 +63,7 @@ export type CopilotChatContext = {
     longitude?: number;
     focus?: "all" | "visits" | "followups" | "tasks";
     limit?: number;
+    page?: ElyPageContext;
 };
 
 export type CopilotChatRequest = {
@@ -94,6 +96,8 @@ export type CopilotChatResponse = {
 
 export type StreamEventProcessing = {
     label: string;
+    /** "tool" when the agent engine reports the tool it is running right now. */
+    source?: "tool";
 };
 
 export type StreamEventMeta = {
@@ -301,6 +305,20 @@ export function sendCopilotMessage(
             ...payload,
             stream: false,
         },
+        token,
+    });
+}
+
+/** Undo an action ELY ran (agent engine). Returns the assistant reply to show. */
+export function undoCopilotAction(
+    auditId: number,
+    token: string,
+    companyId?: number | string
+): Promise<ApiEnvelope<CopilotChatResponse>> {
+    return apiRequest<CopilotChatResponse>({
+        method: "POST",
+        path: `/copilot/actions/undo/${encodeURIComponent(String(auditId))}`,
+        body: { company_id: companyId },
         token,
     });
 }

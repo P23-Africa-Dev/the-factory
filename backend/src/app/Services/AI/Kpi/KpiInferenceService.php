@@ -106,6 +106,74 @@ class KpiInferenceService
      * @param  array<string, mixed>  $actionArgs
      * @return array<string, mixed>
      */
+    /**
+     * Infer arguments for kpis.update: which KPI (by id or by a name that
+     * appears in the message, company-scoped) and the fields being changed.
+     * Only fields the user mentions are returned, so the update stays partial.
+     *
+     * @param  array<string, mixed>  $actionArgs
+     * @return array<string, mixed>
+     */
+    public function inferUpdate(string $message, int $companyId, array $actionArgs = []): array
+    {
+        $args = array_filter(
+            $actionArgs,
+            static fn (mixed $value): bool => ! (is_string($value) && trim($value) === '') && $value !== null,
+        );
+
+        if (! isset($args['kpi_id']) || ! is_numeric($args['kpi_id'])) {
+            $kpiId = $this->resolveKpiIdFromMessage($message, $companyId);
+            if ($kpiId !== null) {
+                $args['kpi_id'] = $kpiId;
+            }
+        } else {
+            $args['kpi_id'] = (int) $args['kpi_id'];
+        }
+
+        if (! isset($args['target_value'])
+            && preg_match('/\btarget(?:\s+value)?\s*(?:to|=|:|of)?\s*([0-9][0-9,.]*\s*%?(?:\s*[a-z]+)?)/i', $message, $m) === 1
+        ) {
+            $args['target_value'] = trim($m[1]);
+        }
+
+        if (! isset($args['priority'])
+            && preg_match('/\bpriority\s*(?:to|=|:)?\s*(low|medium|high|critical)\b/i', $message, $m) === 1
+        ) {
+            $args['priority'] = strtolower($m[1]);
+        }
+
+        if (! isset($args['name'])
+            && preg_match('/\brename\b.*?\bto\s+["“]?([^"”\n]{3,120})["”]?\s*$/i', $message, $m) === 1
+        ) {
+            $args['name'] = trim($m[1]);
+        }
+
+        if (! isset($args['end_date'])
+            && preg_match('/\b(?:deadline|end\s*date|due)\s*(?:to|=|:|on)?\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\b/i', $message, $m) === 1
+        ) {
+            $args['end_date'] = $m[1];
+        }
+
+        return $args;
+    }
+
+    private function resolveKpiIdFromMessage(string $message, int $companyId): ?int
+    {
+        $haystack = mb_strtolower($message);
+
+        $match = \App\Models\Kpi::query()
+            ->where('company_id', $companyId)
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get(['id', 'name'])
+            ->filter(static fn ($kpi): bool => trim((string) $kpi->name) !== ''
+                && str_contains($haystack, mb_strtolower(trim((string) $kpi->name))))
+            ->sortByDesc(static fn ($kpi): int => mb_strlen((string) $kpi->name))
+            ->first();
+
+        return $match !== null ? (int) $match->id : null;
+    }
+
     public function normalizeProvidedArgs(int $companyId, array $actionArgs): array
     {
         $normalized = $actionArgs;

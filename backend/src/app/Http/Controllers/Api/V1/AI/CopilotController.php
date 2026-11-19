@@ -41,6 +41,10 @@ class CopilotController extends Controller
             'context.longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'context.focus' => ['nullable', 'string', 'in:all,visits,followups,tasks'],
             'context.limit' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'context.page' => ['nullable', 'array'],
+            'context.page.path' => ['nullable', 'string', 'max:255'],
+            'context.page.entity_type' => ['nullable', 'string', 'in:lead,task,project,kpi,meeting,user,pipeline'],
+            'context.page.entity_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $clientTimezone = isset($validated['client_timezone']) ? (string) $validated['client_timezone'] : null;
@@ -96,6 +100,7 @@ class CopilotController extends Controller
                     @ob_flush();
                     @flush();
 
+                    $streamedDeltas = false;
                     $result = $this->copilotService->chat(
                         user: $chatUser,
                         message: $chatMessage,
@@ -106,10 +111,38 @@ class CopilotController extends Controller
                         idempotencyKey: $chatIdempotencyKey,
                         clientTimezone: $chatClientTimezone,
                         chatContext: $chatContext,
+                        // Agent engine: real progress as each tool runs, and the
+                        // answer text as the model writes it.
+                        onEvent: function (string $event, array $data) use (&$streamedDeltas): void {
+                            if ($event === 'delta') {
+                                $chunk = (string) ($data['chunk'] ?? '');
+                                if ($chunk === '') {
+                                    return;
+                                }
+                                $streamedDeltas = true;
+                                echo "event: delta\n";
+                                echo 'data: ' . $this->encodeSseData(['chunk' => $chunk]) . "\n\n";
+                                @ob_flush();
+                                @flush();
+
+                                return;
+                            }
+                            if ($event !== 'status') {
+                                return;
+                            }
+                            echo "event: processing\n";
+                            echo 'data: ' . $this->encodeSseData([
+                                'label' => (string) ($data['label'] ?? 'Working...'),
+                                'source' => 'tool',
+                            ]) . "\n\n";
+                            @ob_flush();
+                            @flush();
+                        },
                     );
 
                     $content = (string) ($result['response']['content'] ?? '');
-                    $chunks = preg_split('/\s+/', trim($content)) ?: [];
+                    // Already streamed live by the provider? Then "done" carries the final text.
+                    $chunks = $streamedDeltas ? [] : (preg_split('/\s+/', trim($content)) ?: []);
 
                     if (($result['thread_id'] ?? '') !== ($chatThreadId ?? '')) {
                         echo "event: meta\n";

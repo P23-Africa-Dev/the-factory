@@ -302,24 +302,34 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
 
     Route::prefix('copilot')->name('copilot.')->group(function (): void {
         Route::post('/chat', [CopilotController::class, 'chat'])
-            ->middleware('throttle:api')
+            ->middleware(['throttle:api', 'throttle:ely'])
             ->name('chat');
         Route::post('/email/regenerate', [CopilotController::class, 'regenerateEmail'])
-            ->middleware('throttle:api')
+            ->middleware(['throttle:api', 'throttle:ely'])
             ->name('email.regenerate');
         Route::post('/email/enhance', [CopilotController::class, 'enhanceEmail'])
-            ->middleware('throttle:api')
+            ->middleware(['throttle:api', 'throttle:ely'])
             ->name('email.enhance');
+        Route::post('/actions/{pending}/confirm', [\App\Http\Controllers\Api\V1\AI\ElyActionController::class, 'confirm'])
+            ->middleware('throttle:api')
+            ->name('actions.confirm');
+        Route::post('/actions/{pending}/cancel', [\App\Http\Controllers\Api\V1\AI\ElyActionController::class, 'cancel'])
+            ->middleware('throttle:api')
+            ->name('actions.cancel');
+        Route::post('/actions/undo/{audit}', [\App\Http\Controllers\Api\V1\AI\ElyActionController::class, 'undo'])
+            ->whereNumber('audit')
+            ->middleware('throttle:api')
+            ->name('actions.undo');
         Route::get('/assignees', [CopilotController::class, 'assignees'])
             ->middleware('throttle:api')
             ->name('assignees.index');
         Route::get('/threads/search', [CopilotController::class, 'search'])
             ->middleware('throttle:api')
             ->name('threads.search');
-        Route::get('/threads', [CopilotController::class, 'index'])->name('threads.index');
-        Route::get('/threads/{thread}', [CopilotController::class, 'show'])->name('threads.show');
-        Route::get('/threads/{thread}/messages', [CopilotController::class, 'messages'])->name('threads.messages.index');
-        Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->name('threads.destroy');
+        Route::get('/threads', [CopilotController::class, 'index'])->middleware('throttle:api')->name('threads.index');
+        Route::get('/threads/{thread}', [CopilotController::class, 'show'])->middleware('throttle:api')->name('threads.show');
+        Route::get('/threads/{thread}/messages', [CopilotController::class, 'messages'])->middleware('throttle:api')->name('threads.messages.index');
+        Route::delete('/threads/{thread}', [CopilotController::class, 'destroy'])->middleware('throttle:api')->name('threads.destroy');
 
         Route::get('/analytics/context-pack', [CopilotReportingController::class, 'contextPack'])
             ->middleware('throttle:api')
@@ -329,9 +339,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('reports.weekly-summary.queue');
         Route::get('/reports/weekly-summary/{reportId}', [CopilotReportingController::class, 'weeklySummaryStatus'])
-            ->name('reports.weekly-summary.status');
+            ->middleware('throttle:api')->name('reports.weekly-summary.status');
         Route::get('/reports/weekly-summary/{reportId}/download', [CopilotReportingController::class, 'downloadWeeklySummary'])
-            ->name('reports.weekly-summary.download');
+            ->middleware('throttle:api')->name('reports.weekly-summary.download');
 
         Route::post('/automations/preview', [CopilotAutomationController::class, 'preview'])
             ->middleware('throttle:api')
@@ -340,19 +350,19 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('automations.store');
         Route::get('/automations', [CopilotAutomationController::class, 'index'])
-            ->name('automations.index');
+            ->middleware('throttle:api')->name('automations.index');
         Route::post('/automations/{automation}/run', [CopilotAutomationController::class, 'run'])
             ->middleware('throttle:api')
             ->name('automations.run');
 
         Route::post('/voice/transcriptions', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'transcribeVoice'])
-            ->middleware('throttle:api')
+            ->middleware(['throttle:api', 'throttle:ely'])
             ->name('voice.transcriptions.store');
         Route::post('/files/analyze', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'analyzeFile'])
-            ->middleware('throttle:api')
+            ->middleware(['throttle:api', 'throttle:ely'])
             ->name('files.analyze');
         Route::post('/meetings/transcripts/summarize', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'summarizeTranscript'])
-            ->middleware('throttle:api')
+            ->middleware(['throttle:api', 'throttle:ely'])
             ->name('meetings.transcripts.summarize');
         Route::get('/forecast/overview', ['App\\Http\\Controllers\\Api\\V1\\AI\\CopilotInnovationController', 'forecastOverview'])
             ->middleware('throttle:api')

@@ -1289,10 +1289,20 @@ class ReadToolRegistry
         $stats = $this->crmEmailService->emailStats($user, $companyId);
         $activity = $this->crmEmailService->recentActivity($user, $companyId, 10);
 
+        $role = (string) $this->companyContextService->resolve($user, $companyId)['role'];
+
         $unreadMessages = CrmEmailMessage::query()
             ->where('company_id', $companyId)
             ->where('is_read', false)
             ->where('direction', 'received')
+            ->when($role === 'agent', static function (Builder $query) use ($user): void {
+                // Agents only see mail on leads they created or are assigned to,
+                // matching CrmEmailService::emailStats.
+                $query->whereHas('lead', static function (Builder $leadQuery) use ($user): void {
+                    $leadQuery->where('created_by_user_id', $user->id)
+                        ->orWhere('assigned_to_user_id', $user->id);
+                });
+            })
             ->latest('id')
             ->limit(10)
             ->get(['id', 'lead_id', 'subject', 'from_email', 'received_at']);
@@ -1963,9 +1973,12 @@ class ReadToolRegistry
         $resolvedCompanyId = (int) $context['company']->id;
         $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
 
+        $isAgent = (string) ($context['role'] ?? '') === 'agent';
+
         $leadsQuery = \App\Models\Lead::query()
             ->where('company_id', $resolvedCompanyId)
-            ->whereDate('created_at', $date);
+            ->whereDate('created_at', $date)
+            ->when($isAgent, static fn (Builder $query) => $query->where('created_by_user_id', $user->id));
 
         $leadsAdded = (clone $leadsQuery)->count();
         $creators = (clone $leadsQuery)
@@ -1985,6 +1998,12 @@ class ReadToolRegistry
 
         $wonOnDate = \App\Models\Lead::query()
             ->where('company_id', $resolvedCompanyId)
+            ->when($isAgent, static function (Builder $query) use ($user): void {
+                $query->where(static function (Builder $own) use ($user): void {
+                    $own->where('created_by_user_id', $user->id)
+                        ->orWhere('assigned_to_user_id', $user->id);
+                });
+            })
             ->where(function ($q) use ($date): void {
                 $q->whereDate('converted_at', $date)
                     ->orWhere(function ($inner) use ($date): void {
@@ -2118,10 +2137,13 @@ class ReadToolRegistry
 
         $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
 
+        $isAgent = (string) ($context['role'] ?? '') === 'agent';
+
         $query = \App\Models\LeadActivity::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('type', 'call')
-            ->whereDate('happened_at', $date);
+            ->whereDate('happened_at', $date)
+            ->when($isAgent, static fn (Builder $q) => $q->where('created_by_user_id', $user->id));
 
         $totalCalls = (clone $query)->count();
 
@@ -2142,7 +2164,9 @@ class ReadToolRegistry
             ->all();
 
         $top = $breakdown[0] ?? null;
-        $summary = "Team logged {$totalCalls} call(s) on {$date}.";
+        $summary = $isAgent
+            ? "You logged {$totalCalls} call(s) on {$date}."
+            : "Team logged {$totalCalls} call(s) on {$date}.";
         if (is_array($top)) {
             $summary .= " {$top['name']} logged the most ({$top['count']}).";
         }
@@ -2168,15 +2192,31 @@ class ReadToolRegistry
         $date = $this->resolveDateArg($args['date'] ?? null) ?? now()->toDateString();
         $agentName = is_string($args['agent_name'] ?? null) ? trim((string) $args['agent_name']) : '';
 
+        $role = (string) ($context['role'] ?? '');
+
         $query = \App\Models\AttendanceRecord::query()
             ->where('company_id', $resolvedCompanyId)
             ->whereDate('attendance_date', $date)
             ->with('user:id,name');
 
+        if ($role === 'agent') {
+            $query->where('user_id', $user->id);
+        } elseif ($role === 'supervisor') {
+            // Supervisors see their own record and their direct reports, as in
+            // AttendanceService::listForManager.
+            $query->where(static function (Builder $scope) use ($user): void {
+                $scope->where('user_id', $user->id)
+                    ->orWhereHas('user', static fn (Builder $member) => $member->where('supervisor_user_id', $user->id));
+            });
+        }
+
         if ($agentName !== '') {
             $agentId = $this->resolveCompanyUserIdByName($agentName, $resolvedCompanyId);
             if ($agentId !== null) {
                 $query->where('user_id', $agentId);
+            } else {
+                // An unknown name must not fall back to everyone's records.
+                $query->whereRaw('1 = 0');
             }
         }
 

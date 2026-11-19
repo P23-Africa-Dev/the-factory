@@ -119,6 +119,26 @@ jobs:
           tests/Feature/Task/TaskTrackingPublishTest.php
           tests/Feature/Task/TaskTrackingRegressionTest.php
 
+      # ELY (AI assistant): deterministic checks only, no model calls. The
+      # scripted-model agent tests guard tenant isolation, role limits and
+      # confirmation of risky actions; eval-case lint keeps tools, eval cases
+      # and help articles in step. Live evals: `php artisan ely:eval` (manual).
+      - name: Run ELY assistant tests
+        run: >-
+          php -d memory_limit=1536M vendor/bin/phpunit --stop-on-failure
+          tests/Feature/AI/ElyAgentEngineTest.php
+          tests/Feature/AI/ElyEvalCasesTest.php
+          tests/Feature/AI/ElyServiceToolsTest.php
+          tests/Feature/AI/ElyPhaseZeroSafetyTest.php
+          tests/Feature/AI/CopilotTenantIsolationTest.php
+          tests/Feature/AI/CopilotRoleAccessTest.php
+          tests/Feature/Admin/ElyAgentAdminTest.php
+          tests/Unit/AI/Agent
+          tests/Unit/AI/Providers/ClaudeModelResolverTest.php
+
+      - name: Lint ELY eval cases
+        run: php artisan ely:eval --lint
+
       # - name: Run tests
       #   run: php artisan test --parallel --stop-on-failure 2>&1 || php artisan test --stop-on-failure
 

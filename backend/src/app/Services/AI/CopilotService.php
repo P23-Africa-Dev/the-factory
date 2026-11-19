@@ -8,6 +8,9 @@ use App\Enums\NotificationCategory;
 use App\Enums\TaskType;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\AI\Agent\ElyAgent;
+use App\Services\AI\Agent\ElyEngineSelector;
+use App\Services\AI\Agent\Tools\ToolContext;
 use App\Services\AI\Context\ConversationMemoryService;
 use App\Services\AI\Crm\CrmLeadReadArgsResolver;
 use App\Services\AI\Crm\EmailInferenceService;
@@ -73,6 +76,7 @@ class CopilotService
         ?string $idempotencyKey = null,
         ?string $clientTimezone = null,
         array $chatContext = [],
+        ?callable $onEvent = null,
     ): array {
         $companyContext = $this->companyContextService->resolve($user, $companyId);
         $resolvedCompanyId = (int) $companyContext['company']->id;
@@ -103,6 +107,27 @@ class CopilotService
                 ],
                 creditsConsumed: 0,
             );
+        }
+
+        // Tool-calling engine, when enabled for this company and the active AI
+        // stack supports tools. Everything below is the legacy engine.
+        if (app(ElyEngineSelector::class)->useAgent($resolvedCompanyId)) {
+            $page = is_array($chatContext['page'] ?? null) ? $chatContext['page'] : [];
+            $result = app(ElyAgent::class)->chat(
+                context: new ToolContext($user, $resolvedCompanyId, $role, $threadId, $page, $clientTimezone),
+                companyName: (string) ($companyContext['company']->name ?? ''),
+                message: $message,
+                threadId: $threadId,
+                actionArgs: $actionArgs,
+                actionConfirmed: $actionConfirmed,
+                onEvent: $onEvent,
+            );
+
+            if (! $this->demoCompanyService->hasComplimentaryAccess($resolvedCompanyId)) {
+                $this->registerCreditUsage($resolvedCompanyId, 1);
+            }
+
+            return $result;
         }
 
         $resolution = $this->intentResolver->resolve(
@@ -282,6 +307,31 @@ class CopilotService
                                     );
                                 }
                             } catch (ValidationException $e) {
+                                // Keep the turn in the thread so the conversation does not
+                                // lose the request or the reason it failed.
+                                if (is_string($threadId) && $threadId !== '') {
+                                    $firstError = collect($e->errors())->flatten()->first();
+                                    $this->persistAndRespond(
+                                        user: $user,
+                                        companyId: $resolvedCompanyId,
+                                        role: $role,
+                                        message: $message,
+                                        threadId: $threadId,
+                                        intent: $intent,
+                                        assistantText: 'I could not complete that action: '
+                                            .(is_string($firstError) ? $firstError : 'some details were invalid.')
+                                            .' Please fix the details and confirm again.',
+                                        tool: $candidateTool,
+                                        sources: [$candidateTool],
+                                        payload: [
+                                            'error' => true,
+                                            'tool' => $candidateTool,
+                                            'validation_errors' => $e->errors(),
+                                        ],
+                                        creditsConsumed: 0,
+                                    );
+                                }
+
                                 // Bubble validation issues so HTTP API returns 422 and
                                 // clients can render field-level validation errors.
                                 throw $e;
@@ -859,6 +909,11 @@ class CopilotService
                 message: $message,
                 companyId: $companyId,
                 entities: $entities,
+            ),
+            'kpis.update' => $this->kpiInferenceService->inferUpdate(
+                message: $message,
+                companyId: $companyId,
+                actionArgs: $actionArgs,
             ),
             default => $actionArgs,
         };
@@ -1936,7 +1991,7 @@ class CopilotService
             return array_merge($args, $this->crmLeadReadArgsResolver->resolveFilters($message));
         }
 
-        if ($tool === 'drive.files') {
+        if ($tool === 'drive.files' || $tool === 'crm.draft_email') {
             return array_merge($args, ['message' => $message]);
         }
 

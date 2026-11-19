@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import {
@@ -9,6 +10,7 @@ import {
     PROCESSING_LABEL_INTERVAL_MS,
 } from "@/lib/ely-processing-labels";
 import { resolveUserTimezone } from "@/lib/meeting-timezone";
+import { elyPageContextFromPath } from "@/lib/ely/page-context";
 import {
     CopilotAssigneeOption,
     CopilotChatContext,
@@ -32,6 +34,7 @@ import {
     sendCopilotMessageStream,
     summarizeMeetingTranscript,
     transcribeVoiceInput,
+    undoCopilotAction,
 } from "@/lib/api/copilot";
 import { useAuthStore } from "@/store/auth";
 
@@ -64,6 +67,13 @@ type SendMessageParams = {
     context?: CopilotChatContext;
 };
 
+function withPageContext(context: CopilotChatContext | undefined, pathname: string | null): CopilotChatContext | undefined {
+    const page = elyPageContextFromPath(pathname);
+    if (!page) return context;
+
+    return { ...(context ?? {}), page };
+}
+
 function createIdempotencyKey(): string {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return crypto.randomUUID();
@@ -74,6 +84,7 @@ function createIdempotencyKey(): string {
 
 export function useCopilotChat() {
     const user = useAuthStore((state) => state.user);
+    const pathname = usePathname();
     const [threadId, setThreadId] = useState<string | null>(null);
     const [messages, setMessages] = useState<CopilotMessage[]>([]);
     const [threadPagination, setThreadPagination] = useState<{
@@ -148,6 +159,31 @@ export function useCopilotChat() {
             await loadThread(selected, companyId);
         },
         [loadThread, persistedKey, token]
+    );
+
+    // Agent engine: reverse an action ELY ran, then show ELY's reply.
+    const undoAction = useCallback(
+        async (auditId: number, companyId?: string | number) => {
+            if (!token) return null;
+            const res = await undoCopilotAction(auditId, token, companyId);
+            const data = res.data;
+            if (data?.response) {
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: `local-undo-${Date.now()}`,
+                        role: "assistant",
+                        content: data.response.content,
+                        sources: data.response.sources ?? [],
+                        tool: data.response.tool ?? null,
+                        payload: data.response.payload ?? null,
+                        created_at: new Date().toISOString(),
+                    },
+                ]);
+            }
+            return data;
+        },
+        [token]
     );
 
     const clearCurrentThread = useCallback(
@@ -399,7 +435,7 @@ export function useCopilotChat() {
                         action_confirmed: actionConfirmed,
                         idempotency_key: idempotencyKey ?? createIdempotencyKey(),
                         client_timezone: resolveUserTimezone(),
-                        context,
+                        context: withPageContext(context, pathname),
                     },
                     token,
                     {
@@ -409,8 +445,13 @@ export function useCopilotChat() {
                                 localStorage.setItem(persistedKey, meta.thread_id);
                             }
                         },
-                        onProcessing: () => {
-                            // Client owns label pacing; ignore SSE bursts so status stays engaged.
+                        onProcessing: (event) => {
+                            // Client owns label pacing for generic labels. When the agent
+                            // engine reports the tool it is running, show that instead.
+                            if (event?.source === "tool" && event.label) {
+                                clearProcessingLabelTimer();
+                                setProcessingLabel(event.label);
+                            }
                         },
                         onDelta: (delta) => {
                             clearProcessingLabelTimer();
@@ -466,7 +507,7 @@ export function useCopilotChat() {
                 setProcessingLabel(null);
             }
         },
-        [clearProcessingLabelTimer, persistedKey, threadId, token]
+        [clearProcessingLabelTimer, pathname, persistedKey, threadId, token]
     );
 
     return {
@@ -491,5 +532,6 @@ export function useCopilotChat() {
         runTranscriptSummary,
         loadForecastOverview,
         searchAssignees,
+        undoAction,
     };
 }

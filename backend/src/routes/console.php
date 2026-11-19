@@ -43,6 +43,9 @@ Schedule::command('tracking:health --notify')->everyFiveMinutes()->withoutOverla
 // Dispatch due soon, overdue, and project deadline notification reminders.
 Schedule::command('notifications:dispatch-scheduled')->everyFifteenMinutes();
 
+// Run ELY automation rules with a daily or weekly schedule.
+Schedule::command('ely:run-scheduled-automations')->everyFiveMinutes()->withoutOverlapping();
+
 // Dispatch due meeting reminders every minute.
 Schedule::command('meetings:dispatch-reminders')->everyMinute();
 

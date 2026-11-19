@@ -385,6 +385,17 @@
             @endif
         </div>
 
+        {{-- ELY tool-calling engine --}}
+        <div class="metric-card p-4 mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+                <div class="fw-bold" style="font-size:1rem">ELY agent (tool calling)</div>
+                <div style="font-size:.8rem;color:var(--text-secondary)">
+                    Per-company rollout, tool catalogue, and the audit log of every action ELY ran.
+                </div>
+            </div>
+            <a href="{{ route('admin.ai.ely') }}" class="btn btn-outline-primary btn-sm px-4">Open ELY agent</a>
+        </div>
+
         {{-- Real-time status widget --}}
         <div class="metric-card p-4 mb-4 ai-status-panel d-flex align-items-center justify-content-between flex-wrap">
             <div class="d-flex align-items-center gap-3">

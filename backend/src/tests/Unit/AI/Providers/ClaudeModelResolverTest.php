@@ -14,10 +14,13 @@ final class ClaudeModelResolverTest extends TestCase
     {
         config([
             'services.ai.claude.api_key' => 'test-key',
+            'services.ai.claude.base_url' => 'https://api.anthropic.com/v1',
             'services.ai.claude.model' => 'auto',
             'services.ai.analyst_model' => 'auto',
         ]);
 
+        // No Opus in the list, so the analyst preference (opus, sonnet, haiku)
+        // falls through to Sonnet; Fable models are never picked automatically.
         Http::fake([
             'api.anthropic.com/v1/models' => Http::response([
                 'data' => [
