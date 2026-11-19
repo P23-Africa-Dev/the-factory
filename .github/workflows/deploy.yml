@@ -146,7 +146,7 @@ jobs:
     needs: [test, realtime-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      image_tag: ${{ steps.sha.outputs.SHA_TAG }}
       image_digest: ${{ steps.build.outputs.digest }}
 
     steps:
@@ -168,6 +168,13 @@ jobs:
             exit 1
           fi
           doctl registry login --expiry-seconds 1800
+
+      # Same 7-char tag the deploy job pins in docker-compose.yml. Do NOT use
+      # steps.meta.outputs.version: it resolves to "latest" (raw tag has higher
+      # priority than the sha tag), which left realtime:<sha> unpublished.
+      - name: Compute short SHA tag
+        id: sha
+        run: echo "SHA_TAG=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
 
       - name: Extract metadata (tags, labels)
         id: meta
@@ -207,7 +214,7 @@ jobs:
           file: backend/realtime-server/Dockerfile
           push: true
           tags: |
-            ${{ env.REALTIME_IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+            ${{ env.REALTIME_IMAGE_NAME }}:${{ steps.sha.outputs.SHA_TAG }}
             ${{ env.REALTIME_IMAGE_NAME }}:latest
           cache-from: type=gha,scope=factory23-realtime
           cache-to: type=gha,mode=max,scope=factory23-realtime
