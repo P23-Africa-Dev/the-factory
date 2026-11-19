@@ -22,7 +22,13 @@ export const config = {
   heartbeatIntervalMs: parseInteger(process.env.TRACKING_WS_HEARTBEAT_MS, 30000),
   authTimeoutMs: parseInteger(process.env.TRACKING_WS_AUTH_TIMEOUT_MS, 10000),
   authApiBaseUrl: (process.env.TRACKING_WS_AUTH_API_BASE_URL || "http://nginx").replace(/\/$/, ""),
-  authMePath: process.env.TRACKING_WS_AUTH_ME_PATH || "/api/v1/user/me",
+  // Endpoint that returns the socket's company, role and visibility scope.
+  // (TRACKING_WS_AUTH_ME_PATH is no longer used: /user/me cannot scope supervisors.)
+  authorizePath: process.env.TRACKING_WS_AUTHORIZE_PATH || "/api/v1/tracking/socket-authorization",
+  authRequestTimeoutMs: parseInteger(process.env.TRACKING_WS_AUTH_REQUEST_TIMEOUT_MS, 8000),
+  // How often supervisor / agent scopes are re-checked so reassignments and
+  // revoked tokens take effect without a reconnect.
+  scopeRefreshMs: parseInteger(process.env.TRACKING_WS_SCOPE_REFRESH_MS, 300000),
   logLevel: process.env.TRACKING_WS_LOG_LEVEL || "info",
   allowInsecureSkipAuth: parseBoolean(process.env.TRACKING_WS_ALLOW_INSECURE_SKIP_AUTH, false),
   redisUrl: process.env.TRACKING_WS_REDIS_URL || "",

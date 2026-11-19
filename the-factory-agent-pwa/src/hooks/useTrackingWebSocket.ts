@@ -47,13 +47,9 @@ export const useTrackingWebSocket = (): void => {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const disconnectedAtRef = useRef<number | null>(null);
-
-  const subscribeActiveTask = useCallback((ws: WebSocket) => {
-    const activeTaskId = useTrackingStore.getState().activeTrackingTaskId;
-    if (activeTaskId != null) {
-      ws.send(JSON.stringify({ type: 'subscribe_task', task_id: activeTaskId }));
-    }
-  }, []);
+  // Set when the relay says retrying cannot help (bad token / not a member
+  // of the company). Prevents an endless reconnect loop.
+  const authRejectedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -97,6 +93,25 @@ export const useTrackingWebSocket = (): void => {
       const data = (envelope.data ?? {}) as Record<string, unknown>;
 
       switch (type) {
+        case 'system.connected':
+          setWsStatus('connected');
+          backoffRef.current = INITIAL_BACKOFF_MS;
+          disconnectedAtRef.current = null;
+          authRejectedRef.current = false;
+          stopPolling();
+          break;
+
+        case 'system.error': {
+          const code = message.code as string | undefined;
+          if ((code === 'AUTH_FAILED' || code === 'AUTH_REVOKED') && message.retryable === false) {
+            authRejectedRef.current = true;
+          }
+          if (code === 'TASK_FORBIDDEN') {
+            console.warn('[tracking-ws] relay refused task subscription', message.task_id);
+          }
+          break;
+        }
+
         case 'tracking.task.started':
           if (taskId == null) break;
           upsertTask(taskId, {
@@ -191,11 +206,11 @@ export const useTrackingWebSocket = (): void => {
         }
 
         case 'system.auth_required':
-          wsRef.current?.close();
+          // Expected right after connect; we authenticate in onopen.
           break;
       }
     },
-    [upsertTask, appendPolylinePoint, markArrived, markCompleted, removeTask, setUnreadCount, setPendingNotification]
+    [upsertTask, appendPolylinePoint, markArrived, markCompleted, removeTask, setUnreadCount, setPendingNotification, setWsStatus, stopPolling]
   );
 
   const connect = useCallback(function connectFn() {
@@ -207,18 +222,24 @@ export const useTrackingWebSocket = (): void => {
     setWsStatus('connecting');
 
     const wsBaseUrl = env.TRACKING_WS_URL as string;
-    const wsUrl = `${wsBaseUrl}?token=${encodeURIComponent(token)}&company_id=${encodeURIComponent(String(companyId))}`;
+    // The bearer token is NOT put in the URL (it would land in proxy access
+    // logs); it is sent in the `authenticate` message once the socket opens.
+    const wsUrl = `${wsBaseUrl}?company_id=${encodeURIComponent(String(companyId))}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setWsStatus('connected');
-      backoffRef.current = INITIAL_BACKOFF_MS;
-      disconnectedAtRef.current = null;
-      stopPolling();
-      ws.send(JSON.stringify({ type: 'ping' }));
-      subscribeActiveTask(ws);
+      const activeTaskId = useTrackingStore.getState().activeTrackingTaskId;
+      ws.send(
+        JSON.stringify({
+          type: 'authenticate',
+          token,
+          company_id: companyId,
+          task_ids: activeTaskId != null ? [activeTaskId] : [],
+        }),
+      );
+      // Status becomes 'connected' on the relay's `system.connected` reply.
     };
 
     ws.onmessage = (event) => {
@@ -239,7 +260,17 @@ export const useTrackingWebSocket = (): void => {
       );
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (wsRef.current !== ws) return;
+
+      if (event.code === 4403 || authRejectedRef.current) {
+        // Permanent auth failure: fall back to REST polling, do not hammer the relay.
+        setWsStatus('error');
+        startPolling();
+        console.warn('[tracking-ws] relay rejected authentication permanently; using polling fallback.');
+        return;
+      }
+
       setWsStatus('reconnecting');
       disconnectedAtRef.current = disconnectedAtRef.current ?? Date.now();
 
@@ -253,7 +284,7 @@ export const useTrackingWebSocket = (): void => {
         connectRef.current?.();
       }, backoffRef.current);
     };
-  }, [setWsStatus, handleEvent, startPolling, stopPolling, subscribeActiveTask]);
+  }, [setWsStatus, handleEvent, startPolling]);
 
   useEffect(() => {
     connectRef.current = connect;

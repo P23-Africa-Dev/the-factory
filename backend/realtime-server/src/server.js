@@ -4,7 +4,7 @@ import http from "node:http";
 import Redis from "ioredis";
 import { WebSocket, WebSocketServer } from "ws";
 
-import { authenticateSocket } from "./auth.js";
+import { authenticateSocket, SocketAuthError } from "./auth.js";
 import { config } from "./config.js";
 import { shouldDeliverEvent } from "./filtering.js";
 import { createHealthResponse } from "./health.js";
@@ -134,13 +134,32 @@ const start = async () => {
 
     try {
       const identity = await authenticateSocket(credentials);
+      if (!connections.has(socket)) {
+        return;
+      }
       state.authenticated = true;
+      state.token = credentials.token;
+      state.companyHint = String(identity.companyId);
       state.userId = identity.userId;
       state.userName = identity.name;
       state.companyId = identity.companyId;
       state.companyRole = identity.companyRole;
       state.accessRole = identity.accessRole;
-      state.subscribedTaskIds = new Set((credentials.taskIds || []).map(Number));
+      state.scope = identity.scope;
+      state.visibleUserIds = identity.visibleUserIds;
+      // Only tasks the API confirmed this user may follow.
+      state.subscribedTaskIds = new Set(identity.allowedTaskIds);
+      state.lastScopeRefreshAt = Date.now();
+
+      const rejectedTaskIds = (credentials.taskIds || []).filter((id) => !state.subscribedTaskIds.has(Number(id)));
+      if (rejectedTaskIds.length) {
+        log("warn", "Dropped unauthorized task subscriptions.", {
+          connectionId: state.connectionId,
+          userId: state.userId,
+          companyId: state.companyId,
+          taskIds: rejectedTaskIds,
+        });
+      }
 
       clearAuthTimer(socket);
 
@@ -151,6 +170,7 @@ const start = async () => {
         access_role: state.accessRole,
         company_id: state.companyId,
         company_role: state.companyRole,
+        scope: state.scope,
         subscribed_task_ids: [...state.subscribedTaskIds],
       });
 
@@ -159,20 +179,30 @@ const start = async () => {
         userId: state.userId,
         companyId: state.companyId,
         accessRole: state.accessRole,
+        scope: state.scope,
+        visibleUserCount: state.visibleUserIds ? state.visibleUserIds.size : "all",
       });
     } catch (error) {
+      const permanent = error instanceof SocketAuthError ? error.permanent : false;
+
       safeSend(socket, {
         type: "system.error",
         code: "AUTH_FAILED",
+        // Clients should stop reconnecting when retryable is false.
+        retryable: !permanent,
         message: error instanceof Error ? error.message : "Authentication failed.",
       });
 
       log("warn", "Socket authentication failed.", {
         connectionId: state.connectionId,
+        companyHint: credentials.companyHint ?? null,
+        status: error instanceof SocketAuthError ? error.status : null,
+        permanent,
         error: error instanceof Error ? error.message : "Unknown error",
       });
 
-      socket.close(4401, "Authentication failed");
+      // 4403 = permanent (do not retry), 4401 = transient.
+      socket.close(permanent ? 4403 : 4401, "Authentication failed");
     }
   };
 
@@ -189,6 +219,11 @@ const start = async () => {
       companyId: null,
       companyRole: null,
       accessRole: null,
+      scope: null,
+      visibleUserIds: null,
+      token: null,
+      companyHint: null,
+      lastScopeRefreshAt: 0,
       subscribedTaskIds: new Set(),
       authTimer: setTimeout(() => {
         const state = connections.get(socket);
@@ -206,6 +241,8 @@ const start = async () => {
     log("info", "Socket connected.", { connectionId });
 
     if (initialQuery.token) {
+      // Deprecated: tokens in URLs end up in proxy access logs.
+      log("warn", "Socket used deprecated query-string token.", { connectionId });
       authenticateAndAttach(socket, initialQuery).catch(() => { });
     } else {
       safeSend(socket, {
@@ -281,12 +318,51 @@ const start = async () => {
           return;
         }
 
-        state.subscribedTaskIds.add(taskId);
-        safeSend(socket, {
-          type: "system.subscribed_task",
-          task_id: taskId,
-          subscribed_task_ids: [...state.subscribedTaskIds],
-        });
+        if (state.subscribedTaskIds.has(taskId) || state.scope === "company") {
+          state.subscribedTaskIds.add(taskId);
+          safeSend(socket, {
+            type: "system.subscribed_task",
+            task_id: taskId,
+            subscribed_task_ids: [...state.subscribedTaskIds],
+          });
+          return;
+        }
+
+        authenticateSocket({ token: state.token, companyHint: state.companyHint, taskIds: [taskId] })
+          .then((identity) => {
+            if (!connections.has(socket)) {
+              return;
+            }
+            if (!identity.allowedTaskIds.has(taskId)) {
+              log("warn", "Rejected unauthorized task subscription.", {
+                connectionId: state.connectionId,
+                userId: state.userId,
+                companyId: state.companyId,
+                taskId,
+              });
+              safeSend(socket, {
+                type: "system.error",
+                code: "TASK_FORBIDDEN",
+                task_id: taskId,
+                message: "You are not allowed to follow this task.",
+              });
+              return;
+            }
+            state.subscribedTaskIds.add(taskId);
+            safeSend(socket, {
+              type: "system.subscribed_task",
+              task_id: taskId,
+              subscribed_task_ids: [...state.subscribedTaskIds],
+            });
+          })
+          .catch((error) => {
+            safeSend(socket, {
+              type: "system.error",
+              code: "TASK_SUBSCRIBE_FAILED",
+              task_id: taskId,
+              message: error instanceof Error ? error.message : "Could not verify task access.",
+            });
+          });
         return;
       }
 
@@ -383,8 +459,56 @@ const start = async () => {
     }
   }, config.heartbeatIntervalMs);
 
+  // Re-check non-company scopes so supervisor reassignments, removed
+  // memberships and revoked tokens take effect without a reconnect.
+  const refreshScopes = async () => {
+    const now = Date.now();
+    for (const [socket, state] of connections.entries()) {
+      if (!state.authenticated || state.scope === "company" || !state.token) {
+        continue;
+      }
+      if (now - state.lastScopeRefreshAt < config.scopeRefreshMs) {
+        continue;
+      }
+      state.lastScopeRefreshAt = now;
+
+      try {
+        const identity = await authenticateSocket({
+          token: state.token,
+          companyHint: state.companyHint,
+          taskIds: [...state.subscribedTaskIds],
+        });
+        state.scope = identity.scope;
+        state.accessRole = identity.accessRole;
+        state.visibleUserIds = identity.visibleUserIds;
+        state.subscribedTaskIds = new Set(identity.allowedTaskIds);
+      } catch (error) {
+        if (error instanceof SocketAuthError && error.permanent) {
+          log("warn", "Closing socket after failed scope refresh.", {
+            connectionId: state.connectionId,
+            userId: state.userId,
+            status: error.status,
+          });
+          safeSend(socket, {
+            type: "system.error",
+            code: "AUTH_REVOKED",
+            retryable: false,
+            message: error.message,
+          });
+          socket.close(4403, "Authorization revoked");
+        }
+        // Transient errors: keep the last known scope and try again next tick.
+      }
+    }
+  };
+
+  const scopeRefresher = setInterval(() => {
+    refreshScopes().catch(() => { });
+  }, Math.max(15000, Math.min(config.scopeRefreshMs, 60000)));
+
   wss.on("close", () => {
     clearInterval(heartbeat);
+    clearInterval(scopeRefresher);
   });
 
   server.listen(config.port, config.host, () => {
@@ -393,7 +517,7 @@ const start = async () => {
       port: config.port,
       redisChannelPrefix: config.redisChannelPrefix,
       authApiBaseUrl: config.authApiBaseUrl,
-      authMePath: config.authMePath,
+      authorizePath: config.authorizePath,
     });
   });
 };

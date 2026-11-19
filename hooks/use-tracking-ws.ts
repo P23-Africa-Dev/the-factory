@@ -295,7 +295,15 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         return;
       }
 
-      if (msg.type === "system.error" || msg.type === "system.auth_required" || msg.type === "pong") {
+      if (msg.type === "system.error") {
+        const err = msg as unknown as { code?: string; message?: string; task_id?: number };
+        if (err.code === "TASK_FORBIDDEN" || err.code?.startsWith("AUTH_")) {
+          console.warn(LOG, "Relay error", { code: err.code, message: err.message, taskId: err.task_id });
+        }
+        return;
+      }
+
+      if (msg.type === "system.auth_required" || msg.type === "pong") {
         return;
       }
 
@@ -419,14 +427,24 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         void runRecoveryCycle();
       }
 
+      // 4403 = the relay/API rejected this token or company for good (e.g. not
+      // a member). Reconnecting cannot help; stay on REST polling instead of
+      // looping. A page reload / company switch re-runs the effect.
+      if (event.code === 4403) {
+        store.setWsStatus("error");
+        startPolling();
+        console.warn(LOG, "Relay rejected authentication permanently; using polling fallback.", {
+          reason: event.reason,
+        });
+        return;
+      }
+
       const delay = BACKOFF_STEPS[Math.min(backoffRef.current, BACKOFF_STEPS.length - 1)];
       backoffRef.current++;
 
       retryTimerRef.current = setTimeout(() => {
         if (mountedRef.current) connectRef.current();
       }, delay);
-
-      void event;
     };
   }, [
     token,

@@ -120,6 +120,9 @@ class TaskTrackingRegressionTest extends TestCase
 
     public function test_accuracy_zero_still_allows_near_and_arrival(): void
     {
+        // Timeline is in the recent past: future timestamps beyond
+        // tracking.max_recorded_at_future_skew_seconds are clamped to now(),
+        // and multi-km jumps in seconds trip the implausible-movement filter.
         [$company, $admin, $agent] = $this->seedCompanyUsers('FAC-TRACK-ACC0');
 
         $task = $this->createAssignedTask($company->id, $admin->id, $agent->id, [
@@ -137,6 +140,7 @@ class TaskTrackingRegressionTest extends TestCase
                 'latitude' => 6.4000,
                 'longitude' => 3.3900,
                 'accuracy_meters' => 0,
+                'recorded_at' => now()->subMinutes(10)->toISOString(),
             ])
             ->assertOk();
 
@@ -148,13 +152,13 @@ class TaskTrackingRegressionTest extends TestCase
                         'latitude' => 6.4100,
                         'longitude' => 3.4000,
                         'accuracy_meters' => 0,
-                        'recorded_at' => now()->addMinute()->toISOString(),
+                        'recorded_at' => now()->subMinutes(6)->toISOString(),
                     ],
                     [
                         'latitude' => 6.4301,
                         'longitude' => 3.4201,
                         'accuracy_meters' => 0,
-                        'recorded_at' => now()->addMinutes(2)->toISOString(),
+                        'recorded_at' => now()->subMinutes(3)->toISOString(),
                     ],
                 ],
             ]);
@@ -171,7 +175,7 @@ class TaskTrackingRegressionTest extends TestCase
                         'latitude' => 6.4302,
                         'longitude' => 3.4202,
                         'accuracy_meters' => 0,
-                        'recorded_at' => now()->addMinutes(3)->toISOString(),
+                        'recorded_at' => now()->subMinute()->toISOString(),
                     ],
                 ],
             ]);

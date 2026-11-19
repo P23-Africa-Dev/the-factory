@@ -14,13 +14,13 @@ This service relays Laravel tracking events from Redis to WebSocket clients.
 
 ## Client Protocol
 
-1. Connect:
+1. Connect (no token in the URL; tokens in URLs end up in proxy logs):
 
 ```text
-ws://localhost:8081?token=<SANCTUM_TOKEN>&company_id=<COMPANY_ID>&task_ids=123,124
+wss://api.thefactory23.com/tracking-ws?company_id=<COMPANY_ID>
 ```
 
-2. Or connect without query token and authenticate after socket open:
+2. Authenticate after the socket opens:
 
 ```json
 {
@@ -30,6 +30,16 @@ ws://localhost:8081?token=<SANCTUM_TOKEN>&company_id=<COMPANY_ID>&task_ids=123,1
   "task_ids": [123, 124]
 }
 ```
+
+`?token=` on the URL still works for old clients but is deprecated and logged.
+
+Visibility (checked against the API on auth, on `subscribe_task`, and every `TRACKING_WS_SCOPE_REFRESH_MS`):
+
+- owner/admin: all events in the company
+- supervisor: events about agents whose `supervisor_user_id` is them
+- agent: own events, plus tasks they are assigned to / observe / created
+
+On `AUTH_FAILED` with `retryable: false` (close code `4403`) clients must stop reconnecting.
 
 3. Optional controls:
 
@@ -73,7 +83,9 @@ ws://localhost:8081?token=<SANCTUM_TOKEN>&company_id=<COMPANY_ID>&task_ids=123,1
 - `TRACKING_WS_REDIS_PASSWORD` optional
 - `TRACKING_WS_REDIS_DB` default `0`
 - `TRACKING_WS_AUTH_API_BASE_URL` default `http://nginx`
-- `TRACKING_WS_AUTH_ME_PATH` default `/api/v1/user/me`
+- `TRACKING_WS_AUTHORIZE_PATH` default `/api/v1/tracking/socket-authorization` (returns company, scope, visible agents, allowed tasks)
+- `TRACKING_WS_AUTH_REQUEST_TIMEOUT_MS` default `8000`
+- `TRACKING_WS_SCOPE_REFRESH_MS` default `300000` (re-checks supervisor/agent scope)
 - `TASK_TRACKING_REDIS_CHANNEL_PREFIX` default `factory23.tracking`
 - `TRACKING_WS_HEARTBEAT_MS` default `30000`
 - `TRACKING_WS_AUTH_TIMEOUT_MS` default `10000`

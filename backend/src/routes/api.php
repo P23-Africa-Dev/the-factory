@@ -86,6 +86,7 @@ use App\Http\Controllers\Api\V1\Territory\TerritoryController;
 use App\Http\Controllers\Api\V1\Tracking\AgentLocationController;
 use App\Http\Controllers\Api\V1\Tracking\AgentPresenceController;
 use App\Http\Controllers\Api\V1\Tracking\TrackingHealthController;
+use App\Http\Controllers\Api\V1\Tracking\TrackingSocketAuthorizationController;
 use App\Http\Controllers\Api\V1\User\MeController;
 use App\Http\Controllers\Api\V1\User\ProfileController;
 use App\Http\Controllers\Api\V1\Workforce\WorkforceSummaryController;
@@ -220,6 +221,10 @@ Route::prefix('internal')->name('internal.')->group(function (): void {
 Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscription.active'])->group(function (): void {
     Route::get('/mobile/session', MobileSessionController::class)
         ->name('mobile.session');
+
+    // Used by the realtime tracking relay to scope what a socket may receive.
+    Route::get('/tracking/socket-authorization', TrackingSocketAuthorizationController::class)
+        ->name('tracking.socket-authorization');
 
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])
         ->name('support-access.status');
