@@ -3,29 +3,46 @@
 Checked on the prod droplet `144.126.227.55` (`/opt/factory`), backend image `29e59a4` (= `main` HEAD).
 All checks were read-only. The only write was one Redis PUBLISH to `factory23.tracking.company.0`, a company ID with no viewers.
 
-## Implementation status (2026-11-19, deployed to prod as `f106021`)
+## Implementation status (2026-11-19)
+
+P0 fixes are live as `f106021`. Items marked *pending deploy* are in the working tree (not yet committed) and go live on the next push to `main`.
 
 | Item | Status | Where |
 |---|---|---|
 | P0-1 Supervisor scoping on live stream | ✅ Done | New `GET /api/v1/tracking/socket-authorization` (`TrackingSocketAuthorizationService`) returns scope + visible agent IDs; relay `filtering.js` enforces `company` / `supervisor` / `self`; re-checked every 5 min |
 | P0-2 Task subscription ownership | ✅ Done | Relay only keeps task IDs the API returns in `allowed_task_ids` (assignee / observer / creator; supervisor: their agents' tasks); `TASK_FORBIDDEN` otherwise |
 | P0-3 Company mismatch auth loop | ✅ Done | API validates *membership* in the requested company (internal or public ID) instead of exact match with the default company; failures log `companyHint`/status; permanent failures close with `4403` + `retryable:false`, and both clients stop reconnecting and fall back to REST polling |
-| P0-4 Live end-to-end test on prod | ⏳ Needs test accounts + go-ahead | — |
+| P0-4 Live end-to-end test on prod | ✅ Done, 27/27 checks | Temporary company + owner/supervisor/2 agents; full journey over public `wss://`; results below; all test data deleted afterwards |
 | P1-5 Token in WS URL (agent PWA) | ✅ Done | PWA sends `authenticate` message after open; relay logs any remaining `?token=` use as deprecated |
-| P1-6 Slim relay env | 🟡 Template ready | `backend/realtime-server/realtime.env.example`; switching `env_file` on the droplet is a manual prod change |
+| P1-6 Slim relay env | ✅ Done on prod | Relay now uses `/opt/factory/env/factory23-realtime.env` (14 tracking-only keys, mode 600); compose backup `docker-compose.yml.bak-realtime-env-*`; re-verified live |
 | P1-7 Relay in CI deploy | ✅ Done | `deploy.yml` builds `factory-reg/realtime:<sha>` and recreates it after the API, with a `/healthz` gate |
 | P1-8 Tests in CI | ✅ Done (tracking subset) | `deploy.yml` runs tracking feature tests + relay `npm test` before build |
-| P1-9 Monitoring | 🟡 Partial | Richer relay logs only; alerting not set up |
+| P1-9 Monitoring | ✅ Built, *pending deploy* | Relay `/healthz` reports 15-min auth success/failure counts. `tracking:health` checks the relay (reachable, Redis ready, auth-failure spike) and runs every 5 min with `--notify`, which logs `[tracking-alert]` errors and emails `TRACKING_ALERT_EMAILS` (1/hour per alert). `TRACKING_REALTIME_HEALTH_URL` added to prod env. **Alert email recipients not set yet.** |
+| Extra: supervisor route history | ✅ Fixed, *pending deploy* | `GET /tasks/{id}/route` let supervisors read the location trail of any agent's task; now limited to their agents' tasks / tasks they created (same rule as live map) |
 
 Also fixed: `TaskTrackingRegressionTest::test_accuracy_zero_still_allows_near_and_arrival` used timestamps 2–3 min in the future (clamped by the 120 s skew guard) and 3 km jumps in 30 s (anti-teleport filter). Test-only bug; the service logic was correct.
 
-Tests: 33 backend tracking tests pass, 16 relay tests pass. The relay ↔ Redis ↔ API loop was not run locally (no Redis here); verify after deploy.
+Tests: 39 backend tracking tests and 18 relay tests pass locally.
 
 ### Verified on prod after deploy (`f106021`, 10:46 UTC)
 - Relay `realtime:f106021` running, Redis ready, sockets re-authenticated through the new endpoint within seconds.
 - Scopes observed: owners/admins `company` (all), supervisor 141 (company 84) sees 1 agent, supervisors 213/214 (company 98) see 0. Company 98 has no agents, so that is correct.
 - Zero relay auth warnings since deploy. Before, there were about 230 a day.
-- Deploy runs 1–2 failed *after* deploying: (1) the relay image was tagged `latest` instead of the SHA (fixed: explicit short-SHA step); (2) the health gate used `grep && break`, which aborts under `script_stop` (fixed: if-block). Fix (2) is not yet pushed.
+- Deploy runs 1–2 failed *after* deploying: (1) the relay image was tagged `latest` instead of the SHA (fixed: explicit short-SHA step); (2) the health gate used `grep && break`, which aborts under `script_stop` (fixed: if-block). Both fixes pushed.
+
+### Live end-to-end test on prod (11:53 UTC, 27/27 passed)
+Fixture: temporary company `FAC-E2E-TRACK-20261119115326` (id 100) with an owner, a supervisor, agent A (supervised), agent B (not supervised), and one task each. Drove the real API and watched four live sockets on `wss://api.thefactory23.com/tracking-ws`.
+
+- Auth: owner `scope=company`, supervisor `scope=supervisor`, agents `scope=self`. A non-member company was rejected permanently (`4403`, "not attached to the selected company").
+- Agent B's attempt to follow agent A's task was dropped at connect, and `subscribe_task` was refused with `TASK_FORBIDDEN`.
+- Agent A journey: start → 2 movement pings → **near** at ~155 m → **arrival** at ~8 m → **complete**; task ended `completed`.
+- Live delivery:
+  - owner received all of A's events (started, location, near, arrived, completed) and B's
+  - supervisor received A's 16 events and **0** of B's
+  - each agent received only their own events
+- REST matches: owner sees both agents; supervisor sees only A; agent B cannot read A's location.
+- After switching the relay to its slim env: owner still receives B's live events, and the supervisor still does not.
+- Cleanup: 41 rows deleted (company, 4 users, 4 tokens, 2 tasks, 2 sessions, 9 points, 2 snapshots, 13 in-app notifications, 4 memberships). The re-scan found no leftovers. No emails or pushes were sent (tracking notifications are in-app/push only, and the test users had no devices).
 
 ### Deploy order / compatibility
 - Backend must be live before the new relay (the relay calls the new endpoint). `deploy.yml` already does API → migrate → relay.

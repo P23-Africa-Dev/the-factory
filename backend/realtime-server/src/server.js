@@ -7,7 +7,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { authenticateSocket, SocketAuthError } from "./auth.js";
 import { config } from "./config.js";
 import { shouldDeliverEvent } from "./filtering.js";
-import { createHealthResponse } from "./health.js";
+import { createHealthResponse, createRollingCounter } from "./health.js";
 
 const LOG_LEVEL_WEIGHT = {
   debug: 10,
@@ -91,12 +91,22 @@ const start = async () => {
   log("info", "Subscribed to Redis tracking channels.", { channelPattern });
 
   const connections = new Map();
+  // Exposed on /healthz (last 15 min) for the API-side tracking:health alert.
+  const authSuccesses = createRollingCounter();
+  const authFailures = createRollingCounter();
+  const authPermanentFailures = createRollingCounter();
   const server = http.createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
       const health = createHealthResponse({
         redisStatus: redisSubscriber.status,
         connectionCount: connections.size,
         uptimeSeconds: Math.round(process.uptime()),
+        auth: {
+          window_seconds: 900,
+          successes: authSuccesses.total(),
+          failures: authFailures.total(),
+          permanent_failures: authPermanentFailures.total(),
+        },
       });
 
       response.writeHead(health.statusCode, health.headers);
@@ -150,6 +160,7 @@ const start = async () => {
       // Only tasks the API confirmed this user may follow.
       state.subscribedTaskIds = new Set(identity.allowedTaskIds);
       state.lastScopeRefreshAt = Date.now();
+      authSuccesses.increment();
 
       const rejectedTaskIds = (credentials.taskIds || []).filter((id) => !state.subscribedTaskIds.has(Number(id)));
       if (rejectedTaskIds.length) {
@@ -184,6 +195,10 @@ const start = async () => {
       });
     } catch (error) {
       const permanent = error instanceof SocketAuthError ? error.permanent : false;
+      authFailures.increment();
+      if (permanent) {
+        authPermanentFailures.increment();
+      }
 
       safeSend(socket, {
         type: "system.error",

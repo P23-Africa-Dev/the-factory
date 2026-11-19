@@ -110,6 +110,32 @@ class TrackingSocketAuthorizationTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_supervisor_route_history_is_limited_to_their_agents(): void
+    {
+        $f = $this->seedFixture();
+        $q = '?company_id=' . $f['company']->id;
+        // Fixture tasks have no tracking session yet, so allowed calls return
+        // "no tracking data" (422 on `tracking`); denied calls fail on `authorization`.
+
+        $this->actingAs($f['supervisor'], 'sanctum')
+            ->getJson('/api/v1/tasks/' . $f['taskA']->id . '/route' . $q)
+            ->assertJsonMissingValidationErrors('authorization');
+
+        $this->actingAs($f['supervisor'], 'sanctum')
+            ->getJson('/api/v1/tasks/' . $f['taskB']->id . '/route' . $q)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('authorization');
+
+        $this->actingAs($f['admin'], 'sanctum')
+            ->getJson('/api/v1/tasks/' . $f['taskB']->id . '/route' . $q)
+            ->assertJsonMissingValidationErrors('authorization');
+
+        $this->actingAs($f['agentA'], 'sanctum')
+            ->getJson('/api/v1/tasks/' . $f['taskB']->id . '/route' . $q)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('authorization');
+    }
+
     public function test_unauthenticated_request_is_rejected(): void
     {
         $this->getJson(self::URL)->assertUnauthorized();

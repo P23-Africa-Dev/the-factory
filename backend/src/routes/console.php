@@ -36,6 +36,10 @@ Schedule::command('tracking:prune')->dailyAt('02:00');
 // Auto-close abandoned open tracking sessions so presence/map stay accurate.
 Schedule::command('tracking:sweep-abandoned')->everyFifteenMinutes();
 
+// Monitor the tracking pipeline (relay up, Redis ready, socket auth failures,
+// abandoned sessions). Logs [tracking-alert] errors; emails TRACKING_ALERT_EMAILS if set.
+Schedule::command('tracking:health --notify')->everyFiveMinutes()->withoutOverlapping();
+
 // Dispatch due soon, overdue, and project deadline notification reminders.
 Schedule::command('notifications:dispatch-scheduled')->everyFifteenMinutes();
 
