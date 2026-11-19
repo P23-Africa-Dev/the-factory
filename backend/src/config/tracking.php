@@ -46,6 +46,8 @@ return [
     'health_relay_auth_failures_alert_threshold' => (int) env('TRACKING_HEALTH_RELAY_AUTH_FAILURES_ALERT_THRESHOLD', 50),
     // Optional: comma-separated emails that receive tracking alerts (tracking:health --notify).
     'alert_emails' => array_values(array_filter(array_map('trim', explode(',', (string) env('TRACKING_ALERT_EMAILS', ''))))),
+    // Mailer used for alert emails (e.g. "smtp"); null = the app's default mailer.
+    'alert_mailer' => env('TRACKING_ALERT_MAILER'),
     // Minimum minutes between repeat alert emails for the same alert.
     'alert_cooldown_minutes' => (int) env('TRACKING_ALERT_COOLDOWN_MINUTES', 60),
 

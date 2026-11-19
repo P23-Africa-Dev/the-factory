@@ -90,14 +90,21 @@ class TrackingHealthCommand extends Command
             }
 
             try {
-                Mail::raw(
-                    $alert['message'] . "\n\nRun `php artisan tracking:health` on the API container for details.\n"
-                        . 'Environment: ' . app()->environment() . ' (' . config('app.url') . ')',
-                    function ($message) use ($recipients, $alert): void {
-                        $message->to($recipients)->subject('[Factory23] Tracking alert: ' . $alert['key']);
-                    },
-                );
+                $body = $alert['message'] . "\n\nRun `php artisan tracking:health` on the API container for details.\n"
+                    . 'Environment: ' . app()->environment() . ' (' . config('app.url') . ')';
+                $callback = function ($message) use ($recipients, $alert): void {
+                    $message->to($recipients)->subject('[Factory23] Tracking alert: ' . $alert['key']);
+                };
+
+                $mailer = config('tracking.alert_mailer');
+                if (is_string($mailer) && $mailer !== '') {
+                    Mail::mailer($mailer)->raw($body, $callback);
+                } else {
+                    Mail::raw($body, $callback);
+                }
             } catch (Throwable $e) {
+                // Let the next run retry instead of waiting out the cooldown.
+                Cache::forget('tracking-alert:' . $alert['key']);
                 Log::error('[tracking-alert] failed to email alert', ['alert' => $alert['key'], 'exception' => $e->getMessage()]);
             }
         }

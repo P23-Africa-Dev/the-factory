@@ -17,12 +17,12 @@ P0 fixes are live as `f106021`. Items marked *pending deploy* are in the working
 | P1-6 Slim relay env | ✅ Done on prod | Relay now uses `/opt/factory/env/factory23-realtime.env` (14 tracking-only keys, mode 600); compose backup `docker-compose.yml.bak-realtime-env-*`; re-verified live |
 | P1-7 Relay in CI deploy | ✅ Done | `deploy.yml` builds `factory-reg/realtime:<sha>` and recreates it after the API, with a `/healthz` gate |
 | P1-8 Tests in CI | ✅ Done (tracking subset) | `deploy.yml` runs tracking feature tests + relay `npm test` before build |
-| P1-9 Monitoring | ✅ Built, *pending deploy* | Relay `/healthz` reports 15-min auth success/failure counts. `tracking:health` checks the relay (reachable, Redis ready, auth-failure spike) and runs every 5 min with `--notify`, which logs `[tracking-alert]` errors and emails `TRACKING_ALERT_EMAILS` (1/hour per alert). `TRACKING_REALTIME_HEALTH_URL` added to prod env. **Alert email recipients not set yet.** |
+| P1-9 Monitoring | ✅ Built, *pending deploy* | Relay `/healthz` reports 15-min auth success/failure counts. `tracking:health` checks the relay (reachable, Redis ready, auth-failure spike) and runs every 5 min with `--notify`, which logs `[tracking-alert]` errors and emails `TRACKING_ALERT_EMAILS` (1/hour per alert). `TRACKING_REALTIME_HEALTH_URL` added to prod env. Alerts go to `TRACKING_ALERT_EMAILS=nurudeen@p23africa.co.uk` via the default mailer (Resend). SMTP was tried first but ports 25/465/587 are blocked on the droplet (DigitalOcean default); `TRACKING_ALERT_MAILER` can switch to `smtp` if DO lifts the block. A test alert was delivered to Resend on 2026-11-19. |
 | Extra: supervisor route history | ✅ Fixed, *pending deploy* | `GET /tasks/{id}/route` let supervisors read the location trail of any agent's task; now limited to their agents' tasks / tasks they created (same rule as live map) |
 
 Also fixed: `TaskTrackingRegressionTest::test_accuracy_zero_still_allows_near_and_arrival` used timestamps 2–3 min in the future (clamped by the 120 s skew guard) and 3 km jumps in 30 s (anti-teleport filter). Test-only bug; the service logic was correct.
 
-Tests: 39 backend tracking tests and 18 relay tests pass locally.
+Tests: 40 backend tracking tests and 18 relay tests pass locally.
 
 ### Verified on prod after deploy (`f106021`, 10:46 UTC)
 - Relay `realtime:f106021` running, Redis ready, sockets re-authenticated through the new endpoint within seconds.

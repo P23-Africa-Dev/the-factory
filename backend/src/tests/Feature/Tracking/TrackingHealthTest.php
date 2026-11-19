@@ -173,6 +173,23 @@ class TrackingHealthTest extends TestCase
         Log::shouldHaveReceived('error')->withArgs(fn ($msg) => str_contains($msg, '[tracking-alert]') && str_contains($msg, 'unreachable'))->atLeast()->once();
     }
 
+    public function test_alert_email_uses_configured_mailer(): void
+    {
+        config([
+            'tracking.realtime_health_url' => 'http://relay.test/healthz',
+            'tracking.alert_emails' => ['ops@example.test'],
+            'tracking.alert_mailer' => 'smtp',
+        ]);
+        Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('Connection refused'));
+
+        $smtp = \Mockery::mock();
+        $smtp->shouldReceive('raw')->once();
+        Mail::shouldReceive('mailer')->once()->with('smtp')->andReturn($smtp);
+        Mail::shouldReceive('raw')->never();
+
+        Artisan::call('tracking:health', ['--notify' => true]);
+    }
+
     public function test_relay_auth_failure_spike_raises_alert(): void
     {
         config([
