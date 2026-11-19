@@ -3,7 +3,7 @@
 Checked on the prod droplet `144.126.227.55` (`/opt/factory`), backend image `29e59a4` (= `main` HEAD).
 All checks were read-only. The only write was one Redis PUBLISH to `factory23.tracking.company.0`, a company ID with no viewers.
 
-## Implementation status (2026-11-19, not yet deployed)
+## Implementation status (2026-11-19, deployed to prod as `f106021`)
 
 | Item | Status | Where |
 |---|---|---|
@@ -20,6 +20,12 @@ All checks were read-only. The only write was one Redis PUBLISH to `factory23.tr
 Also fixed: `TaskTrackingRegressionTest::test_accuracy_zero_still_allows_near_and_arrival` used timestamps 2–3 min in the future (clamped by the 120 s skew guard) and 3 km jumps in 30 s (anti-teleport filter). Test-only bug; the service logic was correct.
 
 Tests: 33 backend tracking tests pass, 16 relay tests pass. The relay ↔ Redis ↔ API loop was not run locally (no Redis here); verify after deploy.
+
+### Verified on prod after deploy (`f106021`, 10:46 UTC)
+- Relay `realtime:f106021` running, Redis ready, sockets re-authenticated through the new endpoint within seconds.
+- Scopes observed: owners/admins `company` (all), supervisor 141 (company 84) sees 1 agent, supervisors 213/214 (company 98) see 0. Company 98 has no agents, so that is correct.
+- Zero relay auth warnings since deploy. Before, there were about 230 a day.
+- Deploy runs 1–2 failed *after* deploying: (1) the relay image was tagged `latest` instead of the SHA (fixed: explicit short-SHA step); (2) the health gate used `grep && break`, which aborts under `script_stop` (fixed: if-block). Fix (2) is not yet pushed.
 
 ### Deploy order / compatibility
 - Backend must be live before the new relay (the relay calls the new endpoint). `deploy.yml` already does API → migrate → relay.

@@ -278,7 +278,11 @@ jobs:
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               RT=$(docker exec factory-factory23-php-1 sh -c "curl -s --max-time 3 http://factory23-realtime:8081/healthz || wget -qO- http://factory23-realtime:8081/healthz" 2>/dev/null || true)
               echo "Realtime health attempt ${attempt}: ${RT}"
-              echo "$RT" | grep -q '"status":"ok"' && break
+              # Must be an if-block: with script_stop, a non-zero line (e.g.
+              # `grep ... && break` before the relay is up) aborts the deploy.
+              if echo "$RT" | grep -q '"status":"ok"'; then
+                break
+              fi
               sleep 2
             done
             echo "$RT" | grep -q '"status":"ok"'
