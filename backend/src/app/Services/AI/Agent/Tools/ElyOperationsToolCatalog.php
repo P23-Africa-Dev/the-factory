@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\AI\Agent\Tools;
 
 use App\Models\CompanyZone;
+use App\Models\Lead;
+use App\Services\AI\Agent\Attachments\ChatAttachmentStore;
 use App\Models\Meeting;
 use App\Models\Task;
 use App\Models\TaskReassignment;
@@ -50,7 +52,19 @@ final class ElyOperationsToolCatalog
         private readonly PayrollService $payroll,
         private readonly AttendanceSettingsService $attendanceSettings,
         private readonly CompanyDriveService $drive,
+        private readonly ChatAttachmentStore $attachments,
     ) {}
+
+    private function pipelineId(ToolContext $context, mixed $requested): int
+    {
+        if (is_numeric($requested) && (int) $requested > 0) {
+            return (int) $requested;
+        }
+
+        $pipelines = $this->leads->listPipelines($context->user, $context->companyId);
+
+        return (int) ($pipelines->firstWhere('is_default', true)?->id ?? $pipelines->first()?->id ?? 0);
+    }
 
     /**
      * @return array<int, ElyTool>
@@ -183,6 +197,91 @@ final class ElyOperationsToolCatalog
                     $result = $this->leads->deleteLabel($c->user, (int) $a['label_id'], $payload($c, ['force' => (bool) ($a['force'] ?? false)]));
 
                     return new ToolResult('Stage deleted.', is_array($result) ? $result : [], ['crm.labels.delete']);
+                }),
+            new DefinedTool('crm.import_preview', 'Check a CSV file the user attached in the chat before importing it: how many rows are valid, duplicates, errors, and which columns map to lead fields. The attachment id is in the current context.',
+                S::object(['attachment_id' => S::str(), 'pipeline_id' => S::int('Omit for the default pipeline')], ['attachment_id']),
+                ToolKind::Read, ToolRisk::Safe, self::ALL, 'Checking the file', ['pipeline_id' => 'pipeline'],
+                ['attachment_id' => ['required', 'string', 'max:40'], 'pipeline_id' => ['nullable', 'integer']],
+                function (ToolContext $c, array $a): ToolResult {
+                    $file = $this->attachments->leadRows((string) $a['attachment_id'], $c->companyId, (int) $c->user->id);
+                    $preview = $this->leads->previewImportLeads($c->user, [
+                        'company_id' => $c->companyId,
+                        'pipeline_id' => $this->pipelineId($c, $a['pipeline_id'] ?? null),
+                        'rows' => $file['rows'],
+                    ]);
+
+                    return new ToolResult(
+                        "{$file['name']}: {$preview['valid_count']} of {$preview['total_rows']} row(s) can be imported, {$preview['duplicate_count']} look like existing leads, ".count($preview['error_rows']).' have errors.',
+                        [
+                            'file' => $file['name'],
+                            'column_mapping' => $file['mapped'],
+                            'ignored_columns' => $file['unmapped'],
+                            'total_rows' => $preview['total_rows'],
+                            'valid_count' => $preview['valid_count'],
+                            'duplicate_count' => $preview['duplicate_count'],
+                            'error_rows' => array_slice($preview['error_rows'], 0, 10),
+                            'duplicate_rows' => array_slice($preview['duplicate_rows'], 0, 10),
+                        ],
+                        ['crm.import_preview'],
+                        untrusted: true,
+                    );
+                }, $this->scoped),
+            $this->tool('crm.import_leads', 'Import the leads from a CSV file the user attached in the chat. Run crm.import_preview first and tell the user the counts. duplicate_policy: skip (default) keeps existing leads, update fills them in, create adds duplicates anyway. Needs confirmation.',
+                S::object(['attachment_id' => S::str(), 'pipeline_id' => S::int('Omit for the default pipeline'), 'duplicate_policy' => S::enum(['skip', 'update', 'create'])], ['attachment_id']),
+                ToolRisk::Confirm, self::ALL, 'Preparing the import', ['pipeline_id' => 'pipeline'],
+                ['attachment_id' => ['required', 'string', 'max:40'], 'pipeline_id' => ['nullable', 'integer'], 'duplicate_policy' => ['nullable', Rule::in(['skip', 'update', 'create'])]],
+                function (ToolContext $c, array $a): ToolResult {
+                    $file = $this->attachments->leadRows((string) $a['attachment_id'], $c->companyId, (int) $c->user->id);
+                    $result = $this->leads->importLeads($c->user, [
+                        'company_id' => $c->companyId,
+                        'pipeline_id' => $this->pipelineId($c, $a['pipeline_id'] ?? null),
+                        'rows' => $file['rows'],
+                        'duplicate_policy' => (string) ($a['duplicate_policy'] ?? 'skip'),
+                    ]);
+
+                    return new ToolResult(
+                        "Imported {$result['imported_count']} lead(s) from {$file['name']}"
+                            .($result['updated_count'] > 0 ? ", updated {$result['updated_count']}" : '')
+                            .($result['skipped_count'] > 0 ? ", skipped {$result['skipped_count']}" : '')
+                            .(count($result['failed_rows']) > 0 ? ', '.count($result['failed_rows']).' row(s) failed' : '').'.',
+                        [
+                            'imported_count' => $result['imported_count'],
+                            'updated_count' => $result['updated_count'],
+                            'skipped_count' => $result['skipped_count'],
+                            'failed_rows' => array_slice($result['failed_rows'], 0, 10),
+                        ],
+                        ['crm.import_leads'],
+                        link: '/crm/leads',
+                    );
+                }),
+            $this->tool('crm.merge_leads', 'Merge a duplicate lead into another: details missing on the kept lead are filled from the duplicate, then the duplicate is deleted. Managers only; needs confirmation.',
+                S::object(['keep_lead_id' => S::int('The lead to keep'), 'duplicate_lead_id' => S::int('The lead to merge in and delete')], ['keep_lead_id', 'duplicate_lead_id']),
+                ToolRisk::Confirm, self::MANAGERS, 'Preparing the merge', ['keep_lead_id' => 'lead', 'duplicate_lead_id' => 'lead'],
+                ['keep_lead_id' => ['required', 'integer'], 'duplicate_lead_id' => ['required', 'integer', 'different:keep_lead_id']],
+                function (ToolContext $c, array $a): ToolResult {
+                    $keep = Lead::query()->where('company_id', $c->companyId)->findOrFail((int) $a['keep_lead_id']);
+                    $duplicate = Lead::query()->where('company_id', $c->companyId)->findOrFail((int) $a['duplicate_lead_id']);
+
+                    $data = ['company_id' => $c->companyId];
+                    foreach (['email', 'phone', 'location', 'company_name', 'company_email', 'website', 'position', 'industry', 'next_action', 'profile_urls'] as $field) {
+                        $value = $duplicate->getAttribute($field);
+                        if ($value !== null && $value !== '' && $value !== []) {
+                            $data[$field] = $value;
+                        }
+                    }
+
+                    $merge = $this->leads->merge($c->user, $keep, $data);
+                    $duplicateName = (string) $duplicate->name;
+                    $this->leads->delete($c->user, $duplicate, $c->companyId);
+
+                    $changed = is_array($merge['fields_changed'] ?? null) ? $merge['fields_changed'] : [];
+
+                    return new ToolResult(
+                        "Merged '{$duplicateName}' into '{$keep->name}'".($changed !== [] ? ' (filled: '.implode(', ', $changed).')' : '').' and removed the duplicate.',
+                        ['lead_id' => (int) $keep->id, 'fields_changed' => $changed],
+                        ['crm.merge_leads'],
+                        link: '/crm/leads/'.$keep->id,
+                    );
                 }),
             $this->tool('crm.bulk_delete_leads', 'Delete several CRM leads at once. Managers only; always needs confirmation.',
                 S::object(['lead_ids' => S::intList()], ['lead_ids']),

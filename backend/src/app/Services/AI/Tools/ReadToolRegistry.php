@@ -389,6 +389,17 @@ class ReadToolRegistry
         $resolvedCompanyId = (int) $context['company']->id;
         $limit = max(1, min($this->readListPresenter->maxExpandedLimit('org.users'), (int) ($args['limit'] ?? $this->readListPresenter->previewLimit())));
         $countOnly = ($args['count_only'] ?? false) === true;
+        // Supervisors see themselves and the agents they supervise, as in
+        // InternalUserFetchService; owners and admins see everyone.
+        $supervisorId = (string) ($context['role'] ?? '') === 'supervisor' ? (int) $user->id : null;
+        $scope = static function ($query) use ($supervisorId): void {
+            if ($supervisorId !== null) {
+                $query->where(static function ($inner) use ($supervisorId): void {
+                    $inner->where('users.supervisor_user_id', $supervisorId)
+                        ->orWhere('users.id', $supervisorId);
+                });
+            }
+        };
 
         $total = (int) User::query()
             ->join(
@@ -397,6 +408,7 @@ class ReadToolRegistry
                     ->on('company_users.user_id', '=', 'users.id')
                     ->where('company_users.company_id', '=', $resolvedCompanyId)
             )
+            ->tap($scope)
             ->count();
 
         $users = User::query()
@@ -408,6 +420,7 @@ class ReadToolRegistry
                     ->on('company_users.user_id', '=', 'users.id')
                     ->where('company_users.company_id', '=', $resolvedCompanyId)
             )
+            ->tap($scope)
             ->orderByRaw("case when company_users.role = 'owner' then 0 when company_users.role = 'admin' then 1 when company_users.role = 'supervisor' then 2 when company_users.role = 'agent' then 3 else 4 end")
             ->orderBy('users.name')
             ->limit($limit)

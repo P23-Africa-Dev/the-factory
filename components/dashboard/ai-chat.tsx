@@ -58,6 +58,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ElyActionReceipts, receiptsFromPayload } from "@/components/ely/action-receipts";
 import { MicRecordButton } from "@/components/ely/mic-record-button";
+import { ImportLeadsButton } from "@/components/ely/import-leads-button";
+import { AgentConfirmationCard, agentConfirmationFromPayload, usesAgentCard } from "@/components/ely/agent-confirmation-card";
 import { resolveAvatarSrc } from "@/lib/avatar";
 
 type MessageAction = "liked" | "disliked" | null;
@@ -374,6 +376,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
     loadForecastOverview,
     searchAssignees,
     undoAction,
+    attachFile,
+    confirmAction,
+    cancelAction,
   } = useCopilotChat();
 
   const canAnalyzeFile = user?.access_role ? user.access_role !== "agent" : true;
@@ -3280,6 +3285,18 @@ export function AIChat({ open, onClose }: AIChatProps) {
                       onRecorded={(file) => void handleVoiceFile(file)}
                       onError={(message) => toast.error(message)}
                     />
+                    <ImportLeadsButton
+                      disabled={isRunningQuickAction || isStreaming}
+                      onAttach={(file) => attachFile(file, companyId ?? undefined)}
+                      onAttached={(attachment) =>
+                        void sendCopilotMessage({
+                          message: `Import the leads in ${attachment.name}`,
+                          companyId: companyId ?? undefined,
+                          context: { attachment: { id: attachment.id, name: attachment.name } },
+                        })
+                      }
+                      onError={(message) => toast.error(message)}
+                    />
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isRunningQuickAction || isStreaming}
@@ -3409,7 +3426,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           ))}
                         </div>
                       )}
-                      {messagePayload(msg)?.confirmation_required === true && index === messages.length - 1 && (
+                      {(() => {
+                        const agentCard = usesAgentCard(msg.payload) ? agentConfirmationFromPayload(msg.payload) : null;
+                        if (!agentCard || index !== messages.length - 1) return null;
+                        const report = (err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : "Could not complete that.");
+                          return null;
+                        };
+                        return (
+                          <AgentConfirmationCard
+                            payload={agentCard}
+                            disabled={isStreaming}
+                            onConfirm={(pendingId, edits) => confirmAction(pendingId, edits, companyId ?? undefined).catch(report)}
+                            onCancel={(pendingId) => cancelAction(pendingId, companyId ?? undefined).catch(report)}
+                          />
+                        );
+                      })()}
+                      {messagePayload(msg)?.confirmation_required === true && !usesAgentCard(msg.payload) && index === messages.length - 1 && (
                         <div className="pl-1">
                           {(() => {
                             const previewRows = confirmationPreviewRows(msg);

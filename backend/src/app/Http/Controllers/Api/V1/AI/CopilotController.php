@@ -45,6 +45,9 @@ class CopilotController extends Controller
             'context.page.path' => ['nullable', 'string', 'max:255'],
             'context.page.entity_type' => ['nullable', 'string', 'in:lead,task,project,kpi,meeting,user,pipeline'],
             'context.page.entity_id' => ['nullable', 'integer', 'min:1'],
+            'context.attachment' => ['nullable', 'array'],
+            'context.attachment.id' => ['nullable', 'string', 'max:40'],
+            'context.attachment.name' => ['nullable', 'string', 'max:180'],
         ]);
 
         $clientTimezone = isset($validated['client_timezone']) ? (string) $validated['client_timezone'] : null;

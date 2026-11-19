@@ -197,6 +197,57 @@ final class ElyPhaseZeroSafetyTest extends TestCase
         ]);
     }
 
+    public function test_supervisor_team_list_only_shows_their_agents(): void
+    {
+        [$company, $admin, $supervisor, $agentA, $agentB] = $this->seedCompany();
+
+        $registry = app(ReadToolRegistry::class);
+        $supervisorNames = array_column($registry->execute('org.users', $supervisor, (int) $company->id, ['limit' => 50])['payload']['items'] ?? [], 'name');
+        $adminNames = array_column($registry->execute('org.users', $admin, (int) $company->id, ['limit' => 50])['payload']['items'] ?? [], 'name');
+
+        sort($supervisorNames);
+        $this->assertSame(['Ada Field', 'Sam Supervisor'], $supervisorNames);
+        $this->assertContains($agentB->name, $adminNames);
+    }
+
+    public function test_overdue_task_automation_runs_once_a_day_while_tasks_are_overdue(): void
+    {
+        \Illuminate\Support\Facades\Bus::fake();
+        [$company, $admin, , $agentA] = $this->seedCompany();
+
+        $rule = \App\Models\AiAutomationRule::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Remind on overdue',
+            'prompt' => 'When overdue, notify supervisors',
+            'trigger_type' => 'event.tasks.overdue',
+            'trigger_expression' => 'tasks.overdue.detected',
+            'action_tool' => 'notifications.send',
+            'action_args' => ['title' => 'Overdue tasks', 'message' => 'Some tasks are overdue.', 'roles' => ['supervisor']],
+            'status' => 'active',
+        ]);
+
+        $this->artisan('ely:run-scheduled-automations')->assertSuccessful();
+        \Illuminate\Support\Facades\Bus::assertNotDispatched(\App\Jobs\ExecuteAutomationRuleJob::class);
+
+        \App\Models\Task::query()->create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agentA->id,
+            'title' => 'Late visit',
+            'type' => 'sales_visit',
+            'priority' => 'medium',
+            'status' => 'pending',
+            'due_at' => now()->subDay(),
+        ]);
+
+        $this->artisan('ely:run-scheduled-automations')->assertSuccessful();
+        $this->artisan('ely:run-scheduled-automations')->assertSuccessful();
+
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Jobs\ExecuteAutomationRuleJob::class, 1);
+        $this->assertNotNull($rule->fresh()->last_run_at);
+    }
+
     public function test_scheduled_automation_occurrences(): void
     {
         $now = Carbon::parse('2026-11-19 10:30:00'); // a Thursday

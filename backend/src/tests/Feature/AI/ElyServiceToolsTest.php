@@ -150,6 +150,105 @@ final class ElyServiceToolsTest extends TestCase
         $this->assertTrue(LeadLabel::query()->where('name', 'Mine')->exists());
     }
 
+    public function test_import_leads_from_a_chat_attachment(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $admin = $this->org['users']['admin'];
+        $csv = "Business Name,Phone,City,Notes\nSunrise Supermarket,+2348031234567,Ajah,x\nMama Put Foods,+2348039876543,Surulere,y\n";
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('leads.csv', $csv);
+
+        $attachmentId = $this->actingAs($admin)
+            ->post('/api/v1/copilot/attachments', ['company_id' => $this->org['company']->id, 'file' => $file], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->json('data.attachment.id');
+
+        $this->model
+            ->callsTools([['crm.import_preview', ['attachment_id' => $attachmentId]]])
+            ->callsTools([['crm.import_leads', ['attachment_id' => $attachmentId, 'duplicate_policy' => 'skip']]])
+            ->answers('2 leads are ready. Confirm below to import them.');
+
+        $response = $this->actingAs($admin)->postJson('/api/v1/copilot/chat', [
+            'company_id' => $this->org['company']->id,
+            'message' => 'Import the leads in this file',
+            'context' => ['attachment' => ['id' => $attachmentId, 'name' => 'leads.csv']],
+        ])->assertOk()->assertJsonPath('data.response.payload.confirmation_required', true);
+
+        $this->assertStringContainsString('attachment_id '.$attachmentId, $this->model->requests[0]->systemPrompt);
+        $preview = collect($this->model->requests[1]->messages)->firstWhere('role', 'tool');
+        $this->assertStringContainsString('2 of 2 row(s) can be imported', $preview->content);
+        $this->assertFalse(\App\Models\Lead::query()->where('name', 'Sunrise Supermarket')->exists());
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/copilot/actions/'.$response->json('data.response.payload.pending_action_id').'/confirm', ['company_id' => $this->org['company']->id])
+            ->assertOk()
+            ->assertJsonPath('data.response.payload.imported_count', 2);
+        $this->assertTrue(\App\Models\Lead::query()->where('company_id', $this->org['company']->id)->where('name', 'Mama Put Foods')->exists());
+    }
+
+    public function test_another_user_cannot_read_my_attachment(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('leads.csv', "Name\nSecret Co\n");
+        $attachmentId = $this->actingAs($this->org['users']['admin'])
+            ->post('/api/v1/copilot/attachments', ['company_id' => $this->org['company']->id, 'file' => $file], ['Accept' => 'application/json'])
+            ->json('data.attachment.id');
+
+        $this->model->callsTools([['crm.import_preview', ['attachment_id' => $attachmentId]]])->answers('Not found.');
+        $this->chat($this->org['users']['agent'], 'Import that file')->assertOk();
+
+        $toolMessage = collect($this->model->requests[1]->messages)->firstWhere('role', 'tool');
+        $this->assertTrue($toolMessage->isError);
+        $this->assertStringNotContainsString('Secret Co', $toolMessage->content);
+    }
+
+    public function test_merge_leads_fills_gaps_and_removes_the_duplicate(): void
+    {
+        $keep = $this->org['leads']['acme'];
+        $duplicate = $this->org['leads']['bright'];
+        $duplicate->forceFill(['email' => 'orders@acme.test', 'industry' => 'Retail'])->save();
+
+        $this->model->callsTools([['crm.merge_leads', ['keep_lead_id' => $keep->id, 'duplicate_lead_id' => $duplicate->id]]])->answers('Confirm below.');
+        $pendingId = $this->chat($this->org['users']['admin'], 'Merge Bright into Acme')->json('data.response.payload.pending_action_id');
+
+        $this->actingAs($this->org['users']['admin'])
+            ->postJson("/api/v1/copilot/actions/{$pendingId}/confirm", ['company_id' => $this->org['company']->id])
+            ->assertOk()
+            ->assertJsonPath('data.response.payload.executed', true);
+
+        $this->assertSame('orders@acme.test', $keep->fresh()->email);
+        $this->assertNull(\App\Models\Lead::query()->find($duplicate->id));
+    }
+
+    public function test_confirmation_payload_describes_the_card_and_accepts_edits(): void
+    {
+        $bola = $this->org['users']['other_agent'];
+        $this->model
+            ->callsTools([['org.users.suspend', ['user_id' => $bola->id, 'suspend_type' => 'duration', 'suspend_days' => 3]]])
+            ->answers('Confirm below.');
+
+        $payload = $this->chat($this->org['users']['admin'], 'Suspend Bola for 3 days')->json('data.response.payload');
+
+        $this->assertSame(['user_id', 'suspend_type', 'suspend_days', 'suspend_until'], $payload['preview_fields']);
+        $this->assertSame('User', $payload['field_labels']['user_id']);
+        $this->assertContains('suspend_days', $payload['editable_fields']);
+        $this->assertNotContains('user_id', $payload['editable_fields']);
+        $this->assertSame(['duration', 'date', 'permanent'], $payload['field_options']['suspend_type']);
+        $this->assertStringStartsWith('Suspend a team member', $payload['action_label']);
+
+        // An edit from the card (5 days instead of 3) is applied on confirm.
+        $this->actingAs($this->org['users']['admin'])
+            ->postJson("/api/v1/copilot/actions/{$payload['pending_action_id']}/confirm", [
+                'company_id' => $this->org['company']->id,
+                'action_args' => ['suspend_days' => 5],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.response.payload.executed', true);
+
+        $until = $bola->fresh()->suspended_until;
+        $this->assertNotNull($until);
+        $this->assertTrue($until->greaterThan(now()->addDays(4)));
+    }
+
     public function test_assign_supervisor_runs_only_after_confirmation(): void
     {
         $bola = $this->org['users']['other_agent'];

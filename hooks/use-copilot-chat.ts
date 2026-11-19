@@ -35,6 +35,10 @@ import {
     summarizeMeetingTranscript,
     transcribeVoiceInput,
     undoCopilotAction,
+    attachCopilotFile,
+    cancelCopilotAction,
+    confirmCopilotAction,
+    type CopilotChatResponse,
 } from "@/lib/api/copilot";
 import { useAuthStore } from "@/store/auth";
 
@@ -161,29 +165,62 @@ export function useCopilotChat() {
         [loadThread, persistedKey, token]
     );
 
+    const attachFile = useCallback(
+        async (file: File, companyId?: string | number) => {
+            if (!token) return null;
+            const res = await attachCopilotFile(file, token, companyId);
+            return res.data?.attachment ?? null;
+        },
+        [token]
+    );
+
+    // Agent engine: show the assistant reply from an action endpoint.
+    const appendAgentReply = useCallback((data: CopilotChatResponse | undefined, prefix: string) => {
+        if (!data?.response) return;
+        setMessages((prev) => [
+            ...prev,
+            {
+                id: `local-${prefix}-${Date.now()}`,
+                role: "assistant",
+                content: data.response.content,
+                sources: data.response.sources ?? [],
+                tool: data.response.tool ?? null,
+                payload: data.response.payload ?? null,
+                created_at: new Date().toISOString(),
+            },
+        ]);
+    }, []);
+
     // Agent engine: reverse an action ELY ran, then show ELY's reply.
     const undoAction = useCallback(
         async (auditId: number, companyId?: string | number) => {
             if (!token) return null;
             const res = await undoCopilotAction(auditId, token, companyId);
-            const data = res.data;
-            if (data?.response) {
-                setMessages((prev) => [
-                    ...prev,
-                    {
-                        id: `local-undo-${Date.now()}`,
-                        role: "assistant",
-                        content: data.response.content,
-                        sources: data.response.sources ?? [],
-                        tool: data.response.tool ?? null,
-                        payload: data.response.payload ?? null,
-                        created_at: new Date().toISOString(),
-                    },
-                ]);
-            }
-            return data;
+            appendAgentReply(res.data, "undo");
+            return res.data;
         },
-        [token]
+        [appendAgentReply, token]
+    );
+
+    // Agent engine: confirm or cancel an action from its card.
+    const confirmAction = useCallback(
+        async (pendingId: string, actionArgs: Record<string, unknown>, companyId?: string | number) => {
+            if (!token) return null;
+            const res = await confirmCopilotAction(pendingId, actionArgs, token, companyId);
+            appendAgentReply(res.data, "confirm");
+            return res.data;
+        },
+        [appendAgentReply, token]
+    );
+
+    const cancelAction = useCallback(
+        async (pendingId: string, companyId?: string | number) => {
+            if (!token) return null;
+            const res = await cancelCopilotAction(pendingId, token, companyId);
+            appendAgentReply(res.data, "cancel");
+            return res.data;
+        },
+        [appendAgentReply, token]
     );
 
     const clearCurrentThread = useCallback(
@@ -533,5 +570,8 @@ export function useCopilotChat() {
         loadForecastOverview,
         searchAssignees,
         undoAction,
+        attachFile,
+        confirmAction,
+        cancelAction,
     };
 }

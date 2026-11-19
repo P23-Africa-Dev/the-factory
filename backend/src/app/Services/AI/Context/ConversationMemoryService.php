@@ -112,12 +112,19 @@ class ConversationMemoryService
     {
         $thread = Cache::get($this->threadKey($companyId, $userId, $threadId));
 
-        return is_array($thread) ? $thread : null;
+        if (is_array($thread)) {
+            return $thread;
+        }
+
+        // Agent-engine threads are stored durably; rebuild the cached copy
+        // once it has expired so old chats stay listed and readable.
+        return $this->restoreFromElyTables($companyId, $userId, $threadId);
     }
 
     public function hasThread(int $companyId, int $userId, string $threadId): bool
     {
-        return Cache::has($this->threadKey($companyId, $userId, $threadId));
+        return Cache::has($this->threadKey($companyId, $userId, $threadId))
+            || $this->elyThreadQuery($companyId, $userId)?->where('id', $threadId)->exists() === true;
     }
 
     public function getThreadMessages(int $companyId, int $userId, string $threadId, int $limit = 20, ?string $cursor = null): ?array
@@ -236,6 +243,13 @@ class ConversationMemoryService
         $boundedLimit = max(1, min(30, $limit));
         $index = Cache::get($this->indexKey($companyId, $userId), []);
         if (! is_array($index)) {
+            $index = [];
+        }
+        // Durable agent-engine threads that have left the cache are searchable too.
+        foreach ($this->elyThreadQuery($companyId, $userId)?->orderByDesc('last_message_at')->limit(200)->get(['id', 'last_message_at']) ?? [] as $durable) {
+            $index[(string) $durable->id] ??= (string) $durable->last_message_at?->toIso8601String();
+        }
+        if ($index === []) {
             return [
                 'items' => [],
                 'pagination' => [
@@ -348,7 +362,83 @@ class ConversationMemoryService
 
         Cache::forget($this->threadKey($companyId, $userId, $threadId));
 
-        return $exists;
+        $deletedDurable = (int) ($this->elyThreadQuery($companyId, $userId)?->where('id', $threadId)->delete() ?? 0) > 0;
+
+        return $exists || $deletedDurable;
+    }
+
+    /**
+     * Agent-engine threads for this user (soft-deleted ones excluded), or null
+     * before the ELY tables are migrated.
+     */
+    private function elyThreadQuery(int $companyId, int $userId): ?\Illuminate\Database\Eloquent\Builder
+    {
+        if (! $this->elyTablesReady()) {
+            return null;
+        }
+
+        return \App\Models\ElyThread::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId);
+    }
+
+    private ?bool $elyTablesReady = null;
+
+    private function elyTablesReady(): bool
+    {
+        if ($this->elyTablesReady === null) {
+            try {
+                $this->elyTablesReady = \Illuminate\Support\Facades\Schema::hasTable('ely_threads');
+            } catch (\Throwable) {
+                $this->elyTablesReady = false;
+            }
+        }
+
+        return $this->elyTablesReady;
+    }
+
+    /**
+     * Rebuild the user-visible conversation (user turns and final assistant
+     * replies, not tool steps) from ely_messages and cache it again.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function restoreFromElyTables(int $companyId, int $userId, string $threadId): ?array
+    {
+        $elyThread = $this->elyThreadQuery($companyId, $userId)?->where('id', $threadId)->first();
+        if ($elyThread === null) {
+            return null;
+        }
+
+        $messages = \App\Models\ElyMessage::query()
+            ->where('thread_id', $threadId)
+            ->whereIn('role', ['user', 'assistant'])
+            ->whereNull('tool_calls')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (\App\Models\ElyMessage $row): array => [
+                'id' => 'ely-'.$row->id,
+                'role' => (string) $row->role,
+                'content' => (string) $row->content,
+                'sources' => [],
+                'tool' => $row->role === 'assistant' ? $row->tool_name : null,
+                'payload' => $row->payload,
+                'created_at' => $row->created_at?->toIso8601String() ?? now()->toIso8601String(),
+            ])
+            ->all();
+
+        $thread = [
+            'thread_id' => $threadId,
+            'company_id' => $companyId,
+            'user_id' => $userId,
+            'created_at' => $elyThread->created_at?->toIso8601String() ?? now()->toIso8601String(),
+            'updated_at' => ($elyThread->last_message_at ?? $elyThread->updated_at)?->toIso8601String() ?? now()->toIso8601String(),
+            'messages' => $messages,
+        ];
+
+        $this->storeThread($companyId, $userId, $threadId, $thread);
+
+        return $thread;
     }
 
     private function storeThread(int $companyId, int $userId, string $threadId, array $thread): void
@@ -371,12 +461,18 @@ class ConversationMemoryService
     private function threadIds(int $companyId, int $userId): array
     {
         $index = Cache::get($this->indexKey($companyId, $userId), []);
-        if (! is_array($index)) {
-            return [];
-        }
+        $cached = is_array($index) ? array_keys($index) : [];
 
-        return collect(array_keys($index))
+        // Include durable agent-engine threads whose cache entry has expired.
+        $durable = $this->elyThreadQuery($companyId, $userId)
+            ?->orderByDesc('last_message_at')
+            ->limit(200)
+            ->pluck('id')
+            ->all() ?? [];
+
+        return collect([...$cached, ...$durable])
             ->filter(static fn(mixed $id): bool => is_string($id) && $id !== '')
+            ->unique()
             ->values()
             ->all();
     }

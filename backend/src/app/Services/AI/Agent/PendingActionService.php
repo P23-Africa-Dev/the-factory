@@ -218,6 +218,11 @@ class PendingActionService
         $catalog = ActionFieldCatalog::forTool($tool);
         $allowed = array_merge($catalog['editable'], $catalog['preserve_hidden'] ?? []);
         if ($allowed === []) {
+            // Tools without a legacy field catalog: any field in their schema
+            // (the tool re-validates and re-checks company scope on run).
+            $allowed = array_keys((array) ($this->tools->get($tool)?->inputSchema()['properties'] ?? []));
+        }
+        if ($allowed === []) {
             return $original;
         }
 

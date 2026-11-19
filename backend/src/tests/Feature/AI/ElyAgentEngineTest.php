@@ -301,6 +301,36 @@ final class ElyAgentEngineTest extends TestCase
         $this->assertStringContainsString('"message":"Yes, Acme Retail is in your CRM."', $body);
     }
 
+    public function test_agent_threads_survive_the_cache_expiring(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+        $this->model->answers('Hello from ELY about pricing.');
+
+        $threadId = (string) $this->chat($admin, $company, 'Tell me about pricing')->json('data.thread_id');
+
+        // Simulate the 7-day cache TTL passing.
+        \Illuminate\Support\Facades\Cache::flush();
+
+        $this->actingAs($admin)->getJson('/api/v1/copilot/threads?company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonFragment(['thread_id' => $threadId]);
+
+        $show = $this->actingAs($admin)->getJson("/api/v1/copilot/threads/{$threadId}?company_id={$company->id}")->assertOk();
+        $this->assertStringContainsString('Tell me about pricing', json_encode($show->json()));
+        $this->assertStringContainsString('Hello from ELY about pricing.', json_encode($show->json()));
+
+        \Illuminate\Support\Facades\Cache::flush();
+        $this->actingAs($admin)->getJson('/api/v1/copilot/threads/search?q=pricing&company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonFragment(['thread_id' => $threadId]);
+
+        $this->actingAs($admin)->deleteJson("/api/v1/copilot/threads/{$threadId}?company_id={$company->id}")->assertOk();
+        \Illuminate\Support\Facades\Cache::flush();
+        $this->actingAs($admin)->getJson('/api/v1/copilot/threads?company_id='.$company->id)
+            ->assertOk()
+            ->assertJsonMissing(['thread_id' => $threadId]);
+    }
+
     public function test_legacy_engine_is_used_when_agent_is_off(): void
     {
         config(['ely.agent.engine' => 'legacy']);

@@ -21,7 +21,7 @@ class RunScheduledAutomationsCommand extends Command
 {
     protected $signature = 'ely:run-scheduled-automations';
 
-    protected $description = 'Dispatch ELY automation rules whose daily or weekly schedule is due.';
+    protected $description = 'Dispatch ELY automation rules whose daily/weekly schedule is due, and overdue-task rules once a day while tasks are overdue.';
 
     public function handle(): int
     {
@@ -63,6 +63,34 @@ class RunScheduledAutomationsCommand extends Command
                         (int) $rule->created_by_user_id,
                         (int) $rule->company_id,
                     );
+                    $dispatched++;
+                }
+            });
+
+        // "When tasks are overdue" rules: at most once a day per rule, and only
+        // while the company has overdue open tasks.
+        AiAutomationRule::query()
+            ->where('status', 'active')
+            ->where('trigger_type', 'event.tasks.overdue')
+            ->orderBy('id')
+            ->chunkById(200, function ($rules) use ($now, &$dispatched): void {
+                foreach ($rules as $rule) {
+                    if ($rule->last_run_at !== null && $rule->last_run_at->isSameDay($now)) {
+                        continue;
+                    }
+
+                    $hasOverdue = \App\Models\Task::query()
+                        ->where('company_id', $rule->company_id)
+                        ->whereNotNull('due_at')
+                        ->where('due_at', '<', $now)
+                        ->whereNotIn('status', ['completed', 'cancelled'])
+                        ->exists();
+                    if (! $hasOverdue) {
+                        continue;
+                    }
+
+                    $rule->forceFill(['last_run_at' => $now])->save();
+                    ExecuteAutomationRuleJob::dispatch((int) $rule->id, (int) $rule->created_by_user_id, (int) $rule->company_id);
                     $dispatched++;
                 }
             });

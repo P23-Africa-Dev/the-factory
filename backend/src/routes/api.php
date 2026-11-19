@@ -316,6 +316,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/actions/{pending}/cancel', [\App\Http\Controllers\Api\V1\AI\ElyActionController::class, 'cancel'])
             ->middleware('throttle:api')
             ->name('actions.cancel');
+        Route::post('/attachments', [\App\Http\Controllers\Api\V1\AI\ElyActionController::class, 'attach'])
+            ->middleware(['throttle:api', 'throttle:ely'])
+            ->name('attachments.store');
         Route::post('/actions/undo/{audit}', [\App\Http\Controllers\Api\V1\AI\ElyActionController::class, 'undo'])
             ->whereNumber('audit')
             ->middleware('throttle:api')

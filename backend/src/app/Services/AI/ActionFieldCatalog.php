@@ -115,7 +115,8 @@ final class ActionFieldCatalog
 
     public static function label(string $field): string
     {
-        return self::labels()[$field] ?? str_replace('_', ' ', $field);
+        // e.g. "supervisor_user_id" -> "Supervisor user", "assigned_zone_ids" -> "Assigned zone"
+        return self::labels()[$field] ?? ucfirst(str_replace('_', ' ', (string) preg_replace('/_ids?$/', '', $field)));
     }
 
     /**

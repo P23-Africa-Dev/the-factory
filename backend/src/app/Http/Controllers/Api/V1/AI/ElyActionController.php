@@ -54,6 +54,31 @@ class ElyActionController extends Controller
         return $this->success(message: 'ELY undo processed.', data: $result);
     }
 
+    /**
+     * Attach a CSV file to the chat (e.g. a lead list to import). Returns an
+     * id the chat sends back as context.attachment_id.
+     */
+    public function attach(Request $request, \App\Services\AI\Agent\Attachments\ChatAttachmentStore $store): JsonResponse
+    {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'file' => ['required', 'file', 'max:5120', 'mimes:csv,txt'],
+        ]);
+
+        $context = $this->context($request, $validated);
+
+        // Only the tool-calling engine can read attachments.
+        if (! app(\App\Services\AI\Agent\ElyEngineSelector::class)->useAgent($context->companyId)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'file' => ['Importing from the ELY chat is not enabled for your organization yet. Use Import in the CRM instead.'],
+            ]);
+        }
+
+        $attachment = $store->put($request->file('file'), $context->companyId, (int) $context->user->id);
+
+        return $this->success(message: 'File attached.', data: ['attachment' => $attachment]);
+    }
+
     public function cancel(Request $request, string $pending): JsonResponse
     {
         $validated = $request->validate([

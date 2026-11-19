@@ -482,14 +482,41 @@ class ElyAgent
             ActionFieldCatalog::missingRequired($pending->tool, $args),
         );
 
+        $tool = $this->tools->get($pending->tool);
+        $preview = ActionFieldCatalog::forTool($pending->tool)['preview'];
+        if ($preview === [] && $tool !== null) {
+            $preview = $tool->previewFields();
+        }
+
+        // Plain text/number fields the user can correct on the card (ids are
+        // looked up by ELY, so they are not offered for editing).
+        $properties = (array) ($tool?->inputSchema()['properties'] ?? []);
+        $editable = array_values(array_filter(
+            array_keys($properties),
+            static fn (string $field): bool => ! str_ends_with($field, '_id') && ! str_ends_with($field, '_ids')
+                && in_array($properties[$field]['type'] ?? null, ['string', 'integer', 'number'], true),
+        ));
+
+        $labels = [];
+        foreach (array_unique([...$preview, ...$editable]) as $field) {
+            $labels[$field] = ActionFieldCatalog::label($field);
+        }
+
         return [
             'confirmation_required' => true,
             'tool' => $pending->tool,
+            'action_label' => $tool !== null ? (string) (preg_split('/(?<=\.)\s/', $tool->description())[0] ?? '') : '',
             'action_args' => $args,
             'pending_action_id' => $pending->id,
             'draft_id' => $pending->id,
             'draft_version' => (int) $pending->version,
-            'preview_fields' => ActionFieldCatalog::forTool($pending->tool)['preview'],
+            'preview_fields' => $preview,
+            'editable_fields' => $editable,
+            'field_labels' => $labels,
+            'field_options' => array_filter(array_map(
+                static fn (array $schema): ?array => isset($schema['enum']) ? array_values((array) $schema['enum']) : null,
+                array_filter($properties, 'is_array'),
+            )),
             'validation_warnings' => [],
             'validation_warning_codes' => [],
             'blocking_warning_codes' => [],
@@ -541,6 +568,11 @@ class ElyAgent
                 $page .= ' (viewing '.(string) $context->page['entity_type'].' id '.(string) $context->page['entity_id'].'; "this" or "here" refers to it)';
             }
             $lines[] = $page;
+        }
+
+        if (($context->page['attachment_id'] ?? '') !== '') {
+            $lines[] = '- Attached file: '.(string) ($context->page['attachment_name'] ?? 'file')
+                .' (attachment_id '.(string) $context->page['attachment_id'].'). For a lead list, run crm.import_preview, then crm.import_leads after the user agrees.';
         }
 
         return implode("\n", $lines);
