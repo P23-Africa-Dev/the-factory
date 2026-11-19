@@ -28,6 +28,7 @@ class LeadResource extends JsonResource
             'contacts' => LeadContactResource::collection($this->whenLoaded('contacts')),
             'company_name' => $this->company_name,
             'company_email' => $this->company_email,
+            'industry' => $this->industry,
             'website' => $this->website,
             'position' => $this->position,
             'profile_urls' => $this->profile_urls ?? [],

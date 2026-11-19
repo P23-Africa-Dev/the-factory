@@ -71,6 +71,7 @@ export type LeadApiItem = {
     contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -121,6 +122,7 @@ export type ListLeadsParams = {
     /** ISO instants bounding when the lead was added (inclusive). */
     created_from?: string;
     created_to?: string;
+    industry?: string;
     per_page?: number;
     page?: number;
     uncategorized?: boolean;
@@ -160,6 +162,7 @@ export type CreateLeadPayload = {
     contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -186,6 +189,7 @@ export type UpdateLeadPayload = {
     contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -308,8 +312,10 @@ export type ImportLeadRow = {
     phone?: string;
     location?: string;
     company_name?: string;
+    company_email?: string;
     website?: string;
     position?: string;
+    industry?: string;
     profile_urls?: string | string[];
     source?: string;
     status?: string;
@@ -366,8 +372,10 @@ export type ImportLeadsResult = {
 export type ImportPreviewDuplicateRow = {
     row_index: number;
     data: ImportLeadRow;
-    existing_lead_id: number;
+    existing_lead_id: number | null;
     existing_lead_name: string;
+    /** Duplicate of an earlier row in the same file. */
+    in_file?: boolean;
 };
 
 export type ImportPreviewResult = {
@@ -383,6 +391,8 @@ export type ImportLeadsPayload = {
     pipeline_id: number | string;
     rows: ImportLeadRow[];
     duplicate_policy?: DuplicatePolicy;
+    /** Position of this batch in the original file, so row numbers match the file. */
+    row_offset?: number;
 };
 
 export type ExportLeadsParams = {
@@ -394,6 +404,10 @@ export type ExportLeadsParams = {
     pipeline_id?: number | string;
     source?: string;
     assigned_to_user_id?: number | string;
+    created_by_user_id?: number | string;
+    created_from?: string;
+    created_to?: string;
+    industry?: string;
     lead_ids?: Array<number | string>;
 };
 
@@ -445,6 +459,8 @@ export type CrmLeadsAnalyticsParams = Pick<
     | "created_by_user_id"
     | "created_from"
     | "created_to"
+    | "assigned_to_user_id"
+    | "industry"
 >;
 
 function buildQuery(params: Record<string, string | number | undefined>) {
@@ -494,6 +510,7 @@ export function listLeads(
         created_by_user_id: params.created_by_user_id,
         created_from: params.created_from,
         created_to: params.created_to,
+        industry: params.industry,
         per_page: params.per_page,
         page: params.page,
         uncategorized: params.uncategorized ? 1 : undefined,
@@ -554,6 +571,7 @@ export type LeadMergeSnapshot = {
     location?: string | null;
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[];
@@ -641,6 +659,26 @@ export function deleteLead(
         method: "DELETE",
         path: withBase(basePath, `/crm/leads/${leadId}`),
         body: companyId != null ? { company_id: companyId } : undefined,
+        token,
+    });
+}
+
+export type BulkDeleteLeadsResult = {
+    deleted_ids: number[];
+    failed: Array<{ id: number; message: string }>;
+};
+
+/** Delete many leads at once; failures are reported per lead. */
+export function bulkDeleteLeads(
+    leadIds: Array<number | string>,
+    companyId: number | string | undefined,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<BulkDeleteLeadsResult>> {
+    return apiRequest<BulkDeleteLeadsResult>({
+        method: "POST",
+        path: withBase(basePath, "/crm/leads/bulk-delete"),
+        body: { company_id: companyId, lead_ids: leadIds.map(Number) },
         token,
     });
 }
@@ -1028,6 +1066,8 @@ export function getCrmLeadsAnalytics(
         created_by_user_id: params.created_by_user_id,
         created_from: params.created_from,
         created_to: params.created_to,
+        assigned_to_user_id: params.assigned_to_user_id,
+        industry: params.industry,
     });
 
     return apiRequest<CrmLeadsAnalytics>({

@@ -28,7 +28,8 @@ class StoreLeadRequest extends FormRequest
 
         $this->merge([
             'company_id' => $this->resolveCompanyContextId($this->input('company_id')),
-            'status' => $this->input('status', 'newly_lead'),
+            // No status -> the company's default stage (resolved in LeadService::create).
+            'status' => $this->input('status'),
             'priority' => $this->input('priority', LeadPriority::MEDIUM->value),
             ...$budget,
             ...$this->normalizeLeadProfessionalFields(),
@@ -96,12 +97,13 @@ class StoreLeadRequest extends FormRequest
             'contacts.*.location' => ['nullable', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
             'company_email' => ['nullable', 'email', 'max:255'],
+            'industry' => ['nullable', 'string', 'max:120'],
             'website' => ['nullable', 'string', 'max:255', 'url'],
             'position' => ['nullable', 'string', 'max:120'],
             'profile_urls' => ['nullable', 'array'],
             'profile_urls.*' => ['nullable', 'string', 'url', 'max:2048'],
             'source' => ['nullable', 'string', 'max:120'],
-            'status' => ['required', 'string', 'max:120'],
+            'status' => ['nullable', 'string', 'max:120'],
             'priority' => ['required', 'string', Rule::in(LeadPriority::values())],
             'budget_amount' => ['nullable', 'numeric', 'min:0'],
             'budget_currency' => ['nullable', 'string', 'size:3', 'regex:/^[A-Z]{3}$/'],

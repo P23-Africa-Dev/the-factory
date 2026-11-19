@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  assignInternalUserSupervisor,
   createCompanyZone,
   createInternalUser,
   deleteCompanyZone,
@@ -9,6 +10,7 @@ import {
   listCompanyZones,
   listInternalUsers,
   listInternalUsersPaginated,
+  listSupervisorCandidates,
   updateCompanyZone,
   updateInternalUser,
   type CreateCompanyZonePayload,
@@ -19,6 +21,7 @@ import {
   type CompanyZoneOption,
   type ListInternalUsersParams,
   type PaginatedInternalUsersData,
+  type SupervisorCandidate,
   type UpdateCompanyZonePayload,
   type UpdateInternalUserPayload,
 } from "@/lib/api/internal-users";
@@ -75,6 +78,46 @@ export function useInternalUsersOnboardingStatus(companyId?: number | string) {
     },
     enabled: hasActiveApiSession(token) && !!companyId,
     staleTime: 1000 * 60 * 2,
+  });
+}
+
+/** Owners, admins and supervisors who can supervise an agent. */
+export function useSupervisorCandidates(companyId?: number | string, enabled = true) {
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useQuery({
+    queryKey: ["internal-users", "supervisor-candidates", companyId] as const,
+    queryFn: async (): Promise<SupervisorCandidate[]> => {
+      const res = await listSupervisorCandidates(companyId as number | string, token);
+      return res.data;
+    },
+    enabled: enabled && hasActiveApiSession(token) && !!companyId,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+export function useAssignInternalUserSupervisor() {
+  const queryClient = useQueryClient();
+  const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+  return useMutation({
+    mutationFn: ({
+      userId,
+      companyId,
+      supervisorUserId,
+    }: {
+      userId: number | string;
+      companyId: number | string;
+      supervisorUserId: number;
+    }) =>
+      assignInternalUserSupervisor(
+        userId,
+        { company_id: companyId, supervisor_user_id: supervisorUserId },
+        token
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["internal-users"] });
+    },
   });
 }
 

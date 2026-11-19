@@ -12,7 +12,16 @@ type ExportFormat = "csv" | "xlsx";
 
 export type ExportLeadsFilters = Pick<
     ExportLeadsParams,
-    "search" | "status" | "priority" | "pipeline_id" | "source" | "assigned_to_user_id"
+    | "search"
+    | "status"
+    | "priority"
+    | "pipeline_id"
+    | "source"
+    | "assigned_to_user_id"
+    | "created_by_user_id"
+    | "created_from"
+    | "created_to"
+    | "industry"
 >;
 
 export function ExportLeadsDialog({

@@ -116,6 +116,19 @@ class InternalUserController extends Controller
         );
     }
 
+    public function supervisorCandidates(FetchInternalUsersRequest $request): JsonResponse
+    {
+        $companyId = $request->validated('company_id');
+
+        return $this->success(
+            'Supervisor candidates retrieved successfully',
+            $this->fetchService->fetchSupervisorCandidates(
+                actor: $request->user(),
+                companyId: $companyId !== null ? (int) $companyId : null,
+            ),
+        );
+    }
+
     public function store(CreateInternalUserRequest $request): JsonResponse
     {
         $result = $this->service->createByManager($request->user(), $request->validated());

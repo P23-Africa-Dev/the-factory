@@ -22,6 +22,9 @@ import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-edit
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
+import { LEAD_INDUSTRIES, LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
+import { FieldError } from "@/components/ui/field-error";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
 
 type FormErrors = Partial<{
   pipelineId: string;
@@ -29,6 +32,8 @@ type FormErrors = Partial<{
   companyEmail: string;
   website: string;
   position: string;
+  industry: string;
+  budget: string;
   profileUrls: string;
   source: string;
   status: string;
@@ -40,10 +45,6 @@ type FormErrors = Partial<{
   customFields: string;
 }>;
 
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
-}
 
 const IDENTITY_MATCHES = new Set([
   "name",
@@ -177,6 +178,7 @@ function SearchableCurrencySelect({
 }
 
 const PRIORITY_OPTIONS = [
+  { label: "Urgent", value: "urgent" },
   { label: "High", value: "high" },
   { label: "Medium", value: "medium" },
   { label: "Low", value: "low" },
@@ -240,6 +242,7 @@ export function AddLeadModal({
     lead?.profile_urls?.length ? lead.profile_urls : [""]
   );
   const [source, setSource] = useState(lead?.source ?? "");
+  const [industry, setIndustry] = useState(lead?.industry ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
   const { data: leadFields = [] } = useLeadFields(companyId ?? undefined, apiBasePath);
@@ -300,10 +303,17 @@ export function AddLeadModal({
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergePreview, setMergePreview] = useState<LeadMergePreview | null>(null);
 
+  // New leads fall back to the first stage. When editing, never silently move a
+  // lead whose stage no longer exists: keep it and show it in the list.
+  const statusIsKnown = labels.some((label) => label.slug === status);
   const effectiveStatus: ApiLeadStatus =
-    labels.length > 0 && !labels.some((label) => label.slug === status)
-      ? labels[0].slug
-      : status;
+    !lead && labels.length > 0 && !statusIsKnown ? labels[0].slug : status;
+  const statusOptions = [
+    ...labels.map((l) => ({ value: l.slug, label: l.name })),
+    ...(lead && status && !statusIsKnown
+      ? [{ value: status, label: `${String(status).replace(/_/g, " ")} (removed stage)` }]
+      : []),
+  ];
 
   const { data: companyUsers = [], isLoading: loadingUsers } = useCrmAssignees(
     canManageLeads ? companyId ?? undefined : undefined,
@@ -441,6 +451,12 @@ export function AddLeadModal({
     if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
       e.profileUrls = "One or more profile URLs are invalid.";
     }
+    if (industry.trim().length > LEAD_INDUSTRY_MAX_LENGTH) {
+      e.industry = `Industry must be ${LEAD_INDUSTRY_MAX_LENGTH} characters or fewer.`;
+    }
+    if (budgetAmount.trim() && (isNaN(Number(budgetAmount.replace(/,/g, ""))) || Number(budgetAmount.replace(/,/g, "")) < 0)) {
+      e.budget = "Enter a valid budget amount.";
+    }
     const nextCustomErrors = validateCustomFieldValues(leadFields, customFields);
     setCustomFieldErrors(nextCustomErrors);
     if (Object.keys(nextCustomErrors).length > 0) {
@@ -472,6 +488,18 @@ export function AddLeadModal({
       if (apiErr.errors.company_email) fe.companyEmail = apiErr.errors.company_email[0];
       if (apiErr.errors.website) fe.website = apiErr.errors.website[0];
       if (apiErr.errors.position) fe.position = apiErr.errors.position[0];
+      if (apiErr.errors.industry) fe.industry = apiErr.errors.industry[0];
+      if (apiErr.errors.budget_amount) fe.budget = apiErr.errors.budget_amount[0];
+      else if (apiErr.errors.budget_currency) fe.budget = apiErr.errors.budget_currency[0];
+      const apiCustomErrors: Record<string, string> = {};
+      Object.entries(apiErr.errors).forEach(([key, messages]) => {
+        const match = key.match(/^custom_fields\.(.+)$/);
+        if (match && messages?.[0]) apiCustomErrors[match[1]] = messages[0];
+      });
+      if (Object.keys(apiCustomErrors).length > 0) {
+        setCustomFieldErrors(apiCustomErrors);
+        fe.customFields = "Check the custom fields.";
+      }
       if (apiErr.errors.profile_urls) fe.profileUrls = apiErr.errors.profile_urls[0];
       if (apiErr.errors.source) fe.source = apiErr.errors.source[0];
       if (apiErr.errors.status) fe.status = apiErr.errors.status[0];
@@ -484,6 +512,7 @@ export function AddLeadModal({
       setContactErrors(ce);
       const firstContactError = ce.findIndex((contactError) => Object.keys(contactError).length > 0);
       if (firstContactError >= 0) setActiveContactIndex(firstContactError);
+      void scrollToFirstError();
     }
   };
 
@@ -496,6 +525,8 @@ export function AddLeadModal({
       setErrors(validation.fields);
       setContactErrors(validation.contacts);
       if (firstContactError >= 0) setActiveContactIndex(firstContactError);
+      // Take the user to the first problem (switching contact tab first if needed).
+      void scrollToFirstError();
       return null;
     }
 
@@ -528,6 +559,7 @@ export function AddLeadModal({
       company_email: companyEmail.trim() || null,
       website: website.trim() ? normalizeWebsite(website) : null,
       position: position.trim() || null,
+      industry: industry.trim() || null,
       profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       source: source.trim() || (isAgentContext ? "agent_upload" : null),
       status: effectiveStatus,
@@ -583,9 +615,18 @@ export function AddLeadModal({
     if (!payload) return;
 
     if (lead) {
+      // Agents may only edit stage, pipeline, contact details, industry and
+      // custom fields; sending other keys makes the API reject the update.
+      const updatePayload = isAgentContext
+        ? (Object.fromEntries(
+            Object.entries(payload).filter(([key]) =>
+              ["company_id", "pipeline_id", "status", "contacts", "name", "email", "phone", "location", "industry", "custom_fields"].includes(key),
+            ),
+          ) as typeof payload)
+        : payload;
       updateMutation.mutate({
         leadId: lead.id,
-        payload,
+        payload: updatePayload,
       }, {
         onError: handleError,
       });
@@ -777,6 +818,26 @@ export function AddLeadModal({
             </div>
 
             <div>
+              <FormRow label="Industry" labelClassName="w-28">
+                <InlineInput
+                  value={industry}
+                  list="lead-industry-options"
+                  maxLength={LEAD_INDUSTRY_MAX_LENGTH}
+                  onChange={(e) => { setIndustry(e.target.value); clearError("industry"); }}
+                  placeholder="Pick or type, e.g Technology & Software"
+                  className="col-span-2"
+                  aria-invalid={errors.industry ? true : undefined}
+                />
+                <datalist id="lead-industry-options">
+                  {LEAD_INDUSTRIES.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+              </FormRow>
+              <FieldError message={errors.industry} />
+            </div>
+
+            <div>
               <FormRow label="Budget" labelClassName="w-28">
                 <div className="col-span-2 h-12.25 w-full flex rounded-xl border border-gray-200 overflow-hidden shadow-[0px_1px_3px_1px_#00000026,0px_1px_2px_0px_#0000004D] bg-white focus-within:border-gray-400 transition-colors">
                   <SearchableCurrencySelect
@@ -788,12 +849,13 @@ export function AddLeadModal({
                     type="number"
                     min="0"
                     value={budgetAmount}
-                    onChange={(e) => setBudgetAmount(e.target.value)}
+                    onChange={(e) => { setBudgetAmount(e.target.value); clearError("budget"); }}
                     placeholder="E.g 10,000"
                     className="flex-1 h-full px-3 text-[10px] font-light text-[#616263] placeholder:text-[10px] bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </FormRow>
+              <FieldError message={errors.budget} />
             </div>
 
             <div>
@@ -801,7 +863,7 @@ export function AddLeadModal({
                 <InlineSelect
                   value={effectiveStatus}
                   onChange={(v) => { setStatus(v as ApiLeadStatus); clearError("status"); }}
-                  options={labels.map((l) => ({ value: l.slug, label: l.name }))}
+                  options={statusOptions}
                   className="col-span-2"
                 />
               </FormRow>

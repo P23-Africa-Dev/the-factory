@@ -16,10 +16,18 @@ import {
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth";
-import { useCreateTask, useCreateSelfTask, useTaskAssignees, useTaskObserverCandidates } from "@/hooks/use-tasks";
+import {
+  useCreateTask,
+  useCreateSelfTask,
+  useTaskAssignees,
+  useTaskObserverCandidates,
+  useUpdateTaskStatusAdmin,
+} from "@/hooks/use-tasks";
 import { ObserverPicker } from "@/components/operations/observer-picker";
 import type { DndItem, TaskCategory } from "@/types/operations";
-import type { ApiTaskPriority } from "@/lib/api/tasks";
+import type { ApiTaskPriority, ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
+import { getApiErrorMessage } from "@/lib/api/errors";
+import { isTaskManagerRole } from "@/lib/tasks/board-permissions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { PlaceAutocompleteField } from "@/components/map/PlaceAutocompleteField";
@@ -29,8 +37,16 @@ import type { RetrievedPlace } from "@/lib/utils/place-search";
 
 import { ChecklistRows, SubtaskEditor } from "./project-checklist";
 import type { ProjectSubtask } from "@/lib/tasks/project-checklist";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
 
-type StatusType = "pending" | "in-progress" | "completed";
+export type CreateTaskStatus = "pending" | "in-progress" | "completed";
+type StatusType = CreateTaskStatus;
+
+const STATUS_TO_API: Record<StatusType, ApiTaskStatus> = {
+  pending: "pending",
+  "in-progress": "in_progress",
+  completed: "completed",
+};
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -40,6 +56,8 @@ interface CreateTaskModalProps {
   projectSubtasks?: ProjectSubtask[];
   onProjectChecklistCreated?: (id: string, dueAt: string | null, subtasks: ProjectSubtask[]) => void;
   mode?: "create" | "edit";
+  /** Board column the task was created from; managers' new tasks move there after creation. */
+  initialStatus?: StatusType;
   initialValues?: Partial<{
     title: string;
     taskType: string;
@@ -170,6 +188,7 @@ export function CreateTaskModal({
   onCreateTask,
   projectId,
   mode = "create",
+  initialStatus,
   initialValues,
   submitLabel,
   onSubmitTask,
@@ -179,7 +198,7 @@ export function CreateTaskModal({
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
   const isAgent = role === "agent";
-  const canManageTasks = role === "owner" || role === "admin" || role === "supervisor";
+  const canManageTasks = isTaskManagerRole(role);
 
   const { data: assignees = [], isLoading: loadingAssignees } = useTaskAssignees(
     canManageTasks ? companyId ?? undefined : undefined,
@@ -193,11 +212,30 @@ export function CreateTaskModal({
   const usesProjectDueDate = Boolean(onProjectChecklistCreated || projectSubtasks);
   const submittedChecklist = useRef<{ dueAt: string | null; subtasks: ProjectSubtask[] }>(null);
 
+  const { mutate: updateStatusAdmin } = useUpdateTaskStatusAdmin();
+  const submittedStatus = useRef<StatusType>("pending");
+
+  // New tasks always start as pending; a manager who picked another column
+  // (or used that column's "Add Card") gets the task moved there right after.
+  const applyInitialStatus = (task: TaskApiItem) => {
+    const target = STATUS_TO_API[submittedStatus.current];
+    submittedStatus.current = "pending";
+    if (!canManageTasks || !companyId || target === "pending" || task.status === target) return;
+    updateStatusAdmin(
+      { taskId: task.id, payload: { company_id: companyId, status: target } },
+      {
+        onError: (err) =>
+          toast.error(getApiErrorMessage(err, "Task created, but its status could not be set.")),
+      },
+    );
+  };
+
   const { mutate, isPending } = useCreateTask({
     onSuccess: (task) => {
       const checklist = submittedChecklist.current;
       if (checklist) onProjectChecklistCreated?.(String(task.id), checklist.dueAt, checklist.subtasks);
       submittedChecklist.current = null;
+      applyInitialStatus(task);
       toast.success("Task created successfully.");
       handleClose();
     },
@@ -228,7 +266,7 @@ export function CreateTaskModal({
     minPhotos: initialValues?.minPhotos ?? "0",
     visitVerification: initialValues?.visitVerification ?? false,
     observerIds: initialValues?.observerIds ?? ([] as string[]),
-    status: (initialValues?.status ?? "pending") as StatusType,
+    status: (initialValues?.status ?? initialStatus ?? "pending") as StatusType,
     category: "all" as TaskCategory,
   }));
 
@@ -252,9 +290,10 @@ export function CreateTaskModal({
           : canManageTasks && user?.id
             ? [String(user.id)]
             : initialAssigneeIds(initialValues),
+      status: mode === "create" ? initialStatus ?? initialValues?.status ?? "pending" : current.status,
     }));
     initializedOpenAssigneeRef.current = true;
-  }, [canManageTasks, initialValues, isOpen, mode, user]);
+  }, [canManageTasks, initialStatus, initialValues, isOpen, mode, user]);
 
   const primaryAssigneeId = form.assigneeIds[0] ?? "";
 
@@ -298,6 +337,7 @@ export function CreateTaskModal({
       errs.dueDate = "The task due date cannot be earlier than a subtask due date.";
     }
     setErrors(errs);
+    if (Object.keys(errs).length > 0) void scrollToFirstError();
     return Object.keys(errs).length === 0;
   };
 
@@ -388,6 +428,7 @@ export function CreateTaskModal({
             mappedErrors[formKey] = backendErrors[key][0];
           }
           setErrors(mappedErrors);
+          void scrollToFirstError();
           toast.error(apiErr.message || "Please fix the validation errors");
         } else {
           toast.error(apiErr.message || "Failed to create task");
@@ -404,6 +445,7 @@ export function CreateTaskModal({
         return;
       }
 
+      submittedStatus.current = form.status;
       mutate(
         {
           ...payload,
@@ -508,7 +550,7 @@ export function CreateTaskModal({
               />
             </InputWrap>
             {errors.title && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.title}</p>
+              <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.title}</p>
             )}
           </div>
 
@@ -585,7 +627,7 @@ export function CreateTaskModal({
                 Everyone picked works on the same task. The first person is the primary assignee.
               </p>
               {errors.assignTo && (
-                <p className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
+                <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.assignTo}</p>
               )}
             </div>
           )}
@@ -604,7 +646,7 @@ export function CreateTaskModal({
               Observers can see this task and comment on it, but it is not assigned to them.
             </p>
             {errors.observer_ids && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.observer_ids}</p>
+              <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.observer_ids}</p>
             )}
           </div>
 
@@ -619,7 +661,7 @@ export function CreateTaskModal({
               className={`${INPUT_CLS(errors.taskType)} px-4 cursor-pointer`}
             />
             {errors.taskType && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
+              <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.taskType}</p>
             )}
           </div>
 
@@ -636,7 +678,7 @@ export function CreateTaskModal({
               className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.description ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
             {errors.description && (
-              <p className="text-red-400 text-[11px] mt-1">
+              <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">
                 {errors.description}
               </p>
             )}
@@ -655,7 +697,7 @@ export function CreateTaskModal({
               />
             </InputWrap>
             {errors.location && (
-              <p className="text-red-400 text-[11px] mt-1">{errors.location}</p>
+              <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.location}</p>
             )}
           </div>
 
@@ -708,7 +750,7 @@ export function CreateTaskModal({
                 />
               </InputWrap>
               {errors.dueDate && (
-                <p className="text-red-400 text-[11px] mt-1">
+                <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">
                   {errors.dueDate}
                 </p>
               )}
@@ -734,7 +776,7 @@ export function CreateTaskModal({
                 className={`${INPUT_CLS(errors.priority)} pl-9 pr-4 cursor-pointer`}
               />
               {errors.priority && (
-                <p className="text-red-400 text-[11px] mt-1">
+                <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">
                   {errors.priority}
                 </p>
               )}
@@ -811,7 +853,8 @@ export function CreateTaskModal({
 
           {/* Divider */}
           <div className="border-t border-gray-100 pt-3 space-y-3">
-            {/* Task Status */}
+            {/* Task Status — managers creating a task; agents' tasks always start pending */}
+            {mode === "create" && canManageTasks && (
             <div>
               <FieldLabel>Initial Status</FieldLabel>
               <div className="grid grid-cols-3 gap-2">
@@ -835,6 +878,7 @@ export function CreateTaskModal({
                 ))}
               </div>
             </div>
+            )}
 
             {/* Category */}
             {/* <div>

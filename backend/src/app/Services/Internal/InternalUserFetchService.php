@@ -6,6 +6,8 @@ namespace App\Services\Internal;
 
 use App\Models\User;
 use App\Services\Workforce\AgentPresenceService;
+use App\Support\AvatarUrlResolver;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
@@ -64,6 +66,50 @@ class InternalUserFetchService
         }
 
         return $query->get();
+    }
+
+    /**
+     * People who can be set as an agent's supervisor: active company members
+     * whose company role is owner, admin or supervisor. Uses company_users.role
+     * (owners have no users.internal_role). A supervisor may only pick themselves.
+     *
+     * @return array<int, array{id: int, name: string, email: string, role: string, avatar_url: string|null}>
+     */
+    public function fetchSupervisorCandidates(User $actor, ?int $companyId = null): array
+    {
+        $context = $this->accessService->resolveCompanyContext($actor, $companyId);
+        $actorRole = (string) $context['role'];
+        $this->accessService->ensureCanManageInternalUsers($actorRole);
+        $company = $context['company'];
+
+        $query = DB::table('company_users')
+            ->join('users', 'users.id', '=', 'company_users.user_id')
+            ->where('company_users.company_id', $company->id)
+            ->whereIn('company_users.role', ['owner', 'admin', 'supervisor'])
+            ->whereNull('users.deleted_at')
+            ->where(function ($q): void {
+                // Owners may not have gone through internal onboarding.
+                $q->where('users.is_active', true)->orWhere('company_users.role', 'owner');
+            })
+            ->select(['users.id', 'users.name', 'users.email', 'users.avatar', 'users.gender', 'company_users.role'])
+            ->orderByRaw("CASE company_users.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END")
+            ->orderBy('users.name');
+
+        if ($actorRole === 'supervisor') {
+            $query->where('users.id', $actor->id);
+        }
+
+        return $query->get()
+            ->unique('id')
+            ->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
+                'name' => (string) $row->name,
+                'email' => (string) $row->email,
+                'role' => (string) $row->role,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($row->avatar, $row->gender),
+            ])
+            ->values()
+            ->all();
     }
 
     /**

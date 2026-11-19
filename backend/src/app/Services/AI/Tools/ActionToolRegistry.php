@@ -322,7 +322,12 @@ class ActionToolRegistry
             : '';
         unset($validated['notes']);
 
-        foreach (['industry', 'contact_person'] as $metaField) {
+        // Industry is a first-class lead column; only contact_person stays in meta.
+        if (isset($validated['industry']) && is_string($validated['industry'])) {
+            $validated['industry'] = trim($validated['industry']) !== '' ? trim($validated['industry']) : null;
+        }
+
+        foreach (['contact_person'] as $metaField) {
             if (isset($validated[$metaField]) && is_string($validated[$metaField]) && trim($validated[$metaField]) !== '') {
                 $meta[$metaField] = trim($validated[$metaField]);
             }
@@ -489,9 +494,9 @@ class ActionToolRegistry
             'assigned_zone' => ['nullable', 'string', 'min:2', 'max:120'],
             'assigned_zone_ids' => ['nullable', 'array', 'max:50'],
             'assigned_zone_ids.*' => ['integer', 'exists:company_zones,id'],
-            'work_days' => ['required', 'array', 'min:1', 'max:7'],
+            'work_days' => ['nullable', 'array', 'max:7'],
             'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
-            'base_salary' => ['required', 'numeric', 'min:0'],
+            'base_salary' => ['nullable', 'numeric', 'min:0'],
             'salary_type' => ['nullable', 'string', Rule::in(PayrollSalaryType::values())],
             'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
             'commission_enabled' => ['nullable', 'boolean'],

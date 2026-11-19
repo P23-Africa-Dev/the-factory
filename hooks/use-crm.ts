@@ -12,6 +12,7 @@ import {
     createCrmPipeline,
     deleteCrmPipeline,
     createLead,
+    bulkDeleteLeads,
     deleteLead,
     downloadCrmLeadsExport,
     getAgentUploadsOverview,
@@ -631,6 +632,20 @@ export function useUpdateLead(
                 queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
             }
             options?.onSuccess?.(res.data.lead);
+        },
+    });
+}
+
+export function useBulkDeleteLeads(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ leadIds, companyId }: { leadIds: Array<number | string>; companyId: number | string | undefined }) =>
+            bulkDeleteLeads(leadIds, companyId, token, basePath),
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
         },
     });
 }

@@ -517,13 +517,11 @@ class TaskService
 
         $current = $task->status?->value;
 
-        if ($this->isLockedTerminalStatus($current)) {
-            throw ValidationException::withMessages([
-                'status' => ['Terminal tasks cannot be changed.'],
-            ]);
-        }
-
-        $this->assertValidStatusTransition($current, $status);
+        // Managers (owner, admin, supervisor) may move a task between any two
+        // statuses, including reopening completed or cancelled tasks. The
+        // payload builder clears completed_at on every non-completed status;
+        // the controller closes any open tracking session on complete/cancel.
+        $this->assertManagerStatusTransition($current, $status);
 
         if ($current !== $status) {
             $task->update($this->buildStatusUpdatePayload($task, $user->id, $status));
@@ -729,7 +727,8 @@ class TaskService
 
         if ($creator !== null) {
             $creatorMembership = $this->companyMembership($companyId, $creator->id);
-            if ($creatorMembership && (string) $creatorMembership->role === 'supervisor') {
+            // Supervisors may assign themselves or agents they directly supervise.
+            if ($creatorMembership && (string) $creatorMembership->role === 'supervisor' && $userId !== (int) $creator->id) {
                 $assigneeUser = User::query()->find($userId);
                 if (! $assigneeUser || (int) $assigneeUser->supervisor_user_id !== (int) $creator->id) {
                     throw ValidationException::withMessages([
@@ -1330,6 +1329,21 @@ class TaskService
         if (! in_array($nextStatus, $allowedTransitions[$currentStatus] ?? [], true)) {
             throw ValidationException::withMessages([
                 'status' => ['Invalid task status transition.'],
+            ]);
+        }
+    }
+
+    private function assertManagerStatusTransition(?string $currentStatus, string $nextStatus): void
+    {
+        if ($currentStatus === null) {
+            throw ValidationException::withMessages([
+                'status' => ['Task status is not initialized.'],
+            ]);
+        }
+
+        if (! in_array($nextStatus, TaskStatus::values(), true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Invalid task status.'],
             ]);
         }
     }

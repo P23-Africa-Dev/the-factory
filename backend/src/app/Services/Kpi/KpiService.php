@@ -368,20 +368,11 @@ class KpiService
             ]);
         }
 
-        if ($currentStatus === $nextStatus) {
-            return;
-        }
-
-        $allowed = [
-            KpiStatus::PENDING->value => [KpiStatus::IN_PROGRESS->value, KpiStatus::CANCELLED->value],
-            KpiStatus::IN_PROGRESS->value => [KpiStatus::PENDING->value, KpiStatus::COMPLETED->value, KpiStatus::CANCELLED->value],
-            KpiStatus::COMPLETED->value => [KpiStatus::IN_PROGRESS->value, KpiStatus::PENDING->value],
-            KpiStatus::CANCELLED->value => [KpiStatus::PENDING->value],
-        ];
-
-        if (! in_array($nextStatus, $allowed[$currentStatus] ?? [], true)) {
+        // Managers may move a KPI between any two statuses, including reopening
+        // completed or cancelled KPIs (the payload builder clears their timestamps).
+        if (! in_array($nextStatus, KpiStatus::values(), true)) {
             throw ValidationException::withMessages([
-                'status' => ['Invalid KPI status transition.'],
+                'status' => ['Invalid KPI status.'],
             ]);
         }
     }

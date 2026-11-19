@@ -843,6 +843,14 @@ export default function LeadDetailsPage() {
                   </div>
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Industry
+                    </label>
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.industry || "N/A"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Profile URLs
                     </label>
                     {(leadData.profile_urls?.length ?? 0) > 0 ? (

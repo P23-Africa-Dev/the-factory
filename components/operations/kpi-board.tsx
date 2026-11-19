@@ -101,7 +101,10 @@ export function KpiBoard({
     const overContainer = overIsContainer
       ? containers.find((c) => c.id === overId)
       : findContainer(overId);
-    if (!activeContainer || !overContainer) return;
+    if (!activeContainer || !overContainer) {
+      setDragStartContainerId(null);
+      return;
+    }
     if (activeId !== overId && activeContainer.id === overContainer.id) {
       moveItem(activeId, overId, activeContainer.id);
     }

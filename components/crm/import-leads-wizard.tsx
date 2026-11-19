@@ -25,7 +25,10 @@ import type {
 import { useCrmPreferences, useImportCrmLeads, useLeadFields, usePreviewImportCrmLeads } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 
-const MAX_IMPORT_ROWS = 500;
+/** The API takes 500 rows per request; larger files are sent in batches. */
+const IMPORT_BATCH_SIZE = 500;
+const MAX_IMPORT_ROWS = 5000;
+const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
 
 type FieldKey = keyof ImportLeadRow;
 type MappingValue = FieldKey | `custom:${string}` | "";
@@ -36,8 +39,10 @@ const FIELD_OPTIONS: Array<{ value: FieldKey; label: string }> = [
     { value: "phone", label: "Phone" },
     { value: "location", label: "Location" },
     { value: "company_name", label: "Company Name" },
+    { value: "company_email", label: "Company Email" },
     { value: "website", label: "Website" },
     { value: "position", label: "Position" },
+    { value: "industry", label: "Industry" },
     { value: "profile_urls", label: "Profile URLs (comma-separated)" },
     { value: "source", label: "Source" },
     { value: "status", label: "Status" },
@@ -64,6 +69,12 @@ const HEADER_ALIASES: Record<string, FieldKey> = {
     company: "company_name",
     organization: "company_name",
     organisation: "company_name",
+    company_email: "company_email",
+    business_email: "company_email",
+    organization_email: "company_email",
+    industry: "industry",
+    sector: "industry",
+    business_type: "industry",
     website: "website",
     web: "website",
     url: "website",
@@ -144,6 +155,7 @@ export function ImportLeadsWizard({
     const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>("skip");
     const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
     const [result, setResult] = useState<ImportLeadsResult | null>(null);
+    const [progress, setProgress] = useState<{ label: string; done: number; total: number } | null>(null);
     const [failedRows, setFailedRows] = useState<FailedImportRow[]>([]);
     const fileRef = useRef<HTMLInputElement | null>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -155,6 +167,8 @@ export function ImportLeadsWizard({
     const downloadTemplate = () => {
         const defaultLabel = labels.find((label) => label.is_default) ?? labels[0];
         const exampleStatus = defaultLabel?.name ?? "New Lead";
+        // Include the company's own custom fields so the template matches their CRM.
+        const customColumns = leadFields.filter((field) => field.status === "active");
         const content = toCsvContent(
             [
                 "name",
@@ -162,14 +176,17 @@ export function ImportLeadsWizard({
                 "phone",
                 "location",
                 "company_name",
+                "company_email",
                 "website",
                 "position",
+                "industry",
                 "profile_urls",
                 "source",
                 "status",
                 "priority",
                 "budget_amount",
                 "budget_currency",
+                ...customColumns.map((field) => field.key),
             ],
             [[
                 "Jane Doe",
@@ -177,14 +194,17 @@ export function ImportLeadsWizard({
                 "+1 555 000 1234",
                 "Lagos",
                 "Acme Ltd",
+                "hello@acme.com",
                 "https://acme.com",
                 "Head of Sales",
+                "Technology & Software",
                 "https://linkedin.com/in/jane,https://x.com/jane",
                 "Referral",
                 exampleStatus,
                 "medium",
                 "5000",
                 "USD",
+                ...customColumns.map(() => ""),
             ]]
         );
         downloadCsvFile("crm-leads-import-template.csv", content);
@@ -193,6 +213,10 @@ export function ImportLeadsWizard({
     const processFile = useCallback(async (file: File) => {
         if (!file.name.toLowerCase().endsWith(".csv") && file.type !== "text/csv") {
             toast.error("Please upload a CSV file.");
+            return;
+        }
+        if (file.size > MAX_IMPORT_FILE_BYTES) {
+            toast.error("This file is larger than 5 MB. Split it into smaller files and import them one at a time.");
             return;
         }
 
@@ -312,20 +336,43 @@ export function ImportLeadsWizard({
             return;
         }
         try {
-            const res = await previewMutation.mutateAsync({
-                company_id: companyId,
-                pipeline_id: Number(pipelineId),
-                rows: mappedRows,
-                duplicate_policy: duplicatePolicy,
-            });
-            setPreview(res.data);
+            // Validate in batches of IMPORT_BATCH_SIZE and merge the results.
+            const merged: ImportPreviewResult = {
+                total_rows: 0,
+                valid_count: 0,
+                duplicate_count: 0,
+                error_rows: [],
+                duplicate_rows: [],
+            };
+            for (let offset = 0; offset < mappedRows.length; offset += IMPORT_BATCH_SIZE) {
+                setProgress({ label: "Validating", done: offset, total: mappedRows.length });
+                const res = await previewMutation.mutateAsync({
+                    company_id: companyId,
+                    pipeline_id: Number(pipelineId),
+                    rows: mappedRows.slice(offset, offset + IMPORT_BATCH_SIZE),
+                    duplicate_policy: duplicatePolicy,
+                    row_offset: offset,
+                });
+                merged.total_rows += res.data.total_rows;
+                merged.valid_count += res.data.valid_count;
+                merged.duplicate_count += res.data.duplicate_count;
+                merged.error_rows.push(...res.data.error_rows);
+                merged.duplicate_rows.push(...res.data.duplicate_rows);
+            }
+            setPreview(merged);
             setStep("preview");
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Could not validate the file.");
+        } finally {
+            setProgress(null);
         }
     };
 
-    const submitImport = async (targetRows: ImportLeadRow[]) => {
+    /**
+     * Import rows in batches. `rowNumbers` (retry) maps each row back to its line
+     * in the original file so the results keep the same row numbers.
+     */
+    const submitImport = async (targetRows: ImportLeadRow[], rowNumbers?: number[]) => {
         if (!pipelineId) {
             toast.error("Select a pipeline for import.");
             return;
@@ -335,19 +382,58 @@ export function ImportLeadsWizard({
             return;
         }
 
-        try {
-            const res = await importMutation.mutateAsync({
-                company_id: companyId,
-                pipeline_id: Number(pipelineId),
-                rows: targetRows,
-                duplicate_policy: duplicatePolicy,
-            });
+        const merged: ImportLeadsResult = {
+            imported_count: 0,
+            updated_count: 0,
+            skipped_count: 0,
+            failed_rows: [],
+            skipped_rows: [],
+        };
+        const originalRow = (batchOffset: number, rowIndex: number) =>
+            rowNumbers ? rowNumbers[batchOffset + rowIndex - 1] ?? rowIndex : rowIndex;
 
-            setResult(res.data);
-            setFailedRows(res.data.failed_rows);
+        let processed = 0;
+        try {
+            for (let offset = 0; offset < targetRows.length; offset += IMPORT_BATCH_SIZE) {
+                setProgress({ label: "Importing", done: offset, total: targetRows.length });
+                const res = await importMutation.mutateAsync({
+                    company_id: companyId,
+                    pipeline_id: Number(pipelineId),
+                    rows: targetRows.slice(offset, offset + IMPORT_BATCH_SIZE),
+                    duplicate_policy: duplicatePolicy,
+                    // With explicit row numbers the server counts from 1 and we remap.
+                    row_offset: rowNumbers ? 0 : offset,
+                });
+                merged.imported_count += res.data.imported_count;
+                merged.updated_count += res.data.updated_count;
+                merged.skipped_count += res.data.skipped_count;
+                merged.failed_rows.push(...res.data.failed_rows.map((row) => ({
+                    ...row,
+                    row_index: rowNumbers ? originalRow(offset, row.row_index) : row.row_index,
+                })));
+                merged.skipped_rows.push(...res.data.skipped_rows.map((row) => ({
+                    ...row,
+                    row_index: rowNumbers ? originalRow(offset, row.row_index) : row.row_index,
+                })));
+                processed = offset + IMPORT_BATCH_SIZE;
+            }
+
+            setResult(merged);
+            setFailedRows(merged.failed_rows);
             setStep("results");
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Import failed.");
+            const message = err instanceof Error ? err.message : "Import failed.";
+            if (processed > 0) {
+                // Earlier batches were saved; show what happened instead of losing it.
+                setResult(merged);
+                setFailedRows(merged.failed_rows);
+                setStep("results");
+                toast.error(`Import stopped after ${Math.min(processed, targetRows.length)} rows: ${message}`);
+            } else {
+                toast.error(message);
+            }
+        } finally {
+            setProgress(null);
         }
     };
 
@@ -484,7 +570,7 @@ export function ImportLeadsWizard({
                             )}
                             {tooManyRows && (
                                 <p className="mt-2 text-[12px] text-red-500">
-                                    Imports are limited to {MAX_IMPORT_ROWS} rows per file. Split the file and try again.
+                                    Imports are limited to {MAX_IMPORT_ROWS.toLocaleString()} rows per file. Split the file and try again.
                                 </p>
                             )}
                         </div>
@@ -642,7 +728,7 @@ export function ImportLeadsWizard({
                                 disabled={previewMutation.isPending || !pipelineId}
                                 className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold disabled:opacity-40"
                             >
-                                {previewMutation.isPending ? "Validating…" : "Validate & Preview"}
+                                {progress ? `Validating… ${Math.min(progress.done + IMPORT_BATCH_SIZE, progress.total).toLocaleString()} / ${progress.total.toLocaleString()}` : previewMutation.isPending ? "Validating…" : "Validate & Preview"}
                             </button>
                         </div>
                     </>
@@ -725,7 +811,7 @@ export function ImportLeadsWizard({
                                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold disabled:opacity-40"
                             >
                                 <Upload size={13} />
-                                {importMutation.isPending ? "Importing…" : `Import ${preview.total_rows - preview.error_rows.length} lead(s)`}
+                                {progress ? `${progress.label}… ${Math.min(progress.done + IMPORT_BATCH_SIZE, progress.total).toLocaleString()} / ${progress.total.toLocaleString()}` : importMutation.isPending ? "Importing…" : `Import ${preview.total_rows - preview.error_rows.length} lead(s)`}
                             </button>
                         </div>
                     </>
@@ -789,7 +875,7 @@ export function ImportLeadsWizard({
                         <div className="flex items-center justify-end gap-2">
                             {failedRows.length > 0 && (
                                 <button
-                                    onClick={() => submitImport(failedRows.map((row) => row.data))}
+                                    onClick={() => submitImport(failedRows.map((row) => row.data), failedRows.map((row) => row.row_index))}
                                     disabled={importMutation.isPending}
                                     className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold disabled:opacity-40"
                                 >

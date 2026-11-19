@@ -7,6 +7,8 @@ import { useAuthStore, type AuthUser } from "@/store/auth";
 const mocks = vi.hoisted(() => ({
   createTask: vi.fn(),
   createSelfTask: vi.fn(),
+  updateStatusAdmin: vi.fn(),
+  createTaskOptions: null as null | { onSuccess?: (task: { id: number; status: string }) => void },
   assignees: [
     { id: 7, name: "Olivia Owner", email: "owner@example.com", role: "owner" },
     { id: 8, name: "Adam Admin", email: "admin@example.com", role: "admin" },
@@ -16,7 +18,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/use-tasks", () => ({
-  useCreateTask: () => ({ mutate: mocks.createTask, isPending: false }),
+  useCreateTask: (options: { onSuccess?: (task: { id: number; status: string }) => void }) => {
+    mocks.createTaskOptions = options;
+    return { mutate: mocks.createTask, isPending: false };
+  },
+  useUpdateTaskStatusAdmin: () => ({ mutate: mocks.updateStatusAdmin, isPending: false }),
   useCreateSelfTask: () => ({ mutate: mocks.createSelfTask, isPending: false }),
   useTaskAssignees: () => ({ data: mocks.assignees, isLoading: false }),
   useTaskObserverCandidates: () => ({
@@ -417,5 +423,37 @@ describe("CreateTaskModal observers", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     expect(mocks.createTask.mock.calls[0][0].observer_ids).toBeUndefined();
+  });
+});
+
+describe("CreateTaskModal column status preset", () => {
+  beforeEach(() => {
+    mocks.createTask.mockReset();
+    mocks.updateStatusAdmin.mockReset();
+  });
+
+  it("moves a manager's new task to the column it was created from", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} initialStatus="in-progress" />);
+
+    fillTitle("Visit the client office");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    mocks.createTaskOptions?.onSuccess?.({ id: 55, status: "pending" });
+
+    expect(mocks.updateStatusAdmin).toHaveBeenCalledWith(
+      { taskId: 55, payload: { company_id: 12, status: "in_progress" } },
+      expect.any(Object),
+    );
+  });
+
+  it("leaves a task created from the Pending column as pending", () => {
+    setUser(7, "owner");
+    render(<CreateTaskModal isOpen onClose={vi.fn()} initialStatus="pending" />);
+
+    fillTitle("Visit the client office");
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    mocks.createTaskOptions?.onSuccess?.({ id: 56, status: "pending" });
+
+    expect(mocks.updateStatusAdmin).not.toHaveBeenCalled();
   });
 });

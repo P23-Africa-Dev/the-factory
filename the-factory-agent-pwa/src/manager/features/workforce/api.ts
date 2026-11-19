@@ -24,6 +24,14 @@ export interface InviteInternalUserPayload {
   supervisor_id?: number | null;
 }
 
+export interface SupervisorCandidate {
+  id: number;
+  name: string;
+  email: string;
+  role: 'owner' | 'admin' | 'supervisor';
+  avatar_url?: string | null;
+}
+
 export interface PayrollOverviewSummary {
   period?: string;
   total_agents?: number;
@@ -72,11 +80,14 @@ export const workforceApi = {
       id: Number(u.id ?? u.user_id ?? 0),
       name: String(u.name ?? u.full_name ?? 'Team Member'),
       email: String(u.email ?? ''),
-      phone: (u.phone as string | null) ?? null,
+      phone: ((u.phone_number ?? u.phone) as string | null) ?? null,
       role: String(u.role ?? 'agent'),
       status: String(u.status ?? (u.is_suspended ? 'suspended' : 'active')),
       is_suspended: Boolean(u.is_suspended ?? u.status === 'suspended'),
-      supervisor_id: u.supervisor_id != null ? Number(u.supervisor_id) : null,
+      supervisor_id:
+        (u.supervisor_user_id ?? u.supervisor_id) != null
+          ? Number(u.supervisor_user_id ?? u.supervisor_id)
+          : null,
       supervisor_name:
         (u.supervisor_name as string | null) ??
         ((u.supervisor as { name?: string } | null)?.name ?? null),
@@ -85,34 +96,56 @@ export const workforceApi = {
     }));
   },
 
+  // Matches backend POST /admin/internal-users (only name, email, role required).
   inviteUser: async (payload: InviteInternalUserPayload): Promise<void> => {
     const companyId = getActiveCompanyId();
-    await client.post('/admin/internal-users/invitations', {
+    await client.post('/admin/internal-users', {
       company_id: companyId,
-      ...payload,
+      full_name: payload.name,
+      email: payload.email,
+      role: payload.role,
+      ...(payload.phone ? { phone_number: payload.phone } : {}),
+      ...(payload.role === 'agent' && payload.supervisor_id
+        ? { supervisor_user_id: payload.supervisor_id }
+        : {}),
     });
   },
 
+  // Suspends until manually reactivated.
   suspendUser: async (userId: number): Promise<void> => {
     const companyId = getActiveCompanyId();
-    await client.patch(`/admin/internal-users/${userId}/suspend`, {
+    await client.post(`/admin/internal-users/${userId}/suspend`, {
       company_id: companyId,
+      suspend_type: 'permanent',
     });
   },
 
   reactivateUser: async (userId: number): Promise<void> => {
     const companyId = getActiveCompanyId();
-    await client.patch(`/admin/internal-users/${userId}/reactivate`, {
+    await client.post(`/admin/internal-users/${userId}/reactivate`, {
       company_id: companyId,
     });
   },
 
   assignSupervisor: async (userId: number, supervisorId: number | null): Promise<void> => {
+    if (supervisorId == null) {
+      throw new Error('Choose a supervisor to assign.');
+    }
     const companyId = getActiveCompanyId();
     await client.patch(`/admin/internal-users/${userId}/supervisor`, {
       company_id: companyId,
-      supervisor_id: supervisorId,
+      supervisor_user_id: supervisorId,
     });
+  },
+
+  /** Owners, admins and supervisors who can supervise agents. */
+  getSupervisorCandidates: async (): Promise<SupervisorCandidate[]> => {
+    const companyId = getActiveCompanyId();
+    const { data } = await client.get<{ data?: SupervisorCandidate[] }>(
+      '/admin/internal-users/supervisor-candidates',
+      { params: { company_id: companyId }, suppressErrorToast: true },
+    );
+    return Array.isArray(data?.data) ? data.data : [];
   },
 
   getPayrollOverview: async (params?: { month?: string }): Promise<PayrollOverviewSummary> => {
@@ -179,6 +212,15 @@ export const useInternalUsers = (params?: { role?: string; search?: string }) =>
   return useQuery({
     queryKey: ['admin-internal-users', companyId, params],
     queryFn: () => workforceApi.getInternalUsers(params),
+    enabled: Boolean(companyId),
+  });
+};
+
+export const useSupervisorCandidates = () => {
+  const companyId = getActiveCompanyId();
+  return useQuery({
+    queryKey: ['admin-supervisor-candidates', companyId],
+    queryFn: () => workforceApi.getSupervisorCandidates(),
     enabled: Boolean(companyId),
   });
 };

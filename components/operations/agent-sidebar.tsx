@@ -5,7 +5,12 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import type { AgentItem } from './agent-list';
 import { getAgentSessionBadgeClass } from '@/lib/agent-presence';
-import { useUpdateInternalUser } from '@/hooks/use-internal-users';
+import {
+  useAssignInternalUserSupervisor,
+  useSupervisorCandidates,
+  useUpdateInternalUser,
+} from '@/hooks/use-internal-users';
+import { getApiErrorMessage } from '@/lib/api/errors';
 import { useCompanyZones } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
 import { getActiveCompanyContext } from '@/lib/company-context';
@@ -34,16 +39,33 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
   const [zoneIds, setZoneIds] = useState<number[]>(agent.zoneIds ?? []);
   const [phone, setPhone] = useState(agent.phone);
   const [role, setRole] = useState(agent.role);
+  const [supervisorId, setSupervisorId] = useState(agent.supervisorUserId ? String(agent.supervisorUserId) : '');
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const updateMutation = useUpdateInternalUser();
+  const assignSupervisorMutation = useAssignInternalUserSupervisor();
   const { data: zones = [] } = useCompanyZones(companyId ?? undefined);
   const permissions = useUserManagementPermissions({
     internalRole: agent.internalRole ?? agent.role,
     supervisorUserId: agent.supervisorUserId,
     isSuspended: agent.isSuspended,
   });
+
+  const canManageSupervisor = permissions.role === 'owner' || permissions.role === 'admin';
+  const isAgentRole = (role || '').toLowerCase() === 'agent';
+  // Owners, admins and supervisors can supervise agents.
+  const { data: supervisorCandidates = [] } = useSupervisorCandidates(
+    companyId ?? undefined,
+    canManageSupervisor,
+  );
+  const currentSupervisor = supervisorCandidates.find((c) => c.id === agent.supervisorUserId);
+  const supervisorOptions = supervisorCandidates
+    .filter((c) => String(c.id) !== String(agent.id))
+    .map((c) => ({
+      value: String(c.id),
+      label: `${c.name} · ${c.role.charAt(0).toUpperCase()}${c.role.slice(1)}`,
+    }));
 
   const roleOptions = permissions.role === 'owner' || permissions.role === 'admin'
     ? ROLE_OPTIONS
@@ -58,6 +80,7 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
     setZoneIds(agent.zoneIds ?? []);
     setPhone(agent.phone);
     setRole(agent.role);
+    setSupervisorId(agent.supervisorUserId ? String(agent.supervisorUserId) : '');
     setEditing(true);
   };
 
@@ -87,11 +110,33 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
       },
       {
         onSuccess: () => {
-          toast.success('Agent updated.');
-          setEditing(false);
+          const supervisorChanged =
+            canManageSupervisor &&
+            isAgentRole &&
+            supervisorId !== '' &&
+            Number(supervisorId) !== (agent.supervisorUserId ?? null);
+
+          if (!supervisorChanged) {
+            toast.success('Agent updated.');
+            setEditing(false);
+            return;
+          }
+
+          assignSupervisorMutation.mutate(
+            { userId: agentId, companyId, supervisorUserId: Number(supervisorId) },
+            {
+              onSuccess: () => {
+                toast.success('Agent updated.');
+                setEditing(false);
+              },
+              onError: (err) => {
+                toast.error(getApiErrorMessage(err, 'Details saved, but the supervisor could not be changed.'));
+              },
+            }
+          );
         },
-        onError: () => {
-          toast.error('Failed to update agent. Please try again.');
+        onError: (err) => {
+          toast.error(getApiErrorMessage(err, 'Failed to update agent. Please try again.'));
         },
       }
     );
@@ -179,14 +224,28 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                 </div>
               )}
 
+              {/* Supervisor (agents only) */}
+              {canManageSupervisor && isAgentRole && (
+                <div>
+                  <p className="text-[11px] font-bold text-dash-dark mb-1">Supervisor</p>
+                  <SearchableSelect
+                    value={supervisorId}
+                    onChange={setSupervisorId}
+                    options={supervisorOptions}
+                    placeholder="Select supervisor"
+                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
+                  />
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={handleSave}
-                  disabled={updateMutation.isPending}
+                  disabled={updateMutation.isPending || assignSupervisorMutation.isPending}
                   className="flex-1 py-2 bg-dash-dark text-white rounded-lg text-[12px] font-semibold hover:opacity-90 transition-all disabled:opacity-60 cursor-pointer"
                 >
-                  {updateMutation.isPending ? 'Saving…' : 'Save'}
+                  {updateMutation.isPending || assignSupervisorMutation.isPending ? 'Saving…' : 'Save'}
                 </button>
                 <button
                   onClick={handleCancel}
@@ -217,6 +276,16 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                 <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
                 <p className="text-[12px] text-gray-400">{agent.role}</p>
               </div>
+              {canManageSupervisor && (agent.role || '').toLowerCase() === 'agent' && (
+                <div>
+                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Supervisor</p>
+                  <p className="text-[12px] text-gray-400">
+                    {currentSupervisor
+                      ? `${currentSupervisor.name} (${currentSupervisor.role})`
+                      : agent.supervisorUserId ? '—' : 'Not assigned'}
+                  </p>
+                </div>
+              )}
               {agent.isSuspended && (
                 <div>
                   <p className="text-[13px] font-bold text-dash-dark mb-0.5">Status</p>

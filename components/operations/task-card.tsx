@@ -31,6 +31,8 @@ interface TaskCardProps {
   onViewMap?: (item: DndItem) => void;
   onEdit?: (item: DndItem) => void;
   onDelete?: (item: DndItem) => void;
+  /** True when the viewer may not move cards between columns (agents). */
+  dragDisabled?: boolean;
 }
 
 export function TaskCard({
@@ -43,11 +45,14 @@ export function TaskCard({
   onToggleSubtask,
   onAddSubtask,
   onReorderSubtasks,
+  dragDisabled = false,
 }: TaskCardProps) {
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
   const [subtaskDraft, setSubtaskDraft] = useState('');
   const subtaskInputRef = useRef<HTMLInputElement | null>(null);
+  // Read the clock once per mount: rendering must stay pure.
+  const [now] = useState(() => Date.now());
 
   const {
     attributes,
@@ -58,8 +63,9 @@ export function TaskCard({
     isDragging,
   } = useSortable({
     id: item.id,
-    // Observers follow a task but cannot move it between status columns.
-    disabled: Boolean(item.isObserver),
+    // Observers follow a task but cannot move it between status columns, and
+    // only managers may drag cards on the board.
+    disabled: dragDisabled || Boolean(item.isObserver),
   });
 
   const style = {
@@ -94,7 +100,6 @@ export function TaskCard({
   }
 
   const createdAt = item.createdAt ? Date.parse(item.createdAt) : NaN;
-  const now = Date.now();
   let creationAge = item.time;
   if (Number.isFinite(createdAt)) {
     const elapsed = now - createdAt;

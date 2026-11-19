@@ -13,7 +13,7 @@ export type LeadContactErrors = Partial<Record<"name" | "email" | "phone" | "loc
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="mt-0.5 text-right text-[11px] text-red-500">{message}</p>;
+  return <p data-field-error="" role="alert" className="mt-0.5 text-right text-[11px] text-red-500">{message}</p>;
 }
 
 export function LeadContactsSlider({

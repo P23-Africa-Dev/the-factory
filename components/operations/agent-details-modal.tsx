@@ -174,7 +174,7 @@ export function AgentDetailsModal({
               </div>
             </FormRow>
             {errors.phone && (
-              <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.phone}</p>
+              <p data-field-error="" role="alert" className="text-[11px] text-red-500 mt-0.5 text-right">{errors.phone}</p>
             )}
           </div>
 
@@ -197,7 +197,7 @@ export function AgentDetailsModal({
               />
             </FormRow>
             {errors.gender && (
-              <p className="text-[11px] text-red-500 mt-0.5 text-right">{errors.gender}</p>
+              <p data-field-error="" role="alert" className="text-[11px] text-red-500 mt-0.5 text-right">{errors.gender}</p>
             )}
           </div>
         </div>
@@ -251,7 +251,7 @@ export function AgentDetailsModal({
           )}
 
           {errors.avatarKey && (
-            <p className="text-[11px] text-red-500 mt-2 text-right">{errors.avatarKey}</p>
+            <p data-field-error="" role="alert" className="text-[11px] text-red-500 mt-2 text-right">{errors.avatarKey}</p>
           )}
         </div>
 

@@ -13,18 +13,21 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useBulkDeleteLeads, useCrmAssignees, useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useCrmFilters } from "@/hooks/use-crm-filters";
+import { getApiErrorMessage } from "@/lib/api/errors";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { LabelManagerModal, PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
-import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
+import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
+import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { LeadPagination } from "@/components/crm/lead-pagination";
 import type { ApiLeadStatus, LeadApiItem, LeadCustomFields } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
@@ -102,15 +105,14 @@ function StatusDropdown({
 export default function AllLeadsPage() {
   const basePath = "/crm";
   const router = useRouter();
-  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  // Filters live in the URL (shared with the board, survive reloads, linkable).
+  const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
-  const [prevDefaultPipelineId, setPrevDefaultPipelineId] = useState<number | null>(null);
-  const [selectedLabel, setSelectedLabel] = useState<string>("all");
+  const [search, setSearch] = useState(() => filters.q ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(() => (filters.q ?? "").trim());
+  const [pageState, setPageState] = useState<{ key: string; page: number }>({ key: "", page: 1 });
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
@@ -120,7 +122,7 @@ export default function AllLeadsPage() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
-  const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
+  const sourceParam = (filters.source ?? "").trim().toLowerCase();
   const agentUploadScope = [
     "agent_upload",
     "agent uploaded",
@@ -148,16 +150,14 @@ export default function AllLeadsPage() {
       ? "sales_engine"
       : sourceParam || undefined;
 
-  const boardUrl = useMemo(
-    () => (agentUploadScope ? `${basePath}?source=agent_upload` : salesEngineScope ? `${basePath}?source=sales_engine` : basePath),
-    [agentUploadScope, salesEngineScope, basePath],
-  );
+  const boardUrl = `${basePath}${filterQuery}`;
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, "/admin");
   const { data: preferences } = useCrmPreferences(companyId ?? undefined, "/admin");
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, "/admin");
   const { data: leadFields = [] } = useLeadFields(companyId ?? undefined, "/admin");
   const leadColumns = useHiddenLeadColumns(companyId ?? undefined);
+  const { data: people = [], isLoading: loadingPeople } = useCrmAssignees(companyId ?? undefined, "/admin");
 
   const defaultPipelineId = useMemo(
     () =>
@@ -169,41 +169,77 @@ export default function AllLeadsPage() {
     [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
   );
 
-  if (defaultPipelineId != null && defaultPipelineId !== prevDefaultPipelineId) {
-    setPrevDefaultPipelineId(defaultPipelineId);
-    setSelectedPipelineId(defaultPipelineId);
-    setPage(1);
-    setSelected(new Set());
-  }
+  const selectedPipelineId: number | null =
+    filters.pipeline === "all"
+      ? null
+      : filters.pipeline && Number.isFinite(Number(filters.pipeline))
+        ? Number(filters.pipeline)
+        : defaultPipelineId ?? null;
+  const pipelineFiltered = selectedPipelineId !== defaultPipelineId;
+  const selectedLabel: string =
+    filters.stage && (labels.length === 0 || labels.some((label) => label.slug === filters.stage))
+      ? filters.stage
+      : "all";
+  const createdBy = filters.created_by ?? "";
+  const industryFilter = filters.industry ?? "";
+  const dateRange: CrmDateRange = filters.from || filters.to
+    ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
+    : EMPTY_DATE_RANGE;
+  const createdByPerson = people.find((person) => String(person.id) === createdBy);
 
-  const { data, isFetching, refetch } = useLeads({
+  // Any filter change returns to page 1 and clears the selection.
+  const filterKey = `${filterQuery}|${defaultPipelineId ?? ""}`;
+  const page = pageState.key === filterKey ? pageState.page : 1;
+  const setPage = (next: number) => setPageState({ key: filterKey, page: next });
+  if (pageState.key !== filterKey && selected.size > 0) setSelected(new Set());
+
+  const setSelectedPipelineId = (pipelineId: number | null) =>
+    setFilter("pipeline", pipelineId == null ? "all" : pipelineId === defaultPipelineId ? null : pipelineId);
+  const setSelectedLabel = (label: string) => setFilter("stage", label === "all" ? null : label);
+
+  // Wait for a pause in typing before querying, then mirror the search into the URL.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => {
+    if ((filters.q ?? "") !== debouncedSearch) setFilter("q", debouncedSearch || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
+  const createdFrom = dateRange.from ? new Date(`${dateRange.from}T00:00:00`).toISOString() : undefined;
+  const createdTo = dateRange.to ? new Date(`${dateRange.to}T23:59:59.999`).toISOString() : undefined;
+  const extraFilters = {
+    created_by_user_id: createdBy || undefined,
+    created_from: createdFrom,
+    created_to: createdTo,
+    assigned_to_user_id: filters.assigned_to || undefined,
+    industry: industryFilter || undefined,
+  };
+  const activeFilterCount =
+    (pipelineFiltered ? 1 : 0) +
+    (selectedLabel !== "all" ? 1 : 0) +
+    (createdBy ? 1 : 0) +
+    (dateRange.from || dateRange.to ? 1 : 0) +
+    (industryFilter ? 1 : 0) +
+    (filters.assigned_to ? 1 : 0);
+
+  const { data, isFetching, isLoading: isLoadingLeads, isError: leadsError, refetch } = useLeads({
     company_id: companyId ?? undefined,
     page,
-    search: search.trim() || undefined,
+    search: debouncedSearch || undefined,
     pipeline_id: selectedPipelineId ?? undefined,
     status: selectedLabel === "all" ? undefined : selectedLabel,
     source: effectiveSourceFilter,
+    ...extraFilters,
   }, "/admin");
   const updateLeadMutation = useUpdateLead(undefined, "/admin");
   const deleteLeadMutation = useDeleteLead(undefined, "/admin");
+  const bulkDeleteMutation = useBulkDeleteLeads("/admin");
 
-  const isSalesEngineLead = (lead: LeadApiItem): boolean => {
-    const s = (lead.source ?? "").toLowerCase().trim();
-    const loc = (lead.location ?? "").toLowerCase().trim();
-    const comp = (lead.company_name ?? "").toLowerCase().trim();
-    return (
-      s.includes("sales") ||
-      s.includes("smart_lead") ||
-      s.includes("smart lead") ||
-      loc.includes("sales engine") ||
-      comp.includes("sales engine")
-    );
-  };
-
-  const rawApiLeads = data?.leads ?? [];
-  const apiLeads = salesEngineScope
-    ? rawApiLeads.filter(isSalesEngineLead)
-    : rawApiLeads;
+  // The sales-engine scope is filtered on the server (source=sales_engine); filtering
+  // again here made page counts disagree with the rows shown.
+  const apiLeads = data?.leads ?? [];
 
   const statusOptions = labels.map((label) => ({
     label: label.name,
@@ -214,7 +250,7 @@ export default function AllLeadsPage() {
   const leads: Lead[] = apiLeads.map((l) => ({
     id: String(l.id),
     name: l.name,
-    company: l.location ?? l.source ?? "—",
+    company: l.company_name || "—",
     status: (l.status ?? "newly_lead") as ApiLeadStatus,
     statusColor: getStatusColor(l.status, labels),
     value: resolveLeadBudgetAmount(l),
@@ -231,10 +267,6 @@ export default function AllLeadsPage() {
   );
   const listGridStyle = { gridTemplateColumns: leadListGridTemplate(leadColumns.visible, visibleCustomFields.length) };
 
-  const resetPageSelection = () => {
-    setPage(1);
-    setSelected(new Set());
-  };
 
   const toggleAll = () => {
     if (allChecked) {
@@ -261,8 +293,8 @@ export default function AllLeadsPage() {
       });
       toast.success("Status updated");
       refetch();
-    } catch {
-      toast.error("Failed to update status");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to update status"));
     }
   };
 
@@ -280,8 +312,8 @@ export default function AllLeadsPage() {
       });
       setDeleteTargetId(null);
       refetch();
-    } catch {
-      toast.error("Could not delete the lead. Please try again.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete the lead. Please try again."));
     }
   };
 
@@ -290,22 +322,21 @@ export default function AllLeadsPage() {
     if (ids.length === 0) return;
 
     try {
-      await Promise.all(
-        ids.map((id) =>
-          deleteLeadMutation.mutateAsync({
-            leadId: id,
-            companyId: companyId ?? undefined,
-          })
-        )
-      );
-      toast.success(
-        ids.length === 1 ? "Lead deleted successfully" : `${ids.length} leads deleted successfully`
-      );
-      setSelected(new Set());
+      const res = await bulkDeleteMutation.mutateAsync({ leadIds: ids, companyId: companyId ?? undefined });
+      const deleted = res.data.deleted_ids.length;
+      const failed = res.data.failed;
+      if (failed.length === 0) {
+        toast.success(deleted === 1 ? "Lead deleted successfully" : `${deleted} leads deleted successfully`);
+        setSelected(new Set());
+      } else {
+        // Keep the leads that failed selected so the user can see/retry them.
+        toast.error(`${deleted} deleted, ${failed.length} could not be deleted. ${failed[0].message}`);
+        setSelected(new Set(failed.map((item) => String(item.id))));
+      }
       setShowBulkDeleteConfirm(false);
       refetch();
-    } catch {
-      toast.error("Could not delete one or more leads. Please try again.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete the selected leads. Please try again."));
       refetch();
     }
   };
@@ -328,11 +359,12 @@ export default function AllLeadsPage() {
               size={18}
             />
             <input
-              type="text"
+              type="search"
+              aria-label="Search leads"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                resetPageSelection();
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.preventDefault();
               }}
               placeholder="Search for Leads"
               className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
@@ -340,27 +372,39 @@ export default function AllLeadsPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowPipelineModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              {selectedPipelineId
-                ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
-                : "All Pipeline"}
-              <ChevronDown size={13} />
-            </button>
+            <PipelineSwitcher
+              pipelines={pipelines}
+              selectedPipelineId={selectedPipelineId}
+              defaultPipelineId={defaultPipelineId}
+              onSelect={setSelectedPipelineId}
+              onManage={() => setShowPipelineModal(true)}
+              className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
+              activeClassName="se-control-active"
+            />
             <MapLeadsToolbarButton
               pipelines={pipelines}
               selectedPipelineId={selectedPipelineId}
-              onPipelineChange={(pipelineId) => {
-                setSelectedPipelineId(pipelineId);
-                resetPageSelection();
-              }}
+              fallbackPipelineId={defaultPipelineId}
+              onPipelineChange={setSelectedPipelineId}
             />
             <button onClick={() => setShowLabelModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
-            <button onClick={() => setShowFilter((prev) => !prev)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button
+              type="button"
+              aria-expanded={showFilter}
+              aria-pressed={activeFilterCount > 0}
+              onClick={() => setShowFilter((prev) => !prev)}
+              className={`se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${activeFilterCount > 0 ? "se-control-active" : showFilter ? "ring-1 ring-[#2ae9c9]/60" : ""}`}
+            >
               <SlidersHorizontal size={13} />
               Filter
+              {activeFilterCount > 0 && (
+                <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#2ae9c9] px-1 text-[10px] font-bold text-[#022228]">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
             <CrmImportExportButton
               companyId={companyId}
@@ -369,23 +413,22 @@ export default function AllLeadsPage() {
               labels={labels}
               defaultPipelineId={selectedPipelineId}
               activeFilters={{
-                search: search.trim() || undefined,
+                search: debouncedSearch || undefined,
                 pipeline_id: selectedPipelineId ?? undefined,
                 status: selectedLabel === "all" ? undefined : selectedLabel,
                 source: effectiveSourceFilter,
+                ...extraFilters,
               }}
               selectedLeadIds={Array.from(selected)}
               onViewImportedPipeline={(pipelineId) => {
                 setSearch("");
-                setSelectedPipelineId(pipelineId);
-                setSelectedLabel("all");
-                resetPageSelection();
+                setDebouncedSearch("");
+                setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
               }}
               onViewAllLeads={() => {
                 setSearch("");
-                setSelectedPipelineId(null);
-                setSelectedLabel("all");
-                setPage(1);
+                setDebouncedSearch("");
+                setFilters(() => ({ pipeline: "all" }));
               }}
             />
             <button onClick={() => setShowAddModal(true)} className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
@@ -404,8 +447,29 @@ export default function AllLeadsPage() {
             </div>
             <button
               type="button"
-              onClick={() => router.push(basePath)}
+              onClick={() => setFilter("source", null)}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-xs hover:bg-slate-100 transition cursor-pointer"
+            >
+              <span>Clear Filter</span>
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        {(agentUploadScope || createdBy) && (
+          <div className="se-surface flex items-center justify-between rounded-2xl border border-[#09232d]/15 bg-[#09232d]/[0.03] px-4 py-2.5 text-xs text-[#09232d] shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex size-2 shrink-0 rounded-full bg-emerald-500" />
+              <span className="font-semibold text-slate-900 truncate">
+                {createdBy
+                  ? `Uploaded by ${createdByPerson?.name ?? "selected agent"}`
+                  : "Uploaded by your agents"}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFilters({ source: "", created_by: "" })}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-xs hover:bg-slate-100 transition cursor-pointer"
             >
               <span>Clear Filter</span>
               <X size={12} />
@@ -419,20 +483,18 @@ export default function AllLeadsPage() {
             labels={labels}
             selectedPipelineId={selectedPipelineId}
             defaultPipelineId={defaultPipelineId}
-            onPipelineChange={(pipelineId) => {
-              setSelectedPipelineId(pipelineId);
-              resetPageSelection();
-            }}
+            onPipelineChange={setSelectedPipelineId}
             selectedLabel={selectedLabel}
-            onLabelChange={(label) => {
-              setSelectedLabel(label);
-              resetPageSelection();
-            }}
-            onClear={() => {
-              setSelectedPipelineId(defaultPipelineId);
-              setSelectedLabel("all");
-              resetPageSelection();
-            }}
+            onLabelChange={setSelectedLabel}
+            people={people}
+            loadingPeople={loadingPeople}
+            createdBy={createdBy}
+            onCreatedByChange={(userId) => setFilter("created_by", userId || null)}
+            dateRange={dateRange}
+            onDateRangeChange={(range) => setFilters({ from: range.from || "", to: range.to || "" })}
+            industry={industryFilter}
+            onIndustryChange={(value) => setFilter("industry", value || null)}
+            onClear={() => setFilters((current) => ({ q: current.q, source: current.source }))}
           />
         )}
 
@@ -548,6 +610,53 @@ export default function AllLeadsPage() {
 
           {/* Rows */}
           <div className="flex-1 overflow-y-auto px-4">
+            {isLoadingLeads && leads.length === 0 && (
+              <div className="space-y-2 px-2 py-2" aria-label="Loading leads">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div key={index} className="h-11 rounded-2xl bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            )}
+            {!isLoadingLeads && leadsError && leads.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <p className="text-[13px] text-gray-500">We couldn&apos;t load your leads.</p>
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  className="rounded-full border border-gray-200 px-4 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+            {!isLoadingLeads && !leadsError && leads.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <p className="text-[13px] font-semibold text-[#0B1215]">
+                  {activeFilterCount > 0 || debouncedSearch || effectiveSourceFilter ? "No leads match these filters" : "No leads yet"}
+                </p>
+                {activeFilterCount > 0 || debouncedSearch || effectiveSourceFilter ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("");
+                      setDebouncedSearch("");
+                      setFilters(() => ({}));
+                    }}
+                    className="rounded-full border border-gray-200 px-4 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Clear all filters
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="rounded-full bg-[#0B1215] px-4 py-1.5 text-[12px] font-semibold text-white hover:opacity-90"
+                  >
+                    Add your first lead
+                  </button>
+                )}
+              </div>
+            )}
             {leads.map((lead) => {
               const isSelected = selected.has(lead.id);
               return (
@@ -722,10 +831,7 @@ export default function AllLeadsPage() {
           apiBasePath="/admin"
           pipelines={pipelines}
           selectedPipelineId={selectedPipelineId}
-          onSelectPipeline={(pipelineId) => {
-            setSelectedPipelineId(pipelineId);
-            resetPageSelection();
-          }}
+          onSelectPipeline={setSelectedPipelineId}
           onClose={() => setShowPipelineModal(false)}
         />
       )}

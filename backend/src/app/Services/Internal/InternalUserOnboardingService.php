@@ -43,12 +43,18 @@ class InternalUserOnboardingService
         $this->seatLimitService->assertCanAddMember($company);
 
         $role = (string) $data['role'];
-        $supervisorUserId = $data['supervisor_user_id'] ?? null;
+        // Supervisors may hire agents only; admins/supervisors need an owner or admin.
+        $this->accessService->ensureCanChangeRole($actorRole, $role);
 
-        if ($role === 'agent' && ! $supervisorUserId) {
-            throw ValidationException::withMessages([
-                'supervisor_user_id' => ['Field agents must be assigned to a supervisor.'],
-            ]);
+        // Only name, email and role are required. A supervisor applies to agents
+        // only and is optional; when given it must be an owner/admin/supervisor
+        // of this company. Validated before anything is written.
+        $supervisorUserId = $role === 'agent' && ! empty($data['supervisor_user_id'])
+            ? (int) $data['supervisor_user_id']
+            : null;
+
+        if ($supervisorUserId !== null) {
+            $this->ensureValidSupervisor((int) $company->id, $supervisorUserId);
         }
 
         $prefilledProfile = $this->resolveProfileData(
@@ -60,7 +66,10 @@ class InternalUserOnboardingService
         );
 
         return DB::transaction(function () use ($creator, $company, $data, $role, $supervisorUserId, $prefilledProfile): array {
-            $workDays = collect($data['work_days'])->map(fn($d) => strtolower((string) $d))->unique()->values()->all();
+            // Optional at hire time: NULL means "not configured yet".
+            $workDays = ! empty($data['work_days']) && is_array($data['work_days'])
+                ? collect($data['work_days'])->map(fn($d) => strtolower((string) $d))->unique()->values()->all()
+                : null;
             $salaryType = strtolower((string) ($data['salary_type'] ?? 'monthly'));
             $currency = CurrencyCatalog::normalize(
                 currency: $data['currency_code'] ?? null,
@@ -83,7 +92,7 @@ class InternalUserOnboardingService
                 'internal_role' => $role,
                 'assigned_zone' => $this->resolveLegacyAssignedZoneLabel($assignedZoneIds, isset($data['assigned_zone']) ? (string) $data['assigned_zone'] : null),
                 'work_days' => $workDays,
-                'base_salary' => $data['base_salary'],
+                'base_salary' => isset($data['base_salary']) && $data['base_salary'] !== '' ? $data['base_salary'] : null,
                 'payroll_salary_type' => $salaryType,
                 'salary_currency' => $currency,
                 'commission_enabled' => (bool) ($data['commission_enabled'] ?? false),
@@ -102,10 +111,6 @@ class InternalUserOnboardingService
                     'joined_at' => now(),
                 ],
             ]);
-
-            if ($role === 'agent') {
-                $this->ensureValidSupervisor($company->id, (int) $supervisorUserId);
-            }
 
             if ($role === 'supervisor' && ! empty($data['assign_agent_ids'])) {
                 $this->assignAgentsToSupervisor($company->id, (int) $user->id, Arr::wrap($data['assign_agent_ids']));
@@ -694,11 +699,22 @@ class InternalUserOnboardingService
 
     private function ensureValidSupervisor(int $companyId, int $supervisorUserId): void
     {
-        $this->ensureUserInCompanyWithRole($companyId, $supervisorUserId, ['supervisor', 'admin', 'owner']);
+        $this->ensureUserInCompanyWithRole(
+            $companyId,
+            $supervisorUserId,
+            ['supervisor', 'admin', 'owner'],
+            errorKey: 'supervisor_user_id',
+            message: 'The selected supervisor must be an owner, admin or supervisor in this company.',
+        );
     }
 
-    private function ensureUserInCompanyWithRole(int $companyId, int $userId, array $roles): void
-    {
+    private function ensureUserInCompanyWithRole(
+        int $companyId,
+        int $userId,
+        array $roles,
+        string $errorKey = 'user',
+        string $message = 'Selected user is not in the required company role context.',
+    ): void {
         $member = DB::table('company_users')
             ->where('company_id', $companyId)
             ->where('user_id', $userId)
@@ -707,7 +723,7 @@ class InternalUserOnboardingService
 
         if (! $member) {
             throw ValidationException::withMessages([
-                'user' => ['Selected user is not in the required company role context.'],
+                $errorKey => [$message],
             ]);
         }
     }

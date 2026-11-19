@@ -11,6 +11,8 @@ import { useInternalUsers } from "@/hooks/use-projects";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { KpiCategory, KpiItem, KpiPriority } from "@/lib/api/kpi";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
+import { mapApiFieldErrors } from "@/lib/forms/api-field-errors";
 
 interface EditKpiModalProps {
   kpi: KpiItem | null;
@@ -125,6 +127,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
     if (!form.priority) errs.priority = "Priority is required";
     if (!form.expectedOutcome.trim()) errs.expectedOutcome = "Expected outcome is required";
     setErrors(errs);
+    if (Object.keys(errs).length > 0) void scrollToFirstError();
     return Object.keys(errs).length === 0;
   };
 
@@ -154,6 +157,20 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
       {
         onError: (err: unknown) => {
           const apiErr = err as { message?: string };
+          const fieldErrors = mapApiFieldErrors(err, {
+            name: "name",
+            category: "category",
+            objective: "objective",
+            target_value: "targetValue",
+            start_date: "startDate",
+            end_date: "endDate",
+            priority: "priority",
+            expected_outcome: "expectedOutcome",
+          });
+          if (Object.keys(fieldErrors).length > 0) {
+            setErrors((prev) => ({ ...prev, ...fieldErrors }));
+            void scrollToFirstError();
+          }
           toast.error(apiErr.message || "Failed to update KPI");
         },
       }
@@ -218,7 +235,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
                 className={`${BASE_INPUT} py-2.5 pl-9 pr-4 ${errors.name ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
               />
             </div>
-            {errors.name && <p className="text-red-400 text-[11px] mt-1">{errors.name}</p>}
+            {errors.name && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.name}</p>}
           </div>
 
           {/* KPI Category */}
@@ -231,7 +248,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
               placeholder="Select category"
               className={`${INPUT_CLS(errors.category)} cursor-pointer`}
             />
-            {errors.category && <p className="text-red-400 text-[11px] mt-1">{errors.category}</p>}
+            {errors.category && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.category}</p>}
           </div>
 
           {/* Objective */}
@@ -244,7 +261,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
               rows={2}
               className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.objective ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
-            {errors.objective && <p className="text-red-400 text-[11px] mt-1">{errors.objective}</p>}
+            {errors.objective && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.objective}</p>}
           </div>
 
           {/* Target Value */}
@@ -260,7 +277,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
                 className={`${BASE_INPUT} py-2.5 pl-9 pr-4 ${errors.targetValue ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
               />
             </div>
-            {errors.targetValue && <p className="text-red-400 text-[11px] mt-1">{errors.targetValue}</p>}
+            {errors.targetValue && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.targetValue}</p>}
           </div>
 
           {/* Start Date + End Date */}
@@ -276,7 +293,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
                   className={`${BASE_INPUT} py-2.5 pl-9 pr-2 ${errors.startDate ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
                 />
               </div>
-              {errors.startDate && <p className="text-red-400 text-[11px] mt-1">{errors.startDate}</p>}
+              {errors.startDate && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.startDate}</p>}
             </div>
             <div>
               <FieldLabel required>End Date</FieldLabel>
@@ -289,7 +306,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
                   className={`${BASE_INPUT} py-2.5 pl-9 pr-2 ${errors.endDate ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
                 />
               </div>
-              {errors.endDate && <p className="text-red-400 text-[11px] mt-1">{errors.endDate}</p>}
+              {errors.endDate && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.endDate}</p>}
             </div>
           </div>
 
@@ -326,7 +343,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
                 </button>
               ))}
             </div>
-            {errors.priority && <p className="text-red-400 text-[11px] mt-1">{errors.priority}</p>}
+            {errors.priority && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.priority}</p>}
           </div>
 
           {/* Expected Outcome */}
@@ -339,7 +356,7 @@ export function EditKpiModal({ kpi, onClose }: EditKpiModalProps) {
               rows={2}
               className={`${BASE_INPUT} py-2.5 px-4 resize-none ${errors.expectedOutcome ? "border-red-300" : "border-gray-200 focus:border-[#094B5C]"}`}
             />
-            {errors.expectedOutcome && <p className="text-red-400 text-[11px] mt-1">{errors.expectedOutcome}</p>}
+            {errors.expectedOutcome && <p data-field-error="" role="alert" className="text-red-400 text-[11px] mt-1">{errors.expectedOutcome}</p>}
           </div>
         </div>
 

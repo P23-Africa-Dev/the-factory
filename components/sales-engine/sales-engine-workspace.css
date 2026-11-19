@@ -161,3 +161,14 @@
   background: url("/sales-engine-design/workspace-texture.png") left top / 1024px 1024px;
   opacity: .025;
 }
+
+/* A toolbar control whose filter is currently applied (e.g. Filter with N active,
+   a non-default pipeline). Must stay after .se-control: that rule is unlayered and
+   would otherwise override Tailwind's ring/bg utilities. */
+.se-workspace .se-control.se-control-active {
+  border-color: var(--se-mint);
+  background: #0e3a3f;
+  color: var(--se-mint);
+  box-shadow: 0 0 0 2px rgb(42 233 201 / 55%), 0 4px 8px rgb(0 0 0 / 35%);
+}
+.se-workspace .se-control.se-control-active:not(:disabled):hover { background: #12474d; color: var(--se-mint); }

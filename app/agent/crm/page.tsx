@@ -4,6 +4,11 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
+import { getApiErrorMessage } from "@/lib/api/errors";
+import { useCrmFilters } from "@/hooks/use-crm-filters";
+
+/** Toolbar trigger style when its filter is applied (agent pages are outside .se-workspace). */
+const TRIGGER_ACTIVE_CLS = "border-[#2ae9c9] bg-[#ECFDF8] text-[#0B1215] ring-2 ring-[#2ae9c9]/50";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
 import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
@@ -12,8 +17,9 @@ import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
 import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
-import { CrmFilterBar } from "@/components/crm/crm-filter-bar";
+import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
+import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import { useDroppable } from "@dnd-kit/core";
 import {
@@ -48,8 +54,8 @@ import {
   SlidersHorizontal,
   Tag,
 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 
@@ -100,29 +106,60 @@ function findContainerForItem(containers: DndContainer[], id: string): DndContai
 
 /* ─── Lead Card ─────────────────────────────────────────── */
 
-function LeadCard({
-  item,
-  isDragOverlay,
-  basePath = "/agent/crm",
-  stages,
-  currentStageId,
-  onMoveToStage,
-}: {
+const UNCATEGORIZED_STAGE_ID = "__uncategorized__";
+
+type LeadCardProps = {
   item: DndItem;
   isDragOverlay?: boolean;
   basePath?: string;
   stages?: Array<{ id: string; title: string; color: string }>;
   currentStageId?: string;
   onMoveToStage?: (leadId: string, targetStageId: string) => void;
+};
+
+/** Sortable card on the board. */
+function LeadCard(props: LeadCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.item.id });
+
+  return (
+    <LeadCardView
+      {...props}
+      dnd={{
+        setNodeRef,
+        attributes: attributes as unknown as Record<string, unknown>,
+        listeners: (listeners ?? {}) as Record<string, unknown>,
+        style: { transform: CSS.Transform.toString(transform), transition },
+        isDragging,
+      }}
+    />
+  );
+}
+
+/** Presentational card; the DragOverlay renders this (no second useSortable). */
+function LeadCardView({
+  item,
+  isDragOverlay,
+  basePath = "/agent/crm",
+  stages,
+  currentStageId,
+  onMoveToStage,
+  dnd,
+}: LeadCardProps & {
+  dnd?: {
+    setNodeRef: (el: HTMLElement | null) => void;
+    attributes: Record<string, unknown>;
+    listeners: Record<string, unknown>;
+    style: CSSProperties;
+    isDragging: boolean;
+  };
 }) {
   const router = useRouter();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const setNodeRef = dnd?.setNodeRef;
+  const style = dnd?.style;
+  const attributes = dnd?.attributes ?? {};
+  const listeners = dnd?.listeners ?? {};
+  const isDragging = dnd?.isDragging ?? false;
 
   const amount = item.value || "$ 0";
 
@@ -170,11 +207,13 @@ function LeadCard({
               onClick={(e) => e.stopPropagation()}
               className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-[11px] font-semibold py-1 pl-2.5 pr-6 rounded-lg focus:outline-none cursor-pointer"
             >
-              {stages.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
+              {stages
+                .filter((s) => s.id !== UNCATEGORIZED_STAGE_ID || s.id === currentStageId)
+                .map((s) => (
+                  <option key={s.id} value={s.id} disabled={s.id === UNCATEGORIZED_STAGE_ID}>
+                    {s.title}
+                  </option>
+                ))}
             </select>
             <ChevronDown
               size={10}
@@ -218,7 +257,7 @@ function LeadColumn({
   isFetchingMore?: boolean;
   onLoadMore?: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: id === UNCATEGORIZED_STAGE_ID });
 
   return (
     <div
@@ -543,6 +582,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
       const ac = findContainerForItem(prev, activeId);
       const oc = findContainerForItem(prev, overId);
       if (!ac || !oc || ac.id === oc.id) return prev;
+      if (oc.id === UNCATEGORIZED_STAGE_ID) return prev;
       const item = ac.items.find((i) => i.id === activeId);
       if (!item) return prev;
       const next = prev.map((c) => ({ ...c, items: [...c.items] }));
@@ -565,6 +605,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
     const dest = findContainerForItem(containersRef.current, activeId);
     if (!dest) { apply(initialContainersRef.current); return; }
     if (origin === dest.id) return; // same column reorder, no API call needed
+    if (dest.id === UNCATEGORIZED_STAGE_ID) { apply(initialContainersRef.current); return; }
     try {
       await persistStageMove(activeId, dest.id as ApiLeadStatus);
     } catch {
@@ -698,7 +739,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
 
             <DragOverlay>
               {activeItem ? (
-                <LeadCard
+                <LeadCardView
                   item={activeItem}
                   isDragOverlay
                   basePath={basePath}
@@ -776,11 +817,12 @@ export default function CRMPage() {
   const basePath = "/agent/crm";
   const apiBasePath = "/agent" as const;
   const router = useRouter();
-  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  // Filters live in the URL: kept on reload and when switching to the list view.
+  const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
 
-  const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
+  const sourceParam = (filters.source ?? "").trim().toLowerCase();
   const agentUploadScope = [
     "agent_upload",
     "agent uploaded",
@@ -792,13 +834,11 @@ export default function CRMPage() {
   ].includes(sourceParam);
   const leadListUrl = `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`;
 
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const listUrlWithFilters = `${basePath}/leads${filterQuery}`;
+  const [search, setSearch] = useState(() => filters.q ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(() => (filters.q ?? "").trim());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
-  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
-  const [prevDefaultPipelineId, setPrevDefaultPipelineId] = useState<number | null>(null);
-  const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
 
@@ -817,10 +857,35 @@ export default function CRMPage() {
     [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
   );
 
-  if (defaultPipelineId != null && defaultPipelineId !== prevDefaultPipelineId) {
-    setPrevDefaultPipelineId(defaultPipelineId);
-    setSelectedPipelineId(defaultPipelineId);
-  }
+  const selectedPipelineId: number | null =
+    filters.pipeline === "all"
+      ? null
+      : filters.pipeline && Number.isFinite(Number(filters.pipeline))
+        ? Number(filters.pipeline)
+        : defaultPipelineId ?? null;
+  const setSelectedPipelineId = (pipelineId: number | null) =>
+    setFilter("pipeline", pipelineId == null ? "all" : pipelineId === defaultPipelineId ? null : pipelineId);
+  const pipelineFiltered = selectedPipelineId !== defaultPipelineId;
+  const selectedLabel: string =
+    filters.stage && (labels.length === 0 || labels.some((label) => label.slug === filters.stage))
+      ? filters.stage
+      : "all";
+  const setSelectedLabel = (label: string) => setFilter("stage", label === "all" ? null : label);
+  const selectedStageName = labels.find((label) => label.slug === selectedLabel)?.name;
+  const dateRange: CrmDateRange = filters.from || filters.to
+    ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
+    : EMPTY_DATE_RANGE;
+  const industryFilter = filters.industry ?? "";
+  const extraFilters = {
+    created_from: dateRange.from ? new Date(`${dateRange.from}T00:00:00`).toISOString() : undefined,
+    created_to: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999`).toISOString() : undefined,
+    industry: industryFilter || undefined,
+  };
+  const activeFilterCount =
+    (pipelineFiltered ? 1 : 0) +
+    (selectedLabel !== "all" ? 1 : 0) +
+    (dateRange.from || dateRange.to ? 1 : 0) +
+    (industryFilter ? 1 : 0);
 
   const stages = useMemo(() => {
     if (!labels.length) return DEFAULT_STAGES;
@@ -842,6 +907,10 @@ export default function CRMPage() {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
     return () => clearTimeout(t);
   }, [search]);
+  useEffect(() => {
+    if ((filters.q ?? "") !== debouncedSearch) setFilter("q", debouncedSearch || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
 
   const stageQuery = useLeadStagePages(
     boardStageDefinitions,
@@ -850,6 +919,7 @@ export default function CRMPage() {
       search: debouncedSearch || undefined,
       pipeline_id: selectedPipelineId ?? undefined,
       source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+      ...extraFilters,
       per_page: 20,
     },
     apiBasePath,
@@ -862,6 +932,7 @@ export default function CRMPage() {
       pipeline_id: selectedPipelineId ?? undefined,
       status: selectedLabel === "all" ? undefined : selectedLabel,
       source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+      ...extraFilters,
     },
     apiBasePath
   );
@@ -914,8 +985,8 @@ export default function CRMPage() {
     try {
       await updateMutation.mutateAsync({ leadId, payload: { company_id: companyId ?? "", status } });
       toast.success("Lead status updated");
-    } catch {
-      toast.error("Could not update lead status. Reverting...");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not update lead status. Reverting..."));
       throw new Error("status update failed");
     }
   }
@@ -933,33 +1004,58 @@ export default function CRMPage() {
               size={18}
             />
             <input
-              type="text"
+              type="search"
+              aria-label="Search leads"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.preventDefault();
+              }}
               placeholder="Search for Leads"
               className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowPipelineModal(true)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              {selectedPipelineId
-                ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
-                : "All Pipeline"}
-              <ChevronDown size={13} />
-            </button>
+            <PipelineSwitcher
+              pipelines={pipelines}
+              selectedPipelineId={selectedPipelineId}
+              defaultPipelineId={defaultPipelineId}
+              onSelect={setSelectedPipelineId}
+              onManage={() => setShowPipelineModal(true)}
+              manageLabel="Set my default pipeline…"
+              className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
+              activeClassName={TRIGGER_ACTIVE_CLS}
+            />
             <MapLeadsToolbarButton
               pipelines={pipelines}
               selectedPipelineId={selectedPipelineId}
+              fallbackPipelineId={defaultPipelineId}
               onPipelineChange={setSelectedPipelineId}
             />
-            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button
+              onClick={() => setShowFilter(true)}
+              aria-pressed={selectedLabel !== "all"}
+              title="Filter by stage"
+              className={`flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${selectedLabel !== "all" ? TRIGGER_ACTIVE_CLS : ""}`}
+            >
               <Tag size={13} />
-              Label
+              {selectedStageName ? `Stage: ${selectedStageName}` : "Stage"}
             </button>
-            <button onClick={() => setShowFilter((prev) => !prev)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
+            <button
+              type="button"
+              aria-expanded={showFilter}
+              aria-pressed={activeFilterCount > 0}
+              onClick={() => setShowFilter((prev) => !prev)}
+              className={`flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${activeFilterCount > 0 ? TRIGGER_ACTIVE_CLS : ""}`}
+            >
               <SlidersHorizontal size={13} />
               Filter
+              {activeFilterCount > 0 && (
+                <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#2ae9c9] px-1 text-[10px] font-bold text-[#022228]">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
             <CrmImportExportButton
               companyId={companyId}
@@ -972,11 +1068,12 @@ export default function CRMPage() {
                 pipeline_id: selectedPipelineId ?? undefined,
                 status: selectedLabel === "all" ? undefined : selectedLabel,
                 source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
+                ...extraFilters,
               }}
               onViewImportedPipeline={(pipelineId) => {
-                setSelectedPipelineId(pipelineId);
-                setSelectedLabel("all");
                 setSearch("");
+                setDebouncedSearch("");
+                setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
               }}
               onViewAllLeads={() => router.push(`${basePath}/leads`)}
             />
@@ -999,10 +1096,11 @@ export default function CRMPage() {
             onPipelineChange={setSelectedPipelineId}
             selectedLabel={selectedLabel}
             onLabelChange={setSelectedLabel}
-            onClear={() => {
-              setSelectedPipelineId(defaultPipelineId);
-              setSelectedLabel("all");
-            }}
+            dateRange={dateRange}
+            onDateRangeChange={(range) => setFilters({ from: range.from || "", to: range.to || "" })}
+            industry={industryFilter}
+            onIndustryChange={(value) => setFilter("industry", value || null)}
+            onClear={() => setFilters((current) => ({ q: current.q, source: current.source }))}
           />
         )}
 
@@ -1033,7 +1131,7 @@ export default function CRMPage() {
         {/* Pipeline board */}
         <LeadBoard
           basePath={basePath}
-          leadListUrl={agentUploadScope ? leadListUrl : undefined}
+          leadListUrl={listUrlWithFilters}
           boardKey={boardKey}
           initialContainers={initialContainers}
           onStatusChange={persistStatusChange}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -9,15 +9,15 @@ import {
 import type { DndItem } from "@/types/operations";
 import type { ProjectSubtask } from "@/lib/tasks/project-checklist";
 import { TaskCard } from "./task-card";
-import { Plus, Check, X } from "lucide-react";
+import { Plus } from "lucide-react";
 
 interface TaskColumnProps {
   id: string;
   title: string;
   color: string;
   items: DndItem[];
-  onAddCard: (item: DndItem) => void;
   onOpenCreateTask?: () => void;
+  canDrag?: boolean;
   checklistUserId?: string;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onAddSubtask?: (taskId: string, title: string) => void;
@@ -33,8 +33,8 @@ export function TaskColumn({
   title,
   color,
   items,
-  onAddCard,
   onOpenCreateTask,
+  canDrag = true,
   checklistUserId,
   onToggleSubtask,
   onAddSubtask,
@@ -45,37 +45,6 @@ export function TaskColumn({
   onViewMap,
 }: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    label: "",
-    description: "",
-    location: "",
-  });
-  const [error, setError] = useState("");
-
-  const handleSave = () => {
-    if (!form.label.trim()) {
-      setError("Name is required");
-      return;
-    }
-    onAddCard({
-      id: `task-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      label: form.label.trim(),
-      description: form.description.trim() || "No description",
-      location: form.location.trim() || "Location not set",
-      time: "",
-      createdAt: new Date().toISOString(),
-    });
-    setForm({ label: "", description: "", location: "" });
-    setError("");
-    setShowForm(false);
-  };
-
-  const handleCancel = () => {
-    setForm({ label: "", description: "", location: "" });
-    setError("");
-    setShowForm(false);
-  };
 
   return (
     <div className="flex flex-col relative h-full">
@@ -115,6 +84,7 @@ export function TaskColumn({
                 onReorderSubtasks={onReorderSubtasks}
                 key={item.id}
                 item={item}
+                dragDisabled={!canDrag}
                 onClick={onTaskClick}
                 onEdit={onTaskEdit}
                 onDelete={onTaskDelete}
@@ -124,66 +94,11 @@ export function TaskColumn({
           </div>
         </SortableContext>
 
-        {/* Inline Add Form */}
-        {showForm && (
-          <div className="bg-white rounded-[16px] p-4 shadow-md border border-gray-100 mb-3">
-            <div className="space-y-2.5">
-              <div>
-                <input
-                  type="text"
-                  placeholder="Agent name *"
-                  value={form.label}
-                  autoFocus
-                  onChange={(e) => {
-                    setForm((p) => ({ ...p, label: e.target.value }));
-                    setError("");
-                  }}
-                  className="w-full text-sm font-semibold text-[#0B1215] placeholder:text-gray-300 outline-none bg-transparent border-b border-gray-200 pb-1.5"
-                />
-                {error && (
-                  <p className="text-red-400 text-[11px] mt-1">{error}</p>
-                )}
-              </div>
-              <input
-                type="text"
-                placeholder="Task description"
-                value={form.description}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, description: e.target.value }))
-                }
-                className="w-full text-xs text-gray-500 placeholder:text-gray-300 outline-none bg-transparent border-b border-gray-100 pb-1.5"
-              />
-              <input
-                type="text"
-                placeholder="Location"
-                value={form.location}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, location: e.target.value }))
-                }
-                className="w-full text-xs text-gray-500 placeholder:text-gray-300 outline-none bg-transparent"
-              />
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={handleSave}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-[#0B1215] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
-                >
-                  <Check size={12} /> Save
-                </button>
-                <button
-                  onClick={handleCancel}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold hover:bg-gray-200 transition-colors"
-                >
-                  <X size={12} /> Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Add Card Manually */}
-        {!showForm && (
+        {onOpenCreateTask && (
           <button
-            onClick={onOpenCreateTask ?? (() => setShowForm(true))}
+            type="button"
+            onClick={onOpenCreateTask}
             className="w-full flex items-center justify-between px-2 py-3 text-gray-400 hover:text-[#0B1215] transition-colors group mt-6"
           >
             <span className="text-xs font-medium">Add Card Manually</span>

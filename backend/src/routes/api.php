@@ -599,6 +599,11 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                     ->middleware('throttle:api')
                     ->name('onboarding-status');
 
+                // Owners, admins and supervisors selectable as an agent's supervisor.
+                Route::get('/supervisor-candidates', [InternalUserController::class, 'supervisorCandidates'])
+                    ->middleware('throttle:api')
+                    ->name('supervisor-candidates');
+
                 Route::get('/audit-logs', [InternalUserController::class, 'auditLogs'])
                     ->middleware('throttle:api')
                     ->name('audit-logs');
@@ -643,6 +648,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/leads/import', [LeadController::class, 'import'])
                     ->middleware('throttle:api')
                     ->name('leads.import');
+                Route::post('/leads/bulk-delete', [LeadController::class, 'bulkDestroy'])
+                    ->middleware('throttle:api')
+                    ->name('leads.bulk-destroy');
                 Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
                     ->middleware('throttle:api')
                     ->name('leads.import.preview');
@@ -917,6 +925,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/leads/import', [LeadController::class, 'import'])
                     ->middleware('throttle:api')
                     ->name('leads.import');
+                Route::post('/leads/bulk-delete', [LeadController::class, 'bulkDestroy'])
+                    ->middleware('throttle:api')
+                    ->name('leads.bulk-destroy');
                 Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
                     ->middleware('throttle:api')
                     ->name('leads.import.preview');
@@ -1340,6 +1351,11 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('onboarding-status');
 
+        // Owners, admins and supervisors selectable as an agent's supervisor.
+        Route::get('/supervisor-candidates', [InternalUserController::class, 'supervisorCandidates'])
+            ->middleware('throttle:api')
+            ->name('supervisor-candidates');
+
         Route::get('/audit-logs', [InternalUserController::class, 'auditLogs'])
             ->middleware('throttle:api')
             ->name('audit-logs');
@@ -1384,6 +1400,9 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/leads/import', [LeadController::class, 'import'])
             ->middleware('throttle:api')
             ->name('leads.import');
+        Route::post('/leads/bulk-delete', [LeadController::class, 'bulkDestroy'])
+            ->middleware('throttle:api')
+            ->name('leads.bulk-destroy');
         Route::post('/leads/import/preview', [LeadController::class, 'importPreview'])
             ->middleware('throttle:api')
             ->name('leads.import.preview');

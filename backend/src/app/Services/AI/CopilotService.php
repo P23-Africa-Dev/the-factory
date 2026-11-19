@@ -1489,8 +1489,8 @@ class CopilotService
             'recipient_email_missing' => 'This lead does not have a recipient email yet. Add an email address before confirming.',
             'missing_full_name' => 'Full name is required to create this organization user.',
             'missing_email' => 'A valid email address is required to create this organization user.',
-            'missing_supervisor' => 'Agents must be assigned to a supervisor before confirming.',
-            'missing_zone' => 'At least one assigned zone is required for this organization user.',
+            'missing_supervisor' => 'No supervisor selected. You can assign one later.',
+            'missing_zone' => 'No zone assigned. You can assign one later.',
             'missing_summary' => 'Visit summary is required before this visit can be logged.',
             'task_unresolved' => 'Task ID could not be resolved. Provide a valid task before confirming.',
             'assignee_ambiguous' => 'Multiple assignees matched that name. Choose the exact agent before confirming.',
@@ -1653,13 +1653,8 @@ class CopilotService
             $blockingCodes[] = 'missing_email';
         }
 
-        if (in_array('missing_supervisor', $validationWarningCodes, true)) {
-            $blockingCodes[] = 'missing_supervisor';
-        }
-
-        if (in_array('missing_zone', $validationWarningCodes, true)) {
-            $blockingCodes[] = 'missing_zone';
-        }
+        // Supervisor and zone are optional when hiring (only name, email and
+        // role are required); they stay as non-blocking warnings.
 
         if (in_array('missing_summary', $validationWarningCodes, true)) {
             $blockingCodes[] = 'missing_summary';

@@ -29,6 +29,7 @@ import {
   useSuspendUser,
   useReactivateUser,
   useAssignSupervisor,
+  useSupervisorCandidates,
 } from '@/manager/features/workforce/api';
 import { useManagerPermissions } from '@/features/auth';
 import { toast } from '@/lib/toast';
@@ -88,14 +89,8 @@ function WorkforceContent() {
   const [invitePhone, setInvitePhone] = useState('');
   const [inviteSupervisorId, setInviteSupervisorId] = useState<string>('');
 
-  const supervisorsList = useMemo(
-    () =>
-      internalUsers.filter((u) => {
-        const r = u.role.toLowerCase();
-        return r === 'supervisor' || r === 'admin' || r === 'owner';
-      }),
-    [internalUsers],
-  );
+  // Owners, admins and supervisors can all supervise agents.
+  const { data: supervisorsList = [] } = useSupervisorCandidates();
 
   const filteredAttendance = useMemo(() => {
     if (!searchQuery.trim()) return attendanceRecords;
@@ -619,7 +614,7 @@ function WorkforceContent() {
                   <option value="">No supervisor assigned</option>
                   {supervisorsList.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}
+                      {s.name} ({s.role})
                     </option>
                   ))}
                 </select>

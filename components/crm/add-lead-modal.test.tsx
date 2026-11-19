@@ -151,6 +151,23 @@ describe("AddLeadModal", () => {
     );
   });
 
+  it("sends the chosen industry with the lead", () => {
+    render(<AddLeadModal onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText("E.g John Doe"), {
+      target: { value: "Industry Lead" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Pick or type, e.g Technology & Software"), {
+      target: { value: "Fintech & Payments" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    expect(mocks.createLead).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Industry Lead", industry: "Fintech & Payments" }),
+      expect.any(Object),
+    );
+  });
+
   it("preserves an unassigned lead in edit mode", () => {
     render(
       <AddLeadModal

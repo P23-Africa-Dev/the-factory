@@ -15,23 +15,36 @@ import {
   AgentDetailsModal,
   type AgentDetails,
 } from "@/components/operations/agent-details-modal";
-import { useCompanyZones, useCreateInternalUser } from "@/hooks/use-internal-users";
+import { useCompanyZones, useCreateInternalUser, useSupervisorCandidates } from "@/hooks/use-internal-users";
 import { CreateZoneModal } from "@/components/zones/create-zone-modal";
 import { getProfile } from "@/lib/api/profile";
 import { getBillingStatus } from "@/lib/api/billing";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
-import { useInternalUsers } from "@/hooks/use-projects";
 import { useSupportedCurrencies } from "@/hooks/use-currencies";
 import { useAuthStore } from "@/store/auth";
 import type { ApiRequestError } from "@/lib/api/onboarding";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { PAYROLL_DEFAULT_CURRENCY } from "@/lib/payroll/currency";
+import { FieldError } from "@/components/ui/field-error";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
 
 const ROLE_OPTIONS = [
   { label: "Admin", value: "admin" },
   { label: "Supervisor", value: "supervisor" },
   { label: "Agent", value: "agent" },
 ] as const;
+
+const ROLE_TITLES: Record<string, string> = {
+  admin: "Add New Admin",
+  supervisor: "Add New Supervisor",
+  agent: "Add New Agent",
+};
+
+const CANDIDATE_ROLE_LABEL: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  supervisor: "Supervisor",
+};
 
 const WEEKDAYS = [
   { label: "Mon", value: "monday" },
@@ -58,10 +71,6 @@ type FormErrors = Partial<{
   avatarKey: string;
 }>;
 
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <p className="text-[11px] text-red-500 mt-0.5 text-right">{message}</p>;
-}
 
 export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((s) => s.user);
@@ -73,7 +82,8 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const [salaryType, setSalaryType] = useState<"daily" | "weekly" | "monthly">("monthly");
   const [currencyCode, setCurrencyCode] = useState(PAYROLL_DEFAULT_CURRENCY);
   const [salary, setSalary] = useState("");
-  const [workDays, setWorkDays] = useState<string[]>(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+  // Optional: left empty means "not configured yet" (payroll uses company defaults).
+  const [workDays, setWorkDays] = useState<string[]>([]);
   const [assignedZoneIds, setAssignedZoneIds] = useState<number[]>([]);
   const [supervisorId, setSupervisorId] = useState("");
   const [commissionEnabled, setCommissionEnabled] = useState(false);
@@ -132,8 +142,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
     [fallbackCurrencyCode, normalizedCurrencyCode, supportedCurrencyCodes]
   );
 
-  const { data: supervisors = [], isLoading: loadingSupervisors } = useInternalUsers(
-    { role: "supervisor", company_id: companyId ?? undefined },
+  // Owners, admins and supervisors can all supervise agents.
+  const { data: supervisors = [], isLoading: loadingSupervisors } = useSupervisorCandidates(
+    companyId ?? undefined,
+    role === "agent",
   );
   const { data: zones = [], isLoading: loadingZones } = useCompanyZones(companyId ?? undefined);
 
@@ -164,40 +176,29 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
   const clearError = (field: keyof FormErrors) =>
     setErrors((prev) => ({ ...prev, [field]: undefined }));
 
+  // Only name, email and role are required. Everything else is optional,
+  // but must be well-formed when the user fills it in.
   const validate = (): FormErrors => {
     const e: FormErrors = {};
-    const normalizedCurrency = selectedCurrencyCode;
-    const currencyIsSupported = supportedCurrencyCodes.size > 0
-      ? supportedCurrencyCodes.has(normalizedCurrency)
-      : /^[A-Z]{3}$/.test(normalizedCurrency);
 
     if (!name.trim()) e.name = "Full name is required.";
     if (!email.trim()) {
       e.email = "Email is required.";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       e.email = "Enter a valid email address.";
     }
     if (!role) e.role = "Role is required.";
-    if (!salaryType) e.salaryType = "Salary type is required.";
-    if (!currencyCode.trim()) {
-      e.currency = "Currency is required.";
-    } else if (!currencyIsSupported) {
-      e.currency = "Select a supported currency.";
-    }
+
     if (salary) {
       const numeric = salary.replace(/,/g, "");
       if (isNaN(Number(numeric)) || Number(numeric) < 0)
         e.salary = "Enter a valid salary amount.";
-    } else {
-      e.salary = "Base salary is required.";
     }
-    if (workDays.length === 0) e.workDays = "Select at least one work day.";
-    if (assignedZoneIds.length === 0) e.assignedZoneIds = "Select at least one zone.";
-    if (role === "agent" && !supervisorId) e.supervisorId = "Supervisor is required for agents.";
-    if (fillForAgent && role === "agent") {
-      if (!agentDetails.phone.trim()) e.phone = "Phone number is required.";
-      if (!agentDetails.gender) e.gender = "Gender is required.";
-      if (!agentDetails.avatarKey) e.avatarKey = "Select an avatar.";
+    if (currencyCode.trim() && supportedCurrencyCodes.size > 0 && !supportedCurrencyCodes.has(selectedCurrencyCode)) {
+      e.currency = "Select a supported currency.";
+    }
+    if (role === "agent" && fillForAgent && agentDetails.phone.trim() && !/^\+[1-9][0-9]{7,14}$/.test(agentDetails.phone.trim())) {
+      e.phone = "Enter the phone number in international format, e.g. +2348012345678.";
     }
     return e;
   };
@@ -240,6 +241,8 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if (apiErr.errors.avatar_key) fe.avatarKey = apiErr.errors.avatar_key[0];
       if (apiErr.errors.authorization) toast.error(apiErr.errors.authorization[0]);
       setErrors(fe);
+      if (fe.phone || fe.gender || fe.avatarKey) setAgentDetailsModalOpen(true);
+      void scrollToFirstError();
     }
   };
 
@@ -268,6 +271,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       if ((errs.phone || errs.gender) && !agentDetailsModalOpen) {
         setAgentDetailsModalOpen(true);
       }
+      void scrollToFirstError();
       return;
     }
 
@@ -276,30 +280,29 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    const baseSalaryNum = Number(salary.replace(/,/g, ""));
+    const salaryValue = salary.replace(/,/g, "").trim();
+    const isAgent = role === "agent";
 
+    // Only send optional fields the user actually filled in.
     const payload = {
       company_id: companyId,
       full_name: name.trim(),
       email: email.trim(),
       role: role as "admin" | "supervisor" | "agent",
-      assigned_zone: "",
-      assigned_zone_ids: assignedZoneIds,
-      work_days: workDays,
-      base_salary: baseSalaryNum,
       salary_type: salaryType,
       currency_code: selectedCurrencyCode,
       commission_enabled: commissionEnabled,
-      ...(role === "agent" && supervisorId
-        ? { supervisor_user_id: Number(supervisorId) }
-        : {}),
-      ...(fillForAgent && role === "agent" && agentDetails.phone.trim()
+      ...(assignedZoneIds.length > 0 ? { assigned_zone_ids: assignedZoneIds } : {}),
+      ...(workDays.length > 0 ? { work_days: workDays } : {}),
+      ...(salaryValue !== "" ? { base_salary: Number(salaryValue) } : {}),
+      ...(isAgent && supervisorId ? { supervisor_user_id: Number(supervisorId) } : {}),
+      ...(isAgent && fillForAgent && agentDetails.phone.trim()
         ? { phone_number: agentDetails.phone.trim() }
         : {}),
-      ...(fillForAgent && role === "agent" && agentDetails.gender
+      ...(isAgent && fillForAgent && agentDetails.gender
         ? { gender: agentDetails.gender as "male" | "female" }
         : {}),
-      ...(fillForAgent && role === "agent" && agentDetails.avatarKey
+      ...(isAgent && fillForAgent && agentDetails.avatarKey
         ? { avatar_key: agentDetails.avatarKey }
         : {}),
     };
@@ -342,7 +345,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
             <h2 className="text-[18px] font-bold text-dash-dark relative z-10 leading-tight">
               Enter Appropriate
               <br />
-              Agent Details
+              {role === "admin" ? "Admin" : role === "supervisor" ? "Supervisor" : role === "agent" ? "Agent" : "Team Member"} Details
             </h2>
             <button
               onClick={onClose}
@@ -357,9 +360,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
             onSubmit={handleSubmit}
             className="flex-1 min-h-0 overflow-y-auto px-7 pb-6"
           >
+            <fieldset disabled={seatsAtCap} className="contents disabled:opacity-60">
             {/* ── Profile Section ─────────────────────────────── */}
             <div className="space-y-4 mb-5">
-              <SectionDivider label="Add New Agent" />
+              <SectionDivider label={ROLE_TITLES[role] ?? "Add New Team Member"} />
 
               {seatUsage && (
                 <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 flex items-center justify-between gap-3">
@@ -395,7 +399,6 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                     onChange={(e) => { setName(e.target.value); clearError("name"); }}
                     placeholder="E.g Alison Thomson"
                     className="col-span-2"
-                    disabled={seatsAtCap}
                   />
                 </FormRow>
                 <FieldError message={errors.name} />
@@ -437,6 +440,10 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 <FieldError message={errors.role} />
               </div>
 
+              <p className="text-[11px] text-gray-400">
+                Only name, email and role are required. Everything below is optional and can be added later.
+              </p>
+
               <div>
                 <FormRow label="Salary Type" labelClassName="w-28">
                   <InlineSelect
@@ -469,8 +476,14 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                     <InlineSelect
                       value={supervisorId}
                       onChange={(v) => { setSupervisorId(v); clearError("supervisorId"); }}
-                      options={supervisors.map((s) => ({ value: String(s.id), label: s.name }))}
-                      placeholder={loadingSupervisors ? "Loading…" : "Select supervisor"}
+                      options={[
+                        { value: "", label: "No supervisor (assign later)" },
+                        ...supervisors.map((s) => ({
+                          value: String(s.id),
+                          label: `${s.name} · ${CANDIDATE_ROLE_LABEL[s.role] ?? s.role}`,
+                        })),
+                      ]}
+                      placeholder={loadingSupervisors ? "Loading…" : "Select supervisor (optional)"}
                       className="col-span-2"
                     />
                   </FormRow>
@@ -594,6 +607,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
             )}
+            </fieldset>
           </form>
         </div>
       </div>
