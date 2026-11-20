@@ -16,7 +16,7 @@ import {
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { DndContainer, DndItem } from "@/types/operations";
 import { KpiColumn } from "./kpi-column";
-import { KpiCard } from "./kpi-card";
+import { KpiCardView } from "./kpi-card";
 
 interface KpiBoardProps {
   containers: DndContainer[];
@@ -152,7 +152,7 @@ export function KpiBoard({
       <DragOverlay>
         {activeItem ? (
           <div className="shadow-2xl scale-105 pointer-events-none">
-            <KpiCard item={activeItem} />
+            <KpiCardView item={activeItem} />
           </div>
         ) : null}
       </DragOverlay>

@@ -80,17 +80,18 @@ class KpiManagerStatusTransitionTest extends TestCase
         $this->assertNull($completed->started_at);
     }
 
-    public function test_agent_kpi_transition_matrix_is_unchanged(): void
+    public function test_agent_can_move_kpi_freely_except_reopening_cancelled(): void
     {
         [$company, $owner, , $agent] = $this->seedCompanyUsers();
 
+        // Same freedom as the task board: any column, including back from Completed.
         $pending = $this->createKpi($company, $owner, $agent, ['status' => 'pending']);
         $this->actingAs($agent, 'sanctum')
             ->patchJson('/api/v1/agent/kpis/'.$pending->id.'/status', [
                 'company_id' => $company->company_id,
                 'status' => 'completed',
             ])
-            ->assertUnprocessable();
+            ->assertOk();
 
         $completed = $this->createKpi($company, $owner, $agent, ['status' => 'completed']);
         $this->actingAs($agent, 'sanctum')
@@ -98,10 +99,21 @@ class KpiManagerStatusTransitionTest extends TestCase
                 'company_id' => $company->company_id,
                 'status' => 'pending',
             ])
-            ->assertUnprocessable();
+            ->assertOk();
 
-        $this->assertSame('pending', $pending->fresh()->status?->value);
-        $this->assertSame('completed', $completed->fresh()->status?->value);
+        // Reopening a cancelled KPI still needs a manager, with a clear reason.
+        $cancelled = $this->createKpi($company, $owner, $agent, ['status' => 'cancelled']);
+        $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/agent/kpis/'.$cancelled->id.'/status', [
+                'company_id' => $company->company_id,
+                'status' => 'in_progress',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.status.0', 'Cancelled KPIs can only be reopened by a manager.');
+
+        $this->assertSame('completed', $pending->fresh()->status?->value);
+        $this->assertSame('pending', $completed->fresh()->status?->value);
+        $this->assertSame('cancelled', $cancelled->fresh()->status?->value);
     }
 
     private function createKpi(Company $company, User $creator, User $assignee, array $overrides = []): Kpi

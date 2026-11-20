@@ -63,14 +63,50 @@ function PriorityBadge({ priority }: { priority?: string }) {
   );
 }
 
-export function KpiCard({ item, onClick, onEdit, onDelete, dragDisabled = false }: KpiCardProps) {
+/** Sortable KPI card on the board. */
+export function KpiCard(props: KpiCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id, disabled: dragDisabled });
+    useSortable({ id: props.item.id, disabled: Boolean(props.dragDisabled) });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+  return (
+    <KpiCardView
+      {...props}
+      dnd={{
+        setNodeRef,
+        style: { transform: CSS.Transform.toString(transform), transition },
+        attributes: attributes as unknown as Record<string, unknown>,
+        listeners: (listeners ?? {}) as Record<string, unknown>,
+        isDragging,
+      }}
+    />
+  );
+}
+
+/**
+ * Presentational KPI card, rendered directly by the DragOverlay (a second
+ * useSortable with the same id made drops resolve onto the dragged card).
+ */
+export function KpiCardView({
+  item,
+  onClick,
+  onEdit,
+  onDelete,
+  dragDisabled = false,
+  dnd,
+}: KpiCardProps & {
+  dnd?: {
+    setNodeRef?: (el: HTMLElement | null) => void;
+    style?: React.CSSProperties;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
   };
+}) {
+  const setNodeRef = dnd?.setNodeRef;
+  const style = dnd?.style;
+  const attributes = dnd?.attributes ?? {};
+  const listeners = dnd?.listeners ?? {};
+  const isDragging = dnd?.isDragging ?? false;
 
   return (
     <div

@@ -17,7 +17,7 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 import type { ProjectSubtask } from '@/lib/tasks/project-checklist';
 import { TaskColumn } from './task-column';
-import { TaskCard } from './task-card';
+import { TaskCardView } from './task-card';
 
 interface TaskBoardProps {
   containers: DndContainer[];
@@ -193,7 +193,7 @@ export function TaskBoard({
       <DragOverlay>
         {activeItem ? (
           <div className="shadow-2xl scale-105 pointer-events-none">
-            <TaskCard item={activeItem} />
+            <TaskCardView item={activeItem} />
           </div>
         ) : null}
       </DragOverlay>
