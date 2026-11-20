@@ -40,6 +40,7 @@ interface Lead {
   id: string;
   name: string;
   company: string;
+  industry: string;
   status: ApiLeadStatus;
   statusColor: string;
   value: number;
@@ -181,6 +182,7 @@ export default function AllLeadsPage() {
       ? filters.stage
       : "all";
   const createdBy = filters.created_by ?? "";
+  const assignedTo = filters.assigned_to ?? "";
   const industryFilter = filters.industry ?? "";
   const dateRange: CrmDateRange = filters.from || filters.to
     ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
@@ -251,6 +253,7 @@ export default function AllLeadsPage() {
     id: String(l.id),
     name: l.name,
     company: l.company_name || "—",
+    industry: l.industry || "—",
     status: (l.status ?? "newly_lead") as ApiLeadStatus,
     statusColor: getStatusColor(l.status, labels),
     value: resolveLeadBudgetAmount(l),
@@ -490,6 +493,8 @@ export default function AllLeadsPage() {
             loadingPeople={loadingPeople}
             createdBy={createdBy}
             onCreatedByChange={(userId) => setFilter("created_by", userId || null)}
+            assignedTo={assignedTo}
+            onAssignedToChange={(userId) => setFilter("assigned_to", userId || null)}
             dateRange={dateRange}
             onDateRangeChange={(range) => setFilters({ from: range.from || "", to: range.to || "" })}
             industry={industryFilter}
@@ -573,6 +578,11 @@ export default function AllLeadsPage() {
             {leadColumns.visible("company") && (
             <div className="bg-[#D946EF] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Company
+            </div>
+            )}
+            {leadColumns.visible("industry") && (
+            <div className="bg-[#0EA5E9] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+              Industry
             </div>
             )}
             {leadColumns.visible("status") && (
@@ -708,6 +718,15 @@ export default function AllLeadsPage() {
                       }`}
                   >
                     {lead.company}
+                  </span>
+                  )}
+
+                  {leadColumns.visible("industry") && (
+                  <span
+                    className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
+                      }`}
+                  >
+                    {lead.industry}
                   </span>
                   )}
 

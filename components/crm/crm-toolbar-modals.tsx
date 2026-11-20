@@ -30,6 +30,8 @@ import {
 } from "@/hooks/use-crm";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { FieldError } from "@/components/ui/field-error";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
 import { FALLBACK_SUPPORTED_CURRENCIES, DEFAULT_FALLBACK_CURRENCY } from "@/lib/constants/currencies";
 
 type BaseModalProps = {
@@ -128,6 +130,7 @@ export function PipelineManagerModal({
 }) {
   const canManage = mode === "manage";
   const [newPipelineName, setNewPipelineName] = useState("");
+  const [newPipelineNameError, setNewPipelineNameError] = useState<string | null>(null);
   const [newPipelineCurrency, setNewPipelineCurrency] = useState(DEFAULT_FALLBACK_CURRENCY);
   const [editing, setEditing] = useState<Record<number, string>>({});
   const [editingCurrency, setEditingCurrency] = useState<Record<number, string>>({});
@@ -165,7 +168,12 @@ export function PipelineManagerModal({
   const setCompanyDefault = useSetCompanyDefaultCrmPipeline(apiBasePath);
 
   const saveNew = async () => {
-    if (!newPipelineName.trim()) return;
+    if (!newPipelineName.trim()) {
+      setNewPipelineNameError("Enter a pipeline name.");
+      void scrollToFirstError();
+      return;
+    }
+    setNewPipelineNameError(null);
     try {
       await createPipeline.mutateAsync({
         company_id: companyId,
@@ -176,6 +184,9 @@ export function PipelineManagerModal({
       setNewPipelineCurrency(DEFAULT_FALLBACK_CURRENCY);
       toast.success("Pipeline created");
     } catch (err) {
+      const apiErr = err instanceof ApiRequestError ? err : null;
+      setNewPipelineNameError(apiErr?.errors?.name?.[0] ?? null);
+      if (apiErr?.errors?.name?.[0]) void scrollToFirstError();
       toast.error(
         err instanceof Error ? err.message : "Failed to create pipeline",
       );
@@ -184,7 +195,10 @@ export function PipelineManagerModal({
 
   const saveEdit = async (id: number) => {
     const name = editing[id]?.trim();
-    if (!name) return;
+    if (!name) {
+      toast.error("Pipeline name cannot be empty.");
+      return;
+    }
     try {
       await updatePipeline.mutateAsync({
         pipelineId: id,
@@ -439,31 +453,38 @@ export function PipelineManagerModal({
         </div>
 
         {canManage && (
-          <div className="border-t border-gray-100 pt-4 flex flex-wrap items-center gap-2">
-            <input
-              value={newPipelineName}
-              onChange={(e) => setNewPipelineName(e.target.value)}
-              placeholder="Create new pipeline"
-              className="min-w-[180px] flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
-            />
-            <select
-              value={newPipelineCurrency}
-              onChange={(e) => setNewPipelineCurrency(e.target.value)}
-              aria-label="New pipeline currency"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark outline-none focus:border-dash-dark"
-            >
-              {FALLBACK_SUPPORTED_CURRENCIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.code}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={saveNew}
-              className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
-            >
-              Create
-            </button>
+          <div className="border-t border-gray-100 pt-4 space-y-1.5">
+            <div data-field="pipeline-name" className="flex flex-wrap items-center gap-2">
+              <input
+                value={newPipelineName}
+                onChange={(e) => {
+                  setNewPipelineName(e.target.value);
+                  if (newPipelineNameError) setNewPipelineNameError(null);
+                }}
+                placeholder="Create new pipeline"
+                aria-invalid={newPipelineNameError ? true : undefined}
+                className="min-w-[180px] flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
+              />
+              <select
+                value={newPipelineCurrency}
+                onChange={(e) => setNewPipelineCurrency(e.target.value)}
+                aria-label="New pipeline currency"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark outline-none focus:border-dash-dark"
+              >
+                {FALLBACK_SUPPORTED_CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={saveNew}
+                className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
+              >
+                Create
+              </button>
+            </div>
+            <FieldError message={newPipelineNameError} />
           </div>
         )}
       </ModalShell>
@@ -608,10 +629,12 @@ export function LabelManagerModal({
     const name = draft.name.trim();
     if (!name) {
       setNameErrors((prev) => ({ ...prev, [label.id]: "Label name is required." }));
+      void scrollToFirstError();
       return;
     }
     if (name.length > 120) {
       setNameErrors((prev) => ({ ...prev, [label.id]: "Label name must be 120 characters or fewer." }));
+      void scrollToFirstError();
       return;
     }
     try {
@@ -628,7 +651,10 @@ export function LabelManagerModal({
     } catch (err) {
       const apiErr = err instanceof ApiRequestError ? err : null;
       const fieldError = apiErr?.errors?.name?.[0] ?? apiErr?.errors?.color?.[0];
-      if (fieldError) setNameErrors((prev) => ({ ...prev, [label.id]: fieldError }));
+      if (fieldError) {
+        setNameErrors((prev) => ({ ...prev, [label.id]: fieldError }));
+        void scrollToFirstError();
+      }
       toast.error(
         err instanceof Error ? err.message : "Failed to update label",
       );
@@ -657,10 +683,12 @@ export function LabelManagerModal({
     const name = newLabelName.trim();
     if (!name) {
       setNewLabelError("Enter a name for the new label.");
+      void scrollToFirstError();
       return;
     }
     if (name.length > 120) {
       setNewLabelError("Label name must be 120 characters or fewer.");
+      void scrollToFirstError();
       return;
     }
     try {
@@ -675,6 +703,7 @@ export function LabelManagerModal({
     } catch (err) {
       const apiErr = err instanceof ApiRequestError ? err : null;
       setNewLabelError(apiErr?.errors?.name?.[0] ?? apiErr?.errors?.color?.[0] ?? null);
+      if (apiErr?.errors?.name?.[0] || apiErr?.errors?.color?.[0]) void scrollToFirstError();
       toast.error(
         err instanceof Error ? err.message : "Failed to create label",
       );
@@ -804,7 +833,9 @@ export function LabelManagerModal({
                   Delete
                 </button>
               </div>
-              {nameError && <p className="mt-1 text-[11px] text-red-500">{nameError}</p>}
+              <div data-field={`label-${label.id}`}>
+                <FieldError message={nameError} />
+              </div>
               <div className="flex items-center justify-between mt-1">
                 <p className="text-[11px] text-gray-400">
                   {dirty ? "Unsaved changes" : `Key: ${label.slug}`}
@@ -828,7 +859,7 @@ export function LabelManagerModal({
         })}
       </div>
 
-      <div className="border-t border-gray-100 pt-4">
+      <div className="border-t border-gray-100 pt-4" data-field="new-label-name">
         <div className="flex items-center gap-2">
           <input
             value={newLabelName}
@@ -864,7 +895,7 @@ export function LabelManagerModal({
             {createLabel.isPending ? "Adding…" : "Add"}
           </button>
         </div>
-        {newLabelError && <p className="mt-1 text-[11px] text-red-500">{newLabelError}</p>}
+        <FieldError message={newLabelError} />
       </div>
 
       <ConfirmDeleteModal

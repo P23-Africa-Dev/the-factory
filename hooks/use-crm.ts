@@ -111,7 +111,7 @@ export function useCrmAssignees(
         queryKey: CRM_KEYS.assignees(companyId, basePath),
         queryFn: async (): Promise<CrmAssignee[]> =>
             (await listCrmAssignees(companyId!, token, basePath)).data.items,
-        enabled: hasActiveApiSession(token) && companyId != null && basePath === "/admin",
+        enabled: hasActiveApiSession(token) && companyId != null && (basePath === "/admin" || basePath === "/agent"),
         staleTime: 1000 * 60 * 5,
     });
 }

@@ -218,12 +218,14 @@ export function useUpdateTaskStatus(options?: { onSuccess?: (task: TaskApiItem) 
       payload: UpdateTaskStatusPayload;
     }) => updateTaskStatus(taskId, payload, token),
     onSuccess: (res) => {
+      const task = res.data.task;
+      queryClient.setQueryData(TASK_KEYS.detail(task.id, task.company_id), task);
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
       if (res.meta?.queued_offline) {
         toast.info("Task status update queued offline.");
         return;
       }
-      options?.onSuccess?.(res.data.task);
+      options?.onSuccess?.(task);
     },
   });
 }
@@ -240,12 +242,14 @@ export function useUpdateTaskStatusAdmin(options?: { onSuccess?: (task: TaskApiI
       payload: UpdateTaskStatusPayload;
     }) => updateTaskStatusAdmin(taskId, payload, token),
     onSuccess: (res) => {
+      const task = res.data.task;
+      queryClient.setQueryData(TASK_KEYS.detail(task.id, task.company_id), task);
       queryClient.invalidateQueries({ queryKey: TASK_KEYS.all });
       if (res.meta?.queued_offline) {
         toast.info("Task status update queued offline.");
         return;
       }
-      options?.onSuccess?.(res.data.task);
+      options?.onSuccess?.(task);
     },
   });
 }

@@ -57,16 +57,19 @@ type CrmFilterBarProps = {
   onPipelineChange: (pipelineId: number | null) => void;
   selectedLabel: string;
   onLabelChange: (label: string) => void;
-  /** "Added by" shows only when a handler is passed. */
+  /** "Added by" / "Assigned to" show when their handlers are passed. */
   people?: CrmAssignee[];
   loadingPeople?: boolean;
   createdBy?: string;
   onCreatedByChange?: (userId: string) => void;
+  assignedTo?: string;
+  onAssignedToChange?: (userId: string) => void;
   /** "Date added" shows only when a handler is passed. */
   dateRange?: CrmDateRange;
   onDateRangeChange?: (range: CrmDateRange) => void;
   /** Shown when "Added by" was set from a link before people loaded. */
   createdByLabel?: string | null;
+  assignedToLabel?: string | null;
   /** "Industry" shows only when a handler is passed. */
   industry?: string;
   onIndustryChange?: (industry: string) => void;
@@ -235,9 +238,12 @@ export function CrmFilterBar({
   loadingPeople,
   createdBy = "",
   onCreatedByChange,
+  assignedTo = "",
+  onAssignedToChange,
   dateRange = EMPTY_DATE_RANGE,
   onDateRangeChange,
   createdByLabel = null,
+  assignedToLabel = null,
   industry = "",
   onIndustryChange,
   onClear,
@@ -245,6 +251,7 @@ export function CrmFilterBar({
   const pipelineName = pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name;
   const labelName = labels.find((label) => label.slug === selectedLabel)?.name;
   const personName = people.find((person) => String(person.id) === createdBy)?.name ?? createdByLabel ?? undefined;
+  const assigneeName = people.find((person) => String(person.id) === assignedTo)?.name ?? assignedToLabel ?? undefined;
   const pipelineActive = selectedPipelineId !== defaultPipelineId;
   const dateSummary = describeDateRange(dateRange);
 
@@ -255,12 +262,19 @@ export function CrmFilterBar({
       labelName && { key: "label", label: `Label: ${labelName}`, remove: () => onLabelChange("all") },
     onCreatedByChange &&
       createdBy && { key: "person", label: `Added by ${personName ?? "selected person"}`, remove: () => onCreatedByChange("") },
+    onAssignedToChange &&
+      assignedTo && { key: "assignee", label: `Assigned to ${assigneeName ?? "selected person"}`, remove: () => onAssignedToChange("") },
     onDateRangeChange &&
       dateSummary && { key: "date", label: `Added ${dateSummary}`, remove: () => onDateRangeChange(EMPTY_DATE_RANGE) },
     onIndustryChange &&
       industry && { key: "industry", label: `Industry: ${industry}`, remove: () => onIndustryChange("") },
   ].filter(Boolean) as { key: string; label: string; remove: () => void }[];
-  const fieldCount = 2 + (onCreatedByChange ? 1 : 0) + (onDateRangeChange ? 1 : 0) + (onIndustryChange ? 1 : 0);
+  const fieldCount =
+    2 +
+    (onCreatedByChange ? 1 : 0) +
+    (onAssignedToChange ? 1 : 0) +
+    (onDateRangeChange ? 1 : 0) +
+    (onIndustryChange ? 1 : 0);
   const industryOptions = [
     { value: "", label: "Any industry" },
     ...(industry && !(LEAD_INDUSTRIES as readonly string[]).includes(industry) ? [{ value: industry, label: industry }] : []),
@@ -293,7 +307,7 @@ export function CrmFilterBar({
         </button>
       </div>
 
-      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${fieldCount >= 5 ? "xl:grid-cols-5" : fieldCount === 4 ? "xl:grid-cols-4" : fieldCount === 3 ? "xl:grid-cols-3" : ""}`}>
+      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${fieldCount >= 6 ? "xl:grid-cols-6" : fieldCount >= 5 ? "xl:grid-cols-5" : fieldCount === 4 ? "xl:grid-cols-4" : fieldCount === 3 ? "xl:grid-cols-3" : ""}`}>
         <div>
           <FieldLabel icon={<GitBranch size={11} />}>Pipeline</FieldLabel>
           <SearchableSelect
@@ -340,6 +354,24 @@ export function CrmFilterBar({
             placeholder={loadingPeople ? "Loading people…" : "Choose a person"}
             searchPlaceholder="Search people…"
             className={fieldCls(Boolean(createdBy))}
+          />
+        </div>
+        )}
+
+        {onAssignedToChange && (
+        <div>
+          <FieldLabel icon={<UserRound size={11} />}>Assigned to</FieldLabel>
+          <SearchableSelect
+            variant="enterprise"
+            value={assignedTo || UNSET}
+            onChange={onAssignedToChange}
+            options={[
+              { value: "", label: "Anyone" },
+              ...people.map((person) => ({ value: String(person.id), label: person.name })),
+            ]}
+            placeholder={loadingPeople ? "Loading people…" : "Choose a person"}
+            searchPlaceholder="Search people…"
+            className={fieldCls(Boolean(assignedTo))}
           />
         </div>
         )}

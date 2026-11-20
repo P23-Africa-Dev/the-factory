@@ -11,7 +11,7 @@ import { useCrmFilters } from "@/hooks/use-crm-filters";
 const TRIGGER_ACTIVE_CLS = "border-[#2ae9c9] bg-[#ECFDF8] text-[#0B1215] ring-2 ring-[#2ae9c9]/50";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
-import { useAgentUploadsOverview, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
+import { useAgentUploadsOverview, useCrmAssignees, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
@@ -21,6 +21,7 @@ import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { useDroppable } from "@dnd-kit/core";
 import {
   DndContext,
@@ -49,10 +50,12 @@ import {
   LayoutGrid,
   List,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
   Tag,
+  Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -115,6 +118,8 @@ type LeadCardProps = {
   stages?: Array<{ id: string; title: string; color: string }>;
   currentStageId?: string;
   onMoveToStage?: (leadId: string, targetStageId: string) => void;
+  onEditClick?: (leadId: string) => void;
+  onDeleteClick?: (leadId: string) => void;
 };
 
 /** Sortable card on the board. */
@@ -144,6 +149,8 @@ function LeadCardView({
   stages,
   currentStageId,
   onMoveToStage,
+  onEditClick,
+  onDeleteClick,
   dnd,
 }: LeadCardProps & {
   dnd?: {
@@ -170,12 +177,46 @@ function LeadCardView({
       {...attributes}
       {...listeners}
       onClick={() => router.push(`${basePath}/leads/${item.id}`)}
-      className={`bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200 overflow-hidden min-w-0
+      className={`group bg-white rounded-[20px] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] border border-gray-100 cursor-grab select-none mb-3 transition-all duration-200 overflow-hidden min-w-0
         ${isDragging && !isDragOverlay ? "opacity-40 scale-95" : ""}
         ${isDragOverlay ? "shadow-2xl scale-105 cursor-grabbing" : "hover:shadow-md"}
       `}
     >
-      <p className="text-[#0B1215] font-bold text-[14px] leading-tight truncate">{item.label}</p>
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <p className="text-[#0B1215] font-bold text-[14px] leading-tight min-w-0 flex-1 truncate">{item.label}</p>
+        {(onEditClick || onDeleteClick) && !isDragOverlay && (
+          <div className="flex items-center shrink-0 -mt-1 -mr-1">
+            {onEditClick && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditClick(item.id);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="text-gray-300 hover:text-[#0B1215] p-1.5 rounded-full hover:bg-gray-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 max-md:opacity-100"
+                title="Edit Lead"
+              >
+                <Pencil size={13} />
+              </button>
+            )}
+            {onDeleteClick && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteClick(item.id);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="text-gray-300 hover:text-red-500 p-1.5 rounded-full hover:bg-red-50 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 max-md:opacity-100"
+                title="Delete Lead"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       <p className="text-[#9CA3AF] text-[12px] mt-0.5 truncate" title={item.description}>
         {item.description}
       </p>
@@ -238,6 +279,8 @@ function LeadColumn({
   activeTabId,
   stages,
   onMoveToStage,
+  onEditLeadClick,
+  onDeleteLeadClick,
   total,
   hasMore,
   isFetchingMore,
@@ -252,6 +295,8 @@ function LeadColumn({
   activeTabId?: string;
   stages?: Array<{ id: string; title: string; color: string }>;
   onMoveToStage?: (leadId: string, targetStageId: string) => void;
+  onEditLeadClick?: (leadId: string) => void;
+  onDeleteLeadClick?: (leadId: string) => void;
   total?: number;
   hasMore?: boolean;
   isFetchingMore?: boolean;
@@ -300,6 +345,8 @@ function LeadColumn({
                 stages={stages}
                 currentStageId={id}
                 onMoveToStage={onMoveToStage}
+                onEditClick={onEditLeadClick}
+                onDeleteClick={onDeleteLeadClick}
               />
             ))}
           </div>
@@ -490,13 +537,15 @@ function LeadListView({
   );
 }
 
-function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, isLoading, stageMeta, onLoadMore, budgetTotal }: {
+function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, onEditLeadClick, onDeleteLeadClick, isLoading, stageMeta, onLoadMore, budgetTotal }: {
   basePath?: string;
   leadListUrl?: string;
   boardKey: string;
   initialContainers: DndContainer[];
   onStatusChange: (leadId: string, status: ApiLeadStatus) => Promise<void>;
   onAddClick?: (status: ApiLeadStatus) => void;
+  onEditLeadClick?: (leadId: string) => void;
+  onDeleteLeadClick?: (leadId: string) => void;
   isLoading?: boolean;
   stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
   onLoadMore?: (stageId: string) => void;
@@ -709,6 +758,8 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
                   basePath={basePath}
                   activeTabId={resolvedActiveTabId}
                   stages={stagesList}
+                  onEditLeadClick={onEditLeadClick}
+                  onDeleteLeadClick={onDeleteLeadClick}
                   onMoveToStage={async (leadId, targetStageId) => {
                     const origin = findContainerForItem(containersRef.current, leadId);
                     if (!origin || origin.id === targetStageId) return;
@@ -839,10 +890,13 @@ export default function CRMPage() {
   const [debouncedSearch, setDebouncedSearch] = useState(() => (filters.q ?? "").trim());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
+  const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LeadApiItem | null>(null);
   const [showFilter, setShowFilter] = useState(false);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
 
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
+  const { data: people = [], isLoading: loadingPeople } = useCrmAssignees(companyId ?? undefined, apiBasePath);
   const { data: preferences } = useCrmPreferences(companyId ?? undefined, apiBasePath);
   const { data: labels = [] } = useCrmLabels(companyId ?? undefined, apiBasePath);
   const { data: agentUploadsOverview } = useAgentUploadsOverview(companyId ?? undefined, apiBasePath);
@@ -876,7 +930,11 @@ export default function CRMPage() {
     ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
     : EMPTY_DATE_RANGE;
   const industryFilter = filters.industry ?? "";
+  const createdBy = filters.created_by ?? "";
+  const assignedTo = filters.assigned_to ?? "";
   const extraFilters = {
+    created_by_user_id: createdBy || undefined,
+    assigned_to_user_id: assignedTo || undefined,
     created_from: dateRange.from ? new Date(`${dateRange.from}T00:00:00`).toISOString() : undefined,
     created_to: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999`).toISOString() : undefined,
     industry: industryFilter || undefined,
@@ -884,6 +942,8 @@ export default function CRMPage() {
   const activeFilterCount =
     (pipelineFiltered ? 1 : 0) +
     (selectedLabel !== "all" ? 1 : 0) +
+    (createdBy ? 1 : 0) +
+    (assignedTo ? 1 : 0) +
     (dateRange.from || dateRange.to ? 1 : 0) +
     (industryFilter ? 1 : 0);
 
@@ -980,6 +1040,35 @@ export default function CRMPage() {
   );
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
+  const deleteLeadMutation = useDeleteLead(
+    {
+      onSuccess: () => {
+        toast.success("Lead deleted successfully");
+      },
+    },
+    apiBasePath,
+  );
+
+  const handleEditLead = (leadId: string) => {
+    const lead = loadedLeads.find((entry) => String(entry.id) === leadId);
+    if (lead) setEditingLead(lead);
+  };
+
+  const handleDeleteLead = (leadId: string) => {
+    const lead = loadedLeads.find((entry) => String(entry.id) === leadId);
+    if (lead) setDeleteTarget(lead);
+  };
+
+  const confirmDeleteLead = () => {
+    if (!deleteTarget) return;
+    deleteLeadMutation.mutate(
+      { leadId: deleteTarget.id, companyId: companyId ?? undefined },
+      {
+        onError: (err) => toast.error(getApiErrorMessage(err, "Could not delete the lead. Please try again.")),
+      },
+    );
+    setDeleteTarget(null);
+  };
 
   async function persistStatusChange(leadId: string, status: ApiLeadStatus) {
     try {
@@ -1096,6 +1185,12 @@ export default function CRMPage() {
             onPipelineChange={setSelectedPipelineId}
             selectedLabel={selectedLabel}
             onLabelChange={setSelectedLabel}
+            people={people}
+            loadingPeople={loadingPeople}
+            createdBy={createdBy}
+            onCreatedByChange={(userId) => setFilter("created_by", userId || null)}
+            assignedTo={assignedTo}
+            onAssignedToChange={(userId) => setFilter("assigned_to", userId || null)}
             dateRange={dateRange}
             onDateRangeChange={(range) => setFilters({ from: range.from || "", to: range.to || "" })}
             industry={industryFilter}
@@ -1135,7 +1230,9 @@ export default function CRMPage() {
           boardKey={boardKey}
           initialContainers={initialContainers}
           onStatusChange={persistStatusChange}
-          onAddClick={(status) => { setDefaultStatus(status); setIsAddModalOpen(true); }}
+          onAddClick={(status) => { setDefaultStatus(status); setEditingLead(null); setIsAddModalOpen(true); }}
+          onEditLeadClick={handleEditLead}
+          onDeleteLeadClick={handleDeleteLead}
           isLoading={stageQuery.isLoading}
           stageMeta={stageMeta}
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
@@ -1150,6 +1247,26 @@ export default function CRMPage() {
           defaultStatus={defaultStatus}
         />
       )}
+
+      {editingLead && (
+        <AddLeadModal
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          apiBasePath={apiBasePath}
+        />
+      )}
+
+      <ConfirmDeleteModal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDeleteLead}
+        title="Delete Lead"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`
+            : "Are you sure you want to delete this lead?"
+        }
+      />
 
       {showPipelineModal && companyId && (
         <PipelineManagerModal

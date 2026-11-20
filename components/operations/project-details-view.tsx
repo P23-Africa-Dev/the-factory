@@ -554,6 +554,18 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
         onClose={() => setSelectedTask(null)}
         task={selectedTask?.item ?? null}
         status={selectedTask?.containerId ?? ""}
+        onApiStatusUpdated={(nextStatus) => {
+          if (!nextStatus) return;
+          const containerId =
+            nextStatus === "in_progress" || nextStatus === "paused" || nextStatus === "resumed"
+              ? "in-progress"
+              : nextStatus === "completed"
+                ? "completed"
+                : nextStatus === "cancelled"
+                  ? "cancelled"
+                  : "pending";
+          setSelectedTask((prev) => (prev ? { ...prev, containerId } : prev));
+        }}
       />
     </div>
   );

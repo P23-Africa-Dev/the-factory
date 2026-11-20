@@ -6,6 +6,9 @@ import type { ApiRoleBasePath, LeadFieldDefinition, LeadFieldType } from "@/lib/
 import { LEAD_FIELD_TYPE_OPTIONS, isSelectField } from "@/lib/crm/custom-fields";
 import { useCreateLeadField } from "@/hooks/use-crm";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { FieldError } from "@/components/ui/field-error";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
+import { mapApiFieldErrors } from "@/lib/forms/api-field-errors";
 
 export function LeadFieldDialog({
     companyId,
@@ -31,22 +34,26 @@ export function LeadFieldDialog({
     const [optionsText, setOptionsText] = useState("");
     const [description, setDescription] = useState("");
     const [isRequired, setIsRequired] = useState(false);
+    const [errors, setErrors] = useState<Record<string, string>>({});
     const createField = useCreateLeadField(undefined, apiBasePath);
 
     const submit = () => {
         const trimmed = label.trim();
-        if (!trimmed) {
-            toast.error("Enter a field name.");
-            return;
-        }
+        const nextErrors: Record<string, string> = {};
+        if (!trimmed) nextErrors.label = "Enter a field name.";
         const options = optionsText
             .split("\n")
             .map((line) => line.trim())
             .filter(Boolean);
         if (isSelectField(type) && options.length === 0) {
-            toast.error("Add at least one option, one per line.");
+            nextErrors.options = "Add at least one option, one per line.";
+        }
+        if (Object.keys(nextErrors).length > 0) {
+            setErrors(nextErrors);
+            void scrollToFirstError();
             return;
         }
+        setErrors({});
 
         createField.mutate({
             company_id: companyId,
@@ -67,6 +74,15 @@ export function LeadFieldDialog({
                 onClose();
             },
             onError: (error: unknown) => {
+                const mapped = mapApiFieldErrors(error, {
+                    label: "label",
+                    options: "options",
+                    type: "type",
+                });
+                if (Object.keys(mapped).length > 0) {
+                    setErrors(mapped as Record<string, string>);
+                    void scrollToFirstError();
+                }
                 const message = error instanceof Error ? error.message : "Could not add that field.";
                 toast.error(message);
             },
@@ -80,42 +96,59 @@ export function LeadFieldDialog({
                 <div className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
                     <h3 className="text-[16px] font-bold text-[#0B1215]">{title}</h3>
                     <p className="mt-1 text-[12px] text-gray-500">
-                        This field is shared with the company. Agents’ new fields stay visible until a manager approves them.
+                        This field is shared with the company. Agents’ new fields stay visible until a manager reviews it.
                     </p>
                     <div className="mt-4 space-y-3">
-                        <label className="block text-[12px] font-semibold text-gray-600">
-                            Field name
-                            <input
-                                value={label}
-                                onChange={(event) => setLabel(event.target.value)}
-                                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px]"
-                                placeholder="Industry"
-                                maxLength={80}
-                            />
-                        </label>
-                        <label className="block text-[12px] font-semibold text-gray-600">
-                            Type
-                            <select
-                                value={type}
-                                onChange={(event) => setType(event.target.value as LeadFieldType)}
-                                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] bg-white"
-                            >
-                                {LEAD_FIELD_TYPE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                ))}
-                            </select>
-                        </label>
-                        {isSelectField(type) && (
+                        <div data-field="label">
                             <label className="block text-[12px] font-semibold text-gray-600">
-                                Options
-                                <textarea
-                                    value={optionsText}
-                                    onChange={(event) => setOptionsText(event.target.value)}
+                                Field name
+                                <input
+                                    value={label}
+                                    onChange={(event) => {
+                                        setLabel(event.target.value);
+                                        if (errors.label) setErrors((prev) => ({ ...prev, label: "" }));
+                                    }}
+                                    aria-invalid={errors.label ? true : undefined}
                                     className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px]"
-                                    rows={4}
-                                    placeholder={"SaaS\nRetail"}
+                                    placeholder="Industry"
+                                    maxLength={80}
                                 />
                             </label>
+                            <FieldError message={errors.label} />
+                        </div>
+                        <div data-field="type">
+                            <label className="block text-[12px] font-semibold text-gray-600">
+                                Type
+                                <select
+                                    value={type}
+                                    onChange={(event) => setType(event.target.value as LeadFieldType)}
+                                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] bg-white"
+                                >
+                                    {LEAD_FIELD_TYPE_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <FieldError message={errors.type} />
+                        </div>
+                        {isSelectField(type) && (
+                            <div data-field="options">
+                                <label className="block text-[12px] font-semibold text-gray-600">
+                                    Options
+                                    <textarea
+                                        value={optionsText}
+                                        onChange={(event) => {
+                                            setOptionsText(event.target.value);
+                                            if (errors.options) setErrors((prev) => ({ ...prev, options: "" }));
+                                        }}
+                                        aria-invalid={errors.options ? true : undefined}
+                                        className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px]"
+                                        rows={4}
+                                        placeholder={"SaaS\nRetail"}
+                                    />
+                                </label>
+                                <FieldError message={errors.options} />
+                            </div>
                         )}
                         <label className="block text-[12px] font-semibold text-gray-600">
                             Description

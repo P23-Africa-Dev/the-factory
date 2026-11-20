@@ -38,6 +38,7 @@ import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import { getApiErrorMessage } from '@/lib/api/errors';
 import { isTaskManagerRole } from '@/lib/tasks/board-permissions';
+import { toBoardStatus } from '@/lib/tasks/board-status';
 import type { GeoReading } from '@/types/tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
@@ -64,23 +65,13 @@ interface TaskDetailModalProps {
   status: 'pending' | 'in-progress' | 'completed' | string;
   onToggleSubtask?: (id: string) => void;
   onSaveSubtasks?: (items: ProjectSubtask[]) => void;
-  onApiStatusUpdated?: () => void;
+  onApiStatusUpdated?: (nextStatus?: string) => void;
   localTask?: {
     comments: string[];
     onComment: (body: string) => void;
     onStatus: (status: ApiTaskStatus) => void;
     onAssign: (assignee: { id: number; name: string }) => void;
   };
-}
-
-function toBoardStatus(status?: string): 'pending' | 'in-progress' | 'completed' | 'cancelled' {
-  if (status === 'cancelled') return 'cancelled';
-  if (status === 'completed') return 'completed';
-  if (status === 'in_progress' || status === 'paused' || status === 'resumed') {
-    return 'in-progress';
-  }
-
-  return 'pending';
 }
 
 function TaskLocationMap({
@@ -323,7 +314,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   const isManager = isTaskManagerRole(role);
 
   const onStatusUpdated = (updatedTask: { status: string }) => {
-    onApiStatusUpdated?.();
+    onApiStatusUpdated?.(updatedTask.status);
     toast.success(`Task moved to ${updatedTask.status.replace('_', ' ')}`);
   };
   const updateStatusMutation = useUpdateTaskStatus({ onSuccess: onStatusUpdated });
@@ -358,7 +349,9 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
     (detailQuery.data?.assignee?.id ? String(detailQuery.data.assignee.id) : localTask ? task.projectChecklist?.assigneeId ?? '' : '');
 
   const apiStatus = detailQuery.data?.status;
-  const boardStatus = toBoardStatus(task.projectChecklist ? status : apiStatus ?? status);
+  // Prefer live API status so Start Task / admin updates refresh the badge even when
+  // the parent still passes the column id from when the modal opened.
+  const boardStatus = toBoardStatus(apiStatus ?? status);
   const isPending = boardStatus === 'pending';
   const isInProgress = boardStatus === 'in-progress';
   const isCompleted = boardStatus === 'completed';
@@ -916,19 +909,39 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
 
               {/* Completed */}
               {isCompleted && (
-                <div className="mt-auto pt-6">
+                <div className="mt-auto pt-6 space-y-2">
                   <div className="w-full flex items-center justify-center gap-3 px-8 py-4 bg-dash-teal/10 text-dash-teal rounded-[20px] text-[15px] font-semibold border border-dash-teal/20">
                     <CheckCircle size={20} />
                     Task Completed
                   </div>
+                  {isManager && !isObserver && (
+                    <button
+                      type="button"
+                      onClick={() => updateTaskStatus('in_progress')}
+                      disabled={statusUpdatePending}
+                      className="w-full flex items-center justify-center gap-2 px-8 py-3.5 bg-white border-2 border-gray-100 text-gray-700 rounded-[18px] text-[13px] font-semibold hover:bg-gray-50 transition-all disabled:opacity-60"
+                    >
+                      Reopen Task
+                    </button>
+                  )}
                 </div>
               )}
               {isCancelled && (
-                <div className="mt-auto pt-6">
+                <div className="mt-auto pt-6 space-y-2">
                   <div className="w-full flex items-center justify-center gap-3 px-8 py-4 bg-red-50 text-red-500 rounded-[20px] text-[15px] font-semibold border border-red-100">
                     <CheckCircle size={20} />
                     Task Cancelled
                   </div>
+                  {isManager && !isObserver && (
+                    <button
+                      type="button"
+                      onClick={() => updateTaskStatus('in_progress')}
+                      disabled={statusUpdatePending}
+                      className="w-full flex items-center justify-center gap-2 px-8 py-3.5 bg-white border-2 border-gray-100 text-gray-700 rounded-[18px] text-[13px] font-semibold hover:bg-gray-50 transition-all disabled:opacity-60"
+                    >
+                      Reopen Task
+                    </button>
+                  )}
                 </div>
               )}
               {detailQuery.data?.proofs?.length && taskId && companyId ? (

@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useBulkDeleteLeads, useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useBulkDeleteLeads, useCrmAssignees, useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
@@ -40,6 +40,7 @@ interface Lead {
   id: string;
   name: string;
   company: string;
+  industry: string;
   status: ApiLeadStatus;
   statusColor: string;
   value: number;
@@ -166,7 +167,12 @@ export default function AllLeadsPage() {
     ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
     : EMPTY_DATE_RANGE;
   const industryFilter = filters.industry ?? "";
+  const createdBy = filters.created_by ?? "";
+  const assignedTo = filters.assigned_to ?? "";
+  const { data: people = [], isLoading: loadingPeople } = useCrmAssignees(companyId ?? undefined, "/agent");
   const extraFilters = {
+    created_by_user_id: createdBy || undefined,
+    assigned_to_user_id: assignedTo || undefined,
     created_from: dateRange.from ? new Date(`${dateRange.from}T00:00:00`).toISOString() : undefined,
     created_to: dateRange.to ? new Date(`${dateRange.to}T23:59:59.999`).toISOString() : undefined,
     industry: industryFilter || undefined,
@@ -174,6 +180,8 @@ export default function AllLeadsPage() {
   const activeFilterCount =
     (pipelineFiltered ? 1 : 0) +
     (selectedLabel !== "all" ? 1 : 0) +
+    (createdBy ? 1 : 0) +
+    (assignedTo ? 1 : 0) +
     (dateRange.from || dateRange.to ? 1 : 0) +
     (industryFilter ? 1 : 0);
 
@@ -215,6 +223,7 @@ export default function AllLeadsPage() {
     id: String(l.id),
     name: l.name,
     company: l.company_name || "—",
+    industry: l.industry || "—",
     status: (l.status ?? "newly_lead") as ApiLeadStatus,
     statusColor: getStatusColor(l.status, labels),
     value: resolveLeadBudgetAmount(l),
@@ -409,6 +418,12 @@ export default function AllLeadsPage() {
             onPipelineChange={setSelectedPipelineId}
             selectedLabel={selectedLabel}
             onLabelChange={setSelectedLabel}
+            people={people}
+            loadingPeople={loadingPeople}
+            createdBy={createdBy}
+            onCreatedByChange={(userId) => setFilter("created_by", userId || null)}
+            assignedTo={assignedTo}
+            onAssignedToChange={(userId) => setFilter("assigned_to", userId || null)}
             dateRange={dateRange}
             onDateRangeChange={(range) => setFilters({ from: range.from || "", to: range.to || "" })}
             industry={industryFilter}
@@ -492,6 +507,11 @@ export default function AllLeadsPage() {
             {leadColumns.visible("company") && (
             <div className="bg-[#D946EF] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
               Company
+            </div>
+            )}
+            {leadColumns.visible("industry") && (
+            <div className="bg-[#0EA5E9] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+              Industry
             </div>
             )}
             {leadColumns.visible("status") && (
@@ -606,6 +626,15 @@ export default function AllLeadsPage() {
                       }`}
                   >
                     {lead.company}
+                  </span>
+                  )}
+
+                  {leadColumns.visible("industry") && (
+                  <span
+                    className={`text-[12px] truncate ${isSelected ? "text-white/80" : "text-gray-500"
+                      }`}
+                  >
+                    {lead.industry}
                   </span>
                   )}
 

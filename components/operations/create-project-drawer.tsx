@@ -10,6 +10,9 @@ import type { ApiProjectType, ApiProjectStatus, ApiProjectPriority } from "@/lib
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { FieldError } from "@/components/ui/field-error";
+import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
+import { mapApiFieldErrors } from "@/lib/forms/api-field-errors";
 
 const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
 const STATUS_OPTIONS = ["In progress", "Pending", "Completed"] as const;
@@ -149,6 +152,7 @@ export function CreateProjectDrawer({
 
   const isPending = isCreating || isUpdating;
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -162,13 +166,18 @@ export function CreateProjectDrawer({
       return;
     }
 
-    if (!form.startDate) {
-      toast.error("Please select a start date.");
+    const nextErrors: Record<string, string> = {};
+    if (!form.name.trim()) nextErrors.name = "Project name is required.";
+    if (!form.startDate) nextErrors.startDate = "Please select a start date.";
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      void scrollToFirstError();
       return;
     }
+    setErrors({});
 
     const payload = {
-      name: form.name,
+      name: form.name.trim(),
       description: form.description || undefined,
       type: TYPE_MAP[form.category] ?? null,
       status: STATUS_MAP[form.status] ?? "active",
@@ -186,29 +195,25 @@ export function CreateProjectDrawer({
       notes: form.notes || null,
     };
 
+    const onError = (err: unknown) => {
+      const mapped = mapApiFieldErrors(err, {
+        name: "name",
+        start_date: "startDate",
+        end_date: "deadline",
+        project_manager_user_id: "lead",
+      });
+      if (Object.keys(mapped).length > 0) {
+        setErrors(mapped as Record<string, string>);
+        void scrollToFirstError();
+      }
+      const message = err instanceof Error ? err.message : projectToEdit ? "Failed to update project." : "Failed to create project.";
+      toast.error(message);
+    };
+
     if (projectToEdit) {
-      updateMutate(
-        {
-          ...payload,
-          attachments,
-        },
-        {
-          onError: (err: unknown) => {
-            const message = err instanceof Error ? err.message : "Failed to update project.";
-            toast.error(message);
-          },
-        }
-      );
+      updateMutate({ ...payload, attachments }, { onError });
     } else {
-      createMutate(
-        { ...payload, company_id: companyId, attachments },
-        {
-          onError: (err: unknown) => {
-            const message = err instanceof Error ? err.message : "Failed to create project.";
-            toast.error(message);
-          },
-        }
-      );
+      createMutate({ ...payload, company_id: companyId, attachments }, { onError });
     }
   };
 
@@ -259,14 +264,20 @@ export function CreateProjectDrawer({
 
           {/* Name */}
           <Row label="Project Name">
-            <input
-              required
-              type="text"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="e.g. Product Outreach"
-              className={FIELD}
-            />
+            <div data-field="name">
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => {
+                  set("name", e.target.value);
+                  if (errors.name) setErrors((prev) => ({ ...prev, name: "" }));
+                }}
+                placeholder="e.g. Product Outreach"
+                aria-invalid={errors.name ? true : undefined}
+                className={FIELD}
+              />
+              <FieldError message={errors.name} />
+            </div>
           </Row>
 
           {/* Description */}
@@ -367,12 +378,19 @@ export function CreateProjectDrawer({
 
           {/* Start Date */}
           <Row label="Start Date">
-            <input
-              type="date"
-              value={form.startDate}
-              onChange={(e) => set("startDate", e.target.value)}
-              className={FIELD}
-            />
+            <div data-field="startDate">
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => {
+                  set("startDate", e.target.value);
+                  if (errors.startDate) setErrors((prev) => ({ ...prev, startDate: "" }));
+                }}
+                aria-invalid={errors.startDate ? true : undefined}
+                className={FIELD}
+              />
+              <FieldError message={errors.startDate} />
+            </div>
           </Row>
 
           {/* Deadline */}

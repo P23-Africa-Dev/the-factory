@@ -529,10 +529,25 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
       };
     });
 
-  const currentSelection = selectedTask && (enableProjectChecklist
-    ? serverContainers.flatMap((container) => container.items.map((item) => ({ item, containerId: container.id })))
-      .find(({ item }) => item.id === selectedTask.item.id)
-    : selectedTask);
+  // Prefer the visible board column so the modal badge matches what the user clicked;
+  // fall back to server containers for fresh checklist item data.
+  const currentSelection = selectedTask
+    ? (() => {
+        const fromBoard = boardContainers
+          .flatMap((container) => container.items.map((item) => ({ item, containerId: container.id })))
+          .find(({ item }) => item.id === selectedTask.item.id);
+        const fromServer = enableProjectChecklist
+          ? serverContainers
+              .flatMap((container) => container.items.map((item) => ({ item, containerId: container.id })))
+              .find(({ item }) => item.id === selectedTask.item.id)
+          : undefined;
+        if (!fromBoard && !fromServer) return selectedTask;
+        return {
+          item: fromServer?.item ?? fromBoard?.item ?? selectedTask.item,
+          containerId: fromBoard?.containerId ?? fromServer?.containerId ?? selectedTask.containerId,
+        };
+      })()
+    : null;
   const selectedId = currentSelection?.item.id;
 
   return (
@@ -779,6 +794,18 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         onClose={() => setSelectedTask(null)}
         task={currentSelection?.item ?? null}
         status={currentSelection?.containerId ?? ""}
+        onApiStatusUpdated={(nextStatus) => {
+          if (!nextStatus) return;
+          const containerId =
+            nextStatus === "in_progress" || nextStatus === "paused" || nextStatus === "resumed"
+              ? "in-progress"
+              : nextStatus === "completed"
+                ? "completed"
+                : nextStatus === "cancelled"
+                  ? "cancelled"
+                  : "pending";
+          setSelectedTask((prev) => (prev ? { ...prev, containerId } : prev));
+        }}
         onToggleSubtask={enableProjectChecklist && selectedId ? (id) => toggleSubtask(selectedId, id) : undefined}
         onSaveSubtasks={enableProjectChecklist && selectedId ? (items) => saveSubtasks(selectedId, items) : undefined}
       />

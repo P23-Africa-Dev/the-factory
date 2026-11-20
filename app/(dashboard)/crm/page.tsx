@@ -1013,6 +1013,8 @@ export default function CRMPage() {
 
   const createdBy = filters.created_by ?? "";
   const setCreatedBy = (userId: string) => setFilter("created_by", userId || null);
+  const assignedTo = filters.assigned_to ?? "";
+  const setAssignedTo = (userId: string) => setFilter("assigned_to", userId || null);
   const dateRange: CrmDateRange = filters.from || filters.to
     ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
     : EMPTY_DATE_RANGE;
@@ -1325,6 +1327,8 @@ export default function CRMPage() {
             loadingPeople={loadingPeople}
             createdBy={createdBy}
             onCreatedByChange={setCreatedBy}
+            assignedTo={assignedTo}
+            onAssignedToChange={setAssignedTo}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
             industry={industryFilter}
