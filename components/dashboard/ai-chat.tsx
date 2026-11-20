@@ -57,7 +57,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ElyActionReceipts, receiptsFromPayload } from "@/components/ely/action-receipts";
-import { MicRecordButton } from "@/components/ely/mic-record-button";
+import { InlineVoiceRecorder } from "@/components/ely/inline-voice-recorder";
 import { ImportLeadsButton } from "@/components/ely/import-leads-button";
 import { AgentConfirmationCard, agentConfirmationFromPayload, usesAgentCard } from "@/components/ely/agent-confirmation-card";
 import { resolveAvatarSrc } from "@/lib/avatar";
@@ -3280,11 +3280,6 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     >
                       <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> {isVoiceTranscriptionLoading ? "Processing…" : "Voice Input"}</span>
                     </button>
-                    <MicRecordButton
-                      disabled={isRunningQuickAction || isStreaming || isVoiceTranscriptionLoading}
-                      onRecorded={(file) => void handleVoiceFile(file)}
-                      onError={(message) => toast.error(message)}
-                    />
                     <ImportLeadsButton
                       disabled={isRunningQuickAction || isStreaming}
                       onAttach={(file) => attachFile(file, companyId ?? undefined)}
@@ -3797,7 +3792,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
             {/* Bottom input */}
             <div className="px-6 pb-6 pt-3 flex-shrink-0">
-              <div className="flex items-center gap-2 bg-[#DCE0E1] rounded-[40px] p-1.5 pl-4 shadow-lg">
+              <div className="relative flex items-center gap-2 bg-[#DCE0E1] rounded-[40px] p-1.5 pl-4 shadow-lg">
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="w-8 h-8 flex items-center justify-center text-[#091519] hover:text-black transition-colors flex-shrink-0"
@@ -3815,6 +3810,19 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     className="flex-1 bg-transparent text-[#091519] text-[14px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
                   />
                 </div>
+                {/* Voice dictation — always available, to the right of the input. */}
+                <InlineVoiceRecorder
+                  disabled={isStreaming}
+                  onTranscribe={async (file) => {
+                    const result = await runVoiceTranscription(file, companyId ?? undefined);
+                    return String(result?.transcript ?? "");
+                  }}
+                  onTranscribed={(text) => {
+                    setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+                    setTimeout(() => inputRef.current?.focus(), 0);
+                  }}
+                  onError={(message) => toast.error(message)}
+                />
                 {input.trim() && (
                   <button
                     onClick={() => sendMessage()}
