@@ -23,7 +23,7 @@ import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { useDroppable } from "@dnd-kit/core";
-import { boardCollisionDetection } from "@/lib/dnd/board-collision";
+import { useBoardCollisionDetection } from "@/lib/dnd/use-board-collision";
 import {
   DndContext,
   DragEndEvent,
@@ -652,6 +652,8 @@ function LeadBoard({
     }
   }
 
+  const { collisionDetection, markMoved, resetDrag } = useBoardCollisionDetection();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
@@ -659,6 +661,7 @@ function LeadBoard({
   );
 
   function handleDragStart(event: DragStartEvent) {
+    resetDrag();
     const itemId = String(event.active.id);
     const container = findContainerForItem(containersRef.current, itemId);
     dragOriginRef.current = container?.id ?? null;
@@ -685,6 +688,7 @@ function LeadBoard({
       no2.items = no2.items.filter((i) => i.id !== activeId);
       const oi = no2.items.findIndex((i) => i.id === overId);
       if (oi >= 0) no2.items.splice(oi, 0, item); else no2.items.push(item);
+      markMoved();
       return next;
     });
   }
@@ -793,7 +797,7 @@ function LeadBoard({
           <DndContext
             id="crm-board"
             sensors={sensors}
-            collisionDetection={boardCollisionDetection}
+            collisionDetection={collisionDetection}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}

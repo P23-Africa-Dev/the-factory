@@ -12,7 +12,7 @@ import {
   DragOverlay,
   DragStartEvent,
 } from '@dnd-kit/core';
-import { boardCollisionDetection } from '@/lib/dnd/board-collision';
+import { useBoardCollisionDetection } from '@/lib/dnd/use-board-collision';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 import type { ProjectSubtask } from '@/lib/tasks/project-checklist';
@@ -82,12 +82,15 @@ export function TaskBoard({
         : c.items.filter((item) => item.category === activeTab),
   }));
 
+  const { collisionDetection, markMoved, resetDrag } = useBoardCollisionDetection();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   function handleDragStart(event: DragStartEvent) {
+    resetDrag();
     const { active } = event;
     onDragStateChange?.(true);
     const container = findContainer(active.id as string);
@@ -111,8 +114,10 @@ export function TaskBoard({
     if (!activeContainer || !overContainer) return;
     if (activeContainer.id === overContainer.id) return;
     if (overIsContainer) {
+      markMoved();
       moveToContainer(activeId, overId);
     } else {
+      markMoved();
       moveBetweenContainers(activeId, overId, activeContainer.id, overContainer.id);
     }
   }
@@ -161,7 +166,7 @@ export function TaskBoard({
     <DndContext
       id="board-context"
       sensors={sensors}
-      collisionDetection={boardCollisionDetection}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}

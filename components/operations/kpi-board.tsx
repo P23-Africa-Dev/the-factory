@@ -12,7 +12,7 @@ import {
   DragOverlay,
   DragStartEvent,
 } from "@dnd-kit/core";
-import { boardCollisionDetection } from "@/lib/dnd/board-collision";
+import { useBoardCollisionDetection } from "@/lib/dnd/use-board-collision";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { DndContainer, DndItem } from "@/types/operations";
 import { KpiColumn } from "./kpi-column";
@@ -56,12 +56,15 @@ export function KpiBoard({
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [dragStartContainerId, setDragStartContainerId] = useState<string | null>(null);
 
+  const { collisionDetection, markMoved, resetDrag } = useBoardCollisionDetection();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   function handleDragStart(event: DragStartEvent) {
+    resetDrag();
     const { active } = event;
     onDragStateChange?.(true);
     const container = findContainer(active.id as string);
@@ -83,8 +86,10 @@ export function KpiBoard({
     if (!activeContainer || !overContainer) return;
     if (activeContainer.id === overContainer.id) return;
     if (overIsContainer) {
+      markMoved();
       moveToContainer(activeId, overId);
     } else {
+      markMoved();
       moveBetweenContainers(activeId, overId, activeContainer.id, overContainer.id);
     }
   }
@@ -127,7 +132,7 @@ export function KpiBoard({
     <DndContext
       id="kpi-board-context"
       sensors={sensors}
-      collisionDetection={boardCollisionDetection}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
