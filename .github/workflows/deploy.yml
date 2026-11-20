@@ -129,6 +129,7 @@ jobs:
           tests/Feature/AI/ElyAgentEngineTest.php
           tests/Feature/AI/ElyEvalCasesTest.php
           tests/Feature/AI/ElyServiceToolsTest.php
+          tests/Feature/AI/ElyVoiceProvidersTest.php
           tests/Feature/AI/ElyPhaseZeroSafetyTest.php
           tests/Feature/AI/CopilotTenantIsolationTest.php
           tests/Feature/AI/CopilotRoleAccessTest.php

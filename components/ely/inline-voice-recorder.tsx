@@ -3,6 +3,8 @@
 import { Loader2, Mic, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { downsample, encodeWav, mergeSamples } from "@/lib/ely/wav";
+
 const MAX_SECONDS = 120;
 
 type Props = {
@@ -13,11 +15,6 @@ type Props = {
     onTranscribed: (text: string) => void;
     onError?: (message: string) => void;
 };
-
-function pickMimeType(): string | undefined {
-    if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return undefined;
-    return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((type) => MediaRecorder.isTypeSupported(type));
-}
 
 function formatClock(seconds: number): string {
     const m = Math.floor(seconds / 60);
@@ -30,28 +27,39 @@ function formatClock(seconds: number): string {
  * while recording, replaces the input with a live waveform and a timer; on
  * stop it transcribes and hands the text back so the user can review and edit
  * it before sending. On cancel nothing is sent.
+ *
+ * Audio is captured as raw samples and saved as 16 kHz mono WAV, which both
+ * GLM-ASR (WAV/MP3 only) and OpenAI accept; browser WebM would not work with GLM.
  */
 export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscribed, onError }: Props) {
     const [recording, setRecording] = useState(false);
     const [transcribing, setTranscribing] = useState(false);
     const [seconds, setSeconds] = useState(0);
 
-    const recorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
+    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    const samplesRef = useRef<Float32Array[]>([]);
+    const sampleRateRef = useRef(48000);
+    const recordingRef = useRef(false);
     const streamRef = useRef<MediaStream | null>(null);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const rafRef = useRef<number | null>(null);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    const cancelledRef = useRef(false);
 
     const supported =
         typeof window !== "undefined" &&
-        typeof MediaRecorder !== "undefined" &&
+        (typeof window.AudioContext !== "undefined" ||
+            typeof (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext !== "undefined") &&
         !!navigator.mediaDevices?.getUserMedia;
 
     const teardown = () => {
+        recordingRef.current = false;
+        if (processorRef.current) {
+            processorRef.current.onaudioprocess = null;
+            processorRef.current.disconnect();
+        }
+        processorRef.current = null;
         if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
         if (timerRef.current) clearInterval(timerRef.current);
@@ -68,7 +76,7 @@ export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscri
     // Auto-stop at the max duration.
     useEffect(() => {
         if (recording && seconds >= MAX_SECONDS) {
-            recorderRef.current?.stop();
+            finish(false);
         }
     }, [recording, seconds]);
 
@@ -121,7 +129,6 @@ export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscri
 
     const start = async () => {
         if (disabled || transcribing) return;
-        cancelledRef.current = false;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
@@ -137,27 +144,21 @@ export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscri
             audioCtxRef.current = audioCtx;
             analyserRef.current = analyser;
 
-            const mimeType = pickMimeType();
-            const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-            chunksRef.current = [];
-            recorder.ondataavailable = (event) => {
-                if (event.data.size > 0) chunksRef.current.push(event.data);
+            // Collect raw samples for the WAV file. The processor writes silence
+            // to its output, so nothing is played back.
+            sampleRateRef.current = audioCtx.sampleRate;
+            samplesRef.current = [];
+            const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+            processor.onaudioprocess = (event) => {
+                if (recordingRef.current) {
+                    samplesRef.current.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+                }
             };
-            recorder.onstop = () => {
-                if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-                rafRef.current = null;
-                if (timerRef.current) clearInterval(timerRef.current);
-                timerRef.current = null;
-                const type = recorder.mimeType || mimeType || "audio/webm";
-                const blob = new Blob(chunksRef.current, { type });
-                teardown();
-                setRecording(false);
-                if (cancelledRef.current) return;
-                void handleFinished(blob, type);
-            };
+            source.connect(processor);
+            processor.connect(audioCtx.destination);
+            processorRef.current = processor;
+            recordingRef.current = true;
 
-            recorderRef.current = recorder;
-            recorder.start();
             setSeconds(0);
             setRecording(true);
             rafRef.current = requestAnimationFrame(drawWaveform);
@@ -169,13 +170,26 @@ export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscri
         }
     };
 
-    const handleFinished = async (blob: Blob, type: string) => {
-        if (blob.size === 0) {
+    /** Stop recording; unless cancelled, build the WAV file and transcribe it. */
+    const finish = (cancelled: boolean) => {
+        if (!recordingRef.current) return;
+        const blocks = samplesRef.current;
+        const rate = sampleRateRef.current;
+        samplesRef.current = [];
+        teardown();
+        setRecording(false);
+        if (cancelled) return;
+
+        const samples = downsample(mergeSamples(blocks), rate);
+        if (samples.length < 1600) {
             onError?.("No audio was recorded. Check your microphone and try again.");
             return;
         }
-        const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
-        const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type });
+        void transcribe(encodeWav(samples));
+    };
+
+    const transcribe = async (blob: Blob) => {
+        const file = new File([blob], `voice-note-${Date.now()}.wav`, { type: "audio/wav" });
         setTranscribing(true);
         try {
             const text = (await onTranscribe(file)).trim();
@@ -191,12 +205,9 @@ export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscri
         }
     };
 
-    const stop = () => recorderRef.current?.stop();
+    const stop = () => finish(false);
 
-    const cancel = () => {
-        cancelledRef.current = true;
-        recorderRef.current?.stop();
-    };
+    const cancel = () => finish(true);
 
     if (!supported) return null;
 

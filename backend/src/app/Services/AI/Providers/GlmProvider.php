@@ -124,15 +124,179 @@ class GlmProvider implements AiProviderContract
         );
     }
 
+    /**
+     * Speech-to-text with GLM-ASR (POST {base}/audio/transcriptions, multipart
+     * "model" + "file"). GLM-ASR takes WAV or MP3 and only short clips, so WAV
+     * recordings longer than services.ai.glm.asr_max_seconds are split into
+     * clips that are transcribed in order and joined.
+     */
     public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult
     {
-        return AiGenerationResult::failure(
+        $purpose = (string) ($options['purpose'] ?? 'operational');
+        $model = (string) config('services.ai.glm.asr_model', 'glm-asr-2512');
+        $fail = static fn (string $class, string $message, ?int $status = null): AiGenerationResult => AiGenerationResult::failure(
             provider: 'glm',
-            model: 'unsupported',
-            errorClass: 'not_configured',
-            errorMessage: 'Audio transcription is not available on the GLM stack.',
-            purpose: (string) ($options['purpose'] ?? 'operational'),
+            model: $model,
+            errorClass: $class,
+            errorMessage: $message,
+            httpStatus: $status,
+            purpose: $purpose,
         );
+
+        if (! $this->isConfigured()) {
+            return $fail('not_configured', 'No GLM API key configured.');
+        }
+
+        $path = $audio->getRealPath();
+        $bytes = is_string($path) && $path !== '' ? (file_get_contents($path) ?: '') : '';
+        if ($bytes === '') {
+            return $fail('empty_audio', 'The recording was empty.');
+        }
+
+        $isWav = str_starts_with($bytes, 'RIFF') && substr($bytes, 8, 4) === 'WAVE';
+        $isMp3 = str_starts_with($bytes, 'ID3') || (strlen($bytes) > 1 && ord($bytes[0]) === 0xFF && (ord($bytes[1]) & 0xE0) === 0xE0);
+        if (! $isWav && ! $isMp3) {
+            return $fail('unsupported_format', 'GLM-ASR accepts WAV or MP3 audio only.');
+        }
+
+        $clips = $isWav
+            ? (self::splitWav($bytes, max(5, (int) config('services.ai.glm.asr_max_seconds', 25))) ?? [$bytes])
+            : [$bytes];
+        $extension = $isWav ? 'wav' : 'mp3';
+        $timeoutMs = max(10000, (int) config('services.ai.glm.asr_timeout_ms', 60000));
+        $baseUrl = rtrim((string) config('services.ai.glm.base_url', 'https://api.z.ai/api/paas/v4'), '/');
+
+        $parts = [];
+        foreach ($clips as $index => $clip) {
+            try {
+                $response = $this->http
+                    ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
+                    ->connectTimeout(15)
+                    ->withToken((string) config('services.ai.glm.api_key'))
+                    ->attach('file', $clip, "voice-{$index}.{$extension}")
+                    ->asMultipart()
+                    ->post($baseUrl.'/audio/transcriptions', [
+                        ['name' => 'model', 'contents' => $model],
+                    ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('GLM-ASR transcription error.', ['message' => $e->getMessage()]);
+
+                return $fail(str_contains(strtolower($e->getMessage()), 'timed out') ? 'timeout' : 'unreachable', $e->getMessage());
+            }
+
+            if (! $response->successful()) {
+                $classified = AiProviderHttpError::classify($response->status(), (string) $response->json('error.message', ''));
+                \Illuminate\Support\Facades\Log::warning('GLM-ASR transcription failed.', [
+                    'status' => $response->status(),
+                    'error_class' => $classified['error_class'],
+                    'error' => mb_substr((string) $response->json('error.message', $response->body()), 0, 300),
+                    'model' => $model,
+                ]);
+
+                return $fail($classified['error_class'], $classified['error_message'], $response->status());
+            }
+
+            $text = self::transcriptText($response->json());
+            if ($text !== '') {
+                $parts[] = $text;
+            }
+        }
+
+        $transcript = trim(implode(' ', $parts));
+        if ($transcript === '') {
+            return $fail('empty_transcript', 'No speech was detected in the recording.');
+        }
+
+        return new AiGenerationResult(
+            text: $transcript,
+            provider: 'glm',
+            model: $model,
+            purpose: $purpose,
+        );
+    }
+
+    /**
+     * Transcript text from a GLM-ASR response ("text", or nested under
+     * "data"/"result", or joined "segments").
+     */
+    private static function transcriptText(mixed $json): string
+    {
+        if (! is_array($json)) {
+            return '';
+        }
+
+        foreach (['text', 'data.text', 'result.text'] as $key) {
+            $value = data_get($json, $key);
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        $segments = data_get($json, 'segments');
+        if (is_array($segments)) {
+            return trim(implode(' ', array_filter(array_map(
+                static fn ($segment): string => is_array($segment) ? trim((string) ($segment['text'] ?? '')) : '',
+                $segments,
+            ))));
+        }
+
+        return '';
+    }
+
+    /**
+     * Split a PCM WAV file into WAV clips of at most $maxSeconds each. Returns
+     * null when the file is not a PCM WAV this can parse (it is then sent as is).
+     *
+     * @return array<int, string>|null
+     */
+    public static function splitWav(string $bytes, int $maxSeconds): ?array
+    {
+        if (strlen($bytes) < 44 || ! str_starts_with($bytes, 'RIFF') || substr($bytes, 8, 4) !== 'WAVE') {
+            return null;
+        }
+
+        $offset = 12;
+        $format = null;
+        $dataOffset = null;
+        $dataSize = null;
+        while ($offset + 8 <= strlen($bytes)) {
+            $id = substr($bytes, $offset, 4);
+            $size = unpack('V', substr($bytes, $offset + 4, 4))[1];
+            if ($id === 'fmt ') {
+                $format = unpack('vaudioFormat/vchannels/VsampleRate/VbyteRate/vblockAlign/vbitsPerSample', substr($bytes, $offset + 8, 16));
+            } elseif ($id === 'data') {
+                $dataOffset = $offset + 8;
+                $dataSize = min($size, strlen($bytes) - $dataOffset);
+                break;
+            }
+            $offset += 8 + $size + ($size % 2);
+        }
+
+        if ($format === null || $dataOffset === null || (int) $format['audioFormat'] !== 1 || (int) $format['blockAlign'] <= 0) {
+            return null;
+        }
+
+        $blockAlign = (int) $format['blockAlign'];
+        $clipBytes = (int) (floor(((int) $format['byteRate'] * $maxSeconds) / $blockAlign) * $blockAlign);
+        if ($clipBytes <= 0 || $dataSize <= $clipBytes) {
+            return [$bytes];
+        }
+
+        $header = static fn (int $size): string => 'RIFF'.pack('V', 36 + $size).'WAVE'
+            .'fmt '.pack('VvvVVvv', 16, 1, (int) $format['channels'], (int) $format['sampleRate'], (int) $format['byteRate'], $blockAlign, (int) $format['bitsPerSample'])
+            .'data'.pack('V', $size);
+
+        $clips = [];
+        for ($start = 0; $start < $dataSize; $start += $clipBytes) {
+            $chunk = substr($bytes, $dataOffset + $start, min($clipBytes, $dataSize - $start));
+            // Skip a tail shorter than a quarter second; it holds no words.
+            if ($clips !== [] && strlen($chunk) < (int) $format['byteRate'] / 4) {
+                break;
+            }
+            $clips[] = $header(strlen($chunk)).$chunk;
+        }
+
+        return $clips;
     }
 
     /**

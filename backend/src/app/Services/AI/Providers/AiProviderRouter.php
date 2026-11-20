@@ -208,37 +208,76 @@ class AiProviderRouter
     {
         $purpose = (string) ($options['purpose'] ?? 'operational');
 
-        // Speech-to-text is an OpenAI (Whisper) capability and is independent of
-        // the chat stack — GLM and NVIDIA do not transcribe audio. Use OpenAI
-        // whenever it is configured, whatever stack the chat assistant runs on.
-        if ($this->openAiProvider->isConfigured()) {
-            $result = $this->openAiProvider->transcribeAudio($audio, $prompt, $options)
+        // Speech-to-text is chosen independently of the chat stack:
+        // AI_VOICE_PROVIDER=auto (default) tries GLM-ASR, then OpenAI.
+        $providers = $this->voiceProviders();
+        if ($providers === []) {
+            return $this->finalizeInvocation(
+                AiGenerationResult::failure(
+                    provider: 'none',
+                    model: 'unsupported',
+                    errorClass: 'not_configured',
+                    errorMessage: 'Voice transcription is not set up. A GLM (GLM_API_KEY) or OpenAI (OPENAI_API_KEY) key is required for speech-to-text.',
+                    purpose: $purpose,
+                ),
+                $options,
+            );
+        }
+
+        $last = null;
+        foreach ($providers as $key => $provider) {
+            $result = $provider->transcribeAudio($audio, $prompt, $options)
                 ?? AiGenerationResult::failure(
-                    provider: 'openai',
-                    model: (string) config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'),
+                    provider: $key,
+                    model: 'unknown',
                     errorClass: 'transcription_failed',
                     errorMessage: 'The audio could not be transcribed.',
                     purpose: $purpose,
                 );
 
-            // Keep a record of why it failed, for /admin/ai/logs.
-            if ($result->isFailure()) {
-                $this->recordProviderFailure($result, $options, $purpose);
+            if ($result->isSuccessful()) {
+                if ($last !== null) {
+                    $result = $result->withFailoverFrom((string) $last->provider);
+                }
+
+                return $this->finalizeInvocation($result, $options);
             }
 
-            return $this->finalizeInvocation($result, $options);
+            // Keep a record of why it failed, for /admin/ai/logs.
+            $this->recordProviderFailure($result, $options, $purpose);
+            $last = $result;
+
+            // Silence or an empty file will not transcribe anywhere else either.
+            if (in_array($result->errorClass, ['empty_transcript', 'empty_audio'], true)) {
+                break;
+            }
         }
 
-        return $this->finalizeInvocation(
-            AiGenerationResult::failure(
-                provider: 'none',
-                model: 'unsupported',
-                errorClass: 'not_configured',
-                errorMessage: 'Voice transcription is not set up. An OpenAI API key (OPENAI_API_KEY) is required for speech-to-text.',
-                purpose: $purpose,
-            ),
-            $options,
-        );
+        return $this->finalizeInvocation($last, $options);
+    }
+
+    /**
+     * Configured speech-to-text providers in the order to try them.
+     *
+     * @return array<string, AiProviderContract>
+     */
+    private function voiceProviders(): array
+    {
+        $order = match (strtolower(trim((string) config('services.ai.voice_provider', 'auto')))) {
+            'glm' => ['glm'],
+            'openai' => ['openai'],
+            default => ['glm', 'openai'],
+        };
+
+        $available = ['glm' => $this->glmProvider, 'openai' => $this->openAiProvider];
+        $providers = [];
+        foreach ($order as $key) {
+            if ($available[$key]->isConfigured()) {
+                $providers[$key] = $available[$key];
+            }
+        }
+
+        return $providers;
     }
 
     public function analyzeDocumentFile(

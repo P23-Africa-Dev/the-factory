@@ -20,6 +20,7 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
         // Chat stack is GLM (no speech-to-text), but OpenAI is configured.
         config([
             'services.ai.stack' => 'glm',
+            'services.ai.glm.api_key' => '',
             'services.ai.openai.api_key' => 'test-key',
             'services.ai.openai.base_url' => 'https://api.openai.test/v1',
         ]);
@@ -49,7 +50,7 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
     {
         [$company, $admin] = $this->seedCompanyUser('admin');
 
-        config(['services.ai.openai.api_key' => 'test-key', 'services.ai.openai.base_url' => 'https://api.openai.test/v1']);
+        config(['services.ai.openai.api_key' => 'test-key', 'services.ai.openai.base_url' => 'https://api.openai.test/v1', 'services.ai.glm.api_key' => '']);
         \Illuminate\Support\Facades\Http::fake([
             'api.openai.test/*' => \Illuminate\Support\Facades\Http::response([
                 'error' => [
@@ -82,7 +83,7 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
     {
         [$company, $admin] = $this->seedCompanyUser('admin');
 
-        config(['services.ai.openai.api_key' => '']);
+        config(['services.ai.openai.api_key' => '', 'services.ai.glm.api_key' => '']);
 
         $response = $this
             ->actingAs($admin)

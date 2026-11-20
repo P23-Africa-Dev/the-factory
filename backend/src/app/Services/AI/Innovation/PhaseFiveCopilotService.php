@@ -84,6 +84,7 @@ class PhaseFiveCopilotService
             'rate_limited' => 'Too many voice requests at the moment. Please try again in a minute.',
             'timeout', 'unreachable', 'provider_error' => 'The speech-to-text service did not respond. Please try again.',
             'empty_audio' => 'The recording was empty. Check that your microphone is working and try again.',
+            'unsupported_format' => 'This audio format could not be transcribed. Please record with the microphone button, or upload a WAV or MP3 file.',
             'empty_transcript' => 'No speech was detected. Speak a little closer to the microphone and try again.',
             default => 'The audio could not be transcribed. Please try again.',
         };
