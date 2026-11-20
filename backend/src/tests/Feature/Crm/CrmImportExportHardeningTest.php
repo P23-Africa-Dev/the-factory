@@ -121,6 +121,52 @@ class CrmImportExportHardeningTest extends TestCase
         $this->assertSame($admin->name, $row['Created By']);
     }
 
+    public function test_update_policy_with_profile_url_list_updates_instead_of_failing(): void
+    {
+        [$company, $admin, $pipelineId] = $this->seed_();
+        $rows = [[
+            'name' => 'Faith Dove',
+            'email' => 'faith@example.com',
+            'industry' => 'Logistics & Fleet',
+            'profile_urls' => ['https://linkedin.com/in/faith', 'https://x.com/faith'],
+        ]];
+
+        $import = fn (array $rows) => $this->withToken($this->token($admin))->postJson('/api/v1/crm/leads/import', [
+            'company_id' => $company->id, 'pipeline_id' => $pipelineId, 'duplicate_policy' => 'update', 'rows' => $rows,
+        ]);
+
+        $import($rows)->assertOk()->assertJsonPath('data.imported_count', 1);
+        $rows[0]['company_email'] = 'hello@dove.example';
+        // Matching an existing lead used to throw "Array to string conversion" on profile_urls.
+        $import($rows)->assertOk()
+            ->assertJsonPath('data.updated_count', 1)
+            ->assertJsonPath('data.failed_rows', []);
+
+        $lead = Lead::query()->where('email', 'faith@example.com')->firstOrFail();
+        $this->assertSame('hello@dove.example', $lead->company_email);
+        $this->assertSame('Logistics & Fleet', $lead->industry);
+    }
+
+    public function test_failed_rows_say_which_field_to_fix(): void
+    {
+        [$company, $admin, $pipelineId] = $this->seed_();
+
+        $this->withToken($this->token($admin))->postJson('/api/v1/crm/leads/import', [
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'duplicate_policy' => 'create',
+            'rows' => [[
+                'name' => 'Faith Dove',
+                'email' => 'faith@',
+                'priority' => 'asap',
+                'budget_amount' => 'lots',
+                'status' => 'Not A Stage',
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.failed_rows.0.field_errors.email', "Email 'faith@' is not a valid email address.")
+            ->assertJsonStructure(['data' => ['failed_rows' => [['field_errors' => ['priority', 'budget_amount', 'status']]]]]);
+    }
+
     private function token(User $user): string
     {
         return $user->createToken('t', ['*'])->plainTextToken;

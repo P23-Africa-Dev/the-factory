@@ -10,6 +10,7 @@ import { downloadCsvFile, parseCsvContent, toCsvContent } from "@/lib/crm/csv";
 import { parseProfileUrls } from "@/lib/crm/lead-fields";
 import { customFieldKeyFromMapping, customFieldMappingKey, inferLeadFieldType } from "@/lib/crm/custom-fields";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
+import { ImportFailedRowEditor, failedRowFieldErrors } from "@/components/crm/import-failed-row-editor";
 import type {
     ApiLeadPriority,
     ApiRoleBasePath,
@@ -453,7 +454,9 @@ export function ImportLeadsWizard({
                 Array.isArray(failed.data.profile_urls) ? failed.data.profile_urls.join(", ") : failed.data.profile_urls,
                 failed.data.source,
                 failed.data.status, failed.data.priority, failed.data.budget_amount, failed.data.budget_currency,
-                failed.errors.join(" | "),
+                failed.field_errors && Object.keys(failed.field_errors).length > 0
+                    ? Object.entries(failed.field_errors).map(([field, message]) => `${field}: ${message}`).join(" | ")
+                    : failed.errors.join(" | "),
             ]);
         }
         for (const skipped of result.skipped_rows) {
@@ -473,9 +476,19 @@ export function ImportLeadsWizard({
 
     const updateFailedRowField = (idx: number, field: FieldKey, value: string) => {
         setFailedRows((prev) =>
-            prev.map((item, i) => (i === idx ? { ...item, data: { ...item.data, [field]: value } } : item))
+            prev.map((item, i) => {
+                if (i !== idx) return item;
+                // Once edited, the live check speaks for this field, not the old server message.
+                const fieldErrors = item.field_errors ? { ...item.field_errors } : undefined;
+                if (fieldErrors) delete fieldErrors[field];
+                return { ...item, data: { ...item.data, [field]: value }, field_errors: fieldErrors };
+            })
         );
     };
+
+    const rowsStillNeedingFixes = failedRows.filter(
+        (row) => !row.server_error && Object.keys(failedRowFieldErrors(row, labels)).length > 0,
+    ).length;
 
     const stepIndex = STEP_LABELS.findIndex((s) => s.key === step);
 
@@ -844,29 +857,24 @@ export function ImportLeadsWizard({
                         {failedRows.length > 0 && (
                             <>
                                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700 flex items-start gap-2">
-                                    <AlertTriangle size={14} className="mt-0.5" />
-                                    Fix the failed rows below and retry — already-imported rows will not be duplicated.
+                                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                                    <span>
+                                        Fields that need fixing are outlined in red with the reason underneath. Correct them, then
+                                        retry — rows already imported will not be duplicated.
+                                        {rowsStillNeedingFixes > 0 && (
+                                            <strong className="font-semibold"> {rowsStillNeedingFixes} {rowsStillNeedingFixes === 1 ? "row still needs" : "rows still need"} changes.</strong>
+                                        )}
+                                    </span>
                                 </div>
 
                                 <div className="space-y-3 max-h-[40vh] overflow-auto pr-1">
                                     {failedRows.map((row, idx) => (
-                                        <div key={`${row.row_index}-${idx}`} className="border border-gray-200 rounded-xl p-3">
-                                            <p className="text-[12px] font-semibold text-gray-500 mb-2">Row {row.row_index}</p>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-                                                {FIELD_OPTIONS.map((field) => (
-                                                    <input
-                                                        key={field.value}
-                                                        value={String(row.data[field.value] ?? "")}
-                                                        onChange={(e) => updateFailedRowField(idx, field.value, e.target.value)}
-                                                        placeholder={field.label.replace(" (required)", "")}
-                                                        className="border border-gray-200 rounded-lg px-3 py-2 text-[12px]"
-                                                    />
-                                                ))}
-                                            </div>
-                                            <ul className="text-[11px] text-red-500 list-disc pl-4">
-                                                {row.errors.map((err, i) => <li key={i}>{err}</li>)}
-                                            </ul>
-                                        </div>
+                                        <ImportFailedRowEditor
+                                            key={`${row.row_index}-${idx}`}
+                                            row={row}
+                                            labels={labels}
+                                            onChange={(field, value) => updateFailedRowField(idx, field, value)}
+                                        />
                                     ))}
                                 </div>
                             </>

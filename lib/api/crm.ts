@@ -351,6 +351,10 @@ export type FailedImportRow = {
     row_index: number;
     data: ImportLeadRow;
     errors: string[];
+    /** The same problems keyed by field ("email", "custom_fields.region"). */
+    field_errors?: Record<string, string>;
+    /** Failed on our side, not because of the row's values. */
+    server_error?: boolean;
 };
 
 export type SkippedImportRow = {

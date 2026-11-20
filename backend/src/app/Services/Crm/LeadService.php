@@ -1572,6 +1572,7 @@ class LeadService
                     'row_index' => $rowNumber,
                     'data' => $row,
                     'errors' => $validation['errors'],
+                    'field_errors' => $validation['field_errors'] ?? [],
                 ];
 
                 continue;
@@ -1660,18 +1661,26 @@ class LeadService
                 ]);
                 $importedCount++;
             } catch (ValidationException $exception) {
+                $fieldErrors = [];
+                foreach ($exception->errors() as $key => $messages) {
+                    $fieldErrors[(string) $key] ??= (string) ($messages[0] ?? '');
+                }
                 $failedRows[] = [
                     'row_index' => $rowNumber,
                     'data' => $row,
                     'errors' => collect($exception->errors())->flatten()->map(static fn($m): string => (string) $m)->values()->all(),
+                    'field_errors' => $fieldErrors,
                 ];
             } catch (\Throwable $exception) {
                 // One bad row must not abort the batch (earlier rows are already saved).
+                // Not something the user can fix by editing the row, so say so plainly.
                 report($exception);
                 $failedRows[] = [
                     'row_index' => $rowNumber,
                     'data' => $row,
-                    'errors' => ['This row could not be saved. Check the values and try again.'],
+                    'errors' => ['We could not save this row because of a problem on our side, not with your data. Retry the failed rows; if it keeps failing, contact support.'],
+                    'field_errors' => [],
+                    'server_error' => true,
                 ];
             }
         }
@@ -2932,15 +2941,24 @@ class LeadService
     ): array {
         // "Target Pipeline" applies to both newly created and updated rows.
         $update = ['pipeline_id' => $targetPipelineId];
-        $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
+        // Cells can arrive as lists (profile_urls): casting an array to string threw
+        // "Array to string conversion" and failed every row that matched a lead.
+        $provided = static function (string $key) use ($row): bool {
+            $value = $row[$key] ?? null;
+            if (is_array($value)) {
+                return array_filter($value, static fn($v): bool => is_scalar($v) && trim((string) $v) !== '') !== [];
+            }
 
-        foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
+            return is_scalar($value) && trim((string) $value) !== '';
+        };
+
+        foreach (['name', 'email', 'phone', 'location', 'company_name', 'company_email', 'website', 'position', 'industry', 'source'] as $field) {
             if ($provided($field) && $normalized[$field] !== null) {
                 $update[$field] = $normalized[$field];
             }
         }
 
-        if ($provided('profile_urls') || (is_array($row['profile_urls'] ?? null) && ($row['profile_urls'] ?? []) !== [])) {
+        if ($provided('profile_urls')) {
             if (! empty($normalized['profile_urls'])) {
                 $update['profile_urls'] = $normalized['profile_urls'];
             }
@@ -3199,6 +3217,7 @@ class LeadService
             return [
                 'normalized' => [],
                 'errors' => ['Row must be an object-like payload.'],
+                'field_errors' => [],
             ];
         }
 
@@ -3220,44 +3239,50 @@ class LeadService
         $budgetCurrency = strtoupper(trim((string) ($row['budget_currency'] ?? '')));
 
         $errors = [];
+        // Same messages keyed by the import field, so the retry form can point at the input.
+        $fieldErrors = [];
+        $fail = static function (string $field, string $message) use (&$errors, &$fieldErrors): void {
+            $errors[] = $message;
+            $fieldErrors[$field] ??= $message;
+        };
 
         if ($name === '') {
-            $errors[] = 'Name is required.';
+            $fail('name', 'Name is required.');
         }
 
         if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Email is invalid.';
+            $fail('email', "Email '{$email}' is not a valid email address.");
         }
 
         if ($companyEmail !== '' && ! filter_var($companyEmail, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Company email is invalid.';
+            $fail('company_email', "Company email '{$companyEmail}' is not a valid email address.");
         }
 
         // Same limits as the database columns, so a long cell is a row error
         // instead of a SQL failure that aborts the import halfway.
         foreach (
             [
-                'Name' => [$name, 255],
-                'Email' => [$email, 255],
-                'Phone' => [$phone, 40],
-                'Location' => [$location, 255],
-                'Company name' => [$companyName, 255],
-                'Company email' => [$companyEmail, 255],
-                'Website' => [$websiteRaw, 255],
-                'Position' => [$position, 120],
-                'Industry' => [$industry, 120],
-                'Source' => [$source, 120],
-            ] as $label => [$value, $max]
+                'name' => ['Name', $name, 255],
+                'email' => ['Email', $email, 255],
+                'phone' => ['Phone', $phone, 40],
+                'location' => ['Location', $location, 255],
+                'company_name' => ['Company name', $companyName, 255],
+                'company_email' => ['Company email', $companyEmail, 255],
+                'website' => ['Website', $websiteRaw, 255],
+                'position' => ['Position', $position, 120],
+                'industry' => ['Industry', $industry, 120],
+                'source' => ['Source', $source, 120],
+            ] as $field => [$label, $value, $max]
         ) {
             if (mb_strlen($value) > $max) {
-                $errors[] = "{$label} must be {$max} characters or fewer.";
+                $fail($field, "{$label} must be {$max} characters or fewer (it has " . mb_strlen($value) . ').');
             }
         }
 
         // The normalizer drops values it can't parse; report them instead of losing them silently.
         $website = $websiteRaw !== '' ? LeadFieldNormalizer::normalizeWebsite($websiteRaw) : null;
         if ($websiteRaw !== '' && ($website === null || ! LeadFieldNormalizer::isValidWebsite($website))) {
-            $errors[] = 'Website is invalid.';
+            $fail('website', "Website '{$websiteRaw}' is not a valid web address (e.g. https://acme.com).");
         }
 
         $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
@@ -3272,48 +3297,49 @@ class LeadService
             LeadFieldNormalizer::invalidProfileUrls($profileUrls),
         );
         if ($invalidProfileUrls !== []) {
-            $errors[] = 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '.';
+            $fail('profile_urls', 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '. Separate several links with commas.');
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
-            $errors[] = 'Priority must be one of low, medium, high, urgent.';
+            $fail('priority', "Priority '{$priority}' is not valid. Choose low, medium, high or urgent.");
         }
 
         $budgetAmount = null;
         if ($budgetAmountRaw !== '') {
             if (! is_numeric(str_replace(',', '', $budgetAmountRaw))) {
-                $errors[] = 'Budget amount must be numeric.';
+                $fail('budget_amount', "Budget amount '{$budgetAmountRaw}' must be a number (e.g. 5000).");
             } else {
                 $budgetAmount = (float) str_replace(',', '', $budgetAmountRaw);
                 if ($budgetAmount < 0) {
-                    $errors[] = 'Budget amount must be zero or greater.';
+                    $fail('budget_amount', 'Budget amount must be zero or greater.');
                 }
             }
         }
 
         if ($budgetCurrency !== '' && ! preg_match('/^[A-Z]{3}$/', $budgetCurrency)) {
-            $errors[] = 'Budget currency must be a 3-letter ISO code.';
+            $fail('budget_currency', "Budget currency '{$budgetCurrency}' must be a 3-letter code such as USD or NGN.");
         }
 
         $resolvedStatus = $this->resolveLabelSlug($labelLookup, $status);
         if ($resolvedStatus === null) {
             $suggestion = $this->suggestClosestLabel($labelLookup, $status);
-            $errors[] = $suggestion !== null
-                ? "Status/label '{$status}' is not recognized. Did you mean '{$suggestion}'?"
-                : "Status/label '{$status}' is not recognized.";
+            $fail('status', $suggestion !== null
+                ? "Status '{$status}' is not one of your stages. Did you mean '{$suggestion}'?"
+                : "Status '{$status}' is not one of your stages. Pick a stage from the list.");
         }
 
         $customFields = [];
         if (array_key_exists('custom_fields', $row)) {
             if (! is_array($row['custom_fields'])) {
-                $errors[] = 'Custom fields must be an object.';
+                $fail('custom_fields', 'Custom fields must be an object.');
             } else {
                 try {
                     $customFields = LeadCustomFieldValues::normalize($fieldDefinitions, $row['custom_fields'], [], 'import');
                 } catch (ValidationException $exception) {
-                    foreach ($exception->errors() as $messages) {
+                    foreach ($exception->errors() as $key => $messages) {
+                        $field = str_starts_with((string) $key, 'custom_fields.') ? (string) $key : 'custom_fields';
                         foreach ($messages as $message) {
-                            $errors[] = (string) $message;
+                            $fail($field, (string) $message);
                         }
                     }
                 }
@@ -3341,6 +3367,7 @@ class LeadService
                 'row_index' => $rowIndex,
             ],
             'errors' => $errors,
+            'field_errors' => $fieldErrors,
         ];
     }
 
