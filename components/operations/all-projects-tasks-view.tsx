@@ -36,6 +36,7 @@ import { ApiRequestError } from "@/lib/api/onboarding";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { isTaskManagerRole } from "@/lib/tasks/board-permissions";
 import Arrow57Deg from "@/assets/images/arrow-57deg.png";
+import { moveCardToColumn } from "@/lib/dnd/board-moves";
 
 const STATUS_OPTIONS = ["All", "Pending", "In Progress", "Completed", "Cancelled"];
 
@@ -428,42 +429,14 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
 
   const moveToContainer = useCallback((activeId: string, overContainerId: string) => {
     if (!canDragTaskStatuses) return;
-    setBoardContainers((prev) => {
-      const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
-      const activeItem = activeContainer?.items.find((item) => item.id === activeId);
-      if (!activeContainer || !activeItem) return prev;
-      return prev.map((container) => {
-        if (container.id === activeContainer.id)
-          return { ...container, items: container.items.filter((item) => item.id !== activeId) };
-        if (container.id === overContainerId)
-          return { ...container, items: [...container.items, activeItem] };
-        return container;
-      });
-    });
+    setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId));
   }, [canDragTaskStatuses]);
 
   const moveBetweenContainers = useCallback(
     (activeId: string, overId: string, activeContainerId: string, overContainerId: string) => {
       if (!canDragTaskStatuses) return;
-      setBoardContainers((prev) => {
-        const activeContainer = prev.find((c) => c.id === activeContainerId);
-        const overContainer = prev.find((c) => c.id === overContainerId);
-        if (!activeContainer || !overContainer) return prev;
-        const activeItem = activeContainer.items.find((item) => item.id === activeId);
-        if (!activeItem) return prev;
-        const overIndex = overContainer.items.findIndex((item) => item.id === overId);
-        const insertionIndex = overIndex >= 0 ? overIndex : overContainer.items.length;
-        return prev.map((container) => {
-          if (container.id === activeContainerId)
-            return { ...container, items: container.items.filter((item) => item.id !== activeId) };
-          if (container.id === overContainerId) {
-            const nextItems = [...overContainer.items];
-            nextItems.splice(insertionIndex, 0, activeItem);
-            return { ...container, items: nextItems };
-          }
-          return container;
-        });
-      });
+      if (activeContainerId === overContainerId) return;
+      setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId, overId));
     },
     [canDragTaskStatuses]
   );
@@ -784,6 +757,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         <TaskBoard
           containers={displayContainers}
           canDrag={canDragTaskStatuses}
+          observerDragAllowed={canManageTaskStatuses}
           onOpenCreateTask={openCreateTask}
           checklistUserId={userId}
           onToggleSubtask={enableProjectChecklist ? toggleSubtask : undefined}

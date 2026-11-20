@@ -20,6 +20,7 @@ import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { KpiItem, KpiStatus, KpiStatusCards } from '@/lib/api/kpi';
 import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
+import { moveCardToColumn } from "@/lib/dnd/board-moves";
 // import { OperationsCalendar } from './operations-calendar';
 
 // ─── KPI Stats Panel ──────────────────────────────────────────────────────────
@@ -317,41 +318,13 @@ export function AllTasksView() {
   }, []);
 
   const moveToContainer = useCallback((activeId: string, overContainerId: string) => {
-    setBoardContainers((prev) => {
-      const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
-      const activeItem = activeContainer?.items.find((item) => item.id === activeId);
-      if (!activeContainer || !activeItem) return prev;
-      return prev.map((container) => {
-        if (container.id === activeContainer.id)
-          return { ...container, items: container.items.filter((item) => item.id !== activeId) };
-        if (container.id === overContainerId)
-          return { ...container, items: [...container.items, activeItem] };
-        return container;
-      });
-    });
+    setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId));
   }, []);
 
   const moveBetweenContainers = useCallback(
     (activeId: string, overId: string, activeContainerId: string, overContainerId: string) => {
-      setBoardContainers((prev) => {
-        const activeContainer = prev.find((c) => c.id === activeContainerId);
-        const overContainer = prev.find((c) => c.id === overContainerId);
-        if (!activeContainer || !overContainer) return prev;
-        const activeItem = activeContainer.items.find((item) => item.id === activeId);
-        if (!activeItem) return prev;
-        const overIndex = overContainer.items.findIndex((item) => item.id === overId);
-        const insertionIndex = overIndex >= 0 ? overIndex : overContainer.items.length;
-        return prev.map((container) => {
-          if (container.id === activeContainerId)
-            return { ...container, items: container.items.filter((item) => item.id !== activeId) };
-          if (container.id === overContainerId) {
-            const nextItems = [...overContainer.items];
-            nextItems.splice(insertionIndex, 0, activeItem);
-            return { ...container, items: nextItems };
-          }
-          return container;
-        });
-      });
+      if (activeContainerId === overContainerId) return;
+      setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId, overId));
     },
     []
   );

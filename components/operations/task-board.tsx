@@ -26,6 +26,8 @@ interface TaskBoardProps {
   onOpenCreateTask?: (containerId: string) => void;
   /** False for users who may not move cards (agents): cards render non-draggable. */
   canDrag?: boolean;
+  /** True for managers: they may also move tasks they only observe. */
+  observerDragAllowed?: boolean;
   checklistUserId?: string;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onAddSubtask?: (taskId: string, title: string) => void;
@@ -66,6 +68,7 @@ export function TaskBoard({
   onStatusDrop,
   onDragStateChange,
   canDrag = true,
+  observerDragAllowed = false,
 }: TaskBoardProps) {
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [dragStartContainerId, setDragStartContainerId] = useState<string | null>(null);
@@ -173,6 +176,7 @@ export function TaskBoard({
                 : undefined
             }
             canDrag={canDrag}
+            observerDragAllowed={observerDragAllowed}
             checklistUserId={checklistUserId}
             onToggleSubtask={onToggleSubtask}
             onAddSubtask={onAddSubtask}

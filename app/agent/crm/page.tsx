@@ -4,6 +4,7 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
+import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { useCrmFilters } from "@/hooks/use-crm-filters";
 
@@ -94,7 +95,8 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
 function buildContainers(leads: LeadApiItem[], stages: Array<{ id: ApiLeadStatus; title: string; color: string }>): DndContainer[] {
   const grouped = new Map<ApiLeadStatus, DndItem[]>();
   stages.forEach((s) => grouped.set(s.id, []));
-  leads.forEach((lead) => {
+  // A lead that just moved can sit in two stage pages for a moment; draw it once.
+  dedupeLeadsById(leads).forEach((lead) => {
     const status = (lead.status ?? "newly_lead") as ApiLeadStatus;
     const target = grouped.has(status) ? status : ("__uncategorized__" as ApiLeadStatus);
     grouped.get(target)?.push(mapLeadToItem(lead));
@@ -638,6 +640,8 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
       const na = next.find((c) => c.id === ac.id)!;
       const no2 = next.find((c) => c.id === oc.id)!;
       na.items = na.items.filter((i) => i.id !== activeId);
+      // Never hold the same lead twice in one column (duplicate React keys).
+      no2.items = no2.items.filter((i) => i.id !== activeId);
       const oi = no2.items.findIndex((i) => i.id === overId);
       if (oi >= 0) no2.items.splice(oi, 0, item); else no2.items.push(item);
       return next;
@@ -883,7 +887,8 @@ export default function CRMPage() {
     "uploaded_by_agents",
     "uploaded by agents",
   ].includes(sourceParam);
-  const leadListUrl = `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`;
+  // Uploads are counted across every pipeline, so the list opens on "all".
+  const leadListUrl = `${basePath}/leads?pipeline=all&source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`;
 
   const listUrlWithFilters = `${basePath}/leads${filterQuery}`;
   const [search, setSearch] = useState(() => filters.q ?? "");

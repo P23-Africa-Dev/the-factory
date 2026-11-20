@@ -18,6 +18,7 @@ interface TaskColumnProps {
   items: DndItem[];
   onOpenCreateTask?: () => void;
   canDrag?: boolean;
+  observerDragAllowed?: boolean;
   checklistUserId?: string;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onAddSubtask?: (taskId: string, title: string) => void;
@@ -35,6 +36,7 @@ export function TaskColumn({
   items,
   onOpenCreateTask,
   canDrag = true,
+  observerDragAllowed = false,
   checklistUserId,
   onToggleSubtask,
   onAddSubtask,
@@ -85,6 +87,7 @@ export function TaskColumn({
                 key={item.id}
                 item={item}
                 dragDisabled={!canDrag}
+                observerDragAllowed={observerDragAllowed}
                 onClick={onTaskClick}
                 onEdit={onTaskEdit}
                 onDelete={onTaskDelete}

@@ -23,6 +23,8 @@ import {
 
 interface TaskCardProps {
   item: DndItem;
+  /** Managers may move tasks they only observe; agents may not. */
+  observerDragAllowed?: boolean;
   checklistUserId?: string;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onAddSubtask?: (taskId: string, title: string) => void;
@@ -47,9 +49,11 @@ type CardDnd = {
 export function TaskCard(props: TaskCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.item.id,
-    // Observers follow a task but cannot move it between status columns, and
-    // only managers may drag cards on the board.
-    disabled: Boolean(props.dragDisabled) || Boolean(props.item.isObserver),
+    // Agent observers follow a task but cannot move it between status columns.
+    // Managers (owner/admin/supervisor) may move any task, observed or not.
+    disabled:
+      Boolean(props.dragDisabled) ||
+      (Boolean(props.item.isObserver) && !props.observerDragAllowed),
   });
 
   return (

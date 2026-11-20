@@ -6,6 +6,7 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
+import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { crmFiltersToQuery, useCrmFilters } from "@/hooks/use-crm-filters";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -94,7 +95,8 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
 function buildContainers(leads: LeadApiItem[], stages: Array<{ id: ApiLeadStatus; title: string; color: string }>): DndContainer[] {
   const grouped = new Map<ApiLeadStatus, DndItem[]>();
   stages.forEach((s) => grouped.set(s.id, []));
-  leads.forEach((lead) => {
+  // A lead that just moved can sit in two stage pages for a moment; draw it once.
+  dedupeLeadsById(leads).forEach((lead) => {
     const status = (lead.status ?? "newly_lead") as ApiLeadStatus;
     const target = grouped.has(status) ? status : ("__uncategorized__" as ApiLeadStatus);
     grouped.get(target)?.push(mapLeadToItem(lead));
@@ -679,6 +681,8 @@ function LeadBoard({
       const na = next.find((c) => c.id === ac.id)!;
       const no2 = next.find((c) => c.id === oc.id)!;
       na.items = na.items.filter((i) => i.id !== activeId);
+      // Never hold the same lead twice in one column (duplicate React keys).
+      no2.items = no2.items.filter((i) => i.id !== activeId);
       const oi = no2.items.findIndex((i) => i.id === overId);
       if (oi >= 0) no2.items.splice(oi, 0, item); else no2.items.push(item);
       return next;
@@ -856,7 +860,6 @@ function LeadBoard({
 
 function AgentUploadsCard({
   basePath = "/crm",
-  leadListUrl,
   totalUploadedLeads = 0,
   topAgentAvatarUrl,
   topAgentName,
@@ -872,10 +875,12 @@ function AgentUploadsCard({
   topAgentId?: number | null;
 }) {
   const router = useRouter();
-  // "View Leads" opens the list filtered to the agent shown on the card.
+  // "View Leads" opens the list filtered to the agent shown on the card. The card
+  // counts uploads across every pipeline, so the list must too ("all"): scoped to
+  // the current pipeline it came up empty whenever the agent's leads sat elsewhere.
   const viewLeadsUrl = topAgentId
-    ? `${basePath}/leads${crmFiltersToQuery({ source: "agent_upload", created_by: String(topAgentId) })}`
-    : leadListUrl ?? `${basePath}/leads${crmFiltersToQuery({ source: "agent_upload" })}`;
+    ? `${basePath}/leads${crmFiltersToQuery({ pipeline: "all", source: "agent_upload", created_by: String(topAgentId) })}`
+    : `${basePath}/leads${crmFiltersToQuery({ pipeline: "all", source: "agent_upload" })}`;
 
   return (
     <div className="se-stat-card bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">

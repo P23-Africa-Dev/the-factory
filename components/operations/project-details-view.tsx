@@ -24,6 +24,7 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { isTaskManagerRole } from "@/lib/tasks/board-permissions";
+import { moveCardToColumn } from "@/lib/dnd/board-moves";
 
 const STATUS_FILTERS = [
   { id: "all", label: "All" },
@@ -144,72 +145,14 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
 
   const moveToContainer = useCallback((activeId: string, overContainerId: string) => {
     if (!canManageTaskStatuses) return;
-
-    setBoardContainers((prev) => {
-      const activeContainer = prev.find((container) =>
-        container.items.some((item) => item.id === activeId)
-      );
-      const overContainer = prev.find((container) => container.id === overContainerId);
-      if (!activeContainer || !overContainer) return prev;
-
-      const activeItem = activeContainer.items.find((item) => item.id === activeId);
-      if (!activeItem) return prev;
-
-      return prev.map((container) => {
-        if (container.id === activeContainer.id) {
-          return {
-            ...container,
-            items: container.items.filter((item) => item.id !== activeId),
-          };
-        }
-
-        if (container.id === overContainerId) {
-          return {
-            ...container,
-            items: [...container.items, activeItem],
-          };
-        }
-
-        return container;
-      });
-    });
+    setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId));
   }, [canManageTaskStatuses]);
 
   const moveBetweenContainers = useCallback(
     (activeId: string, overId: string, activeContainerId: string, overContainerId: string) => {
       if (!canManageTaskStatuses) return;
-
-      setBoardContainers((prev) => {
-        const activeContainer = prev.find((container) => container.id === activeContainerId);
-        const overContainer = prev.find((container) => container.id === overContainerId);
-        if (!activeContainer || !overContainer) return prev;
-
-        const activeItem = activeContainer.items.find((item) => item.id === activeId);
-        if (!activeItem) return prev;
-
-        const overIndex = overContainer.items.findIndex((item) => item.id === overId);
-        const insertionIndex = overIndex >= 0 ? overIndex : overContainer.items.length;
-
-        return prev.map((container) => {
-          if (container.id === activeContainerId) {
-            return {
-              ...container,
-              items: container.items.filter((item) => item.id !== activeId),
-            };
-          }
-
-          if (container.id === overContainerId) {
-            const nextItems = [...overContainer.items];
-            nextItems.splice(insertionIndex, 0, activeItem);
-            return {
-              ...container,
-              items: nextItems,
-            };
-          }
-
-          return container;
-        });
-      });
+      if (activeContainerId === overContainerId) return;
+      setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId, overId));
     },
     [canManageTaskStatuses]
   );
@@ -570,6 +513,7 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
               containers={displayContainers}
               activeTab="all"
               canDrag={canManageTaskStatuses}
+              observerDragAllowed={canManageTaskStatuses}
               onOpenCreateTask={canManageTaskStatuses ? openCreateTask : undefined}
               findContainer={findContainer}
               moveItem={moveItem}
