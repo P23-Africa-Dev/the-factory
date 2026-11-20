@@ -723,8 +723,11 @@ export function useCreateCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string; name: string }) =>
-            createCrmPipeline(payload, token, basePath),
+        mutationFn: (payload: {
+            company_id: number | string;
+            name: string;
+            currency_code?: string;
+        }) => createCrmPipeline(payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
         },
@@ -741,7 +744,12 @@ export function useUpdateCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
             payload,
         }: {
             pipelineId: number | string;
-            payload: { company_id?: number | string; name?: string; sort_order?: number };
+            payload: {
+                company_id?: number | string;
+                name?: string;
+                sort_order?: number;
+                currency_code?: string;
+            };
         }) => updateCrmPipeline(pipelineId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
@@ -759,7 +767,11 @@ export function useDeleteCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
             payload,
         }: {
             pipelineId: number | string;
-            payload: { company_id?: number | string; force?: boolean };
+            payload: {
+                company_id?: number | string;
+                force?: boolean;
+                reassign_to_pipeline_id?: number | null;
+            };
         }) => deleteCrmPipeline(pipelineId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
