@@ -23,6 +23,7 @@ import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { useDroppable } from "@dnd-kit/core";
+import { boardCollisionDetection } from "@/lib/dnd/board-collision";
 import {
   DndContext,
   DragEndEvent,
@@ -32,7 +33,6 @@ import {
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
-  closestCorners,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -741,7 +741,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
           <DndContext
             id="crm-board"
             sensors={sensors}
-            collisionDetection={closestCorners}
+            collisionDetection={boardCollisionDetection}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}

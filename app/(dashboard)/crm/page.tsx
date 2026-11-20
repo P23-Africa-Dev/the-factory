@@ -22,6 +22,7 @@ import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { useDroppable } from "@dnd-kit/core";
+import { boardCollisionDetection } from "@/lib/dnd/board-collision";
 import {
   DndContext,
   DragEndEvent,
@@ -31,7 +32,6 @@ import {
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
-  closestCorners,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -789,7 +789,7 @@ function LeadBoard({
           <DndContext
             id="crm-board"
             sensors={sensors}
-            collisionDetection={closestCorners}
+            collisionDetection={boardCollisionDetection}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}

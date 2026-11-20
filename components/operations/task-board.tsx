@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import {
   DndContext,
-  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -13,6 +12,7 @@ import {
   DragOverlay,
   DragStartEvent,
 } from '@dnd-kit/core';
+import { boardCollisionDetection } from '@/lib/dnd/board-collision';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 import type { ProjectSubtask } from '@/lib/tasks/project-checklist';
@@ -158,7 +158,7 @@ export function TaskBoard({
     <DndContext
       id="board-context"
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={boardCollisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
