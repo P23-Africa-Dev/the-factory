@@ -30,6 +30,9 @@ class AdminUpdateTaskStatusRequest extends FormRequest
         return [
             'status' => ['required', 'string', Rule::in(TaskStatus::values())],
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            // When completing via board drag, the UI may ask the manager to
+            // acknowledge unfinished checklist items; those become completed.
+            'complete_incomplete_subtasks' => ['sometimes', 'boolean'],
         ];
     }
 }

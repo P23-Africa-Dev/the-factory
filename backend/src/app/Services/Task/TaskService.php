@@ -460,8 +460,13 @@ class TaskService
         return $updatedTask;
     }
 
-    public function updateStatus(User $user, Task $task, string $status, ?int $companyId = null): Task
-    {
+    public function updateStatus(
+        User $user,
+        Task $task,
+        string $status,
+        ?int $companyId = null,
+        bool $completeIncompleteSubtasks = false,
+    ): Task {
         $context = $this->accessService->resolve($user, $companyId);
         $this->accessService->ensureAgent($context);
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
@@ -476,11 +481,21 @@ class TaskService
 
         if ($this->isLockedTerminalStatus($current)) {
             throw ValidationException::withMessages([
-                'status' => ['Terminal tasks cannot be changed.'],
+                'status' => ['Cancelled tasks cannot be reopened by agents. Ask a manager to reopen this task.'],
             ]);
         }
 
-        $this->assertValidStatusTransition($current, $status);
+        // Agents may drag to any active status column (same freedom as managers
+        // for non-cancelled cards). Cancelled remains locked above.
+        $this->assertManagerStatusTransition($current, $status);
+
+        if (
+            $completeIncompleteSubtasks
+            && $status === TaskStatus::COMPLETED->value
+        ) {
+            $this->markIncompleteSubtasksCompleted($task, $user);
+            $task->refresh();
+        }
 
         // Photo uploads are optional; minimum_photos_required is a hint only.
         // Visit verification stays an opt-in check per task.
@@ -509,8 +524,13 @@ class TaskService
         return $loadedTask;
     }
 
-    public function updateStatusForManager(User $user, Task $task, string $status, ?int $companyId = null): Task
-    {
+    public function updateStatusForManager(
+        User $user,
+        Task $task,
+        string $status,
+        ?int $companyId = null,
+        bool $completeIncompleteSubtasks = false,
+    ): Task {
         $context = $this->accessService->resolve($user, $companyId);
         $this->accessService->ensureManager($context);
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
@@ -523,6 +543,14 @@ class TaskService
         // the controller closes any open tracking session on complete/cancel.
         $this->assertManagerStatusTransition($current, $status);
 
+        if (
+            $completeIncompleteSubtasks
+            && $status === TaskStatus::COMPLETED->value
+        ) {
+            $this->markIncompleteSubtasksCompleted($task, $user);
+            $task->refresh();
+        }
+
         if ($current !== $status) {
             $task->update($this->buildStatusUpdatePayload($task, $user->id, $status));
         }
@@ -531,6 +559,24 @@ class TaskService
         $this->notifyTaskStatusChanged($loadedTask, $user, $status);
 
         return $loadedTask;
+    }
+
+    /**
+     * Mark every open checklist item complete without running syncStatusFromSubtasks.
+     * Used when a manager confirms a drag-to-Completed over unfinished subtasks.
+     */
+    private function markIncompleteSubtasksCompleted(Task $task, User $actor): void
+    {
+        $now = now();
+        $task->subtasks()
+            ->where('is_completed', false)
+            ->each(function ($subtask) use ($actor, $now): void {
+                $subtask->update([
+                    'is_completed' => true,
+                    'completed_at' => $now,
+                    'completed_by_user_id' => $actor->id,
+                ]);
+            });
     }
 
     public function uploadProof(User $user, Task $task, UploadedFile $file, array $data): TaskProof

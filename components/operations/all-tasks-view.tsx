@@ -212,9 +212,10 @@ export function AllTasksView() {
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
-  // Managers (owner, admin, supervisor) may move a KPI to any column.
+  // Managers and agents may drag KPI cards to any status column.
   const canManage = isTaskManagerRole(role);
   const isAgent = role === 'agent';
+  const canDragStatuses = canManage || isAgent;
 
   const { data: kpisData, isPending } = useKpis(
     {
@@ -501,7 +502,7 @@ export function AllTasksView() {
           <KpiBoard
             containers={displayContainers}
             canManageCards={canManage || isAgent}
-            canDrag={canManage}
+            canDrag={canDragStatuses}
             findContainer={findContainer}
             moveItem={moveItem}
             moveToContainer={moveToContainer}

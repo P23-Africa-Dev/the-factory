@@ -212,7 +212,8 @@ class KpiService
         }
 
         $current = $kpi->status?->value;
-        $this->assertAgentStatusTransition($current, $status);
+        // Agents may drag KPI cards to any status column, matching the board UX.
+        $this->assertManagerStatusTransition($current, $status);
 
         if ($current !== $status) {
             $kpi->update($this->buildStatusUpdatePayload($kpi, $user->id, $status));

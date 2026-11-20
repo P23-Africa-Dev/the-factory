@@ -23,12 +23,14 @@ class AdminTaskStatusController extends Controller
     {
         $companyId = $request->validated('company_id');
         $status = (string) $request->validated('status');
+        $completeIncompleteSubtasks = (bool) $request->boolean('complete_incomplete_subtasks');
 
         $updatedTask = $this->taskService->updateStatusForManager(
             user: $request->user(),
             task: $task,
             status: $status,
             companyId: $companyId !== null ? (int) $companyId : null,
+            completeIncompleteSubtasks: $completeIncompleteSubtasks,
         );
 
         // Keep live tracking in sync when a manager stops/cancels/completes a task.

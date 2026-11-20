@@ -23,12 +23,14 @@ class TaskStatusController extends Controller
     {
         $companyId = $request->validated('company_id');
         $status = (string) $request->validated('status');
+        $completeIncompleteSubtasks = (bool) $request->boolean('complete_incomplete_subtasks');
 
         $updatedTask = $this->taskService->updateStatus(
             user: $request->user(),
             task: $task,
             status: $status,
             companyId: $companyId !== null ? (int) $companyId : null,
+            completeIncompleteSubtasks: $completeIncompleteSubtasks,
         );
 
         // Keep live tracking in sync: close the active session and notify the

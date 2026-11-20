@@ -10,9 +10,11 @@ import { TaskBoard } from "@/components/operations/task-board";
 import { TaskDetailModal } from "@/components/operations/task-detail-modal";
 import { CreateTaskModal, type CreateTaskStatus } from "@/components/operations/create-task-modal";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
+import ConfirmStatusMoveModal from "@/components/ui/confirm-status-move-modal";
 import { TaskBoardSkeleton } from "@/components/operations/skeletons/task-board-skeleton";
 import {
   useTasks,
+  useUpdateTaskStatus,
   useUpdateTaskStatusAdmin,
   useUpdateTask,
   useDeleteTask,
@@ -29,6 +31,7 @@ import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { checklistFromTask, toLocalChecklistDate, type ProjectChecklist, type ProjectSubtask } from "@/lib/tasks/project-checklist";
+import { completionBlockerLabels } from "@/lib/tasks/status-move-blockers";
 import { ApiRequestError } from "@/lib/api/onboarding";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { isTaskManagerRole } from "@/lib/tasks/board-permissions";
@@ -181,8 +184,9 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
   const isManagementUser = isTaskManagerRole(role);
-  // Managers (owner, admin, supervisor) may drag a task to any column.
+  // Managers on the ops board, or agents on their own board, may drag to any column.
   const canManageTaskStatuses = !agentView && isManagementUser;
+  const canDragTaskStatuses = canManageTaskStatuses || agentView;
 
   const userId = String(authUser?.id ?? "");
   const userName = authUser?.name ?? "Current user";
@@ -196,6 +200,14 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
   const [editingTask, setEditingTask] = useState<DndItem | null>(null);
   const [deleteTaskTarget, setDeleteTaskTarget] = useState<DndItem | null>(null);
+  const [pendingStatusMove, setPendingStatusMove] = useState<{
+    activeId: string;
+    previousStatus: ApiTaskStatus;
+    nextStatus: ApiTaskStatus;
+    blockers: string[];
+    snapshot: DndContainer[];
+  } | null>(null);
+  const [confirmingStatusMove, setConfirmingStatusMove] = useState(false);
 
   const { data: tasksData, isPending: loadingTasks } = useTasks(
     companyId
@@ -205,7 +217,9 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         }
       : {}
   );
-  const statusMutation = useUpdateTaskStatusAdmin();
+  const adminStatusMutation = useUpdateTaskStatusAdmin();
+  const agentStatusMutation = useUpdateTaskStatus();
+  const statusMutation = canManageTaskStatuses ? adminStatusMutation : agentStatusMutation;
   const updateTaskMutation = useUpdateTask({
     onSuccess: () => {
       toast.success("Task updated successfully.");
@@ -400,7 +414,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
   );
 
   const moveItem = useCallback((activeId: string, overId: string, containerId: string) => {
-    if (!canManageTaskStatuses) return;
+    if (!canDragTaskStatuses) return;
     setBoardContainers((prev) =>
       prev.map((container) => {
         if (container.id !== containerId) return container;
@@ -410,10 +424,10 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         return { ...container, items: arrayMove(container.items, activeIndex, overIndex) };
       })
     );
-  }, [canManageTaskStatuses]);
+  }, [canDragTaskStatuses]);
 
   const moveToContainer = useCallback((activeId: string, overContainerId: string) => {
-    if (!canManageTaskStatuses) return;
+    if (!canDragTaskStatuses) return;
     setBoardContainers((prev) => {
       const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
       const activeItem = activeContainer?.items.find((item) => item.id === activeId);
@@ -426,11 +440,11 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         return container;
       });
     });
-  }, [canManageTaskStatuses]);
+  }, [canDragTaskStatuses]);
 
   const moveBetweenContainers = useCallback(
     (activeId: string, overId: string, activeContainerId: string, overContainerId: string) => {
-      if (!canManageTaskStatuses) return;
+      if (!canDragTaskStatuses) return;
       setBoardContainers((prev) => {
         const activeContainer = prev.find((c) => c.id === activeContainerId);
         const overContainer = prev.find((c) => c.id === overContainerId);
@@ -451,39 +465,37 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
         });
       });
     },
-    [canManageTaskStatuses]
+    [canDragTaskStatuses]
   );
 
-  function handleStatusDrop(activeId: string, fromContainerId: string, toContainerId: string) {
-    const nextStatus = containerToApiStatus(toContainerId);
-    const draggedItem = boardContainers.flatMap((c) => c.items).find((item) => item.id === activeId);
-    // Use the task's real status: the In Progress column also holds paused/resumed tasks.
-    const previousStatus = draggedItem?.apiStatus ?? containerToApiStatus(fromContainerId);
-
-    if (!nextStatus || !previousStatus || nextStatus === previousStatus) return;
-
-    if (!canManageTaskStatuses) {
-      // Cards are not draggable for agents; this only guards stray drops.
-      setBoardContainers(serverContainers);
-      return;
-    }
-
+  function commitStatusMove(
+    activeId: string,
+    previousStatus: ApiTaskStatus,
+    nextStatus: ApiTaskStatus,
+    snapshot: DndContainer[],
+    completeIncompleteSubtasks = false,
+  ) {
     if (!companyId) {
       toast.error("Company context is required.");
-      setBoardContainers(serverContainers);
+      setBoardContainers(snapshot);
       return;
     }
 
     const taskId = Number(activeId);
     if (!Number.isFinite(taskId)) {
-      setBoardContainers(serverContainers);
+      setBoardContainers(snapshot);
       return;
     }
 
-    const snapshot = boardContainers;
-
     statusMutation.mutate(
-      { taskId, payload: { company_id: companyId, status: nextStatus } },
+      {
+        taskId,
+        payload: {
+          company_id: companyId,
+          status: nextStatus,
+          ...(completeIncompleteSubtasks ? { complete_incomplete_subtasks: true } : {}),
+        },
+      },
       {
         onSuccess: (response) => {
           setBoardContainers((prev) =>
@@ -495,19 +507,113 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
                       ...item,
                       apiStatus: response.data.task.status,
                       statusLabel: mapStatusToLabel(response.data.task.status),
+                      projectChecklist: item.projectChecklist
+                        ? {
+                            ...item.projectChecklist,
+                            subtasks: item.projectChecklist.subtasks.map((subtask) =>
+                              completeIncompleteSubtasks
+                                ? {
+                                    ...subtask,
+                                    isCompleted: true,
+                                    completedAt: subtask.completedAt ?? new Date().toISOString(),
+                                  }
+                                : subtask,
+                            ),
+                          }
+                        : item.projectChecklist,
                     }
                   : item
               ),
             }))
           );
           toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
+          setPendingStatusMove(null);
+          setConfirmingStatusMove(false);
         },
         onError: (err) => {
           setBoardContainers(snapshot);
+          setConfirmingStatusMove(false);
           toast.error(getApiErrorMessage(err, "Failed to update task status."));
         },
       }
     );
+  }
+
+  function handleStatusDrop(activeId: string, fromContainerId: string, toContainerId: string) {
+    const nextStatus = containerToApiStatus(toContainerId);
+    const draggedItem = boardContainers.flatMap((c) => c.items).find((item) => item.id === activeId);
+    // Use the task's real status: the In Progress column also holds paused/resumed tasks.
+    const previousStatus = draggedItem?.apiStatus ?? containerToApiStatus(fromContainerId);
+
+    if (!nextStatus || !previousStatus || nextStatus === previousStatus) return;
+
+    if (!canDragTaskStatuses) {
+      setBoardContainers(serverContainers);
+      return;
+    }
+
+    if (!companyId) {
+      toast.error("Company context is required.");
+      setBoardContainers(serverContainers);
+      return;
+    }
+
+    const snapshot = boardContainers;
+    const blockers =
+      nextStatus === "completed" ? completionBlockerLabels(draggedItem) : [];
+
+    if (blockers.length > 0) {
+      // Revert the optimistic board move until the user confirms.
+      setBoardContainers(serverContainers);
+      setPendingStatusMove({
+        activeId,
+        previousStatus,
+        nextStatus,
+        blockers,
+        snapshot: serverContainers,
+      });
+      return;
+    }
+
+    commitStatusMove(activeId, previousStatus, nextStatus, snapshot);
+  }
+
+  function confirmPendingStatusMove() {
+    if (!pendingStatusMove) return;
+    setConfirmingStatusMove(true);
+    // Re-apply the visual move, then persist with checklist auto-complete.
+    const { activeId, previousStatus, nextStatus, snapshot } = pendingStatusMove;
+    const fromId = statusToContainerId(
+      previousStatus === "in_progress" || previousStatus === "paused" || previousStatus === "resumed"
+        ? "In Progress"
+        : previousStatus === "pending"
+          ? "Pending"
+          : previousStatus === "completed"
+            ? "Completed"
+            : "Cancelled",
+    );
+    const toId = "completed";
+    if (fromId && fromId !== toId) {
+      setBoardContainers((prev) => {
+        const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
+        const activeItem = activeContainer?.items.find((item) => item.id === activeId);
+        if (!activeContainer || !activeItem) return prev;
+        return prev.map((container) => {
+          if (container.id === activeContainer.id)
+            return { ...container, items: container.items.filter((item) => item.id !== activeId) };
+          if (container.id === toId) return { ...container, items: [...container.items, activeItem] };
+          return container;
+        });
+      });
+    }
+    commitStatusMove(activeId, previousStatus, nextStatus, snapshot, true);
+  }
+
+  function cancelPendingStatusMove() {
+    if (!pendingStatusMove) return;
+    setBoardContainers(pendingStatusMove.snapshot);
+    setPendingStatusMove(null);
+    setConfirmingStatusMove(false);
   }
 
   const displayContainers: DndContainer[] = boardContainers
@@ -677,7 +783,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
       ) : (
         <TaskBoard
           containers={displayContainers}
-          canDrag={canManageTaskStatuses}
+          canDrag={canDragTaskStatuses}
           onOpenCreateTask={openCreateTask}
           checklistUserId={userId}
           onToggleSubtask={enableProjectChecklist ? toggleSubtask : undefined}
@@ -787,6 +893,17 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
             { onError: (err) => toast.error(getApiErrorMessage(err, "Failed to delete task.")) },
           );
         }}
+      />
+
+      <ConfirmStatusMoveModal
+        isOpen={Boolean(pendingStatusMove)}
+        onClose={cancelPendingStatusMove}
+        onConfirm={confirmPendingStatusMove}
+        confirming={confirmingStatusMove}
+        title="Complete unfinished checklist items?"
+        description="This task still has open checklist items. Confirming marks them complete and moves the card to Completed."
+        confirmLabel="Confirm & complete"
+        items={pendingStatusMove?.blockers ?? []}
       />
 
       <TaskDetailModal

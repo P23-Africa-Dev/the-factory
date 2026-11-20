@@ -14,8 +14,8 @@ use Tests\TestCase;
 
 /**
  * Managers (owner, admin, supervisor) can drag a task to any board column,
- * including reopening completed or cancelled tasks. Agents keep their
- * stricter transition matrix.
+ * including reopening completed or cancelled tasks. Agents may also move
+ * freely between active statuses; cancelled stays locked for agents.
  */
 class TaskManagerStatusTransitionTest extends TestCase
 {
@@ -51,7 +51,7 @@ class TaskManagerStatusTransitionTest extends TestCase
             $task->forceFill(['status' => $from])->saveQuietly();
 
             $this->actingAs($manager, 'sanctum')
-                ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
+                ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
                     'company_id' => $company->id,
                     'status' => $to,
                 ])
@@ -68,7 +68,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         $task = $this->createTask($company, $admin, $agent, ['status' => 'cancelled']);
 
         $this->actingAs($admin, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'in_progress',
             ])
@@ -94,7 +94,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         ]);
 
         $this->actingAs($admin, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'pending',
             ])
@@ -121,7 +121,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         $pending = $this->createTask($company, $admin, $agent, ['status' => 'pending']);
 
         $this->actingAs($admin, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$completed->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $completed->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'cancelled',
             ])
@@ -129,7 +129,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         $this->assertNull($completed->fresh()->completed_at);
 
         $this->actingAs($admin, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$pending->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $pending->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'completed',
             ])
@@ -143,7 +143,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         $task = $this->createTask($company, $admin, $agent, ['status' => 'pending']);
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/tasks/'.$task->id.'/start', [
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
                 'company_id' => $company->id,
                 'location_permission_granted' => true,
                 'latitude' => 6.4000,
@@ -157,7 +157,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         );
 
         $this->actingAs($admin, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'completed',
             ])
@@ -179,7 +179,7 @@ class TaskManagerStatusTransitionTest extends TestCase
         $task = $this->createTask($company, $admin, $agent, ['status' => 'pending']);
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/tasks/'.$task->id.'/start', [
+            ->postJson('/api/v1/tasks/' . $task->id . '/start', [
                 'company_id' => $company->id,
                 'location_permission_granted' => true,
                 'latitude' => 6.4000,
@@ -189,7 +189,7 @@ class TaskManagerStatusTransitionTest extends TestCase
             ->assertOk();
 
         $this->actingAs($admin, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$task->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'cancelled',
             ])
@@ -200,48 +200,96 @@ class TaskManagerStatusTransitionTest extends TestCase
         );
     }
 
-    public function test_agent_transition_matrix_is_unchanged(): void
+    public function test_agent_can_freely_move_active_task_statuses(): void
     {
         [$company, $admin, $agent] = $this->seedCompanyUsers();
 
-        // Agents still cannot jump pending -> completed.
-        $pending = $this->createTask($company, $admin, $agent, ['status' => 'pending']);
+        // Agents may jump pending -> completed when visit verification is not required.
+        $pending = $this->createTask($company, $admin, $agent, [
+            'status' => 'pending',
+            'visit_verification_required' => false,
+        ]);
         $this->actingAs($agent, 'sanctum')
-            ->patchJson('/api/v1/tasks/'.$pending->id.'/status', [
+            ->patchJson('/api/v1/tasks/' . $pending->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'completed',
             ])
-            ->assertUnprocessable()
-            ->assertJsonPath('errors.status.0', 'Invalid task status transition.');
+            ->assertOk()
+            ->assertJsonPath('data.task.status', 'completed');
 
-        // Agents still cannot move a completed task to cancelled.
+        // Agents may move a completed task to cancelled.
         $completed = $this->createTask($company, $admin, $agent, ['status' => 'completed']);
         $this->actingAs($agent, 'sanctum')
-            ->patchJson('/api/v1/tasks/'.$completed->id.'/status', [
+            ->patchJson('/api/v1/tasks/' . $completed->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'cancelled',
             ])
-            ->assertUnprocessable()
-            ->assertJsonPath('errors.status.0', 'Invalid task status transition.');
+            ->assertOk()
+            ->assertJsonPath('data.task.status', 'cancelled');
 
         // Agents still cannot reopen a cancelled task.
         $cancelled = $this->createTask($company, $admin, $agent, ['status' => 'cancelled']);
         $this->actingAs($agent, 'sanctum')
-            ->patchJson('/api/v1/tasks/'.$cancelled->id.'/status', [
+            ->patchJson('/api/v1/tasks/' . $cancelled->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'in_progress',
             ])
             ->assertUnprocessable()
-            ->assertJsonPath('errors.status.0', 'Terminal tasks cannot be changed.');
+            ->assertJsonPath(
+                'errors.status.0',
+                'Cancelled tasks cannot be reopened by agents. Ask a manager to reopen this task.'
+            );
 
         // Agents still cannot use the manager endpoint.
         $this->actingAs($agent, 'sanctum')
-            ->patchJson('/api/v1/admin/tasks/'.$cancelled->id.'/status', [
+            ->patchJson('/api/v1/admin/tasks/' . $cancelled->id . '/status', [
                 'company_id' => $company->id,
                 'status' => 'in_progress',
             ])
             ->assertForbidden();
         $this->assertSame('cancelled', $cancelled->fresh()->status?->value);
+    }
+
+    public function test_manager_completing_with_flag_marks_incomplete_subtasks_done(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+        $task = $this->createTask($company, $admin, $agent, ['status' => 'in_progress']);
+
+        $open = \App\Models\TaskSubtask::create([
+            'company_id' => $company->id,
+            'task_id' => $task->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_user_id' => $agent->id,
+            'title' => 'Call client',
+            'position' => 0,
+            'is_completed' => false,
+        ]);
+        $done = \App\Models\TaskSubtask::create([
+            'company_id' => $company->id,
+            'task_id' => $task->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_user_id' => $agent->id,
+            'title' => 'Already done',
+            'position' => 1,
+            'is_completed' => true,
+            'completed_at' => now()->subHour(),
+            'completed_by_user_id' => $agent->id,
+        ]);
+
+        $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/admin/tasks/' . $task->id . '/status', [
+                'company_id' => $company->id,
+                'status' => 'completed',
+                'complete_incomplete_subtasks' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.task.status', 'completed');
+
+        $this->assertTrue($open->fresh()->is_completed);
+        $this->assertNotNull($open->fresh()->completed_at);
+        $this->assertSame($admin->id, (int) $open->fresh()->completed_by_user_id);
+        $this->assertTrue($done->fresh()->is_completed);
+        $this->assertSame('completed', $task->fresh()->status?->value);
     }
 
     public function test_supervisor_can_self_assign_but_not_assign_unsupervised_agent(): void

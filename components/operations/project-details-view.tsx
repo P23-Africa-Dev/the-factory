@@ -10,6 +10,7 @@ import { TaskBoard } from "@/components/operations/task-board";
 import { OperationsCalendar } from "@/components/operations/operations-calendar";
 import { CreateTaskModal, type CreateTaskStatus } from "@/components/operations/create-task-modal";
 import { TaskDetailModal } from "@/components/operations/task-detail-modal";
+import ConfirmStatusMoveModal from "@/components/ui/confirm-status-move-modal";
 import { ProjectDetailsSkeleton } from "@/components/operations/skeletons/project-details-skeleton";
 import { useProject } from "@/hooks/use-projects";
 import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
@@ -17,6 +18,8 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
 import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
+import { checklistFromTask } from "@/lib/tasks/project-checklist";
+import { completionBlockerLabels } from "@/lib/tasks/status-move-blockers";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { getApiErrorMessage } from "@/lib/api/errors";
@@ -71,6 +74,14 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [pendingStatusMove, setPendingStatusMove] = useState<{
+    activeId: string;
+    previousStatus: ApiTaskStatus;
+    nextStatus: ApiTaskStatus;
+    blockers: string[];
+    snapshot: DndContainer[];
+  } | null>(null);
+  const [confirmingStatusMove, setConfirmingStatusMove] = useState(false);
   const serverContainers = useMemo(
     () => buildContainers(tasksData?.tasks ?? []),
     [tasksData?.tasks],
@@ -203,6 +214,81 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
     [canManageTaskStatuses]
   );
 
+  const commitStatusMove = useCallback(
+    (
+      activeId: string,
+      previousStatus: ApiTaskStatus,
+      nextStatus: ApiTaskStatus,
+      snapshot: DndContainer[],
+      completeIncompleteSubtasks = false,
+    ) => {
+      if (!companyId) {
+        toast.error("Company context is required.");
+        setBoardContainers(snapshot);
+        return;
+      }
+
+      const taskId = Number(activeId);
+      if (!Number.isFinite(taskId)) {
+        setBoardContainers(snapshot);
+        return;
+      }
+
+      statusMutation.mutate(
+        {
+          taskId,
+          payload: {
+            company_id: companyId,
+            status: nextStatus,
+            ...(completeIncompleteSubtasks ? { complete_incomplete_subtasks: true } : {}),
+          },
+        },
+        {
+          onSuccess: (response) => {
+            setBoardContainers((prev) =>
+              prev.map((container) => ({
+                ...container,
+                items: container.items.map((item) =>
+                  item.id === activeId
+                    ? {
+                        ...item,
+                        apiStatus: response.data.task.status,
+                        statusLabel: mapStatusToLabel(response.data.task.status),
+                        projectChecklist: item.projectChecklist
+                          ? {
+                              ...item.projectChecklist,
+                              subtasks: item.projectChecklist.subtasks.map((subtask) =>
+                                completeIncompleteSubtasks
+                                  ? {
+                                      ...subtask,
+                                      isCompleted: true,
+                                      completedAt: subtask.completedAt ?? new Date().toISOString(),
+                                    }
+                                  : subtask,
+                              ),
+                            }
+                          : item.projectChecklist,
+                      }
+                    : item
+                ),
+              }))
+            );
+
+            toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
+            setPendingStatusMove(null);
+            setConfirmingStatusMove(false);
+          },
+          onError: (err) => {
+            setBoardContainers(snapshot);
+            setConfirmingStatusMove(false);
+            toast.error(getApiErrorMessage(err, "Failed to update task status."));
+          },
+        }
+      );
+    },
+    [companyId, statusMutation]
+  );
+
   const handleStatusDrop = useCallback(
     (activeId: string, fromContainerId: string, toContainerId: string) => {
       const nextStatus = containerToApiStatus(toContainerId);
@@ -214,62 +300,71 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
         return;
       }
 
+      const fallback = buildContainers(tasksData?.tasks ?? []);
+
       if (!canManageTaskStatuses) {
-        // Cards are not draggable for agents; this only guards stray drops.
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
+        setBoardContainers(fallback);
         return;
       }
 
       if (!companyId) {
         toast.error("Company context is required.");
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
-        return;
-      }
-
-      const taskId = Number(activeId);
-      if (!Number.isFinite(taskId)) {
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
+        setBoardContainers(fallback);
         return;
       }
 
       const snapshot = boardContainers;
+      const blockers =
+        nextStatus === "completed" ? completionBlockerLabels(draggedItem) : [];
 
-      statusMutation.mutate(
-        {
-          taskId,
-          payload: {
-            company_id: companyId,
-            status: nextStatus,
-          },
-        },
-        {
-          onSuccess: (response) => {
-            setBoardContainers((prev) =>
-              prev.map((container) => ({
-                ...container,
-                items: container.items.map((item) =>
-                  item.id === activeId
-                    ? {
-                      ...item,
-                      apiStatus: response.data.task.status,
-                      statusLabel: mapStatusToLabel(response.data.task.status),
-                    }
-                    : item
-                ),
-              }))
-            );
+      if (blockers.length > 0) {
+        setBoardContainers(fallback);
+        setPendingStatusMove({
+          activeId,
+          previousStatus,
+          nextStatus,
+          blockers,
+          snapshot: fallback,
+        });
+        return;
+      }
 
-            toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
-          },
-          onError: (err) => {
-            setBoardContainers(snapshot);
-            toast.error(getApiErrorMessage(err, "Failed to update task status."));
-          },
-        }
-      );
+      commitStatusMove(activeId, previousStatus, nextStatus, snapshot);
     },
-    [boardContainers, canManageTaskStatuses, companyId, statusMutation, tasksData?.tasks]
+    [
+      boardContainers,
+      canManageTaskStatuses,
+      commitStatusMove,
+      companyId,
+      tasksData?.tasks,
+    ]
   );
+
+  const confirmPendingStatusMove = useCallback(() => {
+    if (!pendingStatusMove) return;
+    setConfirmingStatusMove(true);
+    const { activeId, previousStatus, nextStatus, snapshot } = pendingStatusMove;
+    setBoardContainers((prev) => {
+      const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
+      const activeItem = activeContainer?.items.find((item) => item.id === activeId);
+      if (!activeContainer || !activeItem) return prev;
+      return prev.map((container) => {
+        if (container.id === activeContainer.id)
+          return { ...container, items: container.items.filter((item) => item.id !== activeId) };
+        if (container.id === "completed")
+          return { ...container, items: [...container.items, activeItem] };
+        return container;
+      });
+    });
+    commitStatusMove(activeId, previousStatus, nextStatus, snapshot, true);
+  }, [commitStatusMove, pendingStatusMove]);
+
+  const cancelPendingStatusMove = useCallback(() => {
+    if (!pendingStatusMove) return;
+    setBoardContainers(pendingStatusMove.snapshot);
+    setPendingStatusMove(null);
+    setConfirmingStatusMove(false);
+  }, [pendingStatusMove]);
 
   const stats = useMemo(() => {
     const total = boardContainers.reduce((s, c) => s + c.items.length, 0);
@@ -549,6 +644,16 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
         projectId={projectId}
         initialStatus={createStatus}
       />
+      <ConfirmStatusMoveModal
+        isOpen={Boolean(pendingStatusMove)}
+        onClose={cancelPendingStatusMove}
+        onConfirm={confirmPendingStatusMove}
+        confirming={confirmingStatusMove}
+        title="Complete unfinished checklist items?"
+        description="This task still has open checklist items. Confirming marks them complete and moves the card to Completed."
+        confirmLabel="Confirm & complete"
+        items={pendingStatusMove?.blockers ?? []}
+      />
       <TaskDetailModal
         isOpen={!!selectedTask}
         onClose={() => setSelectedTask(null)}
@@ -669,6 +774,7 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
+    projectChecklist: checklistFromTask(apiTask),
     observers: apiTask.observers ?? [],
     isObserver: Boolean(apiTask.is_observer),
     createdByUserId: apiTask.created_by_user_id != null ? String(apiTask.created_by_user_id) : undefined,
