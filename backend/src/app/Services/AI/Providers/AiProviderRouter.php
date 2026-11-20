@@ -206,38 +206,32 @@ class AiProviderRouter
 
     public function transcribeAudio(UploadedFile $audio, string $prompt = '', array $options = []): ?AiGenerationResult
     {
-        if ($this->stackSettingService->isNvidia()) {
-            return $this->finalizeInvocation(
-                AiGenerationResult::failure(
-                    provider: 'nvidia',
-                    model: 'unsupported',
-                    errorClass: 'not_configured',
-                    errorMessage: 'Audio transcription is not available on the NVIDIA stack.',
-                    purpose: (string) ($options['purpose'] ?? 'operational'),
-                ),
-                $options,
-            );
-        }
+        $purpose = (string) ($options['purpose'] ?? 'operational');
 
-        if ($this->stackSettingService->isGlm()) {
+        // Speech-to-text is an OpenAI (Whisper) capability and is independent of
+        // the chat stack — GLM and NVIDIA do not transcribe audio. Use OpenAI
+        // whenever it is configured, whatever stack the chat assistant runs on.
+        if ($this->openAiProvider->isConfigured()) {
             return $this->finalizeInvocation(
-                AiGenerationResult::failure(
-                    provider: 'glm',
-                    model: 'unsupported',
-                    errorClass: 'not_configured',
-                    errorMessage: 'Audio transcription is not available on the GLM stack.',
-                    purpose: (string) ($options['purpose'] ?? 'operational'),
-                ),
+                $this->openAiProvider->transcribeAudio($audio, $prompt, $options)
+                    ?? AiGenerationResult::failure(
+                        provider: 'openai',
+                        model: (string) config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'),
+                        errorClass: 'transcription_failed',
+                        errorMessage: 'The audio could not be transcribed. Please record again and speak clearly.',
+                        purpose: $purpose,
+                    ),
                 $options,
             );
         }
 
         return $this->finalizeInvocation(
-            $this->tryProviders(
-                $this->orderedProviders((string) ($options['purpose'] ?? 'operational'), $options),
-                (string) ($options['purpose'] ?? 'operational'),
-                $options,
-                fn (AiProviderContract $provider) => $provider->transcribeAudio($audio, $prompt, $options),
+            AiGenerationResult::failure(
+                provider: 'none',
+                model: 'unsupported',
+                errorClass: 'not_configured',
+                errorMessage: 'Voice transcription is not set up. An OpenAI API key (OPENAI_API_KEY) is required for speech-to-text.',
+                purpose: $purpose,
             ),
             $options,
         );

@@ -53,6 +53,8 @@ class PhaseFiveCopilotService
             ],
         );
 
+        $transcript = is_string($transcriptResult?->text) ? trim($transcriptResult->text) : '';
+
         return [
             'company_id' => $resolvedCompanyId,
             'role' => (string) $context['role'],
@@ -60,8 +62,14 @@ class PhaseFiveCopilotService
             'file_name' => (string) $audio->getClientOriginalName(),
             'mime_type' => (string) ($audio->getMimeType() ?? 'application/octet-stream'),
             'size_bytes' => (int) $audio->getSize(),
-            'transcript' => $transcriptResult?->text
-                ?? 'Voice transcription pipeline is active. Provider transcription integration can now be attached to this endpoint.',
+            'transcript' => $transcript,
+            // No placeholder text: when transcription fails the frontend shows
+            // this real reason instead of inserting fake text into the chat.
+            'transcribed' => $transcript !== '',
+            'error' => $transcript !== ''
+                ? null
+                : ($transcriptResult?->errorMessage
+                    ?? 'No speech was detected. Please record again and speak clearly.'),
         ];
     }
 

@@ -2372,7 +2372,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const result = await runVoiceTranscription(file, companyId ?? undefined);
       const transcript = String(result?.transcript ?? "").trim();
       if (!transcript) {
-        throw new Error("No speech was detected in this recording. Try a clearer voice note.");
+        throw new Error(String(result?.error ?? "No speech was detected in this recording. Try a clearer voice note."));
       }
       setVoiceTranscript(transcript);
       setVoiceTranscriptSummary(`Transcript from: ${file.name}`);
@@ -3815,7 +3815,11 @@ export function AIChat({ open, onClose }: AIChatProps) {
                   disabled={isStreaming}
                   onTranscribe={async (file) => {
                     const result = await runVoiceTranscription(file, companyId ?? undefined);
-                    return String(result?.transcript ?? "");
+                    const transcript = String(result?.transcript ?? "").trim();
+                    if (!transcript) {
+                      throw new Error(String(result?.error ?? "No speech was detected. Try again, closer to the microphone."));
+                    }
+                    return transcript;
                   }}
                   onTranscribed={(text) => {
                     setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));

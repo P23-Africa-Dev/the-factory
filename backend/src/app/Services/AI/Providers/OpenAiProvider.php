@@ -172,10 +172,16 @@ class OpenAiProvider implements AiProviderContract
             $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
             $audioModel = (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'));
 
+            $audioPath = $audio->getRealPath();
+            $audioBytes = is_string($audioPath) && $audioPath !== '' ? (file_get_contents($audioPath) ?: '') : '';
+            if ($audioBytes === '') {
+                return null;
+            }
+
             $response = $this->http
                 ->timeout(max(1, (int) ceil($timeoutMs / 1000)))
                 ->withToken((string) config('services.ai.openai.api_key'))
-                ->attach('file', file_get_contents($audio->getRealPath()) ?: '', $audio->getClientOriginalName())
+                ->attach('file', $audioBytes, $audio->getClientOriginalName())
                 ->asMultipart()
                 ->post($baseUrl . '/audio/transcriptions', [
                     ['name' => 'model', 'contents' => $audioModel],
