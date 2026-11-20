@@ -739,7 +739,7 @@ export function listCrmPipelines(
 }
 
 export function createCrmPipeline(
-    payload: { company_id: number | string; name: string },
+    payload: { company_id: number | string; name: string; currency_code?: string },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
@@ -753,7 +753,7 @@ export function createCrmPipeline(
 
 export function updateCrmPipeline(
     pipelineId: number | string,
-    payload: { company_id?: number | string; name?: string; sort_order?: number },
+    payload: { company_id?: number | string; name?: string; sort_order?: number; currency_code?: string },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
@@ -767,7 +767,11 @@ export function updateCrmPipeline(
 
 export function deleteCrmPipeline(
     pipelineId: number | string,
-    payload: { company_id?: number | string; force?: boolean },
+    payload: {
+        company_id?: number | string;
+        force?: boolean;
+        reassign_to_pipeline_id?: number | null;
+    },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<

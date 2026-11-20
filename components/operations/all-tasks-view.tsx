@@ -501,6 +501,7 @@ export function AllTasksView() {
           <KpiBoard
             containers={displayContainers}
             canManageCards={canManage || isAgent}
+            canDrag={canManage}
             findContainer={findContainer}
             moveItem={moveItem}
             moveToContainer={moveToContainer}

@@ -254,10 +254,8 @@ export function CreateTaskModal({
     title: initialValues?.title ?? "",
     taskType: initialValues?.taskType ?? "",
     description: initialValues?.description ?? "",
-    assigneeIds:
-      mode === "create" && canManageTasks && user?.id
-        ? [String(user.id)]
-        : initialAssigneeIds(initialValues),
+    // Managers (including supervisors) start with no assignee — never self-default.
+    assigneeIds: initialAssigneeIds(initialValues),
     location: initialValues?.location ?? "",
     address: initialValues?.address ?? "",
     dueDate: initialValues?.dueDate ?? "",
@@ -287,13 +285,11 @@ export function CreateTaskModal({
       assigneeIds:
         mode === "edit"
           ? (initialValues?.assigneeIds || initialValues?.assignTo ? initialAssigneeIds(initialValues) : current.assigneeIds)
-          : canManageTasks && user?.id
-            ? [String(user.id)]
-            : initialAssigneeIds(initialValues),
+          : initialAssigneeIds(initialValues),
       status: mode === "create" ? initialStatus ?? initialValues?.status ?? "pending" : current.status,
     }));
     initializedOpenAssigneeRef.current = true;
-  }, [canManageTasks, initialStatus, initialValues, isOpen, mode, user]);
+  }, [initialStatus, initialValues, isOpen, mode, user]);
 
   const primaryAssigneeId = form.assigneeIds[0] ?? "";
 

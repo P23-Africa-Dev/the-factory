@@ -12,7 +12,7 @@ export type CreateInternalUserPayload = {
   assigned_zone?: string;
   assigned_zone_ids?: number[];
   // Optional at hire time: omitted means "not configured yet".
-  work_days?: string[];
+  work_days?: string[] | null;
   base_salary?: number;
   salary_type?: "daily" | "monthly" | "weekly";
   currency_code?: string;

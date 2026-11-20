@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { useCrmLabels, useCrmPipelines, useCrmPreferences, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
+import { useBulkDeleteLeads, useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
@@ -202,6 +202,8 @@ export default function AllLeadsPage() {
     ...extraFilters,
   }, "/agent");
   const updateLeadMutation = useUpdateLead(undefined, "/agent");
+  const deleteLeadMutation = useDeleteLead(undefined, "/agent");
+  const bulkDeleteMutation = useBulkDeleteLeads("/agent");
 
   const statusOptions = labels.map((label) => ({
     label: label.name,
@@ -260,12 +262,46 @@ export default function AllLeadsPage() {
     }
   };
 
-  const deleteLead = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  const deleteLead = async (id: string) => {
+    try {
+      await deleteLeadMutation.mutateAsync({
+        leadId: id,
+        companyId: companyId ?? undefined,
+      });
+      toast.success("Lead deleted successfully");
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setDeleteTargetId(null);
+      refetch();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete the lead. Please try again."));
+    }
+  };
+
+  const deleteSelectedLeads = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+
+    try {
+      const res = await bulkDeleteMutation.mutateAsync({ leadIds: ids, companyId: companyId ?? undefined });
+      const deleted = res.data.deleted_ids.length;
+      const failed = res.data.failed;
+      if (failed.length === 0) {
+        toast.success(deleted === 1 ? "Lead deleted successfully" : `${deleted} leads deleted successfully`);
+        setSelected(new Set());
+      } else {
+        toast.error(`${deleted} deleted, ${failed.length} could not be deleted. ${failed[0].message}`);
+        setSelected(new Set(failed.map((item) => String(item.id))));
+      }
+      setShowBulkDeleteConfirm(false);
+      refetch();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not delete the selected leads. Please try again."));
+      refetch();
+    }
   };
 
   return (
@@ -728,9 +764,10 @@ export default function AllLeadsPage() {
         isOpen={showBulkDeleteConfirm}
         onClose={() => setShowBulkDeleteConfirm(false)}
         onConfirm={() => {
-          selected.forEach((id) => deleteLead(id));
-          setSelected(new Set());
+          void deleteSelectedLeads();
         }}
+        closeOnConfirm={false}
+        confirmDisabled={bulkDeleteMutation.isPending}
         title={`Delete ${selected.size} Lead${selected.size === 1 ? "" : "s"}`}
         description={`Are you sure you want to delete ${selected.size} selected lead${selected.size === 1 ? "" : "s"}? This action cannot be undone.`}
       />

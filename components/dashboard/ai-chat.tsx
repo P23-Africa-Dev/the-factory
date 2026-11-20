@@ -1222,8 +1222,18 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const merged: Record<string, unknown> = { ...baseArgs, ...draft };
 
       if (Object.prototype.hasOwnProperty.call(draft, "base_salary")) {
-        const salary = Number(String(draft.base_salary ?? "").trim());
-        merged.base_salary = Number.isFinite(salary) ? salary : 0;
+        const raw = String(draft.base_salary ?? "").trim();
+        if (raw === "") {
+          // Leave blank = not configured (do not invent 0).
+          delete merged.base_salary;
+        } else {
+          const salary = Number(raw);
+          if (Number.isFinite(salary) && salary >= 0) {
+            merged.base_salary = salary;
+          } else {
+            delete merged.base_salary;
+          }
+        }
       }
 
       if (Object.prototype.hasOwnProperty.call(draft, "commission_enabled")) {
@@ -1234,10 +1244,15 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const workDaysSource = Object.prototype.hasOwnProperty.call(draft, "work_days")
         ? String(draft.work_days ?? "")
         : (Array.isArray(baseArgs.work_days) ? baseArgs.work_days.join(",") : String(baseArgs.work_days ?? ""));
-      merged.work_days = workDaysSource
+      const workDays = workDaysSource
         .split(",")
         .map((item) => item.trim().toLowerCase())
         .filter((item) => item !== "");
+      if (workDays.length > 0) {
+        merged.work_days = workDays;
+      } else {
+        delete merged.work_days;
+      }
 
       const zoneIdsSource = Object.prototype.hasOwnProperty.call(draft, "assigned_zone_ids")
         ? String(draft.assigned_zone_ids ?? "")

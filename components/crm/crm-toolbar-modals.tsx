@@ -30,6 +30,7 @@ import {
 } from "@/hooks/use-crm";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { ModalPortal } from "@/components/ui/modal-portal";
+import { FALLBACK_SUPPORTED_CURRENCIES, DEFAULT_FALLBACK_CURRENCY } from "@/lib/constants/currencies";
 
 type BaseModalProps = {
   companyId: number | string;
@@ -127,16 +128,25 @@ export function PipelineManagerModal({
 }) {
   const canManage = mode === "manage";
   const [newPipelineName, setNewPipelineName] = useState("");
+  const [newPipelineCurrency, setNewPipelineCurrency] = useState(DEFAULT_FALLBACK_CURRENCY);
   const [editing, setEditing] = useState<Record<number, string>>({});
+  const [editingCurrency, setEditingCurrency] = useState<Record<number, string>>({});
   const [editingIds, setEditingIds] = useState<Set<number>>(new Set());
-  const [pipelinePendingDelete, setPipelinePendingDelete] =
-    useState<CrmPipeline | null>(null);
+  const [pipelinePendingDelete, setPipelinePendingDelete] = useState<{
+    pipeline: CrmPipeline;
+    usageCount: number | null;
+    moveToId: number | null;
+  } | null>(null);
 
   const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
   const preferredPipelineId = preferences?.preferred_pipeline_id ?? null;
 
   const startEdit = (pipeline: CrmPipeline) => {
     setEditing((prev) => ({ ...prev, [pipeline.id]: pipeline.name }));
+    setEditingCurrency((prev) => ({
+      ...prev,
+      [pipeline.id]: pipeline.currency_code || DEFAULT_FALLBACK_CURRENCY,
+    }));
     setEditingIds((prev) => new Set(prev).add(pipeline.id));
   };
 
@@ -160,8 +170,10 @@ export function PipelineManagerModal({
       await createPipeline.mutateAsync({
         company_id: companyId,
         name: newPipelineName.trim(),
+        currency_code: newPipelineCurrency,
       });
       setNewPipelineName("");
+      setNewPipelineCurrency(DEFAULT_FALLBACK_CURRENCY);
       toast.success("Pipeline created");
     } catch (err) {
       toast.error(
@@ -176,7 +188,11 @@ export function PipelineManagerModal({
     try {
       await updatePipeline.mutateAsync({
         pipelineId: id,
-        payload: { company_id: companyId, name },
+        payload: {
+          company_id: companyId,
+          name,
+          currency_code: editingCurrency[id] || DEFAULT_FALLBACK_CURRENCY,
+        },
       });
       stopEdit(id);
       toast.success("Pipeline updated");
@@ -189,14 +205,20 @@ export function PipelineManagerModal({
 
   const confirmDeletePipeline = async () => {
     if (!pipelinePendingDelete) return;
-    const pipeline = pipelinePendingDelete;
-    setPipelinePendingDelete(null);
+    const { pipeline, usageCount, moveToId } = pipelinePendingDelete;
+    const force = usageCount !== null;
 
     try {
       const result = await deletePipeline.mutateAsync({
         pipelineId: pipeline.id,
-        payload: { company_id: companyId, force: true },
+        payload: {
+          company_id: companyId,
+          force,
+          reassign_to_pipeline_id: force ? moveToId : undefined,
+        },
       });
+
+      setPipelinePendingDelete(null);
 
       const movedCount = result.data?.reassigned_leads_count ?? 0;
       if (movedCount > 0) {
@@ -214,6 +236,22 @@ export function PipelineManagerModal({
         }
       }
     } catch (err) {
+      if (!force && err instanceof ApiRequestError) {
+        const usage = Number.parseInt(err.errors?.pipeline_usage_count?.[0] ?? "0", 10);
+        if (Number.isFinite(usage) && usage > 0) {
+          const defaultTarget =
+            pipelines.find((item) => item.id !== pipeline.id && item.is_default)?.id ??
+            pipelines.find((item) => item.id !== pipeline.id)?.id ??
+            null;
+          setPipelinePendingDelete({
+            pipeline,
+            usageCount: usage,
+            moveToId: defaultTarget,
+          });
+          return;
+        }
+      }
+      setPipelinePendingDelete(null);
       toast.error(
         err instanceof Error ? err.message : "Failed to delete pipeline",
       );
@@ -347,16 +385,43 @@ export function PipelineManagerModal({
                       <IconAction
                         icon={<Trash2 size={15} />}
                         label="Delete"
-                        onClick={() => setPipelinePendingDelete(pipeline)}
+                        onClick={() =>
+                          setPipelinePendingDelete({
+                            pipeline,
+                            usageCount: null,
+                            moveToId: null,
+                          })
+                        }
                         variant="danger"
                       />
                     )}
                   </div>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <p className="text-[11px] text-gray-400">
-                    Currency: {pipeline.currency_code || "USD"}
-                  </p>
+                  {canManage && isEditing ? (
+                    <select
+                      value={editingCurrency[pipeline.id] ?? pipeline.currency_code ?? DEFAULT_FALLBACK_CURRENCY}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        setEditingCurrency((prev) => ({
+                          ...prev,
+                          [pipeline.id]: e.target.value,
+                        }))
+                      }
+                      aria-label={`Currency for ${pipeline.name}`}
+                      className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-dash-dark outline-none focus:border-dash-dark"
+                    >
+                      {FALLBACK_SUPPORTED_CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.code}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-[11px] text-gray-400">
+                      Currency: {pipeline.currency_code || "USD"}
+                    </p>
+                  )}
                   {isPreferred && (
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                       My default
@@ -374,13 +439,25 @@ export function PipelineManagerModal({
         </div>
 
         {canManage && (
-          <div className="border-t border-gray-100 pt-4 flex items-center gap-2">
+          <div className="border-t border-gray-100 pt-4 flex flex-wrap items-center gap-2">
             <input
               value={newPipelineName}
               onChange={(e) => setNewPipelineName(e.target.value)}
               placeholder="Create new pipeline"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
+              className="min-w-[180px] flex-1 border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark placeholder:text-gray-400 outline-none focus:border-dash-dark"
             />
+            <select
+              value={newPipelineCurrency}
+              onChange={(e) => setNewPipelineCurrency(e.target.value)}
+              aria-label="New pipeline currency"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-[13px] text-dash-dark outline-none focus:border-dash-dark"
+            >
+              {FALLBACK_SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code}
+                </option>
+              ))}
+            </select>
             <button
               onClick={saveNew}
               className="px-4 py-2 rounded-lg bg-dash-dark text-white text-[12px] font-semibold"
@@ -395,14 +472,56 @@ export function PipelineManagerModal({
         isOpen={pipelinePendingDelete !== null}
         onClose={() => setPipelinePendingDelete(null)}
         onConfirm={confirmDeletePipeline}
-        title="Delete pipeline?"
-        description={
-          pipelinePendingDelete
-            ? `Are you sure you want to delete "${pipelinePendingDelete.name}"? Leads in this pipeline will be moved to another pipeline. This action cannot be undone.`
-            : "Are you sure you want to delete this pipeline?"
+        closeOnConfirm={false}
+        title={
+          pipelinePendingDelete?.usageCount
+            ? "Move leads and delete pipeline?"
+            : "Delete pipeline?"
         }
-        confirmLabel="Delete"
-      />
+        description={
+          pipelinePendingDelete?.usageCount
+            ? `${pipelinePendingDelete.usageCount} lead${pipelinePendingDelete.usageCount === 1 ? "" : "s"} in "${pipelinePendingDelete.pipeline.name}". Choose where to move ${pipelinePendingDelete.usageCount === 1 ? "it" : "them"}, then delete.`
+            : pipelinePendingDelete
+              ? `Delete "${pipelinePendingDelete.pipeline.name}"? This can't be undone.`
+              : "Are you sure you want to delete this pipeline?"
+        }
+        confirmLabel={
+          pipelinePendingDelete?.usageCount ? "Move leads & delete" : "Delete"
+        }
+        confirmDisabled={
+          Boolean(pipelinePendingDelete?.usageCount) &&
+          !pipelinePendingDelete?.moveToId
+        }
+      >
+        {pipelinePendingDelete?.usageCount ? (
+          <label className="block text-[12px] font-medium text-dash-dark">
+            Move leads to
+            <select
+              value={pipelinePendingDelete.moveToId ?? ""}
+              onChange={(e) =>
+                setPipelinePendingDelete((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        moveToId: e.target.value ? Number(e.target.value) : null,
+                      }
+                    : prev,
+                )
+              }
+              className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-dash-dark"
+            >
+              {pipelines
+                .filter((item) => item.id !== pipelinePendingDelete.pipeline.id)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                    {item.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+        ) : null}
+      </ConfirmDeleteModal>
     </>
   );
 }

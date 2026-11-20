@@ -24,6 +24,8 @@ interface KpiBoardProps {
   onKpiEdit?: (item: DndItem, containerId: string) => void;
   onKpiDelete?: (item: DndItem, containerId: string) => void;
   canManageCards?: boolean;
+  /** Managers can drag; agents get non-draggable cards. */
+  canDrag?: boolean;
   findContainer: (id: string) => DndContainer | undefined;
   moveItem: (activeId: string, overId: string, containerId: string) => void;
   moveToContainer: (activeId: string, overContainerId: string) => void;
@@ -43,6 +45,7 @@ export function KpiBoard({
   onKpiEdit,
   onKpiDelete,
   canManageCards = false,
+  canDrag = canManageCards,
   findContainer,
   moveItem,
   moveToContainer,
@@ -138,6 +141,7 @@ export function KpiBoard({
             title={container.title}
             color={container.color}
             items={container.items}
+            canDrag={canDrag}
             onKpiClick={(item) => onKpiClick?.(item, container.id)}
             onKpiEdit={canManageCards ? (item) => onKpiEdit?.(item, container.id) : undefined}
             onKpiDelete={canManageCards ? (item) => onKpiDelete?.(item, container.id) : undefined}

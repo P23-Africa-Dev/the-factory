@@ -12,12 +12,13 @@ interface KpiColumnProps {
   title: string;
   color: string;
   items: DndItem[];
+  canDrag?: boolean;
   onKpiClick?: (item: DndItem) => void;
   onKpiEdit?: (item: DndItem) => void;
   onKpiDelete?: (item: DndItem) => void;
 }
 
-export function KpiColumn({ id, title, color, items, onKpiClick, onKpiEdit, onKpiDelete }: KpiColumnProps) {
+export function KpiColumn({ id, title, color, items, canDrag = true, onKpiClick, onKpiEdit, onKpiDelete }: KpiColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
@@ -49,6 +50,7 @@ export function KpiColumn({ id, title, color, items, onKpiClick, onKpiEdit, onKp
               <KpiCard
                 key={item.id}
                 item={item}
+                dragDisabled={!canDrag}
                 onClick={onKpiClick}
                 onEdit={onKpiEdit}
                 onDelete={onKpiDelete}

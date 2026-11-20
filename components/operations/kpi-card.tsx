@@ -11,6 +11,8 @@ interface KpiCardProps {
   onClick?: (item: DndItem) => void;
   onEdit?: (item: DndItem) => void;
   onDelete?: (item: DndItem) => void;
+  /** When true, card cannot be dragged (agents / read-only). */
+  dragDisabled?: boolean;
 }
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -61,9 +63,9 @@ function PriorityBadge({ priority }: { priority?: string }) {
   );
 }
 
-export function KpiCard({ item, onClick, onEdit, onDelete }: KpiCardProps) {
+export function KpiCard({ item, onClick, onEdit, onDelete, dragDisabled = false }: KpiCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+    useSortable({ id: item.id, disabled: dragDisabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -75,7 +77,7 @@ export function KpiCard({ item, onClick, onEdit, onDelete }: KpiCardProps) {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
+      {...(dragDisabled ? {} : listeners)}
       onClick={() => onClick?.(item)}
       className={`
         group relative bg-white rounded-[24px] p-5 border border-gray-100

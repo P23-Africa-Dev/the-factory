@@ -140,35 +140,35 @@ class LeadService
         );
 
         $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source): Lead {
-        $lead = Lead::create([
-            'company_id' => $companyId,
-            'pipeline_id' => $pipelineId,
-            'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
-            'created_by_user_id' => $user->id,
-            'assigned_to_user_id' => $assignedToUserId,
-            'name' => $data['name'],
-            'email' => $data['email'] ?? null,
-            'phone' => $data['phone'] ?? null,
-            'location' => $data['location'] ?? null,
+            $lead = Lead::create([
+                'company_id' => $companyId,
+                'pipeline_id' => $pipelineId,
+                'company_location_id' => isset($data['company_location_id']) ? (int) $data['company_location_id'] : null,
+                'created_by_user_id' => $user->id,
+                'assigned_to_user_id' => $assignedToUserId,
+                'name' => $data['name'],
+                'email' => $data['email'] ?? null,
+                'phone' => $data['phone'] ?? null,
+                'location' => $data['location'] ?? null,
                 'company_name' => $data['company_name'] ?? null,
                 'company_email' => $data['company_email'] ?? null,
                 'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
                 'position' => $data['position'] ?? null,
                 'industry' => $this->nullableTrimmed($data['industry'] ?? null),
                 'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
-            'source' => $source,
-            'status' => $data['status'],
-            'priority' => $data['priority'],
-            'budget_amount' => $data['budget_amount'] ?? null,
-            'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
-                ? strtoupper((string) $data['budget_currency'])
-                : null,
-            'next_action' => $data['next_action'] ?? null,
-            'last_interaction' => $data['last_interaction'] ?? null,
-            'last_interaction_at' => $data['last_interaction_at'] ?? null,
-            'meta' => $data['meta'] ?? null,
+                'source' => $source,
+                'status' => $data['status'],
+                'priority' => $data['priority'],
+                'budget_amount' => $data['budget_amount'] ?? null,
+                'budget_currency' => isset($data['budget_currency']) && $data['budget_currency'] !== ''
+                    ? strtoupper((string) $data['budget_currency'])
+                    : null,
+                'next_action' => $data['next_action'] ?? null,
+                'last_interaction' => $data['last_interaction'] ?? null,
+                'last_interaction_at' => $data['last_interaction_at'] ?? null,
+                'meta' => $data['meta'] ?? null,
                 'custom_fields' => $this->resolvedCustomFields($companyId, $data, [], 'create') ?? [],
-        ]);
+            ]);
 
             $this->replaceContacts($lead, $this->contactPayloads($data));
 
@@ -561,9 +561,9 @@ class LeadService
             );
 
             $lead = DB::transaction(function () use ($lead, $data, $editsContacts, $customFields): Lead {
-            $lead->update([
-                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-                'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
+                $lead->update([
+                    'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                    'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
                     'name' => $data['name'] ?? $lead->name,
                     'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
                     'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
@@ -607,15 +607,15 @@ class LeadService
         );
 
         $lead = DB::transaction(function () use ($lead, $data, $customFields): Lead {
-        $lead->update([
-            'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-            'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
-                ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
-                : $lead->assigned_to_user_id,
-            'name' => $data['name'] ?? $lead->name,
-            'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
-            'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
-            'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
+            $lead->update([
+                'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
+                'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
+                    ? ($data['assigned_to_user_id'] !== null ? (int) $data['assigned_to_user_id'] : null)
+                    : $lead->assigned_to_user_id,
+                'name' => $data['name'] ?? $lead->name,
+                'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
+                'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
+                'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
                 'company_name' => array_key_exists('company_name', $data) ? $data['company_name'] : $lead->company_name,
                 'company_email' => array_key_exists('company_email', $data) ? $data['company_email'] : $lead->company_email,
                 'website' => array_key_exists('website', $data)
@@ -626,20 +626,20 @@ class LeadService
                 'profile_urls' => array_key_exists('profile_urls', $data)
                     ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
                     : $lead->profile_urls,
-            'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
-            'status' => $data['status'] ?? $lead->status,
-            'priority' => $data['priority'] ?? $lead->priority,
-            'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
-            'budget_currency' => array_key_exists('budget_currency', $data)
-                ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
-                : $lead->budget_currency,
-            'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
-            'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
-            'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
-            'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
+                'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
+                'status' => $data['status'] ?? $lead->status,
+                'priority' => $data['priority'] ?? $lead->priority,
+                'budget_amount' => array_key_exists('budget_amount', $data) ? $data['budget_amount'] : $lead->budget_amount,
+                'budget_currency' => array_key_exists('budget_currency', $data)
+                    ? ($data['budget_currency'] !== null ? strtoupper((string) $data['budget_currency']) : null)
+                    : $lead->budget_currency,
+                'next_action' => array_key_exists('next_action', $data) ? $data['next_action'] : $lead->next_action,
+                'last_interaction' => array_key_exists('last_interaction', $data) ? $data['last_interaction'] : $lead->last_interaction,
+                'last_interaction_at' => array_key_exists('last_interaction_at', $data) ? $data['last_interaction_at'] : $lead->last_interaction_at,
+                'meta' => array_key_exists('meta', $data) ? $data['meta'] : $lead->meta,
                 'custom_fields' => $customFields ?? $lead->custom_fields,
-            'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
-        ]);
+                'converted_at' => array_key_exists('converted_at', $data) ? $data['converted_at'] : $lead->converted_at,
+            ]);
 
             if (array_key_exists('contacts', $data)) {
                 $this->replaceContacts($lead, $this->contactPayloads($data));
@@ -1052,10 +1052,14 @@ class LeadService
 
         $maxSortOrder = (int) LeadPipeline::query()->where('company_id', $companyId)->max('sort_order');
 
+        $currency = isset($payload['currency_code']) && is_string($payload['currency_code']) && $payload['currency_code'] !== ''
+            ? strtoupper($payload['currency_code'])
+            : 'USD';
+
         return LeadPipeline::query()->create([
             'company_id' => $companyId,
             'name' => (string) $payload['name'],
-            'currency_code' => 'USD',
+            'currency_code' => $currency,
             'sort_order' => $maxSortOrder + 1,
             'is_default' => false,
         ]);
@@ -1086,10 +1090,15 @@ class LeadService
             }
         }
 
-        $pipeline->update([
+        $updates = [
             'name' => $payload['name'] ?? $pipeline->name,
             'sort_order' => isset($payload['sort_order']) ? (int) $payload['sort_order'] : $pipeline->sort_order,
-        ]);
+        ];
+        if (array_key_exists('currency_code', $payload) && is_string($payload['currency_code']) && $payload['currency_code'] !== '') {
+            $updates['currency_code'] = strtoupper($payload['currency_code']);
+        }
+
+        $pipeline->update($updates);
 
         return $pipeline->fresh();
     }
@@ -1263,7 +1272,7 @@ class LeadService
             ->where('pipeline_id', $pipeline->id)
             ->count();
 
-        $fallbackPipeline = LeadPipeline::query()
+        $fallbackCandidates = LeadPipeline::query()
             ->where('company_id', $companyId)
             ->where('id', '!=', $pipeline->id)
             ->where(function ($query): void {
@@ -1273,9 +1282,9 @@ class LeadService
             ->orderByDesc('is_default')
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->first();
+            ->get();
 
-        if ($fallbackPipeline === null) {
+        if ($fallbackCandidates->isEmpty()) {
             throw ValidationException::withMessages([
                 'pipeline' => ['This pipeline cannot be deleted because no fallback pipeline is available.'],
             ]);
@@ -1287,6 +1296,19 @@ class LeadService
             throw ValidationException::withMessages([
                 'pipeline' => ["This pipeline currently has {$assignedCount} leads. Confirm deletion to continue."],
                 'pipeline_usage_count' => [(string) $assignedCount],
+            ]);
+        }
+
+        $requestedTargetId = isset($payload['reassign_to_pipeline_id'])
+            ? (int) $payload['reassign_to_pipeline_id']
+            : null;
+        $fallbackPipeline = $requestedTargetId
+            ? $fallbackCandidates->firstWhere('id', $requestedTargetId)
+            : $fallbackCandidates->first();
+
+        if ($fallbackPipeline === null) {
+            throw ValidationException::withMessages([
+                'reassign_to_pipeline_id' => ['Choose a valid pipeline in this company to move leads into.'],
             ]);
         }
 
@@ -2099,9 +2121,9 @@ class LeadService
                     ->orWhere('custom_fields', 'like', '%' . $search . '%')
                     ->orWhereHas('contacts', function (Builder $contactQuery) use ($search): void {
                         $contactQuery->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('email', 'like', '%' . $search . '%')
-                    ->orWhere('phone', 'like', '%' . $search . '%')
-                    ->orWhere('location', 'like', '%' . $search . '%');
+                            ->orWhere('email', 'like', '%' . $search . '%')
+                            ->orWhere('phone', 'like', '%' . $search . '%')
+                            ->orWhere('location', 'like', '%' . $search . '%');
                     });
             });
         }
@@ -3213,18 +3235,20 @@ class LeadService
 
         // Same limits as the database columns, so a long cell is a row error
         // instead of a SQL failure that aborts the import halfway.
-        foreach ([
-            'Name' => [$name, 255],
-            'Email' => [$email, 255],
-            'Phone' => [$phone, 40],
-            'Location' => [$location, 255],
-            'Company name' => [$companyName, 255],
-            'Company email' => [$companyEmail, 255],
-            'Website' => [$websiteRaw, 255],
-            'Position' => [$position, 120],
-            'Industry' => [$industry, 120],
-            'Source' => [$source, 120],
-        ] as $label => [$value, $max]) {
+        foreach (
+            [
+                'Name' => [$name, 255],
+                'Email' => [$email, 255],
+                'Phone' => [$phone, 40],
+                'Location' => [$location, 255],
+                'Company name' => [$companyName, 255],
+                'Company email' => [$companyEmail, 255],
+                'Website' => [$websiteRaw, 255],
+                'Position' => [$position, 120],
+                'Industry' => [$industry, 120],
+                'Source' => [$source, 120],
+            ] as $label => [$value, $max]
+        ) {
             if (mb_strlen($value) > $max) {
                 $errors[] = "{$label} must be {$max} characters or fewer.";
             }

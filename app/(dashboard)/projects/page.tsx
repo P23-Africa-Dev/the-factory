@@ -80,15 +80,6 @@ function ProjectsContent() {
               Project management is available to owner, admin, and supervisor roles only.
             </div>
           ) : (
-            // <ProjectsView
-            //   projects={projects}
-            //   analytics={analytics}
-            //   onViewProject={handleViewProject}
-            //   isLoading={isLoading}
-            //   pagination={pagination}
-            //   currentPage={page}
-            //   onPageChange={setPage}
-            // />
             <AllProjectsTasksView enableProjectChecklist />
           )
         ) : (

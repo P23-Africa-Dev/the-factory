@@ -18,8 +18,10 @@ use App\Http\Resources\LeadNoteResource;
 use App\Http\Resources\LeadResource;
 use App\Models\Lead;
 use App\Services\Crm\LeadService;
+use App\Support\CurrencyCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LeadController extends Controller
@@ -403,8 +405,12 @@ class LeadController extends Controller
         $validated = $request->validate([
             'company_id' => ['nullable'],
             'name' => ['required', 'string', 'max:120'],
+            'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+        if (isset($validated['currency_code'])) {
+            $validated['currency_code'] = strtoupper((string) $validated['currency_code']);
+        }
 
         $pipeline = $this->leadService->createPipeline($request->user(), $validated);
 
@@ -421,8 +427,12 @@ class LeadController extends Controller
             'company_id' => ['nullable'],
             'name' => ['sometimes', 'required', 'string', 'max:120'],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
+            'currency_code' => ['sometimes', 'nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+        if (isset($validated['currency_code'])) {
+            $validated['currency_code'] = strtoupper((string) $validated['currency_code']);
+        }
 
         $updated = $this->leadService->updatePipeline($request->user(), $pipeline, $validated);
 
@@ -437,6 +447,7 @@ class LeadController extends Controller
         $validated = $request->validate([
             'company_id' => ['nullable'],
             'force' => ['sometimes', 'boolean'],
+            'reassign_to_pipeline_id' => ['sometimes', 'nullable', 'integer', 'exists:lead_pipelines,id'],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
 

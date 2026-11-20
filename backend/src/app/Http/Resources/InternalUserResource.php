@@ -29,7 +29,7 @@ class InternalUserResource extends JsonResource
                 'state_name' => (string) $zone->state_name,
                 'lga_name' => (string) $zone->lga_name,
             ])->values()->all(),
-            'work_days' => $this->work_days ?? [],
+            'work_days' => $this->work_days,
             'base_salary' => $this->base_salary,
             'payroll_salary_type' => $this->payroll_salary_type,
             'salary_currency' => $this->salary_currency,
