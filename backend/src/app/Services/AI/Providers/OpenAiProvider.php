@@ -167,15 +167,28 @@ class OpenAiProvider implements AiProviderContract
             return null;
         }
 
+        $purpose = (string) ($options['purpose'] ?? 'operational');
+        $audioModel = (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'));
+
+        // Failures carry the real reason (billing, bad key, bad audio...) so it
+        // can be logged and shown, instead of a generic "could not transcribe".
+        $fail = static fn (string $class, string $message, ?int $status = null): AiGenerationResult => AiGenerationResult::failure(
+            provider: 'openai',
+            model: $audioModel,
+            errorClass: $class,
+            errorMessage: $message,
+            httpStatus: $status,
+            purpose: $purpose,
+        );
+
         try {
-            $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
+            $timeoutMs = max(30000, (int) config('services.ai.request_timeout_ms', 30000));
             $baseUrl = rtrim((string) config('services.ai.openai.base_url', 'https://api.openai.com/v1'), '/');
-            $audioModel = (string) ($options['audio_model'] ?? config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'));
 
             $audioPath = $audio->getRealPath();
             $audioBytes = is_string($audioPath) && $audioPath !== '' ? (file_get_contents($audioPath) ?: '') : '';
             if ($audioBytes === '') {
-                return null;
+                return $fail('empty_audio', 'The recording was empty.');
             }
 
             $response = $this->http
@@ -189,22 +202,35 @@ class OpenAiProvider implements AiProviderContract
                 ]);
 
             if (! $response->successful()) {
-                return null;
+                $classified = AiProviderHttpError::classify($response->status(), (string) $response->json('error.message', ''));
+                \Illuminate\Support\Facades\Log::warning('OpenAI transcription failed.', [
+                    'status' => $response->status(),
+                    'error_class' => $classified['error_class'],
+                    'error' => mb_substr((string) $response->json('error.message', $response->body()), 0, 300),
+                    'model' => $audioModel,
+                ]);
+
+                return $fail($classified['error_class'], $classified['error_message'], $response->status());
             }
 
             $text = $response->json('text');
             if (! is_string($text) || trim($text) === '') {
-                return null;
+                return $fail('empty_transcript', 'No speech was detected in the recording.');
             }
 
             return new AiGenerationResult(
                 text: trim($text),
                 provider: 'openai',
                 model: $audioModel,
-                purpose: (string) ($options['purpose'] ?? 'operational'),
+                purpose: $purpose,
             );
-        } catch (\Throwable) {
-            return null;
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('OpenAI transcription error.', ['message' => $e->getMessage()]);
+
+            return $fail(
+                str_contains(strtolower($e->getMessage()), 'timed out') ? 'timeout' : 'unreachable',
+                $e->getMessage(),
+            );
         }
     }
 

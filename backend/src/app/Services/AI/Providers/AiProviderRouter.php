@@ -212,17 +212,21 @@ class AiProviderRouter
         // the chat stack — GLM and NVIDIA do not transcribe audio. Use OpenAI
         // whenever it is configured, whatever stack the chat assistant runs on.
         if ($this->openAiProvider->isConfigured()) {
-            return $this->finalizeInvocation(
-                $this->openAiProvider->transcribeAudio($audio, $prompt, $options)
-                    ?? AiGenerationResult::failure(
-                        provider: 'openai',
-                        model: (string) config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'),
-                        errorClass: 'transcription_failed',
-                        errorMessage: 'The audio could not be transcribed. Please record again and speak clearly.',
-                        purpose: $purpose,
-                    ),
-                $options,
-            );
+            $result = $this->openAiProvider->transcribeAudio($audio, $prompt, $options)
+                ?? AiGenerationResult::failure(
+                    provider: 'openai',
+                    model: (string) config('services.ai.openai.audio_model', 'gpt-4o-mini-transcribe'),
+                    errorClass: 'transcription_failed',
+                    errorMessage: 'The audio could not be transcribed.',
+                    purpose: $purpose,
+                );
+
+            // Keep a record of why it failed, for /admin/ai/logs.
+            if ($result->isFailure()) {
+                $this->recordProviderFailure($result, $options, $purpose);
+            }
+
+            return $this->finalizeInvocation($result, $options);
         }
 
         return $this->finalizeInvocation(

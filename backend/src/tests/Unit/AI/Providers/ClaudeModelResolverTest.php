@@ -10,6 +10,19 @@ use Tests\TestCase;
 
 final class ClaudeModelResolverTest extends TestCase
 {
+    public function test_base_url_accepts_both_sdk_and_versioned_forms(): void
+    {
+        foreach ([
+            'https://api.anthropic.com' => 'https://api.anthropic.com/v1',
+            'https://api.anthropic.com/' => 'https://api.anthropic.com/v1',
+            'https://api.anthropic.com/v1' => 'https://api.anthropic.com/v1',
+            'https://proxy.example.test/anthropic/v1/' => 'https://proxy.example.test/anthropic/v1',
+        ] as $configured => $expected) {
+            config(['services.ai.claude.base_url' => $configured]);
+            $this->assertSame($expected, ClaudeModelResolver::baseUrl(), $configured);
+        }
+    }
+
     public function test_auto_mode_selects_sonnet_from_available_models(): void
     {
         config([

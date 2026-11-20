@@ -22,6 +22,13 @@ final class AiProviderHttpError
         }
 
         if ($httpStatus === 429) {
+            // OpenAI answers an empty account with 429 insufficient_quota; that
+            // is a billing problem, not a temporary rate limit.
+            $lower = strtolower($message);
+            if (str_contains($lower, 'credit') || str_contains($lower, 'quota') || str_contains($lower, 'billing')) {
+                return ['error_class' => 'quota_exceeded', 'error_message' => $message];
+            }
+
             return ['error_class' => 'rate_limited', 'error_message' => $message !== '' ? $message : 'Rate limit exceeded.'];
         }
 

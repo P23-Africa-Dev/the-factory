@@ -45,6 +45,39 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
         );
     }
 
+    public function test_voice_transcription_explains_an_empty_openai_account(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        config(['services.ai.openai.api_key' => 'test-key', 'services.ai.openai.base_url' => 'https://api.openai.test/v1']);
+        \Illuminate\Support\Facades\Http::fake([
+            'api.openai.test/*' => \Illuminate\Support\Facades\Http::response([
+                'error' => [
+                    'message' => 'You have no credits remaining.',
+                    'type' => 'insufficient_quota',
+                    'code' => 'credit_balance_exhausted',
+                ],
+            ], 429),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'ely').'.mp3';
+        file_put_contents($path, 'fake-audio-bytes');
+        $result = app(\App\Services\AI\Innovation\PhaseFiveCopilotService::class)->transcribeVoice(
+            $admin,
+            new UploadedFile($path, 'note.mp3', 'audio/mpeg', null, true),
+            (int) $company->id,
+        );
+        @unlink($path);
+
+        $this->assertFalse($result['transcribed']);
+        $this->assertSame('', $result['transcript']);
+        $this->assertSame('quota_exceeded', $result['error_code']);
+        $this->assertStringContainsString('run out of credit', (string) $result['error']);
+
+        // The raw reason is kept for platform admins in the AI logs.
+        $this->assertDatabaseHas('ai_logs', ['provider' => 'openai']);
+    }
+
     public function test_voice_transcription_returns_a_clear_error_when_not_configured(): void
     {
         [$company, $admin] = $this->seedCompanyUser('admin');
@@ -63,7 +96,8 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.transcribed', false)
             ->assertJsonPath('data.transcript', '');
-        $this->assertStringContainsString('OpenAI', (string) $response->json('data.error'));
+        $response->assertJsonPath('data.error_code', 'not_configured');
+        $this->assertStringContainsString('not set up', (string) $response->json('data.error'));
     }
 
     public function test_file_analysis_endpoint_accepts_supported_file_types(): void

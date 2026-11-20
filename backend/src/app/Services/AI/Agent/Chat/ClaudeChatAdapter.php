@@ -84,7 +84,7 @@ class ClaudeChatAdapter implements ChatProviderAdapter
                     'x-api-key' => (string) config('services.ai.claude.api_key'),
                     'anthropic-version' => (string) config('services.ai.claude.version', '2023-06-01'),
                 ])
-                ->post(rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/').'/messages', $payload);
+                ->post(ClaudeModelResolver::baseUrl().'/messages', $payload);
         } catch (Throwable $e) {
             return ChatResponse::failure(
                 'claude',

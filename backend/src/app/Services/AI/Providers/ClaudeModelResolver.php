@@ -16,6 +16,21 @@ class ClaudeModelResolver
     private const CACHE_TTL_SECONDS = 3600;
 
     /**
+     * The Anthropic API base URL, always ending in /v1. Accepts both
+     * "https://api.anthropic.com" (the Anthropic SDK convention) and
+     * "https://api.anthropic.com/v1" in ANTHROPIC_BASE_URL.
+     */
+    public static function baseUrl(): string
+    {
+        $url = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
+        if ($url === '') {
+            $url = 'https://api.anthropic.com/v1';
+        }
+
+        return preg_match('#/v\d+$#', $url) === 1 ? $url : $url.'/v1';
+    }
+
+    /**
      * Resolve the Claude model id to use for a given purpose.
      */
     public function resolve(string $purpose = 'default', ?string $requestedModel = null): string
@@ -119,7 +134,7 @@ class ClaudeModelResolver
         }
 
         try {
-            $baseUrl = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
+            $baseUrl = self::baseUrl();
             $response = Http::timeout(12)
                 ->withHeaders([
                     'x-api-key' => $apiKey,
