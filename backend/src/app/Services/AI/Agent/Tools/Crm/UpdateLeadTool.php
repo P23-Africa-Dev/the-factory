@@ -60,7 +60,7 @@ final class UpdateLeadTool implements ElyTool
             'assigned_to_user_id' => S::int('New owner user id (managers only)'),
             'pipeline_id' => S::int(),
             'budget_amount' => ['type' => 'number'],
-            'budget_currency' => S::str('ISO 4217, e.g. NGN'),
+            'budget_currency' => S::str('ISO 4217, e.g. GBP'),
         ], ['lead_id']);
     }
 

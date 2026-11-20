@@ -73,7 +73,7 @@ class InternalUserOnboardingService
             $salaryType = strtolower((string) ($data['salary_type'] ?? 'monthly'));
             $currency = CurrencyCatalog::normalize(
                 currency: $data['currency_code'] ?? null,
-                fallbackCurrency: $company->currency_code ?? config('internal_onboarding.default_currency', 'USD'),
+                fallbackCurrency: $company->currency_code ?? config('internal_onboarding.default_currency', 'GBP'),
             );
             $assignedZoneIds = $this->resolveAssignedZoneIds(
                 companyId: (int) $company->id,
@@ -748,7 +748,7 @@ class InternalUserOnboardingService
         ?array $assignedZoneIds,
         ?string $assignedZoneText,
         int $actorUserId,
-        string $fallbackCountryCode = 'NG',
+        string $fallbackCountryCode = 'GB',
     ): array {
         $zoneIds = collect($assignedZoneIds ?? [])
             ->map(static fn(mixed $id): int => (int) $id)
@@ -789,7 +789,7 @@ class InternalUserOnboardingService
 
         $countryCode = strtoupper(trim($fallbackCountryCode));
         if (strlen($countryCode) !== 2) {
-            $countryCode = 'NG';
+            $countryCode = 'GB';
         }
 
         $created = CompanyZone::query()->create([

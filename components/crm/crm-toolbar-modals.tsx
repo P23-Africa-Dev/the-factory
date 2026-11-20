@@ -433,7 +433,7 @@ export function PipelineManagerModal({
                     </select>
                   ) : (
                     <p className="text-[11px] text-gray-400">
-                      Currency: {pipeline.currency_code || "USD"}
+                      Currency: {pipeline.currency_code || "GBP"}
                     </p>
                   )}
                   {isPreferred && (

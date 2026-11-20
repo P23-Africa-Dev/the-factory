@@ -19,6 +19,6 @@ Managing the team:
 - Supervisors can only act on their own agents, and only if the company settings allow it.
 - Territory zones (country, state, LGA) are managed from the same area.
 
-ELY can do these too: "Move Ada under Sam", "Suspend Bola for 3 days", "Resend Tunde's invitation", "Create a zone for Lagos, Eti-Osa". Changes to people always need your confirmation.
+ELY can do these too: "Move Ada under Sam", "Suspend Bola for 3 days", "Resend Tunde's invitation", "Create a zone for London, Greater London". Changes to people always need your confirmation.
 
 ELY can do this for you: "Invite Tunde Bello, tunde@example.com, as an agent under Sam". ELY always asks you to confirm before sending an invitation.

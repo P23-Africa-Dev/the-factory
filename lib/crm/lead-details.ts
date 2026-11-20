@@ -107,7 +107,7 @@ export function formatLeadDetailBudget(lead: LeadDetailSource): string {
     return NA;
   }
 
-  const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "USD";
+  const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "GBP";
   return `${currency} ${amount.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,

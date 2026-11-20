@@ -12,7 +12,7 @@ export const CURRENCY_KEYS = {
     all: ["currencies"] as const,
 };
 
-const PRIORITY_CODES = ["USD", "GBP", "CAD"] as const;
+const PRIORITY_CODES = ["GBP", "USD", "CAD"] as const;
 
 function prioritizeCurrencies(data: SupportedCurrenciesData): SupportedCurrenciesData {
     const currencies = Array.isArray(data.currencies) ? data.currencies : [];

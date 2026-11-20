@@ -148,7 +148,7 @@
                         <div>
                             <label class="form-label small fw-semibold mb-1" style="font-size:.78rem">Phone</label>
                             <input type="tel" name="phone" class="form-control form-control-sm"
-                                value="{{ old('phone', $demoRequest->phone) }}" placeholder="+2348012345678"
+                                value="{{ old('phone', $demoRequest->phone) }}" placeholder="+447911123456"
                                 pattern="^\+[1-9][0-9]{7,14}$">
                         </div>
 

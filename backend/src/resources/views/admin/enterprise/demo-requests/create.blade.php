@@ -50,7 +50,7 @@
                             <label class="form-label small fw-semibold mb-1" style="font-size:.78rem">Phone</label>
                             <input type="tel" name="phone"
                                 class="form-control form-control-sm @error('phone') is-invalid @enderror"
-                                value="{{ old('phone') }}" placeholder="+2348012345678" pattern="^\+[1-9][0-9]{7,14}$">
+                                value="{{ old('phone') }}" placeholder="+447911123456" pattern="^\+[1-9][0-9]{7,14}$">
                             @error('phone')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -71,7 +71,7 @@
                             <label class="form-label small fw-semibold mb-1" style="font-size:.78rem">Country</label>
                             <input type="text" name="country"
                                 class="form-control form-control-sm @error('country') is-invalid @enderror"
-                                value="{{ old('country') }}" maxlength="100" required placeholder="e.g. Nigeria">
+                                value="{{ old('country') }}" maxlength="100" required placeholder="e.g. United Kingdom">
                             @error('country')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror

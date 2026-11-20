@@ -1998,7 +1998,7 @@ components:
             - string
             - "null"
           maxLength: 1000
-          example: 12 Adeola Odeku Street, Lagos
+          example: 12 King William Street, London EC4R 9AN
         latitude:
           type:
             - number
@@ -3525,7 +3525,7 @@ components:
           maxLength: 64
         phone_number:
           type: string
-          example: "+2348012345678"
+          example: "+447911123456"
         gender:
           type: string
           enum: [male, female]
@@ -3556,7 +3556,7 @@ components:
           enum: [supervisor, agent]
         phone_number:
           type: string
-          example: "+2348012345678"
+          example: "+447911123456"
         gender:
           type: string
           enum: [male, female]

@@ -80,7 +80,7 @@ class ElyEvalRunner
                 }
             }
 
-            $context = new ToolContext($user, (int) $seed['company']->id, $role, null, $page, 'Africa/Lagos');
+            $context = new ToolContext($user, (int) $seed['company']->id, $role, null, $page, 'Europe/London');
             $result = app(ElyAgent::class)->chat($context, (string) $seed['company']->name, $message, null);
 
             $threadId = (string) $result['thread_id'];

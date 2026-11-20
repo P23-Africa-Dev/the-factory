@@ -15,4 +15,4 @@ Track progress:
 - Managers can move any task to any column. Agents move their own tasks through the normal flow; completing may require photo proof or a verified visit.
 - Open a task to add comments or subtasks, or to request reassignment to someone else. The person asked to take the task accepts or rejects the request.
 
-ELY can do this for you: "Create a task for Ada to visit Shoprite Lekki tomorrow at 10am", "Mark the Lekki delivery task as completed", "What is overdue?". Deleting a task always needs your confirmation.
+ELY can do this for you: "Create a task for Ada to visit Waitrose Canary Wharf tomorrow at 10am", "Mark the Canary Wharf delivery task as completed", "What is overdue?". Deleting a task always needs your confirmation.

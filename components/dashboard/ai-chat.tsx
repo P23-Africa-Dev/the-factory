@@ -3868,7 +3868,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
           isOpen={showCreateZoneModal}
           onClose={() => setShowCreateZoneModal(false)}
           companyId={companyId}
-          defaultCountry="NG"
+          defaultCountry="GB"
         />
       ) : null}
     </>

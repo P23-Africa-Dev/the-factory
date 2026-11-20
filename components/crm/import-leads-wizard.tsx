@@ -192,8 +192,8 @@ export function ImportLeadsWizard({
             [[
                 "Jane Doe",
                 "jane@example.com",
-                "+1 555 000 1234",
-                "Lagos",
+                "+44 7700 900123",
+                "London",
                 "Acme Ltd",
                 "hello@acme.com",
                 "https://acme.com",
@@ -204,7 +204,7 @@ export function ImportLeadsWizard({
                 exampleStatus,
                 "medium",
                 "5000",
-                "USD",
+                "GBP",
                 ...customColumns.map(() => ""),
             ]]
         );

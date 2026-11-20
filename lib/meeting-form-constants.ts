@@ -9,11 +9,11 @@ export const MEETING_REMINDER_PRESETS = [
 ] as const;
 
 export const MEETING_COMMON_TIMEZONES = [
+    "Europe/London",
     "UTC",
     "Africa/Lagos",
     "Africa/Nairobi",
     "Africa/Cairo",
-    "Europe/London",
     "Europe/Berlin",
     "America/New_York",
     "America/Chicago",

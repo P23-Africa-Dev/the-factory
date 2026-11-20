@@ -15,4 +15,4 @@ Notes:
 - Leads that agents add are assigned to themselves. Managers can choose the owner.
 - If a lead with the same details already exists you may be offered a merge instead.
 
-ELY can do this for you: "Add a lead called Bright Pharmacy, phone +2348012345678, in Ikeja".
+ELY can do this for you: "Add a lead called Bright Pharmacy, phone +447911123456, in Shoreditch".

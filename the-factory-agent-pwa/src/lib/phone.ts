@@ -1,7 +1,7 @@
 /**
  * Normalizes a phone number to standard E.164 format.
  *
- * @param countryCode The country calling code (e.g. "+234")
+ * @param countryCode The country calling code (e.g. "+44")
  * @param phonePart The user inputted phone number string
  * @returns Normalized phone number starting with + or null if empty
  */
@@ -9,7 +9,7 @@ export function formatPhoneNumber(countryCode: string, phonePart: string): strin
   const cleaned = phonePart.replace(/\D/g, ''); // strip all non-digits
   if (!cleaned) return null;
 
-  // Get digits of country code (e.g. "+234" -> "234")
+  // Get digits of country code (e.g. "+44" -> "44")
   const ccDigits = countryCode.replace(/\D/g, '');
 
   let localNumber = cleaned;

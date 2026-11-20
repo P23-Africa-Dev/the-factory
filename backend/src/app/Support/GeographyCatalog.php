@@ -12,7 +12,7 @@ final class GeographyCatalog
     /** @return list<string> */
     public static function supportedCountryCodes(): array
     {
-        return ['NG', 'GB', 'US', 'CA', 'IN'];
+        return ['GB', 'NG', 'US', 'CA', 'IN'];
     }
 
     public static function isSupported(string $countryCode): bool

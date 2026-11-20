@@ -77,8 +77,8 @@ interface LeadDetail {
 const MOCK_LEAD: LeadDetail = {
   id: "lead-1",
   name: "Lane Wade",
-  phone: "+234 0000000000",
-  location: "Ikeja GRA ...",
+  phone: "+44 7700 900000",
+  location: "Shoreditch, London ...",
   statusTag: "Contacted",
   status: "Contacted",
   statusColor: "#E879A0",

@@ -16,7 +16,7 @@ use Throwable;
  * UTC instance as-is; Eloquent then stores its UTC wall time, which is later
  * re-read in the app timezone — shifting every timestamp by the UTC offset
  * and corrupting duration math (each interval gains the offset, e.g. +1h in
- * Africa/Lagos). Converting to the app timezone at the parse boundary makes
+ * Europe/London during BST). Converting to the app timezone at the parse boundary makes
  * both input shapes land on the same, correct wall time.
  */
 final class ClientTime

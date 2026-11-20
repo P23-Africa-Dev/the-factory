@@ -8,7 +8,7 @@ return [
         'INTERNAL_ONBOARDING_FRONTEND_URL',
         rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/') . '/onboarding/internal',
     ),
-    'default_currency' => env('INTERNAL_DEFAULT_CURRENCY', 'USD'),
+    'default_currency' => env('INTERNAL_DEFAULT_CURRENCY', 'GBP'),
     'avatar_storage_root' => env('INTERNAL_AVATAR_STORAGE_ROOT', 'avatar'),
     'default_avatar_path' => env('INTERNAL_DEFAULT_AVATAR_PATH', 'avatar/default/ghost.svg'),
     'avatar_public_base_url' => rtrim((string) env('INTERNAL_AVATAR_PUBLIC_BASE_URL', ''), '/'),

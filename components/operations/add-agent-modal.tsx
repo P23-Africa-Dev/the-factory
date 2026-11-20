@@ -198,7 +198,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
       e.currency = "Select a supported currency.";
     }
     if (role === "agent" && fillForAgent && agentDetails.phone.trim() && !/^\+[1-9][0-9]{7,14}$/.test(agentDetails.phone.trim())) {
-      e.phone = "Enter the phone number in international format, e.g. +2348012345678.";
+      e.phone = "Enter the phone number in international format, e.g. +447911123456.";
     }
     return e;
   };
@@ -626,7 +626,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
           isOpen={showCreateZoneModal}
           onClose={() => setShowCreateZoneModal(false)}
           companyId={companyId}
-          defaultCountry={profileData?.organization.company.country ?? "NG"}
+          defaultCountry={profileData?.organization.company.country ?? "GB"}
         />
       ) : null}
     </>

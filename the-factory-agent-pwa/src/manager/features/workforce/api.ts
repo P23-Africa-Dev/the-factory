@@ -186,7 +186,7 @@ export const workforceApi = {
       bonus_pay: Number(item.bonus_pay ?? 0),
       deductions: Number(item.deductions ?? 0),
       net_pay: Number(item.net_pay ?? item.total_pay ?? 0),
-      currency: String(item.currency ?? 'NGN'),
+      currency: String(item.currency ?? 'GBP'),
       approval_status: String(item.approval_status ?? item.status ?? 'pending'),
     }));
   },

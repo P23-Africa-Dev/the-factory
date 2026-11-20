@@ -13,10 +13,10 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import type { MeetingFormValues, AttendeeCandidate } from '../types';
 
 const TIMEZONES = [
+  'Europe/London',
   'Africa/Lagos',
   'Africa/Accra',
   'Africa/Nairobi',
-  'Europe/London',
   'Europe/Paris',
   'America/New_York',
   'America/Los_Angeles',

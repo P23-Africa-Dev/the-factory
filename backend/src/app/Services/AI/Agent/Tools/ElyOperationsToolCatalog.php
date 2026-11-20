@@ -366,8 +366,8 @@ final class ElyOperationsToolCatalog
 
                     return new ToolResult("A new invitation was sent to {$target->name}.", ['user_id' => (int) $target->id], ['org.users.resend_invite']);
                 }),
-            $this->tool('zones.create', 'Create a territory zone (country, state and LGA). Managers only.',
-                S::object(['country_code' => S::str('ISO 3166 alpha-2, e.g. NG'), 'state_name' => S::str(), 'lga_name' => S::str('Local government area'), 'name' => S::str('Optional display name')], ['country_code', 'state_name', 'lga_name']),
+            $this->tool('zones.create', 'Create a territory zone (country, state/region and local area). Managers only.',
+                S::object(['country_code' => S::str('ISO 3166 alpha-2, e.g. GB'), 'state_name' => S::str(), 'lga_name' => S::str('Local area / borough'), 'name' => S::str('Optional display name')], ['country_code', 'state_name', 'lga_name']),
                 ToolRisk::Safe, self::MANAGERS, 'Creating the zone', [],
                 [
                     'country_code' => ['required', 'string', 'size:2', Rule::in(CountryCatalog::codes())], 'state_name' => ['required', 'string', 'min:2', 'max:120'],

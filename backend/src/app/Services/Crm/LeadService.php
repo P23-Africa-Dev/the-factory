@@ -1054,7 +1054,7 @@ class LeadService
 
         $currency = isset($payload['currency_code']) && is_string($payload['currency_code']) && $payload['currency_code'] !== ''
             ? strtoupper($payload['currency_code'])
-            : 'USD';
+            : 'GBP';
 
         return LeadPipeline::query()->create([
             'company_id' => $companyId,
@@ -2277,7 +2277,7 @@ class LeadService
                 [
                     'company_id' => $companyId,
                     'name' => 'Default Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 0,
                     'is_default' => true,
                     'created_at' => now(),
@@ -2286,7 +2286,7 @@ class LeadService
                 [
                     'company_id' => $companyId,
                     'name' => 'Sales Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 1,
                     'is_default' => false,
                     'created_at' => now(),
@@ -2295,7 +2295,7 @@ class LeadService
                 [
                     'company_id' => $companyId,
                     'name' => 'Marketing Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 2,
                     'is_default' => false,
                     'created_at' => now(),
@@ -2564,7 +2564,7 @@ class LeadService
 
         if ($lead->budget_amount === null && isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null) {
             $updates['budget_amount'] = $data['budget_amount'];
-            $updates['budget_currency'] = $this->nullableTrimmed($data['budget_currency'] ?? null) ?? $lead->budget_currency ?? 'USD';
+            $updates['budget_currency'] = $this->nullableTrimmed($data['budget_currency'] ?? null) ?? $lead->budget_currency ?? 'GBP';
         }
 
         $contactsToAdd = [];
@@ -3362,7 +3362,7 @@ class LeadService
                 'status' => $resolvedStatus ?? $status,
                 'priority' => $priority,
                 'budget_amount' => $budgetAmount,
-                'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'USD' : null),
+                'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'GBP' : null),
                 'custom_fields' => $customFields,
                 'row_index' => $rowIndex,
             ],

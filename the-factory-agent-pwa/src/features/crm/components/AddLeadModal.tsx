@@ -334,7 +334,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                     value={currentContact.phone ?? ''}
                     onChange={(val) => updateActiveContact('phone', val)}
                     placeholder=""
-                    defaultCountry="NG"
+                    defaultCountry="GB"
                   />
                 </div>
 

@@ -654,7 +654,7 @@ export function OutreachPreviewModal({
                             value={toPhone}
                             onChange={setToPhone}
                             placeholder="Phone number"
-                            defaultCountry="NG"
+                            defaultCountry="GB"
                             variant="compact"
                           />
                         )}

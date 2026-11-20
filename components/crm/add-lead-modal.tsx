@@ -185,9 +185,9 @@ const PRIORITY_OPTIONS = [
 ] as const;
 
 const CURRENCIES = [
+  { code: "GBP", label: "GBP (£)" },
   { code: "USD", label: "USD ($)" },
   { code: "EUR", label: "EUR (€)" },
-  { code: "GBP", label: "GBP (£)" },
   { code: "NGN", label: "NGN (₦)" },
   { code: "KES", label: "KES (KSh)" },
   { code: "GHS", label: "GHS (GH₵)" },
@@ -278,7 +278,7 @@ export function AddLeadModal({
   );
   const assigneeTouchedRef = useRef(false);
   const [budgetCurrency, setBudgetCurrency] = useState(() =>
-    lead?.budget_currency ?? lead?.budget?.match(/^([A-Z]{3})/)?.[1] ?? "USD"
+    lead?.budget_currency ?? lead?.budget?.match(/^([A-Z]{3})/)?.[1] ?? "GBP"
   );
   const [budgetAmount, setBudgetAmount] = useState(() => {
     if (lead?.budget_amount != null) return String(lead.budget_amount);

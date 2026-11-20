@@ -556,7 +556,7 @@ class CopilotService
 
         if ($this->intentResolver->looksLikeActionRequest($message) && $this->intentResolver->resolveActionToolFromMessage($message, $threadId, $companyId, $userId) === null) {
             if (preg_match('/\b(lead|crm|business)\b/i', $message) === 1) {
-                return ['text' => 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: 080..., Location: Lagos), then I will prepare a confirmation form for you.', 'result' => null];
+                return ['text' => 'I can add that lead to your CRM. Share the business name, phone number, and location (for example: Business Name: Acme Ltd, Phone: +44..., Location: London), then I will prepare a confirmation form for you.', 'result' => null];
             }
 
             if (preg_match('/\bkpi\b/i', $message) === 1) {

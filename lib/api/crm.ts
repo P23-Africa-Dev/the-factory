@@ -343,7 +343,7 @@ export function formatLeadBudgetDisplay(
     if (amount <= 0) {
         return "$ 0";
     }
-    const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "USD";
+    const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "GBP";
     return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 

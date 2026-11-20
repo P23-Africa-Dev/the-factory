@@ -29,7 +29,7 @@ export function CreateZoneModal({
   defaultCountry,
   onCreated,
 }: CreateZoneModalProps) {
-  const [countryCode, setCountryCode] = useState("NG");
+  const [countryCode, setCountryCode] = useState("GB");
   const [stateName, setStateName] = useState("");
   const [lgaName, setLgaName] = useState("");
   const [zoneLevel, setZoneLevel] = useState<"state" | "lga">("lga");

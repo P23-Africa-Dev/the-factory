@@ -6,7 +6,7 @@ namespace App\Support;
 
 final class CurrencyCatalog
 {
-    private const PRIORITY_CODES = ['USD', 'GBP', 'CAD'];
+    private const PRIORITY_CODES = ['GBP', 'USD', 'CAD'];
 
     /**
      * @return array<string, array{name:string, symbol:string}>
@@ -58,18 +58,18 @@ final class CurrencyCatalog
 
     public static function defaultCode(): string
     {
-        if (self::isSupported('USD')) {
-            return 'USD';
+        if (self::isSupported('GBP')) {
+            return 'GBP';
         }
 
-        $configured = strtoupper((string) config('currency.default', 'USD'));
+        $configured = strtoupper((string) config('currency.default', 'GBP'));
         if (self::isSupported($configured)) {
             return $configured;
         }
 
         $codes = self::codes();
 
-        return $codes[0] ?? 'USD';
+        return $codes[0] ?? 'GBP';
     }
 
     public static function isSupported(?string $currency): bool

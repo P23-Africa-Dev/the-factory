@@ -196,7 +196,7 @@ export function resolveDefaultCountryCode(
   countries: CountryOption[],
 ): string {
   if (!organizationCountry) {
-    return "NG";
+    return "GB";
   }
 
   return resolveCountryCode(organizationCountry, countries);

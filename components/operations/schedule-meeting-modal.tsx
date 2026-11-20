@@ -34,11 +34,11 @@ const REMINDER_PRESETS = [
 ] as const;
 
 const COMMON_TIMEZONES = [
-    "Africa/Lagos",
+    "Europe/London",
     "UTC",
+    "Africa/Lagos",
     "Africa/Nairobi",
     "Africa/Cairo",
-    "Europe/London",
     "Europe/Berlin",
     "America/New_York",
     "America/Chicago",
