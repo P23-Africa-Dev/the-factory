@@ -47,9 +47,19 @@ class ElyAgentAdminController extends Controller
         }
 
         $companyIds = $selector->enabledCompanyIds();
+
+        // Selectable list for the rollout picker: real (non-demo) companies.
+        // Demo companies always stay on legacy, so they are left out.
+        $selectableCompanies = Company::query()
+            ->where(static fn ($q) => $q->where('is_demo', false)->orWhereNull('is_demo'))
+            ->orderBy('name')
+            ->limit(2000)
+            ->get(['id', 'name', 'status', 'company_id']);
+
         $companyNames = Company::query()
-            ->whereIn('id', array_unique([...$companyIds, ...($audits?->pluck('company_id')->all() ?? [])]))
-            ->pluck('name', 'id');
+            ->whereIn('id', array_values(array_unique([...$companyIds, ...($audits?->pluck('company_id')->all() ?? [])])))
+            ->pluck('name', 'id')
+            ->union($selectableCompanies->pluck('name', 'id'));
 
         $toolRows = collect($tools->all())->map(static fn ($tool): array => [
             'name' => $tool->name(),
@@ -65,6 +75,7 @@ class ElyAgentAdminController extends Controller
             'canUseTools' => $router->canUseTools(),
             'companyIds' => $companyIds,
             'companyNames' => $companyNames,
+            'selectableCompanies' => $selectableCompanies,
             'audits' => $audits,
             'auditsReady' => $auditsReady,
             'toolRows' => $toolRows,
@@ -80,14 +91,19 @@ class ElyAgentAdminController extends Controller
             abort(403, 'Unauthorized.');
         }
 
-        $validated = $request->validate([
-            'company_ids' => ['nullable', 'string', 'max:2000', 'regex:/^[0-9,\s]*$/'],
+        $request->validate([
+            'company_ids' => ['nullable'],
+            'company_ids.*' => ['integer'],
         ]);
 
+        // Accepts the checkbox list (array) and, for compatibility, a
+        // comma-separated string.
+        $raw = $request->input('company_ids');
+        $parts = is_array($raw) ? $raw : explode(',', (string) $raw);
         $ids = array_values(array_unique(array_filter(array_map(
-            static fn (string $id): int => (int) trim($id),
-            explode(',', (string) ($validated['company_ids'] ?? '')),
-        ))));
+            static fn ($id): int => (int) trim((string) $id),
+            $parts,
+        ), static fn (int $id): bool => $id > 0)));
 
         $unknown = array_diff($ids, Company::query()->whereIn('id', $ids)->pluck('id')->map(static fn ($id): int => (int) $id)->all());
         if ($unknown !== []) {

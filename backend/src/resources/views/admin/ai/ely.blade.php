@@ -65,17 +65,70 @@
             </div>
         @endif
         @if ($canManage)
-            <form method="POST" action="{{ route('admin.ai.ely.rollout') }}" class="row g-2 align-items-end">
+            <form method="POST" action="{{ route('admin.ai.ely.rollout') }}" id="ely-rollout-form">
                 @csrf
-                <div class="col-md-9">
-                    <label class="form-label" style="font-size:.75rem;font-weight:600;color:var(--text-secondary)">Company ids (comma separated)</label>
-                    <input type="text" name="company_ids" class="form-control form-control-sm"
-                        value="{{ old('company_ids', implode(', ', $companyIds)) }}" placeholder="e.g. 12, 48">
+                <label class="form-label" style="font-size:.75rem;font-weight:600;color:var(--text-secondary)">Choose the companies to run on the tool-calling engine</label>
+                <input type="text" id="ely-company-search" class="form-control form-control-sm mb-2"
+                    placeholder="Search companies by name or id…" autocomplete="off">
+                <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:.78rem;color:var(--text-secondary)">
+                    <span><strong id="ely-selected-count">{{ count($companyIds) }}</strong> selected</span>
+                    <button type="button" class="btn btn-link btn-sm p-0" id="ely-clear-selected" style="font-size:.78rem">Clear all</button>
                 </div>
-                <div class="col-md-3 d-flex justify-content-end">
+                <div id="ely-company-list"
+                    style="max-height:280px;overflow:auto;border:1px solid var(--border, rgba(0,0,0,.1));border-radius:10px">
+                    @forelse ($selectableCompanies as $company)
+                        <label class="ely-company-row d-flex align-items-center gap-2 px-3 py-2"
+                            data-name="{{ \Illuminate\Support\Str::lower($company->name) }}" data-id="{{ $company->id }}"
+                            style="cursor:pointer;margin:0;border-bottom:1px solid var(--border, rgba(0,0,0,.06))">
+                            <input type="checkbox" class="form-check-input mt-0 ely-company-checkbox" name="company_ids[]"
+                                value="{{ $company->id }}" {{ in_array($company->id, $companyIds, true) ? 'checked' : '' }}>
+                            <span style="font-size:.85rem">{{ $company->name }}</span>
+                            <span class="ms-auto text-muted" style="font-size:.72rem">#{{ $company->id }}@if ($company->status) · {{ $company->status }}@endif</span>
+                        </label>
+                    @empty
+                        <div class="px-3 py-3 text-muted" style="font-size:.82rem">No companies found.</div>
+                    @endforelse
+                </div>
+                <p id="ely-no-match" class="text-muted mt-2 mb-0" style="font-size:.78rem;display:none">No companies match your search.</p>
+                <div class="d-flex justify-content-end mt-3">
                     <button type="submit" class="btn btn-primary btn-sm px-4">Save rollout</button>
                 </div>
             </form>
+            <script>
+                (function () {
+                    var search = document.getElementById('ely-company-search');
+                    var list = document.getElementById('ely-company-list');
+                    if (!search || !list) return;
+                    var rows = Array.prototype.slice.call(list.querySelectorAll('.ely-company-row'));
+                    var countEl = document.getElementById('ely-selected-count');
+                    var noMatch = document.getElementById('ely-no-match');
+                    var clearBtn = document.getElementById('ely-clear-selected');
+
+                    function updateCount() {
+                        countEl.textContent = String(list.querySelectorAll('.ely-company-checkbox:checked').length);
+                    }
+                    function applyFilter() {
+                        var term = search.value.trim().toLowerCase();
+                        var shown = 0;
+                        rows.forEach(function (row) {
+                            var match = term === '' ||
+                                row.getAttribute('data-name').indexOf(term) !== -1 ||
+                                row.getAttribute('data-id').indexOf(term) !== -1;
+                            row.style.display = match ? 'flex' : 'none';
+                            if (match) shown++;
+                        });
+                        if (noMatch) noMatch.style.display = (rows.length && shown === 0) ? 'block' : 'none';
+                    }
+                    search.addEventListener('input', applyFilter);
+                    list.addEventListener('change', updateCount);
+                    if (clearBtn) {
+                        clearBtn.addEventListener('click', function () {
+                            list.querySelectorAll('.ely-company-checkbox:checked').forEach(function (cb) { cb.checked = false; });
+                            updateCount();
+                        });
+                    }
+                })();
+            </script>
         @else
             <div style="font-size:.82rem;color:var(--text-secondary)">Ask a super admin to change the rollout.</div>
         @endif

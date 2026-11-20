@@ -52,6 +52,47 @@ final class ElyAgentAdminTest extends TestCase
         $this->assertSame([(int) $company->id], app(ElyEngineSelector::class)->enabledCompanyIds());
     }
 
+    public function test_rollout_accepts_a_checkbox_array_of_ids(): void
+    {
+        $a = $this->company();
+        $b = $this->company();
+
+        $this->actingAs($this->admin('super_admin'), 'admin')
+            ->post(route('admin.ai.ely.rollout'), ['company_ids' => [$a->id, $b->id]])
+            ->assertRedirect(route('admin.ai.ely'));
+
+        $this->assertEqualsCanonicalizing([(int) $a->id, (int) $b->id], app(ElyEngineSelector::class)->enabledCompanyIds());
+    }
+
+    public function test_picker_lists_real_companies_as_checkboxes_and_excludes_demo(): void
+    {
+        $real = $this->company();
+        $demo = $this->company();
+        $demo->forceFill(['is_demo' => true])->save();
+
+        $this->actingAs($this->admin('super_admin'), 'admin')
+            ->get(route('admin.ai.ely'))
+            ->assertOk()
+            ->assertSee('Choose the companies')
+            ->assertSee($real->name)
+            ->assertSee('name="company_ids[]"', false)
+            ->assertSee('value="'.$real->id.'"', false)
+            ->assertDontSee('value="'.$demo->id.'"', false);
+    }
+
+    public function test_empty_submit_clears_the_rollout(): void
+    {
+        $company = $this->company();
+        PlatformSetting::query()->create(['key' => ElyEngineSelector::COMPANY_IDS_KEY, 'value' => (string) $company->id]);
+        ElyEngineSelector::forgetCache();
+
+        $this->actingAs($this->admin('super_admin'), 'admin')
+            ->post(route('admin.ai.ely.rollout'), [])
+            ->assertRedirect(route('admin.ai.ely'));
+
+        $this->assertSame([], app(ElyEngineSelector::class)->enabledCompanyIds());
+    }
+
     public function test_unknown_company_ids_are_rejected(): void
     {
         $this->actingAs($this->admin('super_admin'), 'admin')
