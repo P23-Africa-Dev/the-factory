@@ -872,6 +872,16 @@ class LeadService
                     'total_uploads' => (int) $topUploader->total_uploads,
                 ];
             }
+        } elseif ($role === 'agent') {
+            // Agent CRM card is "uploaded by you" — always surface the current
+            // user's avatar even when they have zero uploads yet.
+            $topAgent = [
+                'id' => (int) $user->id,
+                'name' => (string) $user->name,
+                'email' => (string) $user->email,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($user->avatar, $user->gender),
+                'total_uploads' => 0,
+            ];
         }
 
         $recentLeads = (clone $baseQuery)

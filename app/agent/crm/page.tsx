@@ -11,7 +11,7 @@ import { useCrmFilters } from "@/hooks/use-crm-filters";
 /** Toolbar trigger style when its filter is applied (agent pages are outside .se-workspace). */
 const TRIGGER_ACTIVE_CLS = "border-[#2ae9c9] bg-[#ECFDF8] text-[#0B1215] ring-2 ring-[#2ae9c9]/50";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
+import { resolveAvatarSrc } from "@/lib/avatar";
 import { useAgentUploadsOverview, useCrmAssignees, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
@@ -820,14 +820,27 @@ function AgentUploadsCard({
   totalUploadedLeads = 0,
   topAgentAvatarUrl,
   topAgentName,
+  fallbackAvatarUrl,
 }: {
   basePath?: string;
   leadListUrl?: string;
   totalUploadedLeads?: number;
   topAgentAvatarUrl?: string | null;
   topAgentName?: string | null;
+  fallbackAvatarUrl?: string | null;
 }) {
   const router = useRouter();
+  const [imageFailed, setImageFailed] = useState(false);
+  const avatarSrc = resolveAvatarSrc(topAgentAvatarUrl ?? fallbackAvatarUrl);
+  const displayName = topAgentName ?? "you";
+  const initials = displayName === "you"
+    ? "YO"
+    : displayName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("") || "?";
 
   return (
     <div className="bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
@@ -839,16 +852,18 @@ function AgentUploadsCard({
             background: "linear-gradient(135deg, #FD6046 0%, #FFBCAD 100%)",
           }}
         >
-          <div className="w-full h-full rounded-full overflow-hidden bg-[#EEF3F8]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={resolveAvatarSrc(topAgentAvatarUrl)}
-              alt="Agent"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = DEFAULT_AVATAR;
-              }}
-            />
+          <div className="w-full h-full rounded-full overflow-hidden bg-[#EEF3F8] flex items-center justify-center">
+            {!imageFailed ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={avatarSrc}
+                alt={displayName}
+                className="w-full h-full object-cover"
+                onError={() => setImageFailed(true)}
+              />
+            ) : (
+              <span className="text-[18px] font-bold text-[#6B7280]">{initials}</span>
+            )}
           </div>
         </div>
       </div>
@@ -861,7 +876,7 @@ function AgentUploadsCard({
         </div>
         <p className="text-[#6B7280] text-[12px]">
           Uploaded by{" "}
-          <span className="font-bold text-[#0B1215]">{topAgentName ?? "you"}</span>
+          <span className="font-bold text-[#0B1215]">{displayName}</span>
         </p>
         <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
           View Leads
@@ -1228,7 +1243,14 @@ export default function CRMPage() {
             leadListUrl={leadListUrl}
             totalUploadedLeads={agentUploadsOverview?.total_uploaded_leads ?? 0}
             topAgentAvatarUrl={agentUploadsOverview?.top_agent?.avatar_url ?? null}
-            topAgentName={agentUploadsOverview?.top_agent?.name ?? null}
+            topAgentName={
+              agentUploadsOverview?.top_agent?.name
+                ? agentUploadsOverview.top_agent.id === user?.id
+                  ? "you"
+                  : agentUploadsOverview.top_agent.name
+                : "you"
+            }
+            fallbackAvatarUrl={user?.avatar ?? null}
           />
         </div>
 
