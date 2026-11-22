@@ -57,16 +57,17 @@ data:
   VIEW_COMPILED_PATH: "/var/www/html/storage/framework/views"
 
   # ── Storage (DigitalOcean Spaces / S3-compatible) ─────────────────────────────
-  # Bucket: factory23-storage (lon1) — created 2025-07-03
+  # Live catalog + profile avatars: factory23-files-45822258 (lon1).
+  # factory23-storage no longer resolves — do not point AVATAR_* here.
   FILESYSTEM_DISK: "s3"
   AWS_DEFAULT_REGION: "lon1"
-  AWS_BUCKET: "factory23-storage"
+  AWS_BUCKET: "factory23-files-45822258"
   AWS_ENDPOINT: "https://lon1.digitaloceanspaces.com"
-  AWS_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
+  AWS_URL: "https://factory23-files-45822258.lon1.digitaloceanspaces.com"
   AWS_USE_PATH_STYLE_ENDPOINT: "false"
   AVATAR_FILESYSTEM_DISK: "avatars"
   # Browser-facing avatar links — must match direct origin (not .cdn.) unless CDN is enabled.
-  AVATAR_PUBLIC_BASE_URL: "https://factory23-storage.lon1.digitaloceanspaces.com"
+  AVATAR_PUBLIC_BASE_URL: "https://factory23-files-45822258.lon1.digitaloceanspaces.com"
   DRIVE_FILESYSTEM_DISK: "drive"
   DRIVE_DEFAULT_QUOTA_GB: "5"
   INTERNAL_AVATAR_STORAGE_ROOT: "avatar"

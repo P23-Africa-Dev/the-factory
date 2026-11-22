@@ -135,7 +135,7 @@ class MigrateAvatarsToSpacesCommand extends Command
         $this->newLine(2);
         $this->table(
             ['Metric', 'Count'],
-            collect($summary)->map(fn (int $count, string $key) => [str_replace('_', ' ', $key), $count])->values()->all(),
+            collect($summary)->map(fn(int $count, string $key) => [str_replace('_', ' ', $key), $count])->values()->all(),
         );
 
         if ($summary['errors'] > 0) {
@@ -213,6 +213,8 @@ class MigrateAvatarsToSpacesCommand extends Command
     {
         foreach (['male', 'female'] as $gender) {
             Cache::forget(sprintf('internal_onboarding.avatar_manifest.%s', $gender));
+            Cache::forget(sprintf('internal_onboarding.avatar_manifest.v2.%s', $gender));
+            Cache::forget(sprintf('internal_onboarding.avatar_manifest.v3.%s', $gender));
         }
     }
 

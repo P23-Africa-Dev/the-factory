@@ -22,6 +22,7 @@ import { useMeetingAttendeeCandidates } from "@/hooks/use-meeting-attendees";
 import type { MeetingAttendeeCandidate } from "@/lib/api/meeting-attendees";
 import type { CreateMeetingPayload, MeetingItem } from "@/lib/api/meetings";
 import { resolveUserTimezone } from "@/lib/meeting-timezone";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 const REMINDER_PRESETS = [
     { label: "5 minutes before", value: 5 },
@@ -1212,7 +1213,7 @@ export function ScheduleMeetingModal({
                                             <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#EAF2F3] text-[11px] font-bold text-[#094B5C]">
                                                 {candidate.avatar_url ? (
                                                     <Image
-                                                        src={candidate.avatar_url}
+                                                        src={resolveAvatarSrc(candidate.avatar_url)}
                                                         alt={candidate.name}
                                                         fill
                                                         sizes="36px"

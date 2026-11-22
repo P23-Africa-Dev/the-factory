@@ -20,6 +20,7 @@ import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { z } from "zod";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 const onboardingSchema = z
   .object({
@@ -153,7 +154,7 @@ function AvatarPicker({
             >
               {shouldRenderImage ? (
                 <img
-                  src={avatar.url ?? ""}
+                  src={resolveAvatarSrc(avatar.url)}
                   alt={avatar.key}
                   className="h-full w-full object-cover"
                   onError={() =>
@@ -163,11 +164,6 @@ function AvatarPicker({
                       return next;
                     })
                   }
-                />
-              ) : avatar.svg ? (
-                <div
-                  className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-                  dangerouslySetInnerHTML={{ __html: avatar.svg }}
                 />
               ) : (
                 <div className="h-full w-full bg-gray-100" />

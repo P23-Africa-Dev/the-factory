@@ -14,6 +14,7 @@ import {
   type FieldActivityLiveAgent,
 } from "@/store/field-activity-live";
 import { useTrackingStore } from "@/store/tracking";
+import { getSafeAvatarSrc } from "@/lib/avatar";
 
 function mapAgent(dto: FieldActivityLiveAgentDto): FieldActivityLiveAgent {
   const lastLng = dto.last_longitude;
@@ -21,7 +22,7 @@ function mapAgent(dto: FieldActivityLiveAgentDto): FieldActivityLiveAgent {
   return {
     userId: dto.user_id,
     name: dto.name,
-    avatarUrl: dto.avatar_url,
+    avatarUrl: getSafeAvatarSrc(dto.avatar_url),
     sessionId: dto.session.id,
     lastPosition:
       lastLng != null && lastLat != null ? [lastLng, lastLat] : null,

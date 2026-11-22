@@ -5,7 +5,7 @@ import mapboxgl from 'mapbox-gl';
 import { useRouter } from 'next/navigation';
 import { X, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
-import { DEFAULT_AVATAR } from '@/lib/avatar';
+import { getSafeAvatarSrc, resolveAvatarSrc } from '@/lib/avatar';
 import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   useTaskDetail,
@@ -229,7 +229,7 @@ function TaskLocationMap({
         'display:flex;align-items:center;gap:8px;padding:4px 8px;background:rgba(15,23,42,0.86);color:white;border-radius:999px;box-shadow:0 4px 12px rgba(2,6,23,0.35);font-size:11px;font-weight:700;';
 
       const avatar = document.createElement('img');
-      avatar.src = agentAvatar || DEFAULT_AVATAR;
+      avatar.src = resolveAvatarSrc(agentAvatar);
       avatar.alt = agentName;
       avatar.style.cssText =
         'width:22px;height:22px;border-radius:999px;border:2px solid rgba(255,255,255,0.9);object-fit:cover;';
@@ -387,7 +387,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   const descriptionLines = taskDescription.split('\n').filter(Boolean);
   const assignee = detailQuery.data?.assignee;
   const assigneeName = assignee?.name || task.label || 'Unassigned';
-  const assigneeAvatar = assignee?.avatar_url || task.avatar || null;
+  const assigneeAvatar = getSafeAvatarSrc(assignee?.avatar_url || task.avatar || null);
 
   const latitude = detailQuery.data?.latitude ?? null;
   const longitude = detailQuery.data?.longitude ?? null;

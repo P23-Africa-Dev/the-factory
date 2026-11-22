@@ -1,3 +1,4 @@
+import { getSafeAvatarSrc } from "@/lib/avatar";
 import { getAgentInitials } from "@/lib/tracking/map-visualization";
 
 const CLOCK_IN_COLORS = {
@@ -68,9 +69,10 @@ export function createClockInMarkerElement({
     "box-shadow:0 8px 20px rgba(15,23,42,0.18)",
   ].join(";");
 
-  if (avatarUrl) {
+  const resolvedAvatarUrl = getSafeAvatarSrc(avatarUrl);
+  if (resolvedAvatarUrl) {
     const img = document.createElement("img");
-    img.src = avatarUrl;
+    img.src = resolvedAvatarUrl;
     img.alt = agentName;
     img.style.cssText = "width:100%;height:100%;object-fit:cover";
     avatar.appendChild(img);

@@ -8,6 +8,7 @@ import { InlineSelect } from "@/components/payroll/payroll/inline-select";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { listAvatars } from "@/lib/api/internal-onboarding";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 const AVATAR_PAGE_SIZE = 4;
 
@@ -59,7 +60,7 @@ function AgentAvatarGrid({
         >
           {Boolean(avatar.url) && !failedImageKeys.has(avatar.key) ? (
             <img
-              src={avatar.url ?? ""}
+              src={resolveAvatarSrc(avatar.url)}
               alt={avatar.key}
               className="block h-full w-full object-cover"
               onError={() =>
@@ -69,11 +70,6 @@ function AgentAvatarGrid({
                   return next;
                 })
               }
-            />
-          ) : avatar.svg ? (
-            <div
-              className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-              dangerouslySetInnerHTML={{ __html: avatar.svg }}
             />
           ) : (
             <div className="h-full w-full bg-gray-100" />
@@ -209,11 +205,10 @@ export function AgentDetailsModal({
             <p className="text-[11px] text-gray-500 mb-1">Avatar Preview</p>
             <div className="h-16 w-16 rounded-full border border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center">
               {currentAvatar?.url ? (
-                <img src={currentAvatar.url} alt="Selected avatar" className="h-full w-full object-cover" />
-              ) : currentAvatar?.svg ? (
-                <div
-                  className="h-full w-full [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
-                  dangerouslySetInnerHTML={{ __html: currentAvatar.svg }}
+                <img
+                  src={resolveAvatarSrc(currentAvatar.url)}
+                  alt="Selected avatar"
+                  className="h-full w-full object-cover"
                 />
               ) : (
                 <span className="text-[10px] text-gray-400">No avatar</span>

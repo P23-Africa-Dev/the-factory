@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Eye } from "lucide-react";
+import { getSafeAvatarSrc } from "@/lib/avatar";
 
 export type ObserverPerson = {
   id: number | string;
@@ -35,12 +36,13 @@ export function ObserverAvatar({
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const style = { width: size, height: size, fontSize: Math.max(8, Math.round(size * 0.4)) };
+  const resolvedUrl = getSafeAvatarSrc(person.avatar_url);
 
-  if (isRealAvatar(person.avatar_url) && !imageFailed) {
+  if (isRealAvatar(resolvedUrl ?? person.avatar_url) && resolvedUrl && !imageFailed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={person.avatar_url}
+        src={resolvedUrl}
         alt={person.name}
         title={person.name}
         style={style}

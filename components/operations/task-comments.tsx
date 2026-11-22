@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useCreateTaskComment, useTaskComments } from '@/hooks/use-tasks';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import { TASK_COMMENT_MAX_LENGTH, type TaskCommentItem } from '@/lib/api/tasks';
-import { DEFAULT_AVATAR } from '@/lib/avatar';
+import { resolveAvatarSrc } from '@/lib/avatar';
 import { FieldError } from '@/components/ui/field-error';
 import { scrollToFirstError } from '@/lib/forms/scroll-to-first-error';
 
@@ -43,7 +43,7 @@ function CommentRow({ comment }: { comment: TaskCommentItem }) {
     <li className="flex gap-3">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={comment.author?.avatar_url || DEFAULT_AVATAR}
+        src={resolveAvatarSrc(comment.author?.avatar_url)}
         alt=""
         className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
       />

@@ -37,6 +37,7 @@ import { getApiErrorMessage } from "@/lib/api/errors";
 import { isTaskManagerRole } from "@/lib/tasks/board-permissions";
 import Arrow57Deg from "@/assets/images/arrow-57deg.png";
 import { moveCardToColumn } from "@/lib/dnd/board-moves";
+import { resolveAvatarSrc } from "@/lib/avatar";
 
 const STATUS_OPTIONS = ["All", "Pending", "In Progress", "Completed", "Cancelled"];
 
@@ -995,7 +996,9 @@ function mapTaskToDnd(apiTask: BoardTask): DndItem {
     longitude: apiTask.longitude ?? null,
     hasTrackableLocation: hasTrackableTaskLocation(apiTask),
     time: "",
-    avatar: apiTask.assignee?.avatar_url || undefined,
+    avatar: apiTask.assignee?.avatar_url
+      ? resolveAvatarSrc(apiTask.assignee.avatar_url)
+      : undefined,
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
     dueDateIso: apiTask.due_date ?? undefined,

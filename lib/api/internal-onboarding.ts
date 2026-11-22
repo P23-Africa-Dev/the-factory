@@ -170,7 +170,8 @@ export function listAvatars(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  // Listing is URL-only now; keep a generous ceiling for cold starts.
+  const timeout = setTimeout(() => controller.abort(), 20_000);
 
   return fetch(`${API_BASE_URL}/avatars?${params.toString()}`, {
     method: "GET",
@@ -178,6 +179,7 @@ export function listAvatars(
       Accept: "application/json",
     },
     signal: controller.signal,
+    cache: "no-store",
   })
     .then(async (response) => {
       const result = (await response.json()) as AvatarListResponse;

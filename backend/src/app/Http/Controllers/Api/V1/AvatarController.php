@@ -40,9 +40,8 @@ class AvatarController
         }
 
         $avatarPath = "{$this->avatarStorage->avatarRoot()}/{$normalizedGender}";
-        $disk = $this->avatarStorage->disk();
 
-        if (! $disk->exists($avatarPath)) {
+        if (! $this->avatarStorage->disk()->exists($avatarPath)) {
             $manifest = $this->avatarStorage->catalogManifest($normalizedGender);
 
             if ($manifest === []) {
@@ -52,7 +51,9 @@ class AvatarController
             }
         }
 
-        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.%s', $normalizedGender);
+        // Bump cache key when listing strategy changes so old manifests that
+        // inlined multi‑MB SVG bodies are not reused.
+        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.v3.%s', $normalizedGender);
 
         $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use ($normalizedGender): array {
             return $this->avatarStorage->catalogManifest($normalizedGender);
@@ -61,23 +62,15 @@ class AvatarController
         $total = count($manifest);
         $page = array_slice($manifest, $cursor, $limit);
 
-        $avatars = array_map(function (array $item) use ($disk): array {
-            $svgContent = is_string($item['svg'] ?? null) ? $item['svg'] : null;
-            $file = $item['file'] ?? null;
-            $extension = $item['extension'] ?? null;
-
-            if ($svgContent === null && $extension === 'svg' && is_string($file)) {
-                try {
-                    $svgContent = $disk->get($file);
-                } catch (\Throwable) {
-                    // Non-fatal: URL fallback will be used.
-                }
-            }
+        // Serve public URLs only for storage-backed avatars. Pulling SVG bodies
+        // from object storage made list requests exceed the onboarding client timeout.
+        $avatars = array_map(static function (array $item): array {
+            $url = $item['url'] ?? null;
 
             return [
                 'key' => (string) $item['key'],
-                'url' => $item['url'] ?? null,
-                'svg' => $svgContent,
+                'url' => $url,
+                'svg' => $url ? null : (is_string($item['svg'] ?? null) ? $item['svg'] : null),
             ];
         }, $page);
 

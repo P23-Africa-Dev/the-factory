@@ -1,4 +1,5 @@
 import type { LiveTaskState } from "@/types/tracking";
+import { getSafeAvatarSrc } from "@/lib/avatar";
 
 export type VisualTaskState =
     | "in_progress"
@@ -419,7 +420,7 @@ export function updateAgentMarkerElement(
         generic.style.justifyContent = "center";
     };
 
-    const requestedUrl = input.avatarUrl?.trim() ?? "";
+    const requestedUrl = getSafeAvatarSrc(input.avatarUrl)?.trim() ?? "";
 
     const showLoadedImage = () => {
         img.style.display = "block";

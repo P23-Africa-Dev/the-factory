@@ -114,7 +114,15 @@ class AvatarStorageService
             return '/' . $normalizedPath;
         }
 
-        return $baseUrl . '/' . $normalizedPath;
+        $url = $baseUrl . '/' . $normalizedPath;
+
+        // Catalog SVGs were re-encoded in-place (~20KB WebP shells). Bust stale
+        // browser/CDN caches that still hold the old multi‑MB bodies.
+        if (preg_match('#^avatar/(male|female)/[^/]+\.svg$#i', $normalizedPath) === 1) {
+            $url .= (str_contains($url, '?') ? '&' : '?') . 'v=webp192';
+        }
+
+        return $url;
     }
 
     public function url(string $path): string
@@ -155,7 +163,7 @@ class AvatarStorageService
         $candidateKeys = array_values(array_unique(array_filter([
             $avatarValue,
             $avatarFilename,
-        ], static fn ($value): bool => is_string($value) && trim($value) !== '')));
+        ], static fn($value): bool => is_string($value) && trim($value) !== '')));
 
         $candidateGenders = [];
         if ($gender !== null && trim((string) $gender) !== '') {
@@ -231,21 +239,15 @@ class AvatarStorageService
                 }
 
                 $avatarKey = pathinfo($filename, PATHINFO_FILENAME);
-                $entry = [
+                // Listings only need public URLs. Catalog SVGs on Spaces can be
+                // multi‑MB (embedded raster), so never inline their bodies here.
+                $catalog[$gender][$avatarKey] = [
                     'key' => $avatarKey,
                     'svg' => null,
                     'url' => $this->pathToPublicUrl($file),
+                    'extension' => $extension,
+                    'file' => $file,
                 ];
-
-                if ($extension === 'svg') {
-                    try {
-                        $entry['svg'] = $disk->get($file);
-                    } catch (\Throwable) {
-                        // Non-fatal: URL fallback will be used.
-                    }
-                }
-
-                $catalog[$gender][$avatarKey] = $entry;
             }
         }
 
@@ -260,17 +262,17 @@ class AvatarStorageService
             }
 
             foreach ($avatars as $avatarKey => $svg) {
-                if (! isset($catalog[$gender][$avatarKey])) {
-                    $catalog[$gender][$avatarKey] = [
-                        'key' => $avatarKey,
-                        'svg' => $svg,
-                        'url' => $this->pathToPublicUrl("{$basePath}/{$gender}/{$avatarKey}.svg"),
-                    ];
-
+                // Never attach fallback SVG bodies onto Spaces-backed entries —
+                // those files can be multi‑MB and must stay URL-only.
+                if (isset($catalog[$gender][$avatarKey])) {
                     continue;
                 }
 
-                $catalog[$gender][$avatarKey]['svg'] = $svg;
+                $catalog[$gender][$avatarKey] = [
+                    'key' => $avatarKey,
+                    'svg' => $svg,
+                    'url' => $this->pathToPublicUrl("{$basePath}/{$gender}/{$avatarKey}.svg"),
+                ];
             }
         }
 
@@ -347,22 +349,24 @@ class AvatarStorageService
         $manifest = [];
 
         foreach ($items as $avatarKey => $entry) {
-            $extension = 'png';
-            if (is_string($entry['svg'] ?? null) && ($entry['url'] ?? null) === null) {
-                $extension = 'svg';
+            $extension = strtolower((string) ($entry['extension'] ?? ''));
+            if ($extension === '') {
+                $extension = is_string($entry['svg'] ?? null) ? 'svg' : 'png';
             }
 
-            $file = null;
-            if (($entry['url'] ?? null) !== null) {
-                $file = "{$this->avatarRoot()}/{$gender}/{$avatarKey}.{$extension}";
-            }
+            $file = is_string($entry['file'] ?? null) && $entry['file'] !== ''
+                ? $entry['file']
+                : (($entry['url'] ?? null) !== null
+                    ? "{$this->avatarRoot()}/{$gender}/{$avatarKey}.{$extension}"
+                    : null);
 
             $manifest[] = [
-                'key' => $avatarKey,
+                'key' => (string) ($entry['key'] ?? $avatarKey),
                 'url' => $entry['url'] ?? null,
                 'file' => $file,
                 'extension' => $extension,
-                'svg' => $entry['svg'] ?? null,
+                // Prefer URL delivery; keep config-fallback SVG only when no URL.
+                'svg' => ($entry['url'] ?? null) ? null : ($entry['svg'] ?? null),
             ];
         }
 
