@@ -215,6 +215,7 @@ class MigrateAvatarsToSpacesCommand extends Command
             Cache::forget(sprintf('internal_onboarding.avatar_manifest.%s', $gender));
             Cache::forget(sprintf('internal_onboarding.avatar_manifest.v2.%s', $gender));
             Cache::forget(sprintf('internal_onboarding.avatar_manifest.v3.%s', $gender));
+            Cache::forget(sprintf('internal_onboarding.avatar_manifest.v4.%s', $gender));
         }
     }
 

@@ -39,25 +39,23 @@ class AvatarController
             ]);
         }
 
-        $avatarPath = "{$this->avatarStorage->avatarRoot()}/{$normalizedGender}";
+        // Bump cache key when listing strategy changes so old manifests that
+        // inlined multi‑MB SVG bodies / blank webp-in-svg URLs are not reused.
+        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.v4.%s', $normalizedGender);
 
-        if (! $this->avatarStorage->disk()->exists($avatarPath)) {
+        try {
+            $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use ($normalizedGender): array {
+                return $this->avatarStorage->catalogManifest($normalizedGender);
+            });
+        } catch (\Throwable) {
             $manifest = $this->avatarStorage->catalogManifest($normalizedGender);
-
-            if ($manifest === []) {
-                throw ValidationException::withMessages([
-                    'gender' => ['No avatars available for this gender.'],
-                ]);
-            }
         }
 
-        // Bump cache key when listing strategy changes so old manifests that
-        // inlined multi‑MB SVG bodies are not reused.
-        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.v3.%s', $normalizedGender);
-
-        $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use ($normalizedGender): array {
-            return $this->avatarStorage->catalogManifest($normalizedGender);
-        });
+        if ($manifest === []) {
+            throw ValidationException::withMessages([
+                'gender' => ['No avatars available for this gender.'],
+            ]);
+        }
 
         $total = count($manifest);
         $page = array_slice($manifest, $cursor, $limit);
@@ -70,7 +68,7 @@ class AvatarController
             return [
                 'key' => (string) $item['key'],
                 'url' => $url,
-                'svg' => $url ? null : (is_string($item['svg'] ?? null) ? $item['svg'] : null),
+                'svg' => null,
             ];
         }, $page);
 

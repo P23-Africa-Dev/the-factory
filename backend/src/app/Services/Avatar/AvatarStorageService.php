@@ -116,10 +116,9 @@ class AvatarStorageService
 
         $url = $baseUrl . '/' . $normalizedPath;
 
-        // Catalog SVGs were re-encoded in-place (~20KB WebP shells). Bust stale
-        // browser/CDN caches that still hold the old multi‑MB bodies.
-        if (preg_match('#^avatar/(male|female)/[^/]+\.svg$#i', $normalizedPath) === 1) {
-            $url .= (str_contains($url, '?') ? '&' : '?') . 'v=webp192';
+        // Bust stale browser/CDN caches after catalog re-encodes.
+        if (preg_match('#^avatar/(male|female)/[^/]+\.(svg|png|webp)$#i', $normalizedPath) === 1) {
+            $url .= (str_contains($url, '?') ? '&' : '?') . 'v=png192';
         }
 
         return $url;
@@ -148,6 +147,14 @@ class AvatarStorageService
         }
 
         if (str_starts_with($avatarValue, '/') || preg_match('/^https?:\/\//i', $avatarValue) === 1) {
+            // Stored absolute catalog SVG URLs must resolve to the PNG objects
+            // browsers can actually paint inside <img>.
+            if (preg_match('#^(https?://[^/]+)?(/?avatar/(male|female)/[^/]+)\.svg(\?.*)?$#i', $avatarValue, $matches) === 1) {
+                $path = ltrim($matches[2], '/') . '.png';
+
+                return $this->pathToPublicUrl($path);
+            }
+
             return $avatarValue;
         }
 
@@ -171,7 +178,7 @@ class AvatarStorageService
         }
         $candidateGenders = array_values(array_unique(array_filter(array_merge($candidateGenders, ['male', 'female']))));
 
-        $candidateExtensions = ['png', 'svg'];
+        $candidateExtensions = ['png', 'webp', 'svg', 'jpg', 'jpeg'];
         if ($avatarExtension !== '' && in_array($avatarExtension, $candidateExtensions, true)) {
             array_unshift($candidateExtensions, $avatarExtension);
             $candidateExtensions = array_values(array_unique($candidateExtensions));
@@ -192,6 +199,8 @@ class AvatarStorageService
         $preferredGender = $candidateGenders[0] ?? 'male';
         $preferredKey = $candidateKeys[0] ?? $avatarValue;
 
+        // Prefer PNG: catalog objects are public-read and browser-safe. Do not
+        // depend on exists() here — Spaces credential blips must not 404 avatars.
         return $this->pathToPublicUrl("{$avatarRoot}/{$preferredGender}/{$preferredKey}.png");
     }
 
@@ -222,12 +231,16 @@ class AvatarStorageService
 
         foreach (['male', 'female'] as $gender) {
             $genderPath = "{$basePath}/{$gender}";
+            $files = [];
 
-            if (! $this->safeExists($genderPath)) {
-                continue;
+            try {
+                if ($this->safeExists($genderPath)) {
+                    $files = $disk->files($genderPath);
+                }
+            } catch (\Throwable) {
+                $files = [];
             }
 
-            $files = $disk->files($genderPath);
             sort($files);
 
             foreach ($files as $file) {
@@ -239,15 +252,40 @@ class AvatarStorageService
                 }
 
                 $avatarKey = pathinfo($filename, PATHINFO_FILENAME);
-                // Listings only need public URLs. Catalog SVGs on Spaces can be
-                // multi‑MB (embedded raster), so never inline their bodies here.
+                // Prefer PNG entries when both png+svg exist for the same key.
+                if (
+                    isset($catalog[$gender][$avatarKey])
+                    && ($catalog[$gender][$avatarKey]['extension'] ?? '') === 'png'
+                    && $extension !== 'png'
+                ) {
+                    continue;
+                }
+
+                // Listings only need public URLs — never inline catalog bodies.
+                $pngPath = "{$basePath}/{$gender}/{$avatarKey}.png";
                 $catalog[$gender][$avatarKey] = [
                     'key' => $avatarKey,
                     'svg' => null,
-                    'url' => $this->pathToPublicUrl($file),
-                    'extension' => $extension,
-                    'file' => $file,
+                    'url' => $this->pathToPublicUrl($pngPath),
+                    'extension' => 'png',
+                    'file' => $pngPath,
                 ];
+            }
+
+            // Spaces list can fail (credential blip) while objects remain public.
+            // Synthesize the known catalog so onboarding/profile pickers never empty out.
+            if ($catalog[$gender] === []) {
+                for ($i = 1; $i <= 16; $i++) {
+                    $avatarKey = "avatar_{$i}";
+                    $file = "{$basePath}/{$gender}/{$avatarKey}.png";
+                    $catalog[$gender][$avatarKey] = [
+                        'key' => $avatarKey,
+                        'svg' => null,
+                        'url' => $this->pathToPublicUrl($file),
+                        'extension' => 'png',
+                        'file' => $file,
+                    ];
+                }
             }
         }
 

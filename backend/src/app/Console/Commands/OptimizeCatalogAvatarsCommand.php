@@ -272,6 +272,7 @@ class OptimizeCatalogAvatarsCommand extends Command
             Cache::forget("internal_onboarding.avatar_manifest.{$gender}");
             Cache::forget("internal_onboarding.avatar_manifest.v2.{$gender}");
             Cache::forget("internal_onboarding.avatar_manifest.v3.{$gender}");
+            Cache::forget("internal_onboarding.avatar_manifest.v4.{$gender}");
         }
     }
 }

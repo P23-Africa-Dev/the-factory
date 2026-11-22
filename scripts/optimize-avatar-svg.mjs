@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Shrink catalog avatar SVGs that embed huge base64 PNGs.
- * Reads SVG from stdin (or --file), writes optimized SVG to stdout.
+ * Shrink catalog avatar SVGs that embed huge base64 rasters.
+ * Outputs a tiny SVG shell with an embedded PNG (not WebP) so <img src>
+ * rendering works in all major browsers.
  *
  * Usage:
  *   node scripts/optimize-avatar-svg.mjs --file path.svg > out.svg
- *   cat path.svg | node scripts/optimize-avatar-svg.mjs > out.svg
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +27,6 @@ function parseArgs(argv) {
 }
 
 function extractEmbeddedImage(svg) {
-  // Allow truncated downloads where the closing quote never arrived.
   const match = svg.match(
     /(?:xlink:href|href)="data:image\/([a-zA-Z0-9+.-]+);base64,([A-Za-z0-9+/=\r\n]+)/,
   );
@@ -40,50 +39,51 @@ function extractEmbeddedImage(svg) {
   };
 }
 
-function wrapAsSvg(webpBase64, size) {
-  // Tiny SVG shell; browsers and <img src> render this fine.
+function wrapAsSvg(pngBase64, size) {
+  // PNG-in-SVG is required: WebP-in-SVG is blank when used as <img src>.
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`,
-    `<image width="${size}" height="${size}" href="data:image/webp;base64,${webpBase64}" xlink:href="data:image/webp;base64,${webpBase64}"/>`,
+    `<image width="${size}" height="${size}" href="data:image/png;base64,${pngBase64}" xlink:href="data:image/png;base64,${pngBase64}"/>`,
     `</svg>`,
     ``,
   ].join("");
 }
 
+async function rasterizeToPng(input, size, quality) {
+  return sharp(input, { failOn: "none" })
+    .resize(size, size, { fit: "cover" })
+    .png({ compressionLevel: 8, quality })
+    .toBuffer();
+}
+
 async function optimizeSvg(svg, { size, quality }) {
   const embedded = extractEmbeddedImage(svg);
   if (!embedded) {
-    // Already a real vector SVG (or unknown) — leave unchanged if small enough.
     if (Buffer.byteLength(svg, "utf8") < 80_000) {
       return { svg, skipped: true, reason: "no-embedded-raster" };
     }
-    // Rasterize oversized SVG as a last resort.
-    const webp = await sharp(Buffer.from(svg, "utf8"))
-      .resize(size, size, { fit: "cover" })
-      .webp({ quality })
-      .toBuffer();
-    return {
-      svg: wrapAsSvg(webp.toString("base64"), size),
-      skipped: false,
-      before: Buffer.byteLength(svg, "utf8"),
-      after: null,
-      rasterBytes: webp.length,
-    };
-  }
-
-  try {
-    const webp = await sharp(embedded.buffer, { failOn: "none" })
-      .resize(size, size, { fit: "cover" })
-      .webp({ quality })
-      .toBuffer();
-
-    const out = wrapAsSvg(webp.toString("base64"), size);
+    const png = await rasterizeToPng(Buffer.from(svg, "utf8"), size, quality);
+    const out = wrapAsSvg(png.toString("base64"), size);
     return {
       svg: out,
       skipped: false,
       before: Buffer.byteLength(svg, "utf8"),
       after: Buffer.byteLength(out, "utf8"),
-      rasterBytes: webp.length,
+      rasterBytes: png.length,
+      png,
+    };
+  }
+
+  try {
+    const png = await rasterizeToPng(embedded.buffer, size, quality);
+    const out = wrapAsSvg(png.toString("base64"), size);
+    return {
+      svg: out,
+      skipped: false,
+      before: Buffer.byteLength(svg, "utf8"),
+      after: Buffer.byteLength(out, "utf8"),
+      rasterBytes: png.length,
+      png,
     };
   } catch (err) {
     return {
