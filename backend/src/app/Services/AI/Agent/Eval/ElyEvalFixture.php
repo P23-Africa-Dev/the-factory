@@ -10,6 +10,7 @@ use App\Models\Lead;
 use App\Models\LeadPipeline;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
@@ -102,11 +103,16 @@ class ElyEvalFixture
 
     private function member(Company $company, string $role, string $name): User
     {
-        $user = User::factory()->createOne([
+        // Built directly, not with User::factory(): factories need Faker, which
+        // production installs leave out, and `ely:eval` must run there too.
+        $user = new User;
+        $user->forceFill([
             'name' => $name,
             'email' => Str::slug($name).'.'.Str::lower(Str::random(6)).'@eval.test',
+            'email_verified_at' => now(),
+            'password' => Hash::make(Str::random(32)),
             'is_active' => true,
-        ]);
+        ])->save();
         $company->users()->attach($user->id, ['role' => $role, 'joined_at' => now()]);
         // Team members created through onboarding carry their role here too.
         $user->forceFill(['internal_role' => $role])->save();
