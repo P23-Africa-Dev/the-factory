@@ -200,6 +200,13 @@ export const useTrackingWebSocket = (): void => {
             message: notifData.message as string,
             is_in_app_visible: notifData.is_in_app_visible as boolean,
             action_url: (notifData.action_url as string | null) ?? null,
+            action_route: (notifData.action_route as string | null) ?? null,
+            reference_type: (notifData.reference_type as string | null) ?? null,
+            reference_id: (notifData.reference_id as number | null) ?? null,
+            metadata:
+              notifData.metadata && typeof notifData.metadata === 'object'
+                ? (notifData.metadata as Record<string, unknown>)
+                : null,
           });
           queryClient.invalidateQueries({ queryKey: ['notifications', 'list'] });
           break;

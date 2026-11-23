@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
   notification: {} as AppNotification,
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
+// Manager session: every destination must live under /manager (the proxy bounces anything else).
+vi.mock('@/session/sessionStore', () => ({
+  readSession: () => ({ token: 't', app_mode: 'manager', manager_role: 'admin', user: null }),
+}));
 vi.mock('./queries', () => ({
   useNotifications: () => ({ data: { pages: [{ items: [mocks.notification] }] }, refetch: mocks.refetch }),
   useUnreadCount: () => ({ count: 1, refetch: mocks.refetch }),
@@ -45,5 +49,5 @@ it('preserves task notification routing', () => {
   Object.assign(mocks.notification, { type: 'task.created', category: 'task', actionUrl: '/tasks/7' });
   render(React.createElement(NotificationPanel, { open: true, onClose: mocks.close }));
   fireEvent.click(screen.getByText('New CRM lead created'));
-  expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/manager/tasks');
+  expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/manager/task/7');
 });
