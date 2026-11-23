@@ -2086,8 +2086,11 @@ class ReadToolRegistry
             $assignee = $kpi->relationLoaded('assignee') ? $kpi->assignee : $kpi->assignee()->first();
 
             return [
+                // kpis.update / kpis.set_status / kpis.delete need the id.
+                'id' => (int) $kpi->id,
                 'name' => (string) $kpi->name,
                 'target_value' => (string) $kpi->target_value,
+                'priority' => $kpi->priority?->value ?? (string) $kpi->priority,
                 'status' => $kpi->status?->value ?? (string) $kpi->status,
                 'start_date' => optional($kpi->start_date)?->toDateString(),
                 'end_date' => optional($kpi->end_date)?->toDateString(),

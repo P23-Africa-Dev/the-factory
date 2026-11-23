@@ -27,6 +27,7 @@ final class LegacyActionTool implements ElyTool
      * @param  array<string, mixed>  $schema
      * @param  array<string, string>  $scopedFields  field => ScopedResolver kind
      * @param  ToolRisk|Closure(array<string, mixed>, ToolContext): ToolRisk  $risk
+     * @param  array<int, string>|null  $roles  overrides the legacy ToolPolicyService role list for the agent engine
      */
     public function __construct(
         private readonly string $name,
@@ -39,6 +40,7 @@ final class LegacyActionTool implements ElyTool
         private readonly ToolPolicyService $policy,
         private readonly ScopedResolver $scopedResolver,
         private readonly LegacyArgNormalizer $normalizer,
+        private readonly ?array $roles = null,
     ) {}
 
     public function name(): string
@@ -68,6 +70,10 @@ final class LegacyActionTool implements ElyTool
 
     public function allowedFor(string $role): bool
     {
+        if ($this->roles !== null) {
+            return in_array($role, $this->roles, true);
+        }
+
         return $this->policy->canUseTool($role, $this->name);
     }
 
