@@ -7,6 +7,7 @@ namespace App\Services\AI\Agent\Eval;
 use App\Models\ElyActionAudit;
 use App\Models\ElyMessage;
 use App\Models\ElyPendingAction;
+use App\Services\AI\Agent\Attachments\ChatAttachmentStore;
 use App\Services\AI\Agent\ElyAgent;
 use App\Services\AI\Agent\Tools\ToolContext;
 use App\Services\AI\Agent\Tools\ToolKind;
@@ -65,12 +66,26 @@ class ElyEvalRunner
         Bus::fake();
 
         $started = microtime(true);
+        $attachmentId = null;
         DB::beginTransaction();
 
         try {
             $seed = $this->fixture->seed();
             $user = $seed['users'][(string) ($case['role'] ?? 'admin')] ?? $seed['users']['admin'];
             $role = in_array($case['role'] ?? 'admin', ['agent', 'other_agent'], true) ? 'agent' : (string) ($case['role'] ?? 'admin');
+
+            // Cases that say a file is attached get a small lead CSV owned by
+            // the case's user. It lives outside the database, so it is
+            // removed in finally rather than by the rollback.
+            if (str_contains((string) json_encode($case['page'] ?? []), '{attachment}')) {
+                $attachmentId = app(ChatAttachmentStore::class)->putContents(
+                    'leads.csv',
+                    "Name,Phone,Location\nPalm Mart,+2348022222222,Ajah\nBright Pharmacy,,Ikeja\nCedar Foods,+2348033333333,Surulere\n",
+                    (int) $seed['company']->id,
+                    (int) $user->id,
+                )['id'];
+                $seed['attachment'] = $attachmentId;
+            }
 
             $message = $this->fill((string) $case['message'], $seed);
             $page = [];
@@ -104,6 +119,9 @@ class ElyEvalRunner
             $failures = ['exception: '.$e->getMessage()];
         } finally {
             DB::rollBack();
+            if ($attachmentId !== null) {
+                app(ChatAttachmentStore::class)->forget($attachmentId);
+            }
         }
 
         return [
@@ -268,6 +286,9 @@ class ElyEvalRunner
             '{task}' => (string) $seed['task']->id,
             '{kpi}' => (string) $seed['kpi']->id,
             '{foreign_lead}' => (string) $seed['foreign_lead']->id,
+            '{zone}' => isset($seed['zone']) ? (string) $seed['zone']->id : '',
+            '{reassignment}' => isset($seed['reassignment']) ? (string) $seed['reassignment']->id : '',
+            '{attachment}' => (string) ($seed['attachment'] ?? ''),
         ];
         foreach ($seed['leads'] as $key => $lead) {
             $map['{lead:'.$key.'}'] = (string) $lead->id;

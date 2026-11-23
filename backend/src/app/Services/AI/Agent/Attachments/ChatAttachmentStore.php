@@ -44,19 +44,38 @@ class ChatAttachmentStore
      */
     public function put(UploadedFile $file, int $companyId, int $userId): array
     {
+        return $this->putContents($file->getClientOriginalName(), (string) file_get_contents($file->getRealPath()), $companyId, $userId);
+    }
+
+    /**
+     * Store CSV text as an attachment (used by uploads and the eval fixture).
+     *
+     * @return array{id: string, name: string, rows: int}
+     */
+    public function putContents(string $name, string $csv, int $companyId, int $userId): array
+    {
         $id = (string) Str::ulid();
         $path = "ely-attachments/{$companyId}/{$id}.csv";
-        Storage::disk('local')->put($path, (string) file_get_contents($file->getRealPath()));
+        Storage::disk('local')->put($path, $csv);
 
         $meta = [
             'company_id' => $companyId,
             'user_id' => $userId,
             'path' => $path,
-            'name' => mb_substr($file->getClientOriginalName(), 0, 180),
+            'name' => mb_substr($name, 0, 180),
         ];
         Cache::put($this->key($id), $meta, now()->addHours(self::TTL_HOURS));
 
         return ['id' => $id, 'name' => $meta['name'], 'rows' => count($this->parse($path))];
+    }
+
+    /** Remove an attachment and its file now instead of waiting for it to expire. */
+    public function forget(string $id): void
+    {
+        $meta = Cache::pull($this->key($id));
+        if (is_array($meta) && is_string($meta['path'] ?? null)) {
+            Storage::disk('local')->delete($meta['path']);
+        }
     }
 
     /**

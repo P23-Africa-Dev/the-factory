@@ -200,8 +200,11 @@ final class ElyAgentEngineTest extends TestCase
         $this->chat($agent, $company, 'Notify every agent that I am late')->assertOk();
 
         $this->assertNotContains('notifications.send', $this->model->offeredTools(0));
-        $this->assertNotContains('tasks.create', $this->model->offeredTools(0));
+        $this->assertNotContains('kpis.create', $this->model->offeredTools(0));
+        $this->assertNotContains('tasks.reassign', $this->model->offeredTools(0));
         $this->assertContains('crm.create_lead', $this->model->offeredTools(0));
+        // agents create tasks for themselves (TaskService::createSelf)
+        $this->assertContains('tasks.create', $this->model->offeredTools(0));
 
         $toolMessage = collect($this->model->requests[1]->messages)->firstWhere('role', 'tool');
         $this->assertTrue($toolMessage->isError);
