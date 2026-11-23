@@ -136,7 +136,7 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
                 return (
                   <div
                     key={userId}
-                    onClick={() => router.push(`/field-activity/journeys?userId=${userId}`)}
+                    onClick={() => router.push(`/manager/field-activity/journeys?userId=${userId}`)}
                     className="p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 flex items-center justify-between gap-3 cursor-pointer transition-all"
                   >
                     <div className="flex items-center gap-3 min-w-0">

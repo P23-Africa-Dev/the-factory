@@ -385,7 +385,7 @@ function JourneyHistoryContent(): React.ReactElement {
 
                       <div className="flex justify-end">
                         <Link
-                          href={`/field-activity/journeys/${journey.id}`}
+                          href={`/manager/field-activity/journeys/${journey.id}`}
                           className="w-full text-center py-2 rounded-xl bg-[#7BB6B8] hover:bg-[#7BB6B8]/90 text-white text-xs font-bold transition-all shadow-sm block"
                         >
                           View Journey Map

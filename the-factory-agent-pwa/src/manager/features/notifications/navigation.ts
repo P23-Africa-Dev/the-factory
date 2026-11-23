@@ -15,13 +15,13 @@ export function useNotificationNavigation() {
         notification.referenceType?.includes('Lead') ? notification.referenceId : null
       );
       if (leadId != null && /^[1-9]\d*$/.test(String(leadId))) {
-        router.push(`/crm/leads/${leadId}`);
+        router.push(`/manager/crm/leads/${leadId}`);
         return;
       }
     }
 
     if (notification.actionUrl) {
-      router.push(resolveAgentDeepLink(notification.actionUrl));
+      router.push(resolveAgentDeepLink(notification.actionUrl, { mode: 'manager' }));
       return;
     }
 
@@ -36,7 +36,7 @@ export function useNotificationNavigation() {
       }
     }
 
-    router.push('/');
+    router.push('/manager');
   };
 
   return { navigateToNotification };
@@ -44,19 +44,19 @@ export function useNotificationNavigation() {
 
 function resolveReferenceType(type: string, id: number): string | null {
   if (type.includes('Task')) {
-    return `/task/${id}`;
+    return `/manager/task/${id}`;
   }
   if (type.includes('Meeting')) {
-    return `/meetings/${id}`;
+    return `/manager/meetings/${id}`;
   }
   if (type.includes('Lead') || type.includes('Crm')) {
-    return `/crm/leads/${id}`;
+    return `/manager/crm/leads/${id}`;
   }
   if (type.includes('Attendance')) {
-    return '/';
+    return '/manager';
   }
   if (type.includes('FieldActivity') || type.includes('FieldStop')) {
-    return '/field-activity';
+    return '/manager/field-activity';
   }
   return null;
 }

@@ -2,12 +2,16 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Loader2, WifiOff } from 'lucide-react';
 import { useOfflineSyncStatus } from '@/lib/offline/useOfflineSyncStatus';
+import { isManagerPath } from '@/session/appMode';
 
 export function OfflineSyncBanner(): React.ReactElement | null {
   const { isOffline, isSyncing, showingCachedData, stats, totalPending } = useOfflineSyncStatus();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const pathname = usePathname();
+  const syncBase = pathname && isManagerPath(pathname) ? '/manager/sync' : '/sync';
 
   const shouldShow = isOffline || isSyncing || showingCachedData;
   if (!shouldShow) return null;
@@ -77,14 +81,14 @@ export function OfflineSyncBanner(): React.ReactElement | null {
           ) : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <Link
-              href="/sync/queue"
+              href={`${syncBase}/queue`}
               className="inline-block text-[11px] font-semibold text-[#75ADAF] underline"
             >
               View sync queue
             </Link>
             {stats.pendingConflicts > 0 ? (
               <Link
-                href="/sync/conflicts"
+                href={`${syncBase}/conflicts`}
                 className="inline-block text-[11px] font-semibold text-[#75ADAF] underline"
               >
                 Resolve conflicts

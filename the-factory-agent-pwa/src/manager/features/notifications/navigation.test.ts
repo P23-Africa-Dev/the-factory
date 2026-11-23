@@ -36,7 +36,7 @@ it.each([
   Object.assign(mocks.notification, overrides);
   render(React.createElement(NotificationPanel, { open: true, onClose: mocks.close }));
   fireEvent.click(screen.getByText('New CRM lead created'));
-  expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/crm/leads/42');
+  expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/manager/crm/leads/42');
   expect(mocks.markRead).toHaveBeenCalledWith([1]);
   expect(mocks.close).toHaveBeenCalledOnce();
 });
@@ -45,5 +45,5 @@ it('preserves task notification routing', () => {
   Object.assign(mocks.notification, { type: 'task.created', category: 'task', actionUrl: '/tasks/7' });
   render(React.createElement(NotificationPanel, { open: true, onClose: mocks.close }));
   fireEvent.click(screen.getByText('New CRM lead created'));
-  expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/task/7');
+  expect(mocks.push).toHaveBeenCalledExactlyOnceWith('/manager/tasks');
 });

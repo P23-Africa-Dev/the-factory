@@ -17,8 +17,8 @@ export function useTaskNavigation() {
   const router = useRouter();
 
   return {
-    goToTaskList: () => router.replace('/'),
-    goToTasksList: () => router.push('/tasks'),
+    goToTaskList: () => router.replace('/manager'),
+    goToTasksList: () => router.push('/manager/tasks'),
     goToMapScreen: (dest?: MapDestinationParams) => {
       if (dest) {
         const queryParams = new URLSearchParams({
@@ -27,20 +27,20 @@ export function useTaskNavigation() {
           destLat: String(dest.latitude),
           destLng: String(dest.longitude),
         });
-        router.push(`/map?${queryParams.toString()}`);
+        router.push(`/manager/map?${queryParams.toString()}`);
       } else {
-        router.push('/map');
+        router.push('/manager/map');
       }
     },
     goToTaskDetail: (id: string) =>
-      router.push(`/task/${id}`),
+      router.push(`/manager/task/${id}`),
     /** Fresh task start — permission gate + POST /start */
     goToTracking: (id: string) =>
-      router.push(`/task/${id}/tracking`),
+      router.push(`/manager/task/${id}/tracking`),
     /** Active task resume — open map directly (skip tracking gate page) */
     goToContinueTracking: (id: string) =>
-      router.push(`/map?taskId=${id}`),
+      router.push(`/manager/map?taskId=${id}`),
     goToTaskComplete: (id: string) =>
-      router.replace(`/task/${id}/complete`),
+      router.replace(`/manager/task/${id}/complete`),
   };
 }

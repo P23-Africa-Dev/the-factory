@@ -73,7 +73,7 @@ export default function ManagerTaskDetailScreen() {
     if (!task) return;
     const qs = new URLSearchParams({ taskId: task.id });
     if (task.assignedAgentId) qs.set('agentId', String(task.assignedAgentId));
-    router.push(`/map?${qs.toString()}`);
+    router.push(`/manager/map?${qs.toString()}`);
   }, [task, router]);
 
   const handleStatusChange = useCallback(
