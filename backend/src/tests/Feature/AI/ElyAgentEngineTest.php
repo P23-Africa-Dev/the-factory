@@ -331,6 +331,70 @@ final class ElyAgentEngineTest extends TestCase
             ->assertJsonMissing(['thread_id' => $threadId]);
     }
 
+    public function test_existing_confirm_cards_work_with_the_new_engine(): void
+    {
+        [$company, $admin, , $agent] = $this->seedCompany();
+
+        $this->model->callsTools([['notifications.send', [
+            'title' => 'Team update',
+            'message' => 'Please submit your visit photos today.',
+            'user_ids' => [$agent->id],
+            'delivery_types' => ['in_app'],
+        ]]])->answers('Ready. Review and confirm below.');
+
+        $threadId = (string) $this->chat($admin, $company, 'Tell Ada to submit her photos')->json('data.thread_id');
+
+        // The older confirm card re-sends the prompt with action_confirmed and the edited fields.
+        $this->actingAs($admin)->postJson('/api/v1/copilot/chat', [
+            'company_id' => $company->id,
+            'thread_id' => $threadId,
+            'message' => 'Tell Ada to submit her photos',
+            'action_confirmed' => true,
+            'action_args' => ['title' => 'Photos due today'],
+        ])->assertOk()->assertJsonPath('data.response.payload.executed', true);
+
+        $this->assertSame('Photos due today', AppNotification::query()->value('title'));
+        // Confirming needs no extra model call.
+        $this->assertCount(2, $this->model->requests);
+    }
+
+    public function test_confirm_with_nothing_waiting_does_not_start_a_new_request(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+
+        $this->actingAs($admin)->postJson('/api/v1/copilot/chat', [
+            'company_id' => $company->id,
+            'message' => 'Confirm action: notifications.send',
+            'action_confirmed' => true,
+            'action_args' => ['title' => 'Old card'],
+        ])->assertOk()->assertJsonPath('data.response.payload.nothing_to_confirm', true);
+
+        $this->assertCount(0, $this->model->requests);
+        $this->assertSame(0, AppNotification::query()->count());
+    }
+
+    public function test_plan_my_day_receives_the_users_location(): void
+    {
+        [$company, , , $agent] = $this->seedCompany();
+
+        $this->mock(\App\Services\AI\Planning\DailyPlanningService::class, function ($mock): void {
+            $mock->shouldReceive('buildPlan')
+                ->once()
+                ->withArgs(static fn ($user, $companyId, array $args): bool => ($args['latitude'] ?? null) === 6.45
+                    && ($args['longitude'] ?? null) === 3.39
+                    && ($args['focus'] ?? null) === 'visits')
+                ->andReturn(['tool' => 'planning.daily', 'summary' => 'Your plan is ready.', 'payload' => [], 'sources' => ['planning.daily']]);
+        });
+
+        $this->model->callsTools([['planning.daily', []]])->answers('Here is your plan.');
+
+        $this->actingAs($agent)->postJson('/api/v1/copilot/chat', [
+            'company_id' => $company->id,
+            'message' => "Plan today's priorities",
+            'context' => ['latitude' => 6.45, 'longitude' => 3.39, 'focus' => 'visits'],
+        ])->assertOk()->assertJsonPath('data.response.content', 'Here is your plan.');
+    }
+
     public function test_legacy_engine_is_used_when_agent_is_off(): void
     {
         config(['ely.agent.engine' => 'legacy']);

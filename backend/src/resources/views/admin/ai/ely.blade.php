@@ -24,8 +24,11 @@
         <div class="fw-bold mb-2" style="font-size:1rem">Tool-calling engine</div>
         <div class="row g-3" style="font-size:.85rem">
             <div class="col-md-3">
-                <div style="color:var(--text-secondary)">Global engine (ELY_ENGINE)</div>
-                <strong>{{ $engine === 'agent' ? 'Agent for every company' : 'Legacy (agent only for listed companies)' }}</strong>
+                <div style="color:var(--text-secondary)">ELY for all companies</div>
+                <strong>{{ $engine === 'agent' ? 'New ELY (tool-calling)' : 'Old ELY (legacy)' }}</strong>
+                <div style="font-size:.75rem;color:var(--text-secondary)">
+                    {{ $engineOverridden ? 'Set on this page' : 'From the server setting (ELY_ENGINE='.$configEngine.')' }}
+                </div>
             </div>
             <div class="col-md-3">
                 <div style="color:var(--text-secondary)">Active AI stack</div>
@@ -36,7 +39,7 @@
                 @if ($canUseTools)
                     <span class="badge text-bg-success">Yes</span>
                 @else
-                    <span class="badge text-bg-warning">No: set the provider API key. ELY stays on the legacy engine.</span>
+                    <span class="badge text-bg-warning">No: set the provider API key. Until then every company falls back to the old ELY.</span>
                 @endif
             </div>
             <div class="col-md-3">
@@ -50,12 +53,39 @@
         </div>
     </div>
 
-    {{-- Per-company rollout --}}
+    {{-- Global switch --}}
+    @if ($canManage)
+        <div class="metric-card p-4 mb-4">
+            <div class="fw-bold mb-1" style="font-size:1rem">Engine for all companies</div>
+            <p style="font-size:.82rem;color:var(--text-secondary)" class="mb-3">
+                Switch every company between the new and the old ELY instantly, without a redeploy.
+                Use this to roll back if something goes wrong.
+            </p>
+            <form method="POST" action="{{ route('admin.ai.ely.engine') }}" class="d-flex flex-wrap gap-2">
+                @csrf
+                <button type="submit" name="engine" value="agent"
+                    class="btn btn-sm px-3 {{ $engine === 'agent' ? 'btn-primary' : 'btn-outline-primary' }}">New ELY for everyone</button>
+                <button type="submit" name="engine" value="legacy"
+                    class="btn btn-sm px-3 {{ $engine === 'legacy' ? 'btn-secondary' : 'btn-outline-secondary' }}">Old ELY for everyone</button>
+                @if ($engineOverridden)
+                    <button type="submit" name="engine" value="default" class="btn btn-sm btn-link">Use the server setting</button>
+                @endif
+            </form>
+        </div>
+    @endif
+
+    {{-- Per-company exceptions --}}
     <div class="metric-card p-4 mb-4">
-        <div class="fw-bold mb-1" style="font-size:1rem">Per-company rollout</div>
+        <div class="fw-bold mb-1" style="font-size:1rem">
+            {{ $exceptionList === 'legacy' ? 'Companies kept on the old ELY' : 'Companies moved to the new ELY' }}
+        </div>
         <p style="font-size:.82rem;color:var(--text-secondary)" class="mb-3">
-            Companies listed here use the tool-calling engine even while the global engine is legacy.
-            Demo companies always stay on legacy. Run <code>php artisan ely:eval</code> before adding companies.
+            @if ($exceptionList === 'legacy')
+                Every company uses the new ELY. Tick a company to keep it on the old ELY.
+            @else
+                Every company uses the old ELY. Tick a company to give it the new ELY.
+            @endif
+            Demo companies always stay on the old ELY.
         </p>
         @if ($companyIds !== [])
             <div class="mb-3" style="font-size:.85rem">
@@ -67,7 +97,10 @@
         @if ($canManage)
             <form method="POST" action="{{ route('admin.ai.ely.rollout') }}" id="ely-rollout-form">
                 @csrf
-                <label class="form-label" style="font-size:.75rem;font-weight:600;color:var(--text-secondary)">Choose the companies to run on the tool-calling engine</label>
+                <input type="hidden" name="list" value="{{ $exceptionList }}">
+                <label class="form-label" style="font-size:.75rem;font-weight:600;color:var(--text-secondary)">
+                    {{ $exceptionList === 'legacy' ? 'Choose the companies to keep on the old ELY' : 'Choose the companies to run on the new ELY' }}
+                </label>
                 <input type="text" id="ely-company-search" class="form-control form-control-sm mb-2"
                     placeholder="Search companies by name or id…" autocomplete="off">
                 <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:.78rem;color:var(--text-secondary)">

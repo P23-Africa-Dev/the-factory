@@ -500,7 +500,7 @@ function ManagerTasksContent() {
     <div className="relative flex flex-col flex-1 min-h-screen bg-[#0A1D25] overflow-x-hidden pb-[120px] font-sans">
       <div
         className="fixed inset-0 z-0 bg-cover bg-center pointer-events-none opacity-35 mix-blend-overlay"
-        style={{ backgroundImage: "url('/assets/home-background-gradient.png')" }}
+        style={{ backgroundImage: "url('/assets/app-background.png')" }}
       />
       <div className="fixed inset-0 z-0 bg-gradient-to-b from-[#0A1D25]/90 via-[#0D252F]/95 to-[#0A1D25] pointer-events-none" />
 

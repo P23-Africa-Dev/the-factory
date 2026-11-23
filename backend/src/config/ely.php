@@ -187,14 +187,15 @@ PROMPT,
     |--------------------------------------------------------------------------
     | Tool-calling engine (ElyAgent)
     |--------------------------------------------------------------------------
-    | engine: "legacy" keeps the rules-first CopilotService; "agent" turns on
-    | native tool calling for every company. Individual companies can be
-    | switched on with the platform setting "ely.agent_company_ids" (comma
-    | separated ids). The agent only runs when the active AI stack (Admin -> AI)
-    | has a configured provider that supports tool calling.
+    | engine: "agent" (default) runs the tool-calling ELY for every company;
+    | "legacy" keeps the old rules-first CopilotService. The admin page
+    | (Admin -> AI -> ELY agent) can switch the global engine without a
+    | redeploy and keep individual companies on either engine. The agent only
+    | runs when the active AI stack has a configured provider that supports
+    | tool calling; otherwise ELY falls back to legacy automatically.
     */
     'agent' => [
-        'engine' => env('ELY_ENGINE', 'legacy'),
+        'engine' => env('ELY_ENGINE', 'agent'),
         'max_steps' => (int) env('ELY_AGENT_MAX_STEPS', 8),
         'max_tool_calls' => (int) env('ELY_AGENT_MAX_TOOL_CALLS', 12),
         'max_seconds' => (int) env('ELY_AGENT_MAX_SECONDS', 90),

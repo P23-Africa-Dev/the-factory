@@ -20,6 +20,8 @@ import {
   useAssistantConversation,
   useDynamicSuggestions,
   assistantApi,
+  ActionConfirmCard,
+  asPendingActionProposal,
   type AssistantMessage,
 } from '@/features/assistant';
 import {
@@ -64,8 +66,19 @@ export default function AiAssistantPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { firstName, avatarSrc, userRole } = useAgentIdentity();
-  const { messages, isRestoring, isSending, processingLabel, send, runPlanMyDay, clearCurrent, clearAll, threadId } =
-    useAssistantConversation();
+  const {
+    messages,
+    isRestoring,
+    isSending,
+    processingLabel,
+    send,
+    confirmAction,
+    cancelAction,
+    runPlanMyDay,
+    clearCurrent,
+    clearAll,
+    threadId,
+  } = useAssistantConversation();
   const suggestions = useDynamicSuggestions();
   const acceptPlan = useAcceptDailyPlan();
 
@@ -79,6 +92,7 @@ export default function AiAssistantPage() {
   const [notifiedPlanIds, setNotifiedPlanIds] = useState<Set<string>>(new Set());
   const [planEditsByMessage, setPlanEditsByMessage] = useState<Record<string, PlanEditsMap>>({});
   const [acceptingPlanMessageId, setAcceptingPlanMessageId] = useState<string | null>(null);
+  const [actionStates, setActionStates] = useState<Record<string, 'confirmed' | 'cancelled'>>({});
   const planDayTriggeredRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -215,11 +229,35 @@ export default function AiAssistantPage() {
         ? (planEditsByMessage[msg.id] ?? loadPlanEdits(planStorageKey, planPayload))
         : null;
 
+    // Risky actions wait for a tap. Only the newest reply can still be waiting;
+    // older cards stay hidden unless the user acted on them here.
+    const actionProposal = asPendingActionProposal(msg.payload);
+    const actionState = actionStates[msg.id];
+    const isLatest = messages[messages.length - 1]?.id === msg.id;
+    const showActionCard = actionProposal !== null && (isLatest || actionState !== undefined);
+
     return (
       <div key={msg.id} className="flex flex-col items-start">
         <div className="max-w-[85%] flex flex-col gap-2">
           <div className="bg-gradient-to-b from-[#333] to-[#16384B] border border-white/10 rounded-[24px] rounded-tl-none p-5 shadow-lg relative">
             <ParsedHtmlText text={msg.content} />
+            {showActionCard && actionProposal && (
+              <ActionConfirmCard
+                proposal={actionProposal}
+                state={actionState ?? 'open'}
+                disabled={isSending}
+                onConfirm={() => {
+                  setActionStates((prev) => ({ ...prev, [msg.id]: 'confirmed' }));
+                  void confirmAction(actionProposal.tool, actionProposal.args);
+                }}
+                onCancel={() => {
+                  setActionStates((prev) => ({ ...prev, [msg.id]: 'cancelled' }));
+                  if (actionProposal.pendingActionId) {
+                    void cancelAction(actionProposal.pendingActionId);
+                  }
+                }}
+              />
+            )}
             {planPayload && planEdits && (
               <DailyPlanCard
                 payload={planPayload}

@@ -8,6 +8,8 @@ export type {
 
 export { assistantApi } from './api';
 export { useAssistantConversation } from './useAssistantConversation';
+export { ActionConfirmCard, asPendingActionProposal } from './ActionConfirmCard';
+export type { PendingActionProposal } from './ActionConfirmCard';
 export { useDynamicSuggestions } from './useDynamicSuggestions';
 export type { AssistantSuggestion } from './useDynamicSuggestions';
 export {

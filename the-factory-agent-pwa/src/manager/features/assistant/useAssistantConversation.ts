@@ -188,6 +188,16 @@ export function useAssistantConversation() {
     [send],
   );
 
+  /** Cancels the waiting action on the server, so it can't run later. */
+  const cancelAction = useCallback(async (pendingActionId: string) => {
+    try {
+      const reply = await assistantApi.cancelAction(pendingActionId);
+      setMessages((prev) => [...prev, { id: nextId('ai'), role: 'assistant', content: reply }]);
+    } catch {
+      // Already done, cancelled or expired: nothing is left to cancel.
+    }
+  }, []);
+
   const clearCurrent = useCallback(async () => {
     const current = threadId;
     setMessages([]);
@@ -221,6 +231,7 @@ export function useAssistantConversation() {
     processingLabel,
     send,
     confirmAction,
+    cancelAction,
     runPlanMyDay,
     clearCurrent,
     clearAll,

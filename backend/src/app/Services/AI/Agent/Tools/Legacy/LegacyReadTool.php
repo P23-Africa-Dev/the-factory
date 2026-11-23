@@ -77,6 +77,10 @@ final class LegacyReadTool implements ElyTool
     public function handle(ToolContext $context, array $args): ToolResult
     {
         unset($args['company_id']);
+        // The user's location and focus from the chat (sent with "plan my day").
+        if ($this->name === 'planning.daily' && is_array($context->page['planning'] ?? null)) {
+            $args = [...$context->page['planning'], ...$args];
+        }
         $this->scopedResolver->assertArgs($args, $this->scopedFields, $context->companyId);
 
         $result = $this->reads->execute($this->name, $context->user, $context->companyId, $args);
