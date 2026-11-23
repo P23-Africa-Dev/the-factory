@@ -20,6 +20,8 @@
     <php>
         <env name="APP_ENV" value="testing"/>
         <env name="AI_STACK" value="openai_claude"/>
+        <!-- Legacy ELY tests run on the old engine; agent tests opt in with config(["ely.agent.engine" => "agent"]). -->
+        <env name="ELY_ENGINE" value="legacy"/>
         <env name="EMAIL_IMAP_SMTP_ENABLED" value="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

@@ -77,6 +77,17 @@ class ElyAgent
             }
         }
 
+        // A confirm button pressed when nothing is waiting (an old card, an
+        // action already done or cancelled) must not start a new request.
+        if ($open === null && $actionConfirmed) {
+            $this->threads->appendUser($thread, $message);
+            $reply = 'There is nothing waiting for your confirmation. That action was already completed, cancelled, or has expired. Ask me again if you still need it.';
+            $payload = ['nothing_to_confirm' => true];
+            $this->threads->appendAssistant($thread, $reply, null, [], $payload);
+
+            return $this->response($thread, $context, $reply, null, [], $payload, 'action');
+        }
+
         $this->threads->appendUser($thread, $message);
 
         return $this->runLoop($context, $companyName, $thread, $onEvent);

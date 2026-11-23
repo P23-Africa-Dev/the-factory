@@ -70,6 +70,17 @@ export const assistantApi = {
     };
   },
 
+  /** Cancels an action ELY is waiting to have confirmed. */
+  cancelAction: async (pendingActionId: string): Promise<string> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.post(
+      `/copilot/actions/${encodeURIComponent(pendingActionId)}/cancel`,
+      { company_id: companyId ?? undefined },
+    );
+    const response = unwrap(res.data).response as { content?: unknown } | undefined;
+    return String(response?.content ?? 'Okay, I cancelled that. Nothing was changed.');
+  },
+
   listThreads: async (): Promise<ThreadSummary[]> => {
     const res = await client.get(`/copilot/threads${companyQuery()}`);
     const data = unwrap(res.data);

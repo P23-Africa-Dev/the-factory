@@ -113,6 +113,11 @@ class CopilotService
         // stack supports tools. Everything below is the legacy engine.
         if (app(ElyEngineSelector::class)->useAgent($resolvedCompanyId)) {
             $page = is_array($chatContext['page'] ?? null) ? $chatContext['page'] : [];
+            // Location and focus for "plan my day" (nearby visits are ranked higher).
+            $planning = $this->buildReadToolArgs('planning.daily', $chatContext);
+            if ($planning !== []) {
+                $page['planning'] = $planning;
+            }
             if (is_array($chatContext['attachment'] ?? null) && is_string($chatContext['attachment']['id'] ?? null)) {
                 $page['attachment_id'] = $chatContext['attachment']['id'];
                 $page['attachment_name'] = (string) ($chatContext['attachment']['name'] ?? 'attached file');

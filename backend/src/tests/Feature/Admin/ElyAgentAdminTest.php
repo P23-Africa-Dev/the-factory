@@ -93,6 +93,68 @@ final class ElyAgentAdminTest extends TestCase
         $this->assertSame([], app(ElyEngineSelector::class)->enabledCompanyIds());
     }
 
+    public function test_new_engine_is_the_default_when_nothing_overrides_it(): void
+    {
+        config(['ely.agent.engine' => 'agent']);
+
+        $this->assertSame('agent', app(ElyEngineSelector::class)->globalEngine());
+        // The shipped default (no ELY_ENGINE set on the server) is the new engine.
+        $this->assertStringContainsString("env('ELY_ENGINE', 'agent')", (string) file_get_contents(config_path('ely.php')));
+    }
+
+    public function test_admin_can_switch_every_company_instantly_and_back(): void
+    {
+        config(['ely.agent.engine' => 'agent']);
+        $admin = $this->admin('super_admin');
+        $selector = app(ElyEngineSelector::class);
+
+        $this->actingAs($admin, 'admin')->post(route('admin.ai.ely.engine'), ['engine' => 'legacy'])
+            ->assertRedirect(route('admin.ai.ely'));
+        $this->assertSame('legacy', $selector->globalEngine());
+        $this->assertTrue($selector->globalEngineIsOverridden());
+
+        $this->actingAs($admin, 'admin')->post(route('admin.ai.ely.engine'), ['engine' => 'default']);
+        $this->assertSame('agent', $selector->globalEngine());
+        $this->assertFalse($selector->globalEngineIsOverridden());
+    }
+
+    public function test_non_super_admin_cannot_switch_the_engine(): void
+    {
+        $this->actingAs($this->admin('admin'), 'admin')
+            ->post(route('admin.ai.ely.engine'), ['engine' => 'legacy'])
+            ->assertForbidden();
+    }
+
+    public function test_companies_can_be_kept_on_the_old_engine_while_everyone_else_moves(): void
+    {
+        config(['ely.agent.engine' => 'agent']);
+        $kept = $this->company();
+        $moved = $this->company();
+
+        // While the new engine is on, the picker edits the "keep on old" list.
+        $this->actingAs($this->admin('super_admin'), 'admin')
+            ->get(route('admin.ai.ely'))
+            ->assertOk()
+            ->assertSee('Companies kept on the old ELY')
+            ->assertSee('name="list" value="legacy"', false);
+
+        $this->actingAs($this->admin('super_admin'), 'admin')
+            ->post(route('admin.ai.ely.rollout'), ['list' => 'legacy', 'company_ids' => [$kept->id]])
+            ->assertRedirect(route('admin.ai.ely'));
+
+        $selector = app(ElyEngineSelector::class);
+        $this->assertSame([(int) $kept->id], $selector->legacyCompanyIds());
+
+        // Tool calling is available in this test, so only the exception differs.
+        $router = app(\App\Services\AI\Agent\Chat\ChatRouter::class);
+        $router->useAdapters(['openai' => new \Tests\Support\ScriptedChatAdapter('openai')]);
+        $this->app->instance(\App\Services\AI\Agent\Chat\ChatRouter::class, $router);
+        $selector = app(ElyEngineSelector::class);
+
+        $this->assertFalse($selector->useAgent((int) $kept->id));
+        $this->assertTrue($selector->useAgent((int) $moved->id));
+    }
+
     public function test_unknown_company_ids_are_rejected(): void
     {
         $this->actingAs($this->admin('super_admin'), 'admin')

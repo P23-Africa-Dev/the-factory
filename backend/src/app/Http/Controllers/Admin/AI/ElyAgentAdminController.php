@@ -46,7 +46,12 @@ class ElyAgentAdminController extends Controller
                 ->withQueryString();
         }
 
-        $companyIds = $selector->enabledCompanyIds();
+        // The picker edits the exception list for the current global engine:
+        // with the new engine on, ticked companies stay on the old one; with
+        // the old engine on, ticked companies get the new one.
+        $globalEngine = $selector->globalEngine();
+        $exceptionList = $globalEngine === 'agent' ? 'legacy' : 'agent';
+        $companyIds = $exceptionList === 'legacy' ? $selector->legacyCompanyIds() : $selector->enabledCompanyIds();
 
         // Selectable list for the rollout picker: real (non-demo) companies.
         // Demo companies always stay on legacy, so they are left out.
@@ -70,7 +75,10 @@ class ElyAgentAdminController extends Controller
         ])->sortBy('name')->values();
 
         return view('admin.ai.ely', [
-            'engine' => strtolower((string) config('ely.agent.engine', 'legacy')),
+            'engine' => $globalEngine,
+            'engineOverridden' => $selector->globalEngineIsOverridden(),
+            'configEngine' => strtolower((string) config('ely.agent.engine', 'agent')),
+            'exceptionList' => $exceptionList,
             'stack' => $stack->getStack(),
             'canUseTools' => $router->canUseTools(),
             'companyIds' => $companyIds,
@@ -94,7 +102,12 @@ class ElyAgentAdminController extends Controller
         $request->validate([
             'company_ids' => ['nullable'],
             'company_ids.*' => ['integer'],
+            // Which exception list the form edits: "legacy" (keep on the old
+            // engine) or "agent" (move to the new engine). Older forms sent
+            // no list and meant "agent".
+            'list' => ['nullable', 'in:agent,legacy'],
         ]);
+        $list = (string) ($request->input('list') ?: 'agent');
 
         // Accepts the checkbox list (array) and, for compatibility, a
         // comma-separated string.
@@ -111,15 +124,50 @@ class ElyAgentAdminController extends Controller
         }
 
         PlatformSetting::query()->updateOrCreate(
-            ['key' => ElyEngineSelector::COMPANY_IDS_KEY],
+            ['key' => $list === 'legacy' ? ElyEngineSelector::LEGACY_COMPANY_IDS_KEY : ElyEngineSelector::COMPANY_IDS_KEY],
             ['value' => implode(',', $ids), 'updated_by_admin_id' => $admin->id],
         );
         ElyEngineSelector::forgetCache();
 
-        return redirect()
-            ->route('admin.ai.ely')
-            ->with('status', $ids === []
-                ? 'The ELY tool-calling engine is now off for all individually enabled companies.'
-                : 'The ELY tool-calling engine is on for '.count($ids).' company(ies).');
+        $status = match (true) {
+            $list === 'legacy' && $ids === [] => 'Every company now uses the new ELY.',
+            $list === 'legacy' => count($ids).' company(ies) will stay on the old ELY; everyone else uses the new one.',
+            $ids === [] => 'No company is individually moved to the new ELY.',
+            default => 'The new ELY is on for '.count($ids).' company(ies).',
+        };
+
+        return redirect()->route('admin.ai.ely')->with('status', $status);
+    }
+
+    /**
+     * Switch the engine for all companies without a redeploy. "default"
+     * removes the override so ELY_ENGINE applies again.
+     */
+    public function updateEngine(Request $request): RedirectResponse
+    {
+        $admin = auth('admin')->user();
+        if (! $admin instanceof Admin) {
+            abort(403, 'Unauthorized.');
+        }
+
+        $engine = (string) $request->validate([
+            'engine' => ['required', 'in:agent,legacy,default'],
+        ])['engine'];
+
+        if ($engine === 'default') {
+            PlatformSetting::query()->where('key', ElyEngineSelector::ENGINE_KEY)->delete();
+        } else {
+            PlatformSetting::query()->updateOrCreate(
+                ['key' => ElyEngineSelector::ENGINE_KEY],
+                ['value' => $engine, 'updated_by_admin_id' => $admin->id],
+            );
+        }
+        ElyEngineSelector::forgetCache();
+
+        return redirect()->route('admin.ai.ely')->with('status', match ($engine) {
+            'agent' => 'Every company now uses the new ELY (except the companies you keep on the old one).',
+            'legacy' => 'Every company is back on the old ELY (except the companies you move to the new one).',
+            default => 'The engine now follows the server setting (ELY_ENGINE).',
+        });
     }
 }

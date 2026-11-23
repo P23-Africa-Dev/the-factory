@@ -68,6 +68,9 @@ Route::prefix('admin')->name('admin.')->group(function (): void {
             Route::post('/ely/rollout', [\App\Http\Controllers\Admin\AI\ElyAgentAdminController::class, 'updateRollout'])
                 ->name('ely.rollout')
                 ->middleware('admin.permission:manage_ai');
+            Route::post('/ely/engine', [\App\Http\Controllers\Admin\AI\ElyAgentAdminController::class, 'updateEngine'])
+                ->name('ely.engine')
+                ->middleware('admin.permission:manage_ai');
         });
 
         // ── Users ──────────────────────────────────────────────

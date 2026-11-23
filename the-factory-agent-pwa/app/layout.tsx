@@ -10,6 +10,7 @@ import { queryClient } from '@/lib/queryClient';
 import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
 import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
 import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
+import { BrokenImageGuard } from '@/components/shared/BrokenImageGuard';
 import '@/lib/pwa/installPromptStore';
 import './globals.css';
 
@@ -69,6 +70,7 @@ export default function RootLayout({
         className="min-h-full flex flex-col bg-[#0A1D25] text-white overflow-x-hidden selection:bg-[#75ADAF]/30"
         suppressHydrationWarning
       >
+        <BrokenImageGuard />
         <AuthProvider>
           <SessionRevalidator />
           <QueryClientProvider client={queryClient}>

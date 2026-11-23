@@ -4,9 +4,10 @@
  * feature. Conversations are scoped server-side by the authenticated user +
  * company, so no cross-user access is possible.
  *
- * Agent role note: the backend permits read tools only and denies write/action
- * tools, so this client never sends action confirmation payloads. Drafting
- * (e.g. outreach emails) still works as a normal conversational reply.
+ * Agent role note: the server decides which actions an agent may take. Risky
+ * ones (sending an email, deleting a task) come back with
+ * `confirmation_required`; the app shows a card, and Confirm re-sends the chat
+ * with `action_confirmed` while Cancel calls `/copilot/actions/{id}/cancel`.
  */
 import { client } from '@/lib/api/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
@@ -43,6 +44,9 @@ export const assistantApi = {
       focus?: 'all' | 'visits' | 'followups' | 'tasks';
       limit?: number;
     };
+    actionConfirmed?: boolean;
+    actionArgs?: Record<string, unknown>;
+    idempotencyKey?: string;
   }): Promise<SendMessageResult> => {
     const companyId = getActiveCompanyId();
     const res = await client.post('/copilot/chat', {
@@ -51,6 +55,9 @@ export const assistantApi = {
       thread_id: params.threadId ?? undefined,
       client_timezone: resolveTimezone(),
       context: params.context,
+      action_confirmed: params.actionConfirmed ?? undefined,
+      action_args: params.actionArgs ?? undefined,
+      idempotency_key: params.idempotencyKey ?? undefined,
       stream: false,
     });
     const data = unwrap(res.data);
@@ -67,6 +74,17 @@ export const assistantApi = {
           ? (response.payload as Record<string, unknown>)
           : null,
     };
+  },
+
+  /** Cancels an action ELY is waiting to have confirmed. */
+  cancelAction: async (pendingActionId: string): Promise<string> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.post(
+      `/copilot/actions/${encodeURIComponent(pendingActionId)}/cancel`,
+      { company_id: companyId ?? undefined },
+    );
+    const response = unwrap(res.data).response as { content?: unknown } | undefined;
+    return String(response?.content ?? 'Okay, I cancelled that. Nothing was changed.');
   },
 
   listThreads: async (): Promise<ThreadSummary[]> => {
