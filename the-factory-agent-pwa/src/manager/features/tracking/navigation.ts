@@ -7,12 +7,12 @@ export const useTrackingNavigation = () => {
 
   return {
     goToTracking: (taskId: number) =>
-      router.push(`/task/${taskId}/tracking`),
+      router.push(`/manager/task/${taskId}/tracking`),
 
     goToMapActivity: (taskId: number) =>
-      router.replace(`/map?taskId=${taskId}`),
+      router.replace(`/manager/map?taskId=${taskId}`),
 
     goToTrackingComplete: (taskId: number) =>
-      router.replace(`/task/${taskId}/complete`),
+      router.replace(`/manager/task/${taskId}/complete`),
   };
 };

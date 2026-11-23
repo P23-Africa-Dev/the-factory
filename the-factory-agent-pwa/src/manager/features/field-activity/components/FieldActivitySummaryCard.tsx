@@ -32,11 +32,11 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
   return (
     <section className="mx-4 mt-4 space-y-3">
       <div
-        onClick={() => router.push('/field-activity')}
+        onClick={() => router.push('/manager/field-activity')}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') router.push('/field-activity');
+          if (e.key === 'Enter' || e.key === ' ') router.push('/manager/field-activity');
         }}
         className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#12323A] to-[#0B1E26] p-5 cursor-pointer active:scale-[0.99] transition-transform"
       >
