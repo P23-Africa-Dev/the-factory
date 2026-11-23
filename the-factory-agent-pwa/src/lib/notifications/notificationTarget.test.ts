@@ -63,6 +63,18 @@ const cases: Array<{
     manager: '/manager/crm/leads/42',
   },
   {
+    name: 'lead updated',
+    source: { type: 'crm.lead_updated', actionUrl: '/crm/leads/42', referenceType: 'App\\Models\\Crm\\Lead', referenceId: 42, metadata: { lead_id: 42 } },
+    agent: '/crm/leads/42',
+    manager: '/manager/crm/leads/42',
+  },
+  {
+    name: 'lead field pending',
+    source: { type: 'crm.lead_field_pending', actionUrl: '/settings/crm', referenceType: 'lead_field_definition', referenceId: 5 },
+    agent: '/crm/leads',
+    manager: '/manager/crm/leads',
+  },
+  {
     name: 'lead import finished',
     source: { type: 'crm.leads_imported', actionUrl: '/crm/leads', metadata: { created: 3 } },
     agent: '/crm/leads',
@@ -107,8 +119,20 @@ const cases: Array<{
   {
     name: 'attendance',
     source: { type: 'attendance.clock_in_reminder', actionUrl: '/agent/operations/attendance', referenceType: 'App\\Models\\AttendanceRecord', referenceId: 3 },
+    agent: '/?section=attendance',
+    manager: '/manager/workforce',
+  },
+  {
+    name: 'workforce onboarding completed',
+    source: { type: 'workforce.internal_onboarding_completed', actionUrl: '/internal-users/onboarding-status', referenceType: 'App\\Models\\User', referenceId: 8 },
     agent: '/',
     manager: '/manager/workforce',
+  },
+  {
+    name: 'workforce supervisor assigned',
+    source: { type: 'workforce.supervisor_assigned', actionUrl: '/user/profile', referenceType: 'App\\Models\\User', referenceId: 8 },
+    agent: '/profile',
+    manager: '/manager/profile',
   },
   {
     name: 'payroll',

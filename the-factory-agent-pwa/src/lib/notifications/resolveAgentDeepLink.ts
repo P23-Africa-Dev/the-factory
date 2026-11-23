@@ -100,7 +100,12 @@ function resolveAgentPath(pathname: string, search: string): string {
   }
   if (pathname === '/assistant' || pathname.startsWith('/assistant/')) return '/assistant';
 
-  // Attendance (clock-in card), payroll, dashboard-only pages → home.
+  // Attendance (clock-in card on home)
+  if (pathname === '/operations/attendance' || pathname.startsWith('/operations/attendance/')) {
+    return '/?section=attendance';
+  }
+
+  // Payroll, dashboard-only pages → home.
   return '/';
 }
 
@@ -142,7 +147,9 @@ function resolveManagerPath(pathname: string, search: string): string {
     pathname === '/workforce' ||
     pathname.startsWith('/workforce/') ||
     pathname === '/operations' ||
-    pathname.startsWith('/operations/')
+    pathname.startsWith('/operations/') ||
+    pathname === '/internal-users' ||
+    pathname.startsWith('/internal-users/')
   ) {
     return '/manager/workforce';
   }

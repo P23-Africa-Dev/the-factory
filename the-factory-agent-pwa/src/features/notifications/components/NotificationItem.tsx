@@ -20,6 +20,7 @@ const CATEGORY_COLOR: Record<NotificationCategory, string> = {
   workforce: '#F97316',
   profile: '#64748B',
   attendance: '#0EA5E9',
+  drive: '#0284C7',
   system: '#64748B',
 };
 
@@ -34,6 +35,7 @@ const CATEGORY_LABEL: Record<NotificationCategory, string> = {
   workforce: 'Workforce',
   profile: 'Profile',
   attendance: 'Attendance',
+  drive: 'Drive',
   system: 'System',
 };
 
