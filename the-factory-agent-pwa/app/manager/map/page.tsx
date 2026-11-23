@@ -769,7 +769,7 @@ function MapContent() {
                   {selectedAgent.active_task_id && (
                     <button
                       type="button"
-                      onClick={() => router.push(`/task/${selectedAgent.active_task_id}`)}
+                      onClick={() => router.push(`/manager/task/${selectedAgent.active_task_id}`)}
                       className="px-2.5 py-1 rounded-lg bg-[#FD6046] text-white text-[10px] font-bold flex items-center gap-1 flex-shrink-0"
                     >
                       Inspect <ExternalLink className="w-3 h-3" />
@@ -782,7 +782,7 @@ function MapContent() {
                 <button
                   type="button"
                   onClick={() =>
-                    router.push(`/field-activity/journeys?userId=${selectedAgent.agent_id}`)
+                    router.push(`/manager/field-activity/journeys?userId=${selectedAgent.agent_id}`)
                   }
                   className="py-2 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[11px] font-semibold flex items-center justify-center gap-1"
                 >
@@ -792,7 +792,7 @@ function MapContent() {
                 <button
                   type="button"
                   onClick={() =>
-                    router.push(`/tasks?assigneeId=${selectedAgent.agent_id}`)
+                    router.push(`/manager/tasks?assigneeId=${selectedAgent.agent_id}`)
                   }
                   className="py-2 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[11px] font-semibold flex items-center justify-center gap-1"
                 >
@@ -802,7 +802,7 @@ function MapContent() {
                 <button
                   type="button"
                   onClick={() =>
-                    router.push(`/workforce?userId=${selectedAgent.agent_id}`)
+                    router.push(`/manager/workforce?userId=${selectedAgent.agent_id}`)
                   }
                   className="py-2 px-2.5 rounded-xl bg-[#1D7293] hover:bg-[#1D7293]/90 text-white text-[11px] font-semibold flex items-center justify-center gap-1"
                 >
@@ -998,7 +998,7 @@ function MapContent() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/task/${task.id}`);
+                          router.push(`/manager/task/${task.id}`);
                         }}
                         className="px-2.5 py-1 rounded-lg bg-[#0A1D25] text-white text-[10px] font-bold flex-shrink-0"
                       >

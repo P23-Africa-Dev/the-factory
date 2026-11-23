@@ -672,7 +672,7 @@ function ManagerTasksContent() {
                   return (
                     <div
                       key={task.id}
-                      onClick={() => router.push(`/task/${task.id}`)}
+                      onClick={() => router.push(`/manager/task/${task.id}`)}
                       className="relative bg-[#0B3343]/90 hover:bg-[#0E3B4D] border border-white/8 rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.99] shadow-md"
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
@@ -925,7 +925,7 @@ function ManagerTasksContent() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => router.push(`/task/${item.task_id}`)}
+                        onClick={() => router.push(`/manager/task/${item.task_id}`)}
                         className="text-xs font-semibold text-[#75ADAF] hover:underline"
                       >
                         View Task

@@ -47,7 +47,7 @@ export default function TrackingPage() {
     if (!task || isTaskLoading) return;
     if (!hasMapLocation) {
       toast.error('No map location', 'This task has no destination. Update its status from task details.');
-      router.replace(`/task/${taskId}`);
+      router.replace(`/manager/task/${taskId}`);
     }
   }, [task, isTaskLoading, hasMapLocation, router, taskId]);
 
@@ -228,7 +228,7 @@ export default function TrackingPage() {
         isBusy={isRequesting}
         isResume={false}
         onRequest={handleRequest}
-        onDismiss={() => router.replace(`/task/${taskId}`)}
+        onDismiss={() => router.replace(`/manager/task/${taskId}`)}
         fullScreen
       />
     </div>

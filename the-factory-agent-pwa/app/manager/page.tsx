@@ -272,7 +272,7 @@ export default function ManagerHomeScreen() {
     (agentId: number) => {
       setSheetExpanded(false);
       setWhereToQuery('');
-      router.push(`/map?agentId=${agentId}`);
+      router.push(`/manager/map?agentId=${agentId}`);
     },
     [router],
   );
@@ -288,7 +288,7 @@ export default function ManagerHomeScreen() {
         destName: place.name,
         destAddr: place.address ?? '',
       });
-      router.push(`/map?${params.toString()}`);
+      router.push(`/manager/map?${params.toString()}`);
     },
     [router],
   );
@@ -591,7 +591,7 @@ export default function ManagerHomeScreen() {
         {pendingReassignmentsCount > 0 && (
           <button
             type="button"
-            onClick={() => router.push('/tasks?tab=reassignments')}
+            onClick={() => router.push('/manager/tasks?tab=reassignments')}
             className="mb-3 flex w-full items-center justify-between rounded-2xl border border-[#FD6046]/40 bg-[#FD6046]/12 px-4 py-3 text-left active:scale-[0.99] transition-transform"
           >
             <div className="flex items-center gap-2.5">
@@ -981,7 +981,7 @@ export default function ManagerHomeScreen() {
                       type="button"
                       onClick={() => {
                         setExecBriefOpen(false);
-                        router.push('/assistant?prompt=Generate+this+week%27s+executive+summary');
+                        router.push('/manager/assistant?prompt=Generate+this+week%27s+executive+summary');
                       }}
                       className="w-full h-11 rounded-2xl bg-[#75ADAF] text-[#0A1D25] text-xs font-extrabold flex items-center justify-center gap-2 active:scale-95 transition-transform"
                     >
@@ -992,7 +992,7 @@ export default function ManagerHomeScreen() {
                       type="button"
                       onClick={() => {
                         setExecBriefOpen(false);
-                        router.push('/tasks?create=1');
+                        router.push('/manager/tasks?create=1');
                       }}
                       className="w-full h-11 rounded-2xl bg-[#FD6046] text-white text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
                     >
@@ -1098,7 +1098,7 @@ export default function ManagerHomeScreen() {
                   <button
                     onClick={() => {
                       setDayScheduleVisible(false);
-                      router.push('/tasks?create=1');
+                      router.push('/manager/tasks?create=1');
                     }}
                     className="px-3 py-1.5 rounded-lg bg-[#FD6046]/20 border border-[#FD6046]/40 text-xs text-[#FD6046] font-semibold"
                   >
@@ -1131,7 +1131,7 @@ export default function ManagerHomeScreen() {
                             key={task.id}
                             onClick={() => {
                               setDayScheduleVisible(false);
-                              router.push(`/task/${task.id}`);
+                              router.push(`/manager/task/${task.id}`);
                             }}
                             className="flex items-center bg-white/5 hover:bg-white/10 rounded-xl p-3 cursor-pointer transition-colors"
                           >
@@ -1187,7 +1187,7 @@ export default function ManagerHomeScreen() {
                             key={m.id}
                             onClick={() => {
                               setDayScheduleVisible(false);
-                              router.push(`/meetings/${m.id}`);
+                              router.push(`/manager/meetings/${m.id}`);
                             }}
                             className="flex items-center bg-white/5 hover:bg-white/10 rounded-xl p-3 cursor-pointer transition-colors"
                           >
