@@ -13,7 +13,6 @@ import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import type { ApiLeadStatus, ApiLeadPriority, ApiRoleBasePath, CreateLeadPayload, LeadApiItem, LeadContact, LeadCustomFields, LeadDuplicateField, LeadDuplicateMatch, LeadMergePreview } from "@/lib/api/crm";
 import type { ApiRequestError } from "@/lib/api/onboarding";
-import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
 import { LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadDuplicateNotice, LeadDuplicateSuggestions, LeadMergeDialog } from "@/components/crm/lead-duplicate-suggestions";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
@@ -31,10 +30,8 @@ type FormErrors = Partial<{
   companyName: string;
   companyEmail: string;
   website: string;
-  position: string;
   industry: string;
   budget: string;
-  profileUrls: string;
   source: string;
   status: string;
   priority: string;
@@ -216,12 +213,18 @@ export function AddLeadModal({
 
   const [contacts, setContacts] = useState<LeadContact[]>(() =>
     lead?.contacts?.length
-      ? lead.contacts.map(({ id, name, email, phone, location, sort_order }) => ({
+      ? lead.contacts.map(({ id, name, email, phone, location, position, profile_urls, sort_order }, index) => ({
           id,
           name,
           email: email ?? "",
           phone: phone ?? "",
           location: location ?? "",
+          position: position ?? (index === 0 ? (lead.position ?? "") : ""),
+          profile_urls: profile_urls?.length
+            ? profile_urls
+            : index === 0 && lead.profile_urls?.length
+              ? lead.profile_urls
+              : [""],
           sort_order,
         }))
       : [{
@@ -229,6 +232,8 @@ export function AddLeadModal({
           email: lead?.email ?? "",
           phone: lead?.phone ?? "",
           location: lead?.location ?? "",
+          position: lead?.position ?? "",
+          profile_urls: lead?.profile_urls?.length ? lead.profile_urls : [""],
           sort_order: 0,
         }],
   );
@@ -237,10 +242,6 @@ export function AddLeadModal({
   const [companyName, setCompanyName] = useState(lead?.company_name ?? "");
   const [companyEmail, setCompanyEmail] = useState(lead?.company_email ?? "");
   const [website, setWebsite] = useState(lead?.website ?? "");
-  const [position, setPosition] = useState(lead?.position ?? "");
-  const [profileUrls, setProfileUrls] = useState<string[]>(
-    lead?.profile_urls?.length ? lead.profile_urls : [""]
-  );
   const [source, setSource] = useState(lead?.source ?? "");
   const [industry, setIndustry] = useState(lead?.industry ?? "");
   const { data: pipelines = [] } = useCrmPipelines(companyId ?? undefined, apiBasePath);
@@ -417,7 +418,7 @@ export function AddLeadModal({
   const addContact = () => {
     setContacts((current) => [
       ...current,
-      { name: "", email: "", phone: "", location: "", sort_order: current.length },
+      { name: "", email: "", phone: "", location: "", position: "", profile_urls: [""], sort_order: current.length },
     ]);
     setActiveContactIndex(contacts.length);
   };
@@ -438,6 +439,9 @@ export function AddLeadModal({
       if (contact.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
         errorsForContact.email = "Enter a valid email address.";
       }
+      if (parseProfileUrls(contact.profile_urls ?? []).some((url) => !isValidUrl(url))) {
+        errorsForContact.profileUrls = "One or more profile URLs are invalid.";
+      }
       return errorsForContact;
     });
     if (!effectivePipelineId) e.pipelineId = "Pipeline is required.";
@@ -446,10 +450,6 @@ export function AddLeadModal({
     }
     if (website.trim() && !isValidUrl(website)) {
       e.website = "Enter a valid website URL.";
-    }
-    const cleanedProfileUrls = parseProfileUrls(profileUrls);
-    if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
-      e.profileUrls = "One or more profile URLs are invalid.";
     }
     if (industry.trim().length > LEAD_INDUSTRY_MAX_LENGTH) {
       e.industry = `Industry must be ${LEAD_INDUSTRY_MAX_LENGTH} characters or fewer.`;
@@ -478,16 +478,16 @@ export function AddLeadModal({
       if (apiErr.errors.phone) ce[0].phone = apiErr.errors.phone[0];
       if (apiErr.errors.location) ce[0].location = apiErr.errors.location[0];
       Object.entries(apiErr.errors).forEach(([key, messages]) => {
-        const match = key.match(/^contacts\.(\d+)\.(name|email|phone|location)$/);
+        const match = key.match(/^contacts\.(\d+)\.(name|email|phone|location|position|profile_urls)$/);
         if (!match) return;
         const index = Number(match[1]);
         ce[index] ??= {};
-        ce[index][match[2] as keyof LeadContactErrors] = messages[0];
+        const field = match[2] === "profile_urls" ? "profileUrls" : match[2];
+        ce[index][field as keyof LeadContactErrors] = messages[0];
       });
       if (apiErr.errors.company_name) fe.companyName = apiErr.errors.company_name[0];
       if (apiErr.errors.company_email) fe.companyEmail = apiErr.errors.company_email[0];
       if (apiErr.errors.website) fe.website = apiErr.errors.website[0];
-      if (apiErr.errors.position) fe.position = apiErr.errors.position[0];
       if (apiErr.errors.industry) fe.industry = apiErr.errors.industry[0];
       if (apiErr.errors.budget_amount) fe.budget = apiErr.errors.budget_amount[0];
       else if (apiErr.errors.budget_currency) fe.budget = apiErr.errors.budget_currency[0];
@@ -500,7 +500,6 @@ export function AddLeadModal({
         setCustomFieldErrors(apiCustomErrors);
         fe.customFields = "Check the custom fields.";
       }
-      if (apiErr.errors.profile_urls) fe.profileUrls = apiErr.errors.profile_urls[0];
       if (apiErr.errors.source) fe.source = apiErr.errors.source[0];
       if (apiErr.errors.status) fe.status = apiErr.errors.status[0];
       if (apiErr.errors.priority) fe.priority = apiErr.errors.priority[0];
@@ -535,20 +534,25 @@ export function AddLeadModal({
       return null;
     }
 
-    const cleanedProfileUrls = parseProfileUrls(profileUrls);
-    const normalizedContacts = contacts.map((contact, index) => ({
-      name: contact.name.trim(),
-      email: contact.email?.trim() || null,
-      phone: contact.phone?.trim() || null,
-      location: contact.location?.trim() || null,
-      sort_order: index,
-    }));
+    const normalizedContacts = contacts.map((contact, index) => {
+      const contactProfileUrls = parseProfileUrls(contact.profile_urls ?? []);
+      return {
+        name: contact.name.trim(),
+        email: contact.email?.trim() || null,
+        phone: contact.phone?.trim() || null,
+        location: contact.location?.trim() || null,
+        position: contact.position?.trim() || null,
+        profile_urls: contactProfileUrls.length > 0 ? contactProfileUrls : null,
+        sort_order: index,
+      };
+    });
     const primaryContact = normalizedContacts[0];
+    const resolvedLeadName = companyName.trim() || primaryContact.name;
 
     return {
       company_id: companyId,
       pipeline_id: Number(effectivePipelineId),
-      name: primaryContact.name,
+      name: resolvedLeadName,
       email: primaryContact.email,
       phone: primaryContact.phone,
       budget_amount: budgetAmount.trim() ? Number(budgetAmount.replace(/,/g, "")) : null,
@@ -558,9 +562,9 @@ export function AddLeadModal({
       company_name: companyName.trim() || null,
       company_email: companyEmail.trim() || null,
       website: website.trim() ? normalizeWebsite(website) : null,
-      position: position.trim() || null,
+      position: primaryContact.position,
       industry: industry.trim() || null,
-      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
+      profile_urls: primaryContact.profile_urls,
       source: source.trim() || (isAgentContext ? "agent_upload" : null),
       status: effectiveStatus,
       priority,
@@ -713,7 +717,7 @@ export function AddLeadModal({
 
           <div className="space-y-4 mb-5">
             <SectionDivider
-              label={lead ? "Edit Company & Professional Details" : "Company & Professional Details"}
+              label={lead ? "Edit Company Details" : "Company Details"}
               subtitle="All fields in this section are optional."
             />
 
@@ -767,27 +771,6 @@ export function AddLeadModal({
               </FormRow>
               <FieldError message={errors.website} />
             </div>
-
-            <div>
-              <FormRow label="Position" labelClassName="w-28">
-                <InlineInput
-                  value={position}
-                  onChange={(e) => { setPosition(e.target.value); clearError("position"); }}
-                  placeholder="E.g Head of Sales"
-                  className="col-span-2"
-                />
-              </FormRow>
-              <FieldError message={errors.position} />
-            </div>
-
-            <ProfileUrlInputs
-              values={profileUrls}
-              onChange={(values) => {
-                setProfileUrls(values);
-                clearError("profileUrls");
-              }}
-              errors={errors.profileUrls ? [errors.profileUrls] : []}
-            />
           </div>
 
           <div className="space-y-4 mb-5">

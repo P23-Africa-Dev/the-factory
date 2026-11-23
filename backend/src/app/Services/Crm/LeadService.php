@@ -139,7 +139,17 @@ class LeadService
             $role,
         );
 
-        $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source): Lead {
+        $contacts = $this->contactPayloads($data);
+        $primaryContact = $contacts[0] ?? null;
+
+        $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source, $contacts, $primaryContact): Lead {
+            $position = array_key_exists('position', $data)
+                ? $this->nullableTrimmed($data['position'] ?? null)
+                : ($primaryContact['position'] ?? null);
+            $profileUrls = ! empty($data['profile_urls'])
+                ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls'])
+                : ($primaryContact['profile_urls'] ?? null);
+
             $lead = Lead::create([
                 'company_id' => $companyId,
                 'pipeline_id' => $pipelineId,
@@ -153,9 +163,9 @@ class LeadService
                 'company_name' => $data['company_name'] ?? null,
                 'company_email' => $data['company_email'] ?? null,
                 'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
-                'position' => $data['position'] ?? null,
+                'position' => $position,
                 'industry' => $this->nullableTrimmed($data['industry'] ?? null),
-                'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
+                'profile_urls' => $profileUrls,
                 'source' => $source,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
@@ -170,7 +180,7 @@ class LeadService
                 'custom_fields' => $this->resolvedCustomFields($companyId, $data, [], 'create') ?? [],
             ]);
 
-            $this->replaceContacts($lead, $this->contactPayloads($data));
+            $this->replaceContacts($lead, $contacts);
 
             return $lead;
         });
@@ -606,7 +616,17 @@ class LeadService
             'update',
         );
 
-        $lead = DB::transaction(function () use ($lead, $data, $customFields): Lead {
+        $contacts = array_key_exists('contacts', $data) ? $this->contactPayloads($data) : null;
+        $primaryContact = $contacts[0] ?? null;
+
+        $lead = DB::transaction(function () use ($lead, $data, $customFields, $contacts, $primaryContact): Lead {
+            $position = array_key_exists('position', $data)
+                ? $this->nullableTrimmed($data['position'])
+                : ($contacts !== null ? ($primaryContact['position'] ?? null) : $lead->position);
+            $profileUrls = array_key_exists('profile_urls', $data)
+                ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
+                : ($contacts !== null ? ($primaryContact['profile_urls'] ?? null) : $lead->profile_urls);
+
             $lead->update([
                 'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
                 'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
@@ -621,11 +641,9 @@ class LeadService
                 'website' => array_key_exists('website', $data)
                     ? ($data['website'] !== null ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null)
                     : $lead->website,
-                'position' => array_key_exists('position', $data) ? $data['position'] : $lead->position,
+                'position' => $position,
                 'industry' => array_key_exists('industry', $data) ? $this->nullableTrimmed($data['industry']) : $lead->industry,
-                'profile_urls' => array_key_exists('profile_urls', $data)
-                    ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
-                    : $lead->profile_urls,
+                'profile_urls' => $profileUrls,
                 'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
                 'status' => $data['status'] ?? $lead->status,
                 'priority' => $data['priority'] ?? $lead->priority,
@@ -1940,7 +1958,7 @@ class LeadService
 
     /**
      * @param  array<string, mixed>  $data
-     * @return array<int, array{name:string,email:?string,phone:?string,location:?string}>
+     * @return array<int, array{name:string,email:?string,phone:?string,location:?string,position:?string,profile_urls:?array<int,string>}>
      */
     private function contactPayloads(array $data): array
     {
@@ -1951,18 +1969,29 @@ class LeadService
                 'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'location' => $data['location'] ?? null,
+                'position' => $data['position'] ?? null,
+                'profile_urls' => $data['profile_urls'] ?? null,
             ]];
 
-        return array_map(static fn(array $contact): array => [
-            'name' => trim((string) $contact['name']),
-            'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
-            'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
-            'location' => isset($contact['location']) && $contact['location'] !== '' ? trim((string) $contact['location']) : null,
-        ], $contacts);
+        return array_map(static function (array $contact): array {
+            $rawProfileUrls = $contact['profile_urls'] ?? null;
+            $normalizedUrls = is_array($rawProfileUrls) && $rawProfileUrls !== []
+                ? LeadFieldNormalizer::normalizeProfileUrls($rawProfileUrls)
+                : [];
+
+            return [
+                'name' => trim((string) $contact['name']),
+                'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
+                'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
+                'location' => isset($contact['location']) && $contact['location'] !== '' ? trim((string) $contact['location']) : null,
+                'position' => isset($contact['position']) && trim((string) $contact['position']) !== '' ? trim((string) $contact['position']) : null,
+                'profile_urls' => $normalizedUrls !== [] ? $normalizedUrls : null,
+            ];
+        }, $contacts);
     }
 
     /**
-     * @param  array<int, array{name:string,email:?string,phone:?string,location:?string}>  $contacts
+     * @param  array<int, array{name:string,email:?string,phone:?string,location:?string,position:?string,profile_urls:?array<int,string>}>  $contacts
      */
     private function replaceContacts(Lead $lead, array $contacts): void
     {
@@ -1987,6 +2016,8 @@ class LeadService
                 'email' => $lead->email,
                 'phone' => $lead->phone,
                 'location' => $lead->location,
+                'position' => $lead->position,
+                'profile_urls' => $lead->profile_urls,
             ],
         );
         $lead->unsetRelation('contacts');
@@ -1997,7 +2028,7 @@ class LeadService
      */
     private function containsPrimaryContactFields(array $data): bool
     {
-        return array_intersect(['name', 'email', 'phone', 'location'], array_keys($data)) !== [];
+        return array_intersect(['name', 'email', 'phone', 'location', 'position', 'profile_urls'], array_keys($data)) !== [];
     }
 
     private function baseQuery(int $companyId): Builder

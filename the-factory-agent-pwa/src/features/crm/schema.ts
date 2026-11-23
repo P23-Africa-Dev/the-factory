@@ -13,6 +13,8 @@ export const leadContactSchema = z.object({
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
+  position: z.string().nullable().optional(),
+  profile_urls: z.array(z.string()).nullable().optional(),
   sort_order: z.number().nullable().optional(),
 }).passthrough();
 
