@@ -33,7 +33,10 @@ if (!fs.existsSync(gradlewPath)) {
   process.exit(1);
 }
 
-const result = spawnSync(gradlewName, [task], {
+// On Windows the wrapper runs through cmd.exe, which needs the full path
+// quoted (the repo folder contains spaces) to find gradlew.bat.
+const command = isWin ? `"${gradlewPath}"` : gradlewName;
+const result = spawnSync(command, [task], {
   cwd: androidDir,
   stdio: 'inherit',
   env: process.env,
