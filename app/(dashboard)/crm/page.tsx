@@ -506,7 +506,7 @@ function LeadListView({
                       <span className="text-[12px] text-gray-400">{item.assignedBy ?? "Unassigned"}</span>
                     </div>
 
-                    {/* Actions */}
+                    {/* Actions -- */}
                     {onEditLeadClick && (
                       <button
                         type="button"
