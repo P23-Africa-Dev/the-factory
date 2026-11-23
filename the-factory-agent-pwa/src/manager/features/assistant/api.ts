@@ -4,6 +4,7 @@
  * weekly executive summaries, and sales/operations forecasting.
  */
 import { client } from '@/lib/api/client';
+import { flattenApiError } from '@/lib/api/errors';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import type { AssistantMessage, SendMessageResult, ThreadDetail, ThreadSummary } from './types';
 
@@ -40,6 +41,8 @@ export const assistantApi = {
       longitude?: number;
       focus?: 'all' | 'visits' | 'followups' | 'tasks';
       limit?: number;
+      /** A CSV attached with attachFile (e.g. leads to import). */
+      attachment?: { id: string; name: string };
     };
   }): Promise<SendMessageResult> => {
     const companyId = getActiveCompanyId();
@@ -67,6 +70,58 @@ export const assistantApi = {
         response.payload && typeof response.payload === 'object'
           ? (response.payload as Record<string, unknown>)
           : null,
+    };
+  },
+
+  /** Turns a voice note into text. Throws with a readable message on failure. */
+  transcribeVoice: async (file: File): Promise<string> => {
+    const companyId = getActiveCompanyId();
+    const formData = new FormData();
+    formData.append('audio', file);
+    if (companyId != null) formData.append('company_id', String(companyId));
+    let data: Record<string, unknown>;
+    try {
+      const res = await client.post('/copilot/voice/transcriptions', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        suppressErrorToast: true,
+      });
+      data = unwrap(res.data);
+    } catch (err) {
+      throw new Error(flattenApiError(err) || 'Could not transcribe that recording. Please try again.');
+    }
+    const transcript = String(data.transcript ?? '').trim();
+    if (!transcript) {
+      throw new Error(String(data.error ?? 'No speech was detected. Try again, closer to the microphone.'));
+    }
+    return transcript;
+  },
+
+  /** Attaches a CSV to the chat; ELY can then import it when asked. */
+  attachFile: async (file: File): Promise<{ id: string; name: string }> => {
+    const companyId = getActiveCompanyId();
+    const formData = new FormData();
+    formData.append('file', file);
+    if (companyId != null) formData.append('company_id', String(companyId));
+    const res = await client.post('/copilot/attachments', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const attachment = (unwrap(res.data).attachment ?? {}) as Record<string, unknown>;
+    return { id: String(attachment.id ?? ''), name: String(attachment.name ?? file.name) };
+  },
+
+  /** Undoes an action ELY ran. Returns ELY's reply and whether it was undone. */
+  undoAction: async (auditId: number): Promise<{ content: string; undone: boolean }> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.post(`/copilot/actions/undo/${encodeURIComponent(String(auditId))}`, {
+      company_id: companyId ?? undefined,
+    });
+    const response = (unwrap(res.data).response ?? {}) as {
+      content?: unknown;
+      payload?: { undone?: unknown } | null;
+    };
+    return {
+      content: String(response.content ?? ''),
+      undone: response.payload?.undone === true,
     };
   },
 

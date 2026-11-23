@@ -13,13 +13,13 @@ import {
   Trash,
   Trash2,
   Paperclip,
-  CheckCircle2,
-  XCircle,
+  FileSpreadsheet,
+  X,
   FileBarChart2,
   TrendingUp,
-  X,
 } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
+import { ActionConfirmCard, asPendingActionProposal } from '@/features/assistant/ActionConfirmCard';
 import { useAgentIdentity } from '@/features/auth';
 import {
   useAssistantConversation,
@@ -35,6 +35,8 @@ import {
   type DailyPlanPayload,
   type PlanEditsMap,
 } from '@/manager/features/planning';
+import { InlineVoiceRecorder } from '@/components/ely/InlineVoiceRecorder';
+import { ActionReceipts, receiptsFromPayload } from '@/components/ely/ActionReceipts';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 import { showApiErrorToast } from '@/lib/api/errors';
@@ -44,25 +46,6 @@ type LocalAction = 'liked' | 'disliked' | null;
 function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined): DailyPlanPayload | null {
   if (!payload || !Array.isArray(payload.items)) return null;
   return payload as unknown as DailyPlanPayload;
-}
-
-function asPendingActionProposal(
-  payload: Record<string, unknown> | null | undefined,
-): { actionName: string; args: Record<string, unknown>; pendingActionId: string | null } | null {
-  if (!payload) return null;
-  const requiresConfirmation =
-    Boolean(payload.requires_confirmation) ||
-    Boolean(payload.confirmation_required) ||
-    Boolean(payload.action_args);
-  if (!requiresConfirmation) return null;
-  const args =
-    payload.action_args && typeof payload.action_args === 'object'
-      ? (payload.action_args as Record<string, unknown>)
-      : payload;
-  const actionName = String(payload.action ?? payload.tool ?? 'Execute Manager Action');
-  const pendingActionId =
-    typeof payload.pending_action_id === 'string' ? payload.pending_action_id : null;
-  return { actionName, args, pendingActionId };
 }
 
 function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
@@ -96,6 +79,7 @@ export default function AiAssistantPage() {
     send,
     confirmAction,
     cancelAction,
+    undoAction,
     runPlanMyDay,
     clearCurrent,
     clearAll,
@@ -112,8 +96,7 @@ export default function AiAssistantPage() {
   const [acceptedPlanIds, setAcceptedPlanIds] = useState<Set<string>>(new Set());
   const [dismissedPlanIds, setDismissedPlanIds] = useState<Set<string>>(new Set());
   const [notifiedPlanIds, setNotifiedPlanIds] = useState<Set<string>>(new Set());
-  const [confirmedActionIds, setConfirmedActionIds] = useState<Set<string>>(new Set());
-  const [dismissedActionIds, setDismissedActionIds] = useState<Set<string>>(new Set());
+  const [actionStates, setActionStates] = useState<Record<string, 'confirmed' | 'cancelled'>>({});
   const [planEditsByMessage, setPlanEditsByMessage] = useState<Record<string, PlanEditsMap>>({});
   const [acceptingPlanMessageId, setAcceptingPlanMessageId] = useState<string | null>(null);
   const planDayTriggeredRef = useRef(false);
@@ -128,6 +111,8 @@ export default function AiAssistantPage() {
   const contentRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
+  // A CSV attached for ELY to import; sent with the next message.
+  const [attachment, setAttachment] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -190,7 +175,12 @@ export default function AiAssistantPage() {
     const content = (text ?? input).trim();
     if (!content) return;
     setInput('');
-    void send(content, { withGeolocation, context });
+    const attached = attachment;
+    setAttachment(null);
+    void send(content, {
+      withGeolocation,
+      context: attached ? { ...context, attachment: attached } : context,
+    });
   };
 
   const handleGenerateWeeklySummary = async () => {
@@ -222,8 +212,22 @@ export default function AiAssistantPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // ELY reads documents and spreadsheets, not photos.
+    if (file.type.startsWith('image/')) {
+      toast.error('ELY can read documents and spreadsheets, but not photos yet.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setIsAnalyzingPhoto(true);
     try {
+      // A CSV is attached so ELY can import it (e.g. a lead list) when asked.
+      if (/\.csv$/i.test(file.name)) {
+        const attached = await assistantApi.attachFile(file);
+        setAttachment(attached);
+        if (!input.trim()) setInput('Import these leads');
+        return;
+      }
       const result = await assistantApi.analyzeFile(file);
       void send(`File Analysis (${file.name}):\n\n${result.summary}`);
     } catch (err) {
@@ -283,59 +287,41 @@ export default function AiAssistantPage() {
         : null;
 
     const actionProposal = asPendingActionProposal(msg.payload);
-    const isActionConfirmed = confirmedActionIds.has(msg.id);
-    const isActionDismissed = dismissedActionIds.has(msg.id);
+    const actionState = actionStates[msg.id];
+    const isLatest = messages[messages.length - 1]?.id === msg.id;
+    const showActionCard = actionProposal !== null && (isLatest || actionState !== undefined);
 
     return (
       <div key={msg.id} className="flex flex-col items-start">
         <div className="max-w-[88%] flex flex-col gap-2">
           <div className="bg-gradient-to-b from-[#333] to-[#16384B] border border-white/10 rounded-[24px] rounded-tl-none p-5 shadow-lg relative">
             <ParsedHtmlText text={msg.content} />
+            <ActionReceipts
+              receipts={receiptsFromPayload(msg.payload)}
+              area="manager"
+              disabled={isSending}
+              onUndo={undoAction}
+            />
 
-            {/* Manager Write-Action Confirmation Card */}
-            {actionProposal && !isActionDismissed && (
-              <div className="mt-4 p-3.5 rounded-2xl bg-[#0A1D25]/90 border border-[#75ADAF]/40">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#75ADAF]">
-                    Manager Action Confirmation
-                  </span>
-                  <span className="text-[10px] font-semibold text-white/60">
-                    {actionProposal.actionName}
-                  </span>
-                </div>
-                {isActionConfirmed ? (
-                  <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
-                    <CheckCircle2 className="w-4 h-4" /> Confirmed &amp; Executed
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 mt-2">
-                    <button
-                      type="button"
-                      disabled={isSending}
-                      onClick={() => {
-                        setConfirmedActionIds((prev) => new Set(prev).add(msg.id));
-                        void confirmAction(actionProposal.actionName, actionProposal.args);
-                      }}
-                      className="flex-1 py-2 px-3 rounded-xl bg-[#FD6046] hover:bg-[#E0533C] text-white text-xs font-bold flex items-center justify-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Confirm &amp; Execute
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDismissedActionIds((prev) => new Set(prev).add(msg.id));
-                        // Cancel on the server too, so the action can't run later.
-                        if (actionProposal.pendingActionId) {
-                          void cancelAction(actionProposal.pendingActionId);
-                        }
-                      }}
-                      className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white/80 text-xs font-semibold flex items-center gap-1"
-                    >
-                      <XCircle className="w-3.5 h-3.5" /> Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
+            {/* Risky actions wait for a tap. Only the newest reply can still be
+                waiting; older cards stay hidden unless acted on here. */}
+            {showActionCard && actionProposal && (
+              <ActionConfirmCard
+                proposal={actionProposal}
+                state={actionState ?? 'open'}
+                disabled={isSending}
+                onConfirm={() => {
+                  setActionStates((prev) => ({ ...prev, [msg.id]: 'confirmed' }));
+                  void confirmAction(actionProposal.tool, actionProposal.args);
+                }}
+                onCancel={() => {
+                  setActionStates((prev) => ({ ...prev, [msg.id]: 'cancelled' }));
+                  // Cancel on the server too, so the action can't run later.
+                  if (actionProposal.pendingActionId) {
+                    void cancelAction(actionProposal.pendingActionId);
+                  }
+                }}
+              />
             )}
 
             {planPayload && planEdits && (
@@ -523,11 +509,27 @@ export default function AiAssistantPage() {
 
         {/* Input Bar pinned above Bottom Navigation */}
         <div className="fixed bottom-[80px] left-0 right-0 max-w-md mx-auto z-50 pb-1">
+          {attachment && (
+            <div className="mx-4 mb-2 flex items-center gap-2 rounded-2xl bg-[#16384B] px-3 py-2 text-xs text-white shadow-lg">
+              <FileSpreadsheet size={16} className="flex-shrink-0 text-[#7BB6B8]" />
+              <span className="min-w-0 flex-1 truncate">
+                {attachment.name} is attached. Tell ELY what to do with it.
+              </span>
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                aria-label="Remove attachment"
+                className="flex-shrink-0 rounded-full p-1 active:bg-white/10"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
           <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-6 gap-3 border border-gray-100">
             <input
               type="file"
               ref={fileInputRef}
-              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,image/*"
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -540,7 +542,7 @@ export default function AiAssistantPage() {
               <Paperclip size={20} />
             </button>
 
-            <div className="flex-1 bg-gray-100 rounded-full h-12 flex items-center px-4">
+            <div className="relative flex-1 min-w-0 bg-gray-100 rounded-full h-12 flex items-center pl-4 pr-1.5 gap-1">
               <input
                 type="text"
                 placeholder={ELY_INPUT_PLACEHOLDER}
@@ -549,7 +551,13 @@ export default function AiAssistantPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSend();
                 }}
-                className="w-full bg-transparent border-none text-[#091519] font-medium text-sm focus:outline-none placeholder-[#091519]/45 p-0"
+                className="w-full min-w-0 bg-transparent border-none text-[#091519] font-medium text-sm focus:outline-none placeholder-[#091519]/45 p-0"
+              />
+              <InlineVoiceRecorder
+                disabled={isSending}
+                onTranscribe={assistantApi.transcribeVoice}
+                onTranscribed={(text) => setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))}
+                onError={(message) => toast.error(message)}
               />
             </div>
 

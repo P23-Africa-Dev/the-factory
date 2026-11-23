@@ -101,6 +101,7 @@ export function useAssistantConversation() {
           longitude?: number;
           focus?: 'all' | 'visits' | 'followups' | 'tasks';
           limit?: number;
+          attachment?: { id: string; name: string };
         };
       },
     ) => {
@@ -188,6 +189,19 @@ export function useAssistantConversation() {
     [send],
   );
 
+  /** Undoes an action ELY ran (the receipt's Undo button). Resolves true when undone. */
+  const undoAction = useCallback(async (auditId: number): Promise<boolean> => {
+    try {
+      const result = await assistantApi.undoAction(auditId);
+      if (result.content) {
+        setMessages((prev) => [...prev, { id: nextId('ai'), role: 'assistant', content: result.content }]);
+      }
+      return result.undone;
+    } catch {
+      return false;
+    }
+  }, []);
+
   /** Cancels the waiting action on the server, so it can't run later. */
   const cancelAction = useCallback(async (pendingActionId: string) => {
     try {
@@ -232,6 +246,7 @@ export function useAssistantConversation() {
     send,
     confirmAction,
     cancelAction,
+    undoAction,
     runPlanMyDay,
     clearCurrent,
     clearAll,
