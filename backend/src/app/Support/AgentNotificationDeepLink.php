@@ -10,6 +10,30 @@ namespace App\Support;
  */
 final class AgentNotificationDeepLink
 {
+    /**
+     * Source identifiers forwarded with push / realtime payloads so the PWA can open the
+     * exact record for the user's mode (agent or manager), regardless of action_url.
+     *
+     * @return array{raw_action_url: string, action_route: string, reference_type: string, reference_id: string, task_id: string, lead_id: string, meeting_id: string}
+     */
+    public static function clickContext(\App\Models\AppNotification $notification): array
+    {
+        $metadata = is_array($notification->metadata) ? $notification->metadata : [];
+        $id = static function (mixed $value): string {
+            return is_numeric($value) && (int) $value > 0 ? (string) (int) $value : '';
+        };
+
+        return [
+            'raw_action_url' => (string) ($notification->action_url ?? ''),
+            'action_route' => (string) ($notification->action_route ?? ''),
+            'reference_type' => (string) ($notification->reference_type ?? ''),
+            'reference_id' => $id($notification->reference_id),
+            'task_id' => $id($metadata['task_id'] ?? null),
+            'lead_id' => $id($metadata['lead_id'] ?? null),
+            'meeting_id' => $id($metadata['meeting_id'] ?? null),
+        ];
+    }
+
     public static function resolve(?string $rawUrl): string
     {
         $input = is_string($rawUrl) ? trim($rawUrl) : '';

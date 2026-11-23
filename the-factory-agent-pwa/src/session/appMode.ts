@@ -34,6 +34,8 @@ export function isPublicOrSystemPath(pathname: string): boolean {
     pathname === '/install' ||
     pathname.startsWith('/install/') ||
     pathname === '/offline' ||
+    // Push-tap landing page: resolves the destination for either mode client-side.
+    pathname === '/open-notification' ||
     pathname === '/manifest.json' ||
     pathname === '/sw.js' ||
     pathname.startsWith('/icons/') ||

@@ -4,6 +4,10 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { readSession } from '@/session/sessionStore';
 import { homeFor, type AppMode } from '@/session/appMode';
+import {
+  hasPendingNotification,
+  hasRecentNotificationNavigation,
+} from '@/lib/notifications/notificationTarget';
 
 function getStorageKey(mode?: AppMode, userId?: number | string): string {
   if (mode && userId) {
@@ -67,6 +71,8 @@ export function useRouteRestoration(expectedMode?: AppMode): { isRestoring: bool
   const [isRestoring, setIsRestoring] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     if (pathname !== launchPath) return false;
+    // A tapped notification owns this launch — never send the user elsewhere.
+    if (hasRecentNotificationNavigation() || hasPendingNotification()) return false;
     const saved = window.localStorage.getItem(storageKey);
     return Boolean(saved && saved !== launchPath && isRestorableRoute(saved, activeMode));
   });

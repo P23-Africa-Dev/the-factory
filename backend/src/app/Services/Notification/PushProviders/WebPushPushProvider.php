@@ -73,6 +73,7 @@ class WebPushPushProvider implements PushProvider
                 'notification_id' => $notification->id,
                 'type' => $notification->type,
                 'category' => $notification->category,
+                ...AgentNotificationDeepLink::clickContext($notification),
             ], JSON_THROW_ON_ERROR));
 
             if ($report->isSuccess()) {

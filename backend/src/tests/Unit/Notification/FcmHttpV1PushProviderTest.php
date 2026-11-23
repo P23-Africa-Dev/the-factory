@@ -45,6 +45,7 @@ class FcmHttpV1PushProviderTest extends TestCase
             'action_route' => 'tasks.show',
             'reference_type' => 'App\\Models\\Task',
             'reference_id' => 42,
+            'metadata' => ['task_id' => 42],
         ]);
         $notification->id = 99;
 
@@ -63,6 +64,13 @@ class FcmHttpV1PushProviderTest extends TestCase
 
             return ($message['token'] ?? null) === 'device-token-abc'
                 && ($message['data']['action_url'] ?? null) === '/task/42'
+                && ($message['data']['raw_action_url'] ?? null) === '/tasks/42'
+                && ($message['data']['task_id'] ?? null) === '42'
+                && ($message['data']['reference_id'] ?? null) === '42'
+                && ($message['data']['notification_id'] ?? null) === '99'
+                // A custom click_action without a matching intent-filter makes APK taps do nothing.
+                && ! array_key_exists('click_action', $message['android']['notification'] ?? [])
+                && collect($message['data'])->every(fn ($value) => is_string($value))
                 && ($message['notification']['title'] ?? null) === 'New task'
                 && $request->hasHeader('Authorization', 'Bearer ya29.test-token');
         });

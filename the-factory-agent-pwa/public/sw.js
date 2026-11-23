@@ -29,110 +29,13 @@ const IDB_NAME = "factory-agent-pwa";
 const LOCATION_BATCH_SIZE = 50;
 
 /**
- * Keep in sync with src/lib/notifications/resolveAgentDeepLink.ts
- * (service workers cannot import the TS module).
+ * Notification taps are routed by the app, not here: the SW cannot tell whether the
+ * signed-in user is an agent or a manager. It forwards the raw payload to an open
+ * window (NOTIFICATION_CLICKED message) or opens /open-notification, which resolves
+ * the destination with src/lib/notifications/notificationTarget.ts.
  */
-function resolveAgentDeepLink(rawUrl) {
-  const input = typeof rawUrl === "string" ? rawUrl.trim() : "";
-  if (!input) return "/";
-
-  if (/^https?:\/\//i.test(input)) {
-    try {
-      const parsed = new URL(input);
-      if (parsed.origin === self.location.origin) {
-        return resolveAgentDeepLink(`${parsed.pathname}${parsed.search}${parsed.hash}`);
-      }
-      return input;
-    } catch {
-      // fall through
-    }
-  }
-
-  let path = input;
-  if (/^https?:\/\//i.test(path)) {
-    try {
-      const parsed = new URL(path);
-      path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    } catch {
-      // keep
-    }
-  }
-  if (!path.startsWith("/")) path = `/${path}`;
-  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-
-  const parts = path.split("?");
-  let pathname = parts[0] || "/";
-  const search = parts[1] ? `?${parts[1]}` : "";
-
-  if (pathname === "/agent") {
-    pathname = "/";
-  } else if (pathname.startsWith("/agent/")) {
-    pathname = pathname.slice("/agent".length);
-  }
-
-  const taskDetail = pathname.match(/^\/tasks\/(\d+)(?:\/.*)?$/);
-  if (taskDetail) return `/task/${taskDetail[1]}${search}`;
-  if (pathname.startsWith("/tasks/reassignments")) return `/tasks${search}`;
-  if (pathname === "/tasks") return `/tasks${search}`;
-
-  const meetingDetail = pathname.match(/^\/meetings\/(\d+)/);
-  if (meetingDetail) return `/meetings/${meetingDetail[1]}${search}`;
-  if (pathname.startsWith("/meetings")) return `${pathname}${search}`;
-
-  const leadDetail = pathname.match(/^\/crm\/leads\/(\d+)/);
-  if (leadDetail) return `/crm/leads/${leadDetail[1]}${search}`;
-  if (pathname.startsWith("/crm")) return `${pathname}${search}`;
-
-  if (pathname.startsWith("/field-activity")) return `${pathname}${search}`;
-  if (pathname === "/map" || pathname.startsWith("/map/")) return `/map${search}`;
-
-  if (
-    pathname.startsWith("/operations/attendance") ||
-    pathname === "/operations" ||
-    pathname.startsWith("/operations/")
-  ) {
-    return "/";
-  }
-
-  if (pathname === "/user/profile" || pathname === "/profile") return "/profile";
-  if (pathname === "/assistant" || pathname.startsWith("/assistant/")) return "/assistant";
-
-  if (
-    pathname === "/" ||
-    pathname === "/dashboard" ||
-    pathname === "/home" ||
-    pathname === "/notifications" ||
-    pathname === "/insight" ||
-    pathname === "/payroll" ||
-    pathname.startsWith("/projects/") ||
-    pathname === "/subscribe" ||
-    pathname.startsWith("/enterprise/") ||
-    pathname.startsWith("/internal") ||
-    pathname.startsWith("/auth/") ||
-    pathname.startsWith("/drive")
-  ) {
-    return "/";
-  }
-
-  const knownPrefixes = [
-    "/task/",
-    "/tasks",
-    "/map",
-    "/meetings",
-    "/crm",
-    "/field-activity",
-    "/profile",
-    "/assistant",
-    "/sync",
-    "/login",
-  ];
-  if (knownPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix))) {
-    return `${pathname}${search}`;
-  }
-
-  return "/";
-}
-
+const OPEN_NOTIFICATION_PATH = "/open-notification";
+const NOTIFICATION_ACK_TIMEOUT_MS = 1000;
 
 const STATIC_ASSETS = [
   "/",
@@ -490,8 +393,9 @@ self.addEventListener("push", (event) => {
 
       const title = data.title || "Factory 23 Agent";
       const body = data.message || data.body || "";
-      const url = resolveAgentDeepLink(data.action_url || data.url || "/");
       const tag = data.tag || `factory-notification-${data.notification_id || Date.now()}`;
+      const { title: _t, body: _b, message: _m, tag: _tag, ...payload } = data;
+      if (!payload.action_url && data.url) payload.action_url = data.url;
 
       await self.registration.showNotification(title, {
         body,
@@ -502,7 +406,8 @@ self.addEventListener("push", (event) => {
         requireInteraction: false,
         vibrate: [120, 60, 120],
         data: {
-          url,
+          url: payload.action_url || "/",
+          payload,
           notification_id: data.notification_id || null,
           type: data.type || null,
           category: data.category || null,
@@ -523,7 +428,8 @@ self.addEventListener("message", (event) => {
       badge: PWA_NOTIFICATION_BADGE,
       tag: data.tag || "factory-notification",
       data: {
-        url: resolveAgentDeepLink(data.url || "/"),
+        url: data.url || "/",
+        payload: data.payload || null,
       },
     };
 
@@ -544,29 +450,75 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const rawUrl = event.notification.data?.url || "/";
-  const resolvedPath = resolveAgentDeepLink(rawUrl);
-  const targetUrl = /^https?:\/\//i.test(resolvedPath)
-    ? resolvedPath
-    : new URL(resolvedPath, self.location.origin).href;
+  const data = event.notification.data || {};
+  const payload =
+    data.payload && typeof data.payload === "object" ? data.payload : { url: data.url || "/" };
+  const openUrl = new URL(
+    `${OPEN_NOTIFICATION_PATH}?d=${encodeURIComponent(JSON.stringify(payload))}`,
+    self.location.origin,
+  ).href;
 
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if ("focus" in client) {
-          if ("navigate" in client) {
-            return client.focus().then(() => client.navigate(targetUrl));
-          }
-          return client.focus();
-        }
-      }
-      if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
-      }
-      return undefined;
-    }),
-  );
+  event.waitUntil(routeNotificationClick(payload, openUrl));
 });
+
+/** Ask an open app window to route the tap; resolves true once the app acknowledges. */
+function askClientToOpenNotification(client, payload) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(false), NOTIFICATION_ACK_TIMEOUT_MS);
+    try {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (event) => {
+        if (event.data && event.data.type === "NOTIFICATION_CLICK_ACK") finish(true);
+      };
+      client.postMessage({ type: "NOTIFICATION_CLICKED", payload }, [channel.port2]);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+async function routeNotificationClick(payload, openUrl) {
+  const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const appClients = clientList.filter((client) => {
+    try {
+      return new URL(client.url).origin === self.location.origin;
+    } catch {
+      return false;
+    }
+  });
+  const client =
+    appClients.find((c) => c.focused) ||
+    appClients.find((c) => c.visibilityState === "visible") ||
+    appClients[0];
+
+  if (client) {
+    try {
+      await client.focus();
+    } catch {
+      // Focus can fail without user activation; navigation below still works.
+    }
+    if (await askClientToOpenNotification(client, payload)) return;
+    if ("navigate" in client) {
+      try {
+        const navigated = await client.navigate(openUrl);
+        if (navigated) return;
+      } catch {
+        // Uncontrolled clients cannot be navigated — fall back to a new window.
+      }
+    }
+  }
+
+  if (self.clients.openWindow) {
+    await self.clients.openWindow(openUrl);
+  }
+}
 
 async function cacheRoutes(routes) {
   const cache = await caches.open(PAGE_CACHE);

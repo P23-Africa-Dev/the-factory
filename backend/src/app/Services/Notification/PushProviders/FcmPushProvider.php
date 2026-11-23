@@ -48,10 +48,8 @@ class FcmPushProvider implements PushProvider
             'notification_id' => (string) $notification->id,
             'type' => (string) $notification->type,
             'category' => (string) $notification->category,
-            'reference_type' => (string) ($notification->reference_type ?? ''),
-            'reference_id' => (string) ($notification->reference_id ?? ''),
+            ...AgentNotificationDeepLink::clickContext($notification),
             'action_url' => (string) $actionUrl,
-            'action_route' => (string) ($notification->action_route ?? ''),
             'title' => $title,
             'body' => $body,
         ];
@@ -73,9 +71,11 @@ class FcmPushProvider implements PushProvider
                     'data' => $data,
                     'android' => [
                         'priority' => 'HIGH',
+                        // No click_action: the default launcher intent opens MainActivity, where
+                        // Capacitor emits pushNotificationActionPerformed with the data above.
+                        // (A custom action with no matching intent-filter makes taps do nothing.)
                         'notification' => [
                             'sound' => 'default',
-                            'click_action' => 'FCM_PLUGIN_ACTIVITY',
                         ],
                     ],
                 ],

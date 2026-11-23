@@ -13,6 +13,10 @@ export type NotificationEnvelope = {
   message: string;
   is_in_app_visible: boolean;
   action_url: string | null;
+  action_route?: string | null;
+  reference_type?: string | null;
+  reference_id?: number | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 interface NotificationStore {

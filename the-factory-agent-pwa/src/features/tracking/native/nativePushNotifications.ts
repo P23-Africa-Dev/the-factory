@@ -8,7 +8,12 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { PushNotifications, type Token, type ActionPerformed, type PushNotificationSchema } from '@capacitor/push-notifications';
 import { client } from '@/lib/api/client';
-import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
+import {
+  openNotificationTarget,
+  resolveNotificationTargetFromPayload,
+  type NotificationClickPayload,
+} from '@/lib/notifications/notificationTarget';
+import { markNotificationOpened } from '@/lib/notifications/openNotification';
 import { isNativeAndroid } from './capacitorPlatform';
 import { ensureNativeLocalNotificationPermission, notifyNative } from './nativeLocalNotifications';
 
@@ -39,10 +44,9 @@ async function isFirebaseReadyOnDevice(): Promise<boolean> {
   }
 }
 
-function resolveActionUrl(data: Record<string, unknown> | undefined): string {
-  const raw = data?.action_url ?? data?.action_route ?? data?.url;
-  if (typeof raw !== 'string' || raw.trim() === '') return '/';
-  return resolveAgentDeepLink(raw.trim());
+/** FCM data values arrive as strings; keep them as the raw click payload. */
+function clickPayloadFrom(data: Record<string, unknown> | undefined): NotificationClickPayload {
+  return { ...(data ?? {}) } as NotificationClickPayload;
 }
 
 async function registerTokenWithApi(token: string): Promise<void> {
@@ -87,21 +91,23 @@ function attachListeners(): void {
         ? `fcm-${data.notification_id}`
         : `fcm-${Date.now()}`;
 
+    const payload = clickPayloadFrom(data);
     void notifyNative({
       title,
       body,
       tag,
-      url: resolveActionUrl(data),
+      url: resolveNotificationTargetFromPayload(payload),
+      payload,
     });
   });
 
+  // Tray tap (app backgrounded or cold-started from the notification).
   void PushNotifications.addListener('pushNotificationActionPerformed', (event: ActionPerformed) => {
-    const data = (event.notification.data ?? {}) as Record<string, unknown>;
-    const url = resolveActionUrl(data);
     try {
-      if (typeof window !== 'undefined') {
-        window.location.assign(url.startsWith('http') ? url : url);
-      }
+      const payload = clickPayloadFrom(event.notification.data as Record<string, unknown> | undefined);
+      const target = resolveNotificationTargetFromPayload(payload);
+      markNotificationOpened(payload.notification_id);
+      openNotificationTarget(target);
     } catch {
       // ignore navigation failures
     }
