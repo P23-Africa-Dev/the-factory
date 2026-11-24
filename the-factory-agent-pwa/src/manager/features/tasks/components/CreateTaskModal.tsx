@@ -245,25 +245,6 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             />
           </div>
 
-          {/* Task Type */}
-          <div className="flex flex-col">
-            <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">
-              Task Type
-            </label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as typeof type)}
-              className="bg-[#0B1E26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
-            >
-              <option value="" />
-              {TASK_TYPES.map((t) => (
-                <option key={t.value} value={t.value} className="bg-[#0B1E26] text-white">
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Description */}
           <div className="flex flex-col">
             <label className="text-[10px] text-white/50 tracking-wider font-bold mb-1 uppercase font-sans">

@@ -1173,235 +1173,218 @@ function ManagerTasksContent() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 pb-9 max-h-[90vh] overflow-y-auto"
+              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 max-h-[85dvh] flex flex-col overflow-hidden"
             >
-              <div className="w-9 h-1 rounded-full bg-white/25 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-white mb-4">Create &amp; Assign Task</h3>
+              <div className="shrink-0">
+                <div className="w-9 h-1 rounded-full bg-white/25 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-white mb-4">Create &amp; Assign Task</h3>
+              </div>
 
-              <form onSubmit={handleCreateTask} className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Title *
-                  </label>
-                  <input
-                    type="text"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g. Client site inspection"
-                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
-                  />
-                  {createErrors.title && (
-                    <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.title}</p>
-                  )}
-                </div>
-
-                {/* Subtasks — right after the title */}
-                <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} agents={assignees}
-                  defaultAssignee={{ id: newAssigneeId || String(user?.id ?? ""), name: assignees.find((agent) => String(agent.id) === newAssigneeId)?.name ?? user?.name ?? "You" }} />
-
-                {/* Assignee selector */}
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Assign to *
-                  </label>
-                  <ObserverPicker
-                    people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
-                    value={newAssigneeIds}
-                    onChange={(ids) => {
-                      setNewAssigneeIds(ids);
-                      // Someone who performs the task cannot also observe it.
-                      setNewObserverIds((current) => current.filter((id) => !ids.includes(id)));
-                    }}
-                    ariaLabel="Select assignees"
-                    placeholder="Select one or more people"
-                    icon={<UserPlus size={13} className="text-white/40 shrink-0" aria-hidden="true" />}
-                  />
-                  <p className="text-[10px] text-white/40 mt-1">
-                    Everyone picked works on the same task. The first person is the primary assignee.
-                  </p>
-                  {createErrors.assignee && (
-                    <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.assignee}</p>
-                  )}
-                </div>
-
-                {/* Observers — follow the task and can comment, but do not perform it */}
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Observers
-                  </label>
-                  <ObserverPicker
-                    people={observerCandidates}
-                    value={newObserverIds}
-                    onChange={setNewObserverIds}
-                    excludeIds={newAssigneeIds}
-                    loading={loadingObserverCandidates}
-                  />
-                  <p className="text-[10px] text-white/40 mt-1">
-                    Observers can see this task and comment on it, but it is not assigned to them.
-                  </p>
-                </div>
-
-                {/* Project selector */}
-                {projects.length > 0 && (
+              <form onSubmit={handleCreateTask} className="flex flex-col flex-1 min-h-0">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y space-y-4 pb-4">
                   <div>
                     <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                      Project (Optional)
+                      Title *
                     </label>
-                    <select
-                      value={newProjectId}
-                      onChange={(e) => setNewProjectId(e.target.value)}
-                      className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
-                    >
-                      <option value="">No project</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={String(p.id)}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Task Type
-                  </label>
-                  <div className="flex overflow-x-auto gap-2 pb-1 scrollbar-none">
-                    {TASK_TYPES.map((t) => (
-                      <button
-                        key={t.value}
-                        type="button"
-                        onClick={() => setNewType(t.value)}
-                        className={`px-3.5 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                          newType === t.value
-                            ? 'bg-[#75ADAF] text-[#0A1D25] font-bold'
-                            : 'bg-white/8 text-white/65'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={newDesc}
-                    onChange={(e) => setNewDesc(e.target.value)}
-                    placeholder="Describe instructions and deliverables for the agent..."
-                    className="w-full rounded-xl bg-white/6 border border-white/12 p-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF] resize-none"
-                  />
-                  {createErrors.description && (
-                    <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.description}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Location / Address
-                  </label>
-                  <div className="relative">
-                    <Search
-                      size={15}
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none"
-                    />
                     <input
                       type="text"
-                      value={newAddress}
-                      onChange={(e) => {
-                        setNewAddress(e.target.value);
-                        setNewPlaceCoords(null);
-                      }}
-                      placeholder="Search address or landmark..."
-                      className="w-full h-11 rounded-xl bg-white/6 border border-white/12 pl-9 pr-8 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      placeholder="e.g. Client site inspection"
+                      className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
                     />
+                    {createErrors.title && (
+                      <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.title}</p>
+                    )}
                   </div>
 
-                  {!newPlaceSearching && newPlaceResults.length > 0 && (
-                    <div className="mt-1.5 rounded-xl bg-[#0D252F] border border-white/10 max-h-44 overflow-y-auto divide-y divide-white/5">
-                      {newPlaceResults.map((place) => (
-                        <button
-                          key={place.id}
-                          type="button"
-                          onClick={() => {
-                            setNewAddress(
-                              place.address ? `${place.name} — ${place.address}` : place.name,
-                            );
-                            setNewPlaceCoords({
-                              latitude: place.latitude,
-                              longitude: place.longitude,
-                            });
-                            setNewPlaceResults([]);
-                          }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
-                        >
-                          <MapPin size={14} className="text-[#75ADAF] shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-white truncate">
-                              {place.name}
-                            </p>
-                            <p className="text-[11px] text-white/50 truncate">{place.address}</p>
-                          </div>
-                        </button>
-                      ))}
-                      {getAttributionLine(newPlaceResults) && (
-                        <p className="text-[10px] text-white/35 text-right px-3 py-1">
-                          {getAttributionLine(newPlaceResults)}
-                        </p>
-                      )}
+                  {/* Subtasks — right after the title */}
+                  <ChecklistDraftFields steps={subtasks} onChange={setSubtasks} agents={assignees}
+                    defaultAssignee={{ id: newAssigneeId || String(user?.id ?? ""), name: assignees.find((agent) => String(agent.id) === newAssigneeId)?.name ?? user?.name ?? "You" }} />
+
+                  {/* Assignee selector */}
+                  <div>
+                    <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                      Assign to *
+                    </label>
+                    <ObserverPicker
+                      people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                      value={newAssigneeIds}
+                      onChange={(ids) => {
+                        setNewAssigneeIds(ids);
+                        // Someone who performs the task cannot also observe it.
+                        setNewObserverIds((current) => current.filter((id) => !ids.includes(id)));
+                      }}
+                      ariaLabel="Select assignees"
+                      placeholder="Select one or more people"
+                      icon={<UserPlus size={13} className="text-white/40 shrink-0" aria-hidden="true" />}
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">
+                      Everyone picked works on the same task. The first person is the primary assignee.
+                    </p>
+                    {createErrors.assignee && (
+                      <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.assignee}</p>
+                    )}
+                  </div>
+
+                  {/* Observers — follow the task and can comment, but do not perform it */}
+                  <div>
+                    <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                      Observers
+                    </label>
+                    <ObserverPicker
+                      people={observerCandidates}
+                      value={newObserverIds}
+                      onChange={setNewObserverIds}
+                      excludeIds={newAssigneeIds}
+                      loading={loadingObserverCandidates}
+                    />
+                    <p className="text-[10px] text-white/40 mt-1">
+                      Observers can see this task and comment on it, but it is not assigned to them.
+                    </p>
+                  </div>
+
+                  {/* Project selector */}
+                  {projects.length > 0 && (
+                    <div>
+                      <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                        Project (Optional)
+                      </label>
+                      <select
+                        value={newProjectId}
+                        onChange={(e) => setNewProjectId(e.target.value)}
+                        className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
+                      >
+                        <option value="">No project</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={String(p.id)}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   )}
-                  {placeCreditsExhausted && (
-                    <p className="text-[11px] text-amber-300/80 mt-1.5">
-                      Place search is temporarily unavailable. Enter the address manually.
-                    </p>
-                  )}
-                </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Priority
-                  </label>
-                  <div className="flex gap-2">
-                    {PRIORITIES.map((p) => (
-                      <button
-                        key={p.value}
-                        type="button"
-                        onClick={() => setNewPriority(p.value)}
-                        className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
-                          newPriority === p.value
-                            ? 'bg-white/15 border-white/30 text-white'
-                            : 'bg-white/5 border-white/8 text-white/50'
-                        }`}
-                        style={
-                          newPriority === p.value
-                            ? { borderColor: p.color, color: p.color }
-                            : undefined
-                        }
-                      >
-                        {p.label}
-                      </button>
-                    ))}
+                  <div>
+                    <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                      Description
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={newDesc}
+                      onChange={(e) => setNewDesc(e.target.value)}
+                      placeholder="Describe instructions and deliverables for the agent..."
+                      className="w-full rounded-xl bg-white/6 border border-white/12 p-3.5 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF] resize-none"
+                    />
+                    {createErrors.description && (
+                      <p className="text-[11px] text-[#E74C3C] mt-1">{createErrors.description}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                      Location / Address
+                    </label>
+                    <div className="relative">
+                      <Search
+                        size={15}
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none"
+                      />
+                      <input
+                        type="text"
+                        value={newAddress}
+                        onChange={(e) => {
+                          setNewAddress(e.target.value);
+                          setNewPlaceCoords(null);
+                        }}
+                        placeholder="Search address or landmark..."
+                        className="w-full h-11 rounded-xl bg-white/6 border border-white/12 pl-9 pr-8 text-sm text-white placeholder-white/35 outline-none focus:border-[#75ADAF]"
+                      />
+                    </div>
+
+                    {!newPlaceSearching && newPlaceResults.length > 0 && (
+                      <div className="mt-1.5 rounded-xl bg-[#0D252F] border border-white/10 max-h-44 overflow-y-auto divide-y divide-white/5">
+                        {newPlaceResults.map((place) => (
+                          <button
+                            key={place.id}
+                            type="button"
+                            onClick={() => {
+                              setNewAddress(
+                                place.address ? `${place.name} — ${place.address}` : place.name,
+                              );
+                              setNewPlaceCoords({
+                                latitude: place.latitude,
+                                longitude: place.longitude,
+                              });
+                              setNewPlaceResults([]);
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+                          >
+                            <MapPin size={14} className="text-[#75ADAF] shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-white truncate">
+                                {place.name}
+                              </p>
+                              <p className="text-[11px] text-white/50 truncate">{place.address}</p>
+                            </div>
+                          </button>
+                        ))}
+                        {getAttributionLine(newPlaceResults) && (
+                          <p className="text-[10px] text-white/35 text-right px-3 py-1">
+                            {getAttributionLine(newPlaceResults)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {placeCreditsExhausted && (
+                      <p className="text-[11px] text-amber-300/80 mt-1.5">
+                        Place search is temporarily unavailable. Enter the address manually.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                      Priority
+                    </label>
+                    <div className="flex gap-2">
+                      {PRIORITIES.map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          onClick={() => setNewPriority(p.value)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                            newPriority === p.value
+                              ? 'bg-white/15 border-white/30 text-white'
+                              : 'bg-white/5 border-white/8 text-white/50'
+                          }`}
+                          style={
+                            newPriority === p.value
+                              ? { borderColor: p.color, color: p.color }
+                              : undefined
+                          }
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
+                      Due Date (Optional)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={newDueDate}
+                      onChange={(e) => setNewDueDate(e.target.value)}
+                      style={{ colorScheme: 'dark' }}
+                      className="w-full min-w-0 max-w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF] appearance-none"
+                    />
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5 block">
-                    Due Date (Optional)
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={newDueDate}
-                    onChange={(e) => setNewDueDate(e.target.value)}
-                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-2">
+                <div className="shrink-0 flex gap-3 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] border-t border-white/10 bg-[#0A1D25]">
                   <button
                     type="button"
                     onClick={() => {
@@ -1525,8 +1508,8 @@ function ManagerTasksContent() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="min-w-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="min-w-0 overflow-hidden">
                       <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
                         Start Date
                       </label>
@@ -1534,10 +1517,11 @@ function ManagerTasksContent() {
                         type="date"
                         value={kpiStartDate}
                         onChange={(e) => setKpiStartDate(e.target.value)}
+                        style={{ colorScheme: 'dark' }}
                         className="w-full min-w-0 max-w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-xs text-white outline-none appearance-none"
                       />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 overflow-hidden">
                       <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
                         End Date
                       </label>
@@ -1545,6 +1529,7 @@ function ManagerTasksContent() {
                         type="date"
                         value={kpiEndDate}
                         onChange={(e) => setKpiEndDate(e.target.value)}
+                        style={{ colorScheme: 'dark' }}
                         className="w-full min-w-0 max-w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-xs text-white outline-none appearance-none"
                       />
                     </div>
@@ -1577,11 +1562,20 @@ function ManagerTasksContent() {
       <AnimatePresence>
         {createProjectOpen && (
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-5">
+            <div
+              className="absolute inset-0"
+              onClick={() => {
+                setCreateProjectOpen(false);
+                setProjectName('');
+                setProjectDesc('');
+                setProjectDueDate('');
+              }}
+            />
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.92, opacity: 0 }}
-              className="w-full max-w-sm bg-[#0D252F] border border-white/10 rounded-3xl p-6"
+              className="relative z-10 w-full max-w-sm bg-[#0D252F] border border-white/10 rounded-3xl p-6"
             >
               <h3 className="text-base font-bold text-white mb-4">Create New Project</h3>
               <form onSubmit={handleCreateProjectSubmit} className="space-y-3.5">
@@ -1599,16 +1593,37 @@ function ManagerTasksContent() {
                   placeholder="Description (optional)"
                   className="w-full rounded-xl bg-white/8 border border-white/12 p-3 text-sm text-white outline-none resize-none"
                 />
-                <input
-                  type="date"
-                  value={projectDueDate}
-                  onChange={(e) => setProjectDueDate(e.target.value)}
-                  className="w-full h-11 rounded-xl bg-white/8 border border-white/12 px-3.5 text-sm text-white outline-none"
-                />
+                <div>
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
+                    Due Date (optional)
+                  </label>
+                  <div className="relative">
+                    {!projectDueDate && (
+                      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-white/40">
+                        Select due date
+                      </span>
+                    )}
+                    <input
+                      type="date"
+                      aria-label="Due Date"
+                      value={projectDueDate}
+                      onChange={(e) => setProjectDueDate(e.target.value)}
+                      style={{ colorScheme: 'dark' }}
+                      className={`w-full min-w-0 max-w-full h-11 rounded-xl bg-white/8 border border-white/12 px-3.5 text-sm outline-none appearance-none ${
+                        projectDueDate ? 'text-white' : 'text-transparent'
+                      }`}
+                    />
+                  </div>
+                </div>
                 <div className="flex gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => setCreateProjectOpen(false)}
+                    onClick={() => {
+                      setCreateProjectOpen(false);
+                      setProjectName('');
+                      setProjectDesc('');
+                      setProjectDueDate('');
+                    }}
                     className="flex-1 h-11 rounded-xl bg-white/10 text-white text-xs font-bold"
                   >
                     Cancel
