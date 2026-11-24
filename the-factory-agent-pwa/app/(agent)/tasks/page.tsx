@@ -718,7 +718,7 @@ export default function TasksPage() {
 
       <AnimatePresence>
         {taskToDecline && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 px-8">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-8">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -780,7 +780,7 @@ export default function TasksPage() {
       />
       <AnimatePresence>
         {taskToEdit && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 px-6">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-6">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -855,7 +855,7 @@ export default function TasksPage() {
 
       <AnimatePresence>
         {taskToDelete && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 px-8">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-8">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

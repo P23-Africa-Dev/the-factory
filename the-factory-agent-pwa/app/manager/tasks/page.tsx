@@ -1048,7 +1048,7 @@ function ManagerTasksContent() {
       {/* ─── Task Action Sheet (Assign / Status / Edit / Delete) ─── */}
       <AnimatePresence>
         {menuTask && (
-          <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60">
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/60">
             <div className="absolute inset-0" onClick={() => setMenuTask(null)} />
             <motion.div
               initial={{ y: '100%' }}
@@ -1116,7 +1116,7 @@ function ManagerTasksContent() {
       {/* ─── Assign / Reassign Agent Modal ─── */}
       <AnimatePresence>
         {reassignModalTask && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 px-5">
+          <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/65 px-5">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1166,7 +1166,7 @@ function ManagerTasksContent() {
       {/* ─── Create & Assign Task Modal ─── */}
       <AnimatePresence>
         {createModalOpen && (
-          <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/65">
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/65">
             <div className="absolute inset-0" onClick={() => setCreateModalOpen(false)} />
             <motion.div
               initial={{ y: '100%' }}
@@ -1433,63 +1433,35 @@ function ManagerTasksContent() {
       {/* ─── Create & Assign KPI Modal ─── */}
       <AnimatePresence>
         {createKpiOpen && (
-          <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/65">
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/65">
             <div className="absolute inset-0" onClick={() => setCreateKpiOpen(false)} />
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 pb-9 max-h-[90vh] overflow-y-auto"
+              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 max-h-[85dvh] flex flex-col overflow-hidden"
             >
-              <div className="w-9 h-1 rounded-full bg-white/25 mx-auto mb-4" />
-              <h3 className="text-lg font-bold text-white mb-4">Create &amp; Assign KPI</h3>
+              <div className="shrink-0">
+                <div className="w-9 h-1 rounded-full bg-white/25 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-white mb-4">Create &amp; Assign KPI</h3>
+              </div>
 
-              <form onSubmit={handleCreateKpiSubmit} className="space-y-3.5">
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                    Assign to Field Agent
-                  </label>
-                  <select
-                    value={kpiAssigneeId}
-                    onChange={(e) => setKpiAssigneeId(e.target.value)}
-                    className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
-                  >
-                    <option value="">Team / Unassigned</option>
-                    {assignees.map((a) => (
-                      <option key={a.id} value={String(a.id)}>
-                        {a.name} ({a.email})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                    KPI Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={kpiName}
-                    onChange={(e) => setKpiName(e.target.value)}
-                    placeholder="e.g. Monthly Enterprise Lead Signups"
-                    className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
+              <form onSubmit={handleCreateKpiSubmit} className="flex flex-col flex-1 min-h-0">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y space-y-3.5 pb-4">
                   <div>
                     <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                      Category
+                      Assign to Field Agent
                     </label>
                     <select
-                      value={kpiCategory}
-                      onChange={(e) => setKpiCategory(e.target.value as KpiCategory)}
-                      className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3 text-xs text-white outline-none"
+                      value={kpiAssigneeId}
+                      onChange={(e) => setKpiAssigneeId(e.target.value)}
+                      className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
                     >
-                      {KPI_CATEGORIES.map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
+                      <option value="">Team / Unassigned</option>
+                      {assignees.map((a) => (
+                        <option key={a.id} value={String(a.id)}>
+                          {a.name} ({a.email})
                         </option>
                       ))}
                     </select>
@@ -1497,57 +1469,89 @@ function ManagerTasksContent() {
 
                   <div>
                     <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                      Target Value *
+                      KPI Name *
                     </label>
                     <input
                       type="text"
-                      value={kpiTargetValue}
-                      onChange={(e) => setKpiTargetValue(e.target.value)}
-                      placeholder="e.g. 25 visits"
-                      className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-sm text-white outline-none"
+                      value={kpiName}
+                      onChange={(e) => setKpiName(e.target.value)}
+                      placeholder="e.g. Monthly Enterprise Lead Signups"
+                      className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                    Objective
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={kpiObjective}
-                    onChange={(e) => setKpiObjective(e.target.value)}
-                    placeholder="What should the agent achieve?"
-                    className="w-full rounded-xl bg-white/6 border border-white/12 p-3 text-sm text-white outline-none resize-none"
-                  />
-                </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
+                        Category
+                      </label>
+                      <select
+                        value={kpiCategory}
+                        onChange={(e) => setKpiCategory(e.target.value as KpiCategory)}
+                        className="w-full min-w-0 h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3 text-xs text-white outline-none"
+                      >
+                        {KPI_CATEGORIES.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
+                        Target Value *
+                      </label>
+                      <input
+                        type="text"
+                        value={kpiTargetValue}
+                        onChange={(e) => setKpiTargetValue(e.target.value)}
+                        placeholder="e.g. 25 visits"
+                        className="w-full min-w-0 h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-sm text-white outline-none"
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                      Start Date
+                      Objective
                     </label>
-                    <input
-                      type="date"
-                      value={kpiStartDate}
-                      onChange={(e) => setKpiStartDate(e.target.value)}
-                      className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-xs text-white outline-none"
+                    <textarea
+                      rows={2}
+                      value={kpiObjective}
+                      onChange={(e) => setKpiObjective(e.target.value)}
+                      placeholder="What should the agent achieve?"
+                      className="w-full rounded-xl bg-white/6 border border-white/12 p-3 text-sm text-white outline-none resize-none"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={kpiEndDate}
-                      onChange={(e) => setKpiEndDate(e.target.value)}
-                      className="w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-xs text-white outline-none"
-                    />
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={kpiStartDate}
+                        onChange={(e) => setKpiStartDate(e.target.value)}
+                        className="w-full min-w-0 max-w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-xs text-white outline-none appearance-none"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="text-xs font-semibold text-[#75ADAF] mb-1 block">
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={kpiEndDate}
+                        onChange={(e) => setKpiEndDate(e.target.value)}
+                        className="w-full min-w-0 max-w-full h-11 rounded-xl bg-white/6 border border-white/12 px-3 text-xs text-white outline-none appearance-none"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-2">
+                <div className="shrink-0 flex gap-3 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] border-t border-white/10 bg-[#0A1D25]">
                   <button
                     type="button"
                     onClick={() => setCreateKpiOpen(false)}
@@ -1572,7 +1576,7 @@ function ManagerTasksContent() {
       {/* ─── Create Project Modal ─── */}
       <AnimatePresence>
         {createProjectOpen && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/65 px-5">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-5">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1626,7 +1630,7 @@ function ManagerTasksContent() {
       {/* ─── Edit Task Modal ─── */}
       <AnimatePresence>
         {editTask && (
-          <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/65">
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/65">
             <div className="absolute inset-0" onClick={() => setEditTask(null)} />
             <motion.div
               initial={{ y: '100%' }}
@@ -1734,7 +1738,7 @@ function ManagerTasksContent() {
       {/* ─── Delete Confirmation Modal ─── */}
       <AnimatePresence>
         {deleteConfirmTask && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 px-5">
+          <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/65 px-5">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1771,7 +1775,7 @@ function ManagerTasksContent() {
       {/* ─── KPI Details Bottom Sheet ─── */}
       <AnimatePresence>
         {selectedKpi && (
-          <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/65">
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/65">
             <div className="absolute inset-0" onClick={() => setSelectedKpi(null)} />
             <motion.div
               initial={{ y: '100%' }}

@@ -570,7 +570,7 @@ export default function AiAssistantPage() {
       {/* Forecast Modal */}
       {forecastModalOpen &&
         createPortal(
-          <div className="fixed inset-0 z-[220] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 font-sans">
+          <div className="fixed inset-0 z-[10000] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 font-sans">
             <div className="w-full max-w-md bg-[#0B3343] border border-white/15 rounded-3xl p-5 text-white max-h-[80vh] overflow-y-auto">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <div className="flex items-center gap-2">
@@ -639,7 +639,7 @@ export default function AiAssistantPage() {
       {/* Confirm modal */}
       {confirmTarget &&
         createPortal(
-          <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
             <div
               onClick={() => !isClearing && setConfirmTarget(null)}
               className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
