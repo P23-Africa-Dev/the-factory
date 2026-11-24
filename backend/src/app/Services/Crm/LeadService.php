@@ -18,6 +18,7 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Security\SecurityAuditLogger;
 use App\Services\Notification\NotificationService;
 use App\Support\AvatarUrlResolver;
+use App\Support\CompanyNameKey;
 use App\Support\LeadCustomFieldValues;
 use App\Support\LeadFieldNormalizer;
 use Carbon\CarbonInterface;
@@ -1590,6 +1591,8 @@ class LeadService
         $failedRows = [];
         $skippedRows = [];
         $seenInFile = [];
+        // Leads created or updated by this batch, for the same-company merge prompt.
+        $importedLeadIds = [];
 
         foreach ($rows as $index => $row) {
             $rowNumber = $rowOffset + $index + 1;
@@ -1655,6 +1658,7 @@ class LeadService
                         $this->syncPrimaryContactFromLead($duplicate->fresh());
                     });
                     $updatedCount++;
+                    $importedLeadIds[] = (int) $duplicate->id;
 
                     continue;
                 }
@@ -1664,7 +1668,7 @@ class LeadService
                     $normalizedSource = 'agent_upload';
                 }
 
-                $this->create($user, [
+                $createdLead = $this->create($user, [
                     'company_id' => $companyId,
                     'pipeline_id' => $pipelineId,
                     'name' => $data['name'],
@@ -1688,6 +1692,7 @@ class LeadService
                     'suppress_notifications' => true,
                 ]);
                 $importedCount++;
+                $importedLeadIds[] = (int) $createdLead->id;
             } catch (ValidationException $exception) {
                 $fieldErrors = [];
                 foreach ($exception->errors() as $key => $messages) {
@@ -1723,6 +1728,7 @@ class LeadService
             'skipped_count' => count($skippedRows),
             'failed_rows' => $failedRows,
             'skipped_rows' => $skippedRows,
+            'imported_lead_ids' => array_values(array_unique($importedLeadIds)),
         ];
     }
 
@@ -2927,6 +2933,419 @@ class LeadService
     /**
      * Find an existing company lead matching by email (preferred) or phone.
      */
+    /**
+     * Same-company groups for leads that were just imported: each given lead with a
+     * company name is grouped with every other accessible lead whose company matches
+     * (see CompanyNameKey). Only groups of two or more leads are returned.
+     *
+     * @param  array<int, int|string>  $leadIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function companyGroups(User $user, array $leadIds, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+
+        $ids = collect($leadIds)->map(static fn($id): int => (int) $id)->filter()->unique()->take(5000)->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $seedQuery = Lead::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereIn('id', $ids->all())
+            ->whereNotNull('company_name')
+            ->where('company_name', '!=', '');
+        if ($role === 'agent') {
+            $this->applyAgentLeadScope($seedQuery, (int) $user->id);
+        }
+
+        $keys = [];
+        foreach ($seedQuery->get(['id', 'company_name']) as $seed) {
+            $key = CompanyNameKey::key($seed->company_name);
+            if ($key !== null) {
+                $keys[$key] = true;
+            }
+        }
+        if ($keys === []) {
+            return [];
+        }
+
+        // Narrow in SQL by first word, then compare exact keys in PHP.
+        $firstWords = array_values(array_unique(array_map(
+            static fn(string $key): string => CompanyNameKey::firstWord($key),
+            array_keys($keys),
+        )));
+
+        $candidates = collect();
+        foreach (array_chunk($firstWords, 50) as $chunk) {
+            $query = Lead::query()
+                ->where('company_id', $resolvedCompanyId)
+                ->whereNotNull('company_name')
+                ->where(function (Builder $builder) use ($chunk): void {
+                    foreach ($chunk as $word) {
+                        $builder->orWhereRaw('LOWER(company_name) LIKE ?', ['%' . $word . '%']);
+                    }
+                });
+            if ($role === 'agent') {
+                $this->applyAgentLeadScope($query, (int) $user->id);
+            }
+            $candidates = $candidates->merge(
+                $query->with(['contacts:id,lead_id,name,email,phone,sort_order'])
+                    ->get(['id', 'name', 'email', 'phone', 'company_name', 'status', 'created_at', 'created_by_user_id', 'assigned_to_user_id'])
+            );
+        }
+
+        $labelNames = LeadLabel::query()->where('company_id', $resolvedCompanyId)->pluck('name', 'slug')->all();
+        $newIds = array_flip($ids->all());
+
+        $groups = [];
+        foreach ($candidates->unique('id') as $lead) {
+            $key = CompanyNameKey::key($lead->company_name);
+            if ($key === null || ! isset($keys[$key])) {
+                continue;
+            }
+            $groups[$key][] = $lead;
+        }
+
+        $result = [];
+        foreach ($groups as $key => $leads) {
+            if (count($leads) < 2) {
+                continue;
+            }
+
+            usort($leads, static fn(Lead $a, Lead $b): int => [$a->created_at?->getTimestamp() ?? 0, $a->id] <=> [$b->created_at?->getTimestamp() ?? 0, $b->id]);
+
+            $spellings = array_count_values(array_map(static fn(Lead $lead): string => trim((string) $lead->company_name), $leads));
+            arsort($spellings);
+
+            $result[] = [
+                'key' => $key,
+                'company_name' => (string) array_key_first($spellings),
+                'survivor_id' => (int) $leads[0]->id,
+                'can_merge' => $this->canMergeLeads($role, (int) $user->id, $leads),
+                'leads' => array_map(static function (Lead $lead) use ($newIds, $labelNames): array {
+                    $primary = $lead->contacts->sortBy('sort_order')->first();
+
+                    return [
+                        'id' => (int) $lead->id,
+                        'name' => (string) $lead->name,
+                        'contact_name' => $primary?->name ?? $lead->name,
+                        'email' => $primary?->email ?? $lead->email,
+                        'company_name' => (string) $lead->company_name,
+                        'status' => (string) $lead->status,
+                        'status_name' => $labelNames[(string) $lead->status] ?? null,
+                        'created_at' => $lead->created_at?->toIso8601String(),
+                        'is_new' => isset($newIds[(int) $lead->id]),
+                    ];
+                }, $leads),
+            ];
+        }
+
+        usort($result, static fn(array $a, array $b): int => [count($b['leads']), $a['company_name']] <=> [count($a['leads']), $b['company_name']]);
+
+        return array_slice($result, 0, 50);
+    }
+
+    /**
+     * Merge same-company leads into one company lead. The oldest lead survives, is renamed
+     * to the company, and receives every other lead's contacts and history; its own stage,
+     * priority, pipeline and assignee are kept and empty fields are filled from the others.
+     * The other leads are deleted. Runs in one transaction.
+     *
+     * @param  array<int, int|string>  $leadIds
+     * @return array{lead: Lead, merged_count: int, merged_lead_ids: array<int, int>}
+     */
+    public function mergeLeadsIntoCompany(User $user, array $leadIds, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $role = (string) $context['role'];
+        $this->ensureCanCreateLeads($role);
+
+        $ids = collect($leadIds)->map(static fn($id): int => (int) $id)->filter()->unique()->values();
+        if ($ids->count() < 2) {
+            throw ValidationException::withMessages(['lead_ids' => ['Pick at least two leads to merge.']]);
+        }
+
+        $leads = Lead::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereIn('id', $ids->all())
+            ->with('contacts')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        if ($leads->count() !== $ids->count()) {
+            throw ValidationException::withMessages(['lead_ids' => ['Some of these leads no longer exist or are outside your company.']]);
+        }
+
+        $keys = $leads->map(static fn(Lead $lead): ?string => CompanyNameKey::key($lead->company_name))->unique()->values();
+        if ($keys->count() !== 1 || $keys->first() === null) {
+            throw ValidationException::withMessages(['lead_ids' => ['Only leads with the same company can be merged.']]);
+        }
+
+        if (! $this->canMergeLeads($role, (int) $user->id, $leads->all())) {
+            throw ValidationException::withMessages([
+                'authorization' => ['You can only merge leads you created or are assigned to. Ask a manager to merge these.'],
+            ]);
+        }
+
+        /** @var Lead $survivor */
+        $survivor = $leads->first();
+        $others = $leads->slice(1)->values();
+        $otherIds = $others->pluck('id')->map(static fn($id): int => (int) $id)->all();
+        $companyName = $this->preferredCompanySpelling($leads->all());
+
+        DB::transaction(function () use ($survivor, $others, $otherIds, $companyName, $user, $resolvedCompanyId): void {
+            // 1. Contacts: survivor's first, then each other lead's, skipping repeats by email/phone.
+            $contacts = $this->contactsForMerge($survivor);
+            $seenEmails = [];
+            $seenPhones = [];
+            foreach ($contacts as $contact) {
+                $this->rememberContactIdentity($contact, $seenEmails, $seenPhones);
+            }
+            foreach ($others as $other) {
+                foreach ($this->contactsForMerge($other) as $contact) {
+                    if ($this->contactAlreadySeen($contact, $seenEmails, $seenPhones)) {
+                        continue;
+                    }
+                    $this->rememberContactIdentity($contact, $seenEmails, $seenPhones);
+                    $contacts[] = $contact;
+                }
+            }
+
+            DB::table('lead_contacts')->whereIn('lead_id', array_merge([(int) $survivor->id], $otherIds))->delete();
+            $now = now();
+            foreach (array_values($contacts) as $position => $contact) {
+                DB::table('lead_contacts')->insert([
+                    'lead_id' => (int) $survivor->id,
+                    'name' => $contact['name'],
+                    'email' => $contact['email'],
+                    'phone' => $contact['phone'],
+                    'location' => $contact['location'],
+                    'position' => $contact['position'],
+                    'profile_urls' => $contact['profile_urls'] !== null ? json_encode($contact['profile_urls']) : null,
+                    'sort_order' => $position,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // 2. History moves to the survivor.
+            foreach (['lead_notes', 'lead_activities', 'crm_email_threads', 'crm_email_messages', 'crm_email_activity_logs', 'meeting_attendees', 'field_stops'] as $table) {
+                DB::table($table)->whereIn('lead_id', $otherIds)->update(['lead_id' => (int) $survivor->id]);
+            }
+
+            $meetingIds = DB::table('meeting_leads')->whereIn('lead_id', $otherIds)->pluck('meeting_id')->unique()->all();
+            foreach ($meetingIds as $meetingId) {
+                DB::table('meeting_leads')->insertOrIgnore([
+                    'meeting_id' => (int) $meetingId,
+                    'lead_id' => (int) $survivor->id,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+            DB::table('meeting_leads')->whereIn('lead_id', $otherIds)->delete();
+
+            // 3. Map locations stay linked to the CRM through the survivor.
+            DB::table('company_locations')->whereIn('crm_lead_id', $otherIds)->update(['crm_lead_id' => (int) $survivor->id]);
+            $carriedLocationId = $survivor->company_location_id === null
+                ? $others->first(static fn(Lead $lead): bool => $lead->company_location_id !== null)?->company_location_id
+                : null;
+            if ($carriedLocationId !== null) {
+                DB::table('leads')->whereIn('id', $otherIds)->update(['company_location_id' => null]);
+            }
+
+            // 4. Survivor fields: company name; blanks filled from the others; stage/owner kept.
+            $updates = ['name' => $companyName, 'company_name' => $companyName];
+            foreach (['email', 'phone', 'location', 'company_email', 'website', 'position', 'industry', 'profile_urls', 'next_action', 'budget_amount', 'budget_currency', 'last_interaction', 'last_interaction_at'] as $field) {
+                if ($this->isBlankLeadValue($survivor->{$field})) {
+                    $filler = $others->first(fn(Lead $lead): bool => ! $this->isBlankLeadValue($lead->{$field}));
+                    if ($filler !== null) {
+                        $updates[$field] = $filler->{$field};
+                    }
+                }
+            }
+            if ($survivor->assigned_to_user_id === null) {
+                $assignee = $others->first(static fn(Lead $lead): bool => $lead->assigned_to_user_id !== null);
+                if ($assignee !== null) {
+                    $updates['assigned_to_user_id'] = $assignee->assigned_to_user_id;
+                }
+            }
+            $customFields = is_array($survivor->custom_fields) ? $survivor->custom_fields : [];
+            foreach ($others as $other) {
+                foreach ((is_array($other->custom_fields) ? $other->custom_fields : []) as $key => $value) {
+                    if (! array_key_exists($key, $customFields) || $this->isBlankLeadValue($customFields[$key])) {
+                        if (! $this->isBlankLeadValue($value)) {
+                            $customFields[$key] = $value;
+                        }
+                    }
+                }
+            }
+            $updates['custom_fields'] = $customFields;
+            if ($carriedLocationId !== null) {
+                $updates['company_location_id'] = $carriedLocationId;
+            }
+
+            $converted = $others->pluck('converted_at')->filter()->sort()->first();
+            $survivor->update($updates);
+            if ($survivor->fresh()->converted_at === null && $converted !== null) {
+                // The observer only stamps on stage changes; keep a merged lead's conversion.
+                DB::table('leads')->where('id', $survivor->id)->update(['converted_at' => $converted]);
+            }
+
+            // 5. Audit trail on the survivor.
+            LeadActivity::create([
+                'lead_id' => (int) $survivor->id,
+                'company_id' => $resolvedCompanyId,
+                'created_by_user_id' => (int) $user->id,
+                'type' => 'merge',
+                'title' => 'Merged ' . count($otherIds) . ' ' . (count($otherIds) === 1 ? 'lead' : 'leads') . ' into this company lead',
+                'description' => 'Merged: ' . $others->pluck('name')->implode(', '),
+                'happened_at' => now(),
+                'meta' => ['merged_lead_ids' => $otherIds],
+            ]);
+
+            // 6. Remove the merged leads (observer refreshes dashboard caches).
+            foreach ($others as $other) {
+                $other->delete();
+            }
+        });
+
+        $survivor = $survivor->fresh();
+
+        $this->notifyLeadRecipients(
+            lead: $survivor,
+            actor: $user,
+            type: 'crm.lead_updated',
+            title: 'CRM leads merged',
+            message: "Leads at '{$companyName}' were merged into one company lead.",
+            priority: NotificationPriority::NORMAL->value,
+        );
+
+        return [
+            'lead' => $this->findForUser($user, $survivor, $resolvedCompanyId),
+            'merged_count' => count($otherIds),
+            'merged_lead_ids' => $otherIds,
+        ];
+    }
+
+    /**
+     * @param  array<int, Lead>  $leads
+     */
+    private function canMergeLeads(string $role, int $userId, array $leads): bool
+    {
+        if (in_array($role, ['owner', 'admin', 'supervisor'], true)) {
+            return true;
+        }
+
+        if ($role !== 'agent') {
+            return false;
+        }
+
+        foreach ($leads as $lead) {
+            if ((int) $lead->created_by_user_id !== $userId && (int) ($lead->assigned_to_user_id ?? 0) !== $userId) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<int, Lead>  $leads
+     */
+    private function preferredCompanySpelling(array $leads): string
+    {
+        $spellings = [];
+        foreach ($leads as $lead) {
+            $name = trim((string) $lead->company_name);
+            if ($name !== '') {
+                $spellings[$name] = ($spellings[$name] ?? 0) + 1;
+            }
+        }
+        // Most common spelling; ties go to the oldest lead's spelling (first seen).
+        $best = null;
+        foreach ($spellings as $name => $count) {
+            if ($best === null || $count > $spellings[$best]) {
+                $best = $name;
+            }
+        }
+
+        return (string) $best;
+    }
+
+    /**
+     * The lead's contacts as plain rows; a lead without contact rows contributes its own fields.
+     *
+     * @return array<int, array{name:string,email:?string,phone:?string,location:?string,position:?string,profile_urls:?array}>
+     */
+    private function contactsForMerge(Lead $lead): array
+    {
+        $rows = $lead->contacts->sortBy('sort_order')->values()->map(static fn($contact): array => [
+            'name' => (string) $contact->name,
+            'email' => $contact->email,
+            'phone' => $contact->phone,
+            'location' => $contact->location,
+            'position' => $contact->position ?? null,
+            'profile_urls' => is_array($contact->profile_urls ?? null) ? $contact->profile_urls : null,
+        ])->all();
+
+        if ($rows !== []) {
+            return $rows;
+        }
+
+        return [[
+            'name' => (string) $lead->name,
+            'email' => $lead->email,
+            'phone' => $lead->phone,
+            'location' => $lead->location,
+            'position' => $lead->position,
+            'profile_urls' => is_array($lead->profile_urls) ? $lead->profile_urls : null,
+        ]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $contact
+     * @param  array<string, bool>  $emails
+     * @param  array<string, bool>  $phones
+     */
+    private function rememberContactIdentity(array $contact, array &$emails, array &$phones): void
+    {
+        $email = Str::lower(trim((string) ($contact['email'] ?? '')));
+        if ($email !== '') {
+            $emails[$email] = true;
+        }
+        $phone = $this->normalizePhoneDigits($contact['phone'] ?? null);
+        if ($phone !== null) {
+            $phones[$phone] = true;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $contact
+     * @param  array<string, bool>  $emails
+     * @param  array<string, bool>  $phones
+     */
+    private function contactAlreadySeen(array $contact, array $emails, array $phones): bool
+    {
+        $email = Str::lower(trim((string) ($contact['email'] ?? '')));
+        if ($email !== '' && isset($emails[$email])) {
+            return true;
+        }
+        $phone = $this->normalizePhoneDigits($contact['phone'] ?? null);
+
+        return $phone !== null && isset($phones[$phone]);
+    }
+
+    private function isBlankLeadValue(mixed $value): bool
+    {
+        return $value === null || $value === '' || $value === [];
+    }
+
     private function resolveDuplicateLead(int $companyId, ?string $email, ?string $phone): ?Lead
     {
         $normalizedEmail = $email !== null ? Str::lower(trim($email)) : null;
@@ -3287,8 +3706,13 @@ class LeadService
             $fieldErrors[$field] ??= $message;
         };
 
+        // A company-only row (no contact name) is named after the company.
+        if ($name === '' && $companyName !== '') {
+            $name = $companyName;
+        }
+
         if ($name === '') {
-            $fail('name', 'Name is required.');
+            $fail('name', 'Name or company name is required.');
         }
 
         if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { ApiRoleBasePath, LeadFieldDefinition, LeadFieldType } from "@/lib/api/crm";
-import { LEAD_FIELD_TYPE_OPTIONS, isSelectField } from "@/lib/crm/custom-fields";
+import { LEAD_FIELD_TYPE_OPTIONS, findExistingLeadField, isSelectField } from "@/lib/crm/custom-fields";
 import { useCreateLeadField, useUpdateLeadField } from "@/hooks/use-crm";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { FieldError } from "@/components/ui/field-error";
@@ -23,6 +23,8 @@ export function LeadFieldDialog({
     onClose,
     onCreated,
     onUpdated,
+    existingFields,
+    onUseExisting,
 }: {
     companyId: number | string;
     apiBasePath: ApiRoleBasePath;
@@ -36,6 +38,9 @@ export function LeadFieldDialog({
     onClose: () => void;
     onCreated?: (field: LeadFieldDefinition) => void;
     onUpdated?: (field: LeadFieldDefinition) => void;
+    /** Company fields; when given with onUseExisting, a taken name offers the existing field. */
+    existingFields?: LeadFieldDefinition[];
+    onUseExisting?: (field: LeadFieldDefinition) => void;
 }) {
     const editing = Boolean(field);
     const [label, setLabel] = useState(field?.label ?? initialLabel);
@@ -50,6 +55,10 @@ export function LeadFieldDialog({
     const createField = useCreateLeadField(undefined, apiBasePath);
     const updateField = useUpdateLeadField(undefined, apiBasePath);
     const pending = createField.isPending || updateField.isPending;
+
+    // Only one field per name per company: point to the existing one instead of a dead end.
+    const existingMatch =
+        !editing && onUseExisting && existingFields ? findExistingLeadField(existingFields, label) : undefined;
 
     const resolvedTitle = title ?? (editing ? "Edit lead field" : "Add lead field");
     const resolvedSubmit = submitLabel ?? (editing ? "Save field" : "Add field");
@@ -181,7 +190,31 @@ export function LeadFieldDialog({
                                     maxLength={80}
                                 />
                             </label>
-                            <FieldError message={errors.label} />
+                            {existingMatch ? (
+                                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                                    <p>
+                                        <span className="font-semibold">{existingMatch.label}</span> already exists as{" "}
+                                        {existingMatch.is_universal ? "a company field" : "a lead-only field"}
+                                        {existingMatch.created_by?.name ? ` (created by ${existingMatch.created_by.name}` : ""}
+                                        {existingMatch.created_by?.name && existingMatch.created_at
+                                            ? `, ${new Date(existingMatch.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })})`
+                                            : existingMatch.created_by?.name ? ")" : ""}
+                                        . Use it for this column instead of creating a new one.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onUseExisting?.(existingMatch);
+                                            onClose();
+                                        }}
+                                        className="mt-2 rounded-lg bg-[#0B1215] px-3 py-1.5 text-[12px] font-semibold text-white"
+                                    >
+                                        Use this field
+                                    </button>
+                                </div>
+                            ) : (
+                                <FieldError message={errors.label} />
+                            )}
                         </div>
                         <div data-field="type">
                             <label className="block text-[12px] font-semibold text-gray-600">
@@ -266,7 +299,7 @@ export function LeadFieldDialog({
                         <button
                             type="button"
                             onClick={submit}
-                            disabled={pending}
+                            disabled={pending || Boolean(existingMatch)}
                             className="rounded-lg bg-[#0B1215] px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-60"
                         >
                             {pending ? "Saving…" : resolvedSubmit}

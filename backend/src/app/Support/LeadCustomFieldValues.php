@@ -207,8 +207,9 @@ class LeadCustomFieldValues
                     $errors["custom_fields.{$key}"][] = "{$definition->label} is required.";
                 }
 
-                // Keep an explicitly sent lead-only key so the column stays on that lead.
-                if (! (bool) $definition->is_universal) {
+                // Keep an explicitly sent lead-only key so the column stays on that lead,
+                // except on file import: a blank cell must not register the field on the lead.
+                if (! (bool) $definition->is_universal && $mode !== 'import') {
                     $result[$key] = '';
                 } else {
                     unset($result[$key]);

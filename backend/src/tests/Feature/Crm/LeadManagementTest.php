@@ -2208,6 +2208,170 @@ class LeadManagementTest extends TestCase
             ->assertJsonValidationErrors('authorization');
     }
 
+    public function test_import_accepts_company_name_without_contact_name(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+        $token = $admin->createToken('admin-import-company-only', ['*'])->plainTextToken;
+
+        $response = $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'create',
+                'rows' => [
+                    ['company_name' => 'Acme Industries', 'email' => 'hello@acme.test'],
+                    ['name' => 'Jane Doe', 'company_name' => 'Beta Ltd'],
+                    ['email' => 'nobody@example.com'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.imported_count', 2)
+            ->assertJsonPath('data.failed_rows.0.row_index', 3);
+
+        $this->assertStringContainsString('Name or company name is required.', json_encode($response->json('data.failed_rows.0')));
+
+        $this->assertDatabaseHas('leads', ['company_id' => $company->id, 'name' => 'Acme Industries', 'company_name' => 'Acme Industries']);
+        $this->assertDatabaseHas('leads', ['company_id' => $company->id, 'name' => 'Jane Doe', 'company_name' => 'Beta Ltd']);
+    }
+
+    public function test_import_returns_lead_ids_and_company_groups_include_older_leads(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+        $token = $admin->createToken('admin-company-groups', ['*'])->plainTextToken;
+
+        // An older lead from an earlier upload.
+        $salim = $this->createLeadAt([
+            'company_id' => $company->id,
+            'pipeline_id' => $pipelineId,
+            'created_by_user_id' => $admin->id,
+            'name' => 'Salim',
+            'company_name' => 'P23 Africa Ltd.',
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+        ], '2026-11-01 09:00:00');
+
+        $import = $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'create',
+                'rows' => [
+                    ['name' => 'Donald', 'company_name' => 'P23 Africa', 'email' => 'donald@p23.test'],
+                    ['name' => 'Siro', 'company_name' => 'p23  africa', 'email' => 'siro@p23.test'],
+                    ['name' => 'Jane', 'company_name' => 'Solo Corp', 'email' => 'jane@solo.test'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.imported_count', 3);
+
+        $ids = $import->json('data.imported_lead_ids');
+        $this->assertCount(3, $ids);
+
+        $groups = $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/company-groups', ['company_id' => $company->id, 'lead_ids' => $ids])
+            ->assertOk()
+            ->json('data.groups');
+
+        // Solo Corp has one lead only, so it is not offered.
+        $this->assertCount(1, $groups);
+        $this->assertSame('p23 africa', $groups[0]['key']);
+        $this->assertSame($salim->id, $groups[0]['survivor_id']);
+        $this->assertTrue($groups[0]['can_merge']);
+        $this->assertSame(['Salim', 'Donald', 'Siro'], array_column($groups[0]['leads'], 'name'));
+        $this->assertSame([false, true, true], array_column($groups[0]['leads'], 'is_new'));
+    }
+
+    public function test_merge_by_company_keeps_oldest_lead_and_moves_contacts_and_history(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+        $token = $admin->createToken('admin-merge-company', ['*'])->plainTextToken;
+        $this->withToken($token)->getJson('/api/v1/crm/labels?company_id=' . $company->id)->assertOk();
+
+        $base = ['company_id' => $company->id, 'pipeline_id' => $pipelineId, 'created_by_user_id' => $admin->id, 'priority' => 'medium'];
+        $donald = $this->createLeadAt($base + [
+            'name' => 'Donald', 'email' => 'donald@p23.test', 'company_name' => 'P23 Africa',
+            'status' => 'qualified', 'assigned_to_user_id' => $agent->id,
+        ], '2026-11-01 09:00:00');
+        $siro = $this->createLeadAt($base + [
+            'name' => 'Siro', 'email' => 'siro@p23.test', 'phone' => '0801 234 5678', 'company_name' => 'P23 Africa Ltd',
+            'status' => 'newly_lead', 'website' => 'https://p23.africa', 'budget_amount' => 5000,
+        ], '2026-11-02 09:00:00');
+        // Same person as Donald (same email) -> not added twice.
+        $donaldAgain = $this->createLeadAt($base + [
+            'name' => 'Donald A.', 'email' => 'DONALD@p23.test', 'company_name' => 'p23 africa',
+            'status' => 'newly_lead',
+        ], '2026-11-03 09:00:00');
+
+        $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/' . $siro->id . '/notes', ['company_id' => $company->id, 'note' => 'Called Siro'])
+            ->assertCreated();
+
+        $response = $this->withToken($token)
+            ->postJson('/api/v1/crm/leads/merge-by-company', [
+                'company_id' => $company->id,
+                'lead_ids' => [$siro->id, $donald->id, $donaldAgain->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.lead.id', $donald->id)
+            ->assertJsonPath('data.merged_count', 2);
+
+        $this->assertEqualsCanonicalizing([$siro->id, $donaldAgain->id], $response->json('data.merged_lead_ids'));
+
+        $survivor = Lead::query()->with('contacts')->findOrFail($donald->id);
+        $this->assertSame('P23 Africa', $survivor->name);
+        $this->assertSame('qualified', $survivor->status);
+        $this->assertSame($agent->id, (int) $survivor->assigned_to_user_id);
+        // Blanks filled from the others.
+        $this->assertSame('https://p23.africa', $survivor->website);
+        $this->assertEquals(5000, (float) $survivor->budget_amount);
+        $this->assertSame(
+            ['Donald', 'Siro'],
+            $survivor->contacts->sortBy('sort_order')->pluck('name')->values()->all(),
+        );
+
+        // Merged leads are soft-deleted like any deleted lead (hidden, recoverable by support).
+        $this->assertSoftDeleted('leads', ['id' => $siro->id]);
+        $this->assertSoftDeleted('leads', ['id' => $donaldAgain->id]);
+        $this->assertSame(1, Lead::query()->where('company_id', $company->id)->count());
+        $this->assertDatabaseHas('lead_notes', ['lead_id' => $donald->id, 'note' => 'Called Siro']);
+        $this->assertDatabaseHas('lead_activities', ['lead_id' => $donald->id, 'type' => 'merge']);
+    }
+
+    public function test_merge_by_company_rejects_mixed_companies_single_lead_and_agent_without_access(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+        $adminToken = $admin->createToken('admin-merge-reject', ['*'])->plainTextToken;
+
+        $base = ['company_id' => $company->id, 'pipeline_id' => $pipelineId, 'status' => 'newly_lead', 'priority' => 'medium'];
+        $a = Lead::create($base + ['name' => 'A', 'company_name' => 'Acme', 'created_by_user_id' => $agent->id]);
+        $b = Lead::create($base + ['name' => 'B', 'company_name' => 'Beta', 'created_by_user_id' => $agent->id]);
+        $c = Lead::create($base + ['name' => 'C', 'company_name' => 'Acme Ltd', 'created_by_user_id' => $admin->id]);
+
+        $this->withToken($adminToken)
+            ->postJson('/api/v1/crm/leads/merge-by-company', ['company_id' => $company->id, 'lead_ids' => [$a->id, $b->id]])
+            ->assertUnprocessable();
+
+        $this->withToken($adminToken)
+            ->postJson('/api/v1/crm/leads/merge-by-company', ['company_id' => $company->id, 'lead_ids' => [$a->id]])
+            ->assertUnprocessable();
+
+        // The agent can't access C (created by the admin, not assigned to them).
+        $this->app['auth']->forgetGuards();
+        $agentToken = $agent->createToken('agent-merge-reject', ['*'])->plainTextToken;
+        $this->withToken($agentToken)
+            ->postJson('/api/v1/crm/leads/merge-by-company', ['company_id' => $company->id, 'lead_ids' => [$a->id, $c->id]])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseHas('leads', ['id' => $a->id]);
+        $this->assertDatabaseHas('leads', ['id' => $c->id]);
+
+        // And C is not offered to the agent as part of the Acme group.
+        $this->withToken($agentToken)
+            ->postJson('/api/v1/crm/leads/company-groups', ['company_id' => $company->id, 'lead_ids' => [$a->id]])
+            ->assertOk()
+            ->assertJsonPath('data.groups', []);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([

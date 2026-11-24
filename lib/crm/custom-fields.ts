@@ -33,6 +33,43 @@ export function isPendingUniversalRequest(field: LeadFieldDefinition): boolean {
     return isActiveLeadField(field) && field.universal_request_status === "pending";
 }
 
+/** Same base key the server derives from a label (LeadCustomFieldValues::keyFromLabel). */
+export function leadFieldKeyFromLabel(label: string): string {
+    return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+/**
+ * A field that would block creating one with this name: the server keeps one field per
+ * name per company. Archived or declined fields are revived instead, so they don't block.
+ */
+export function findExistingLeadField(
+    fields: LeadFieldDefinition[],
+    label: string,
+): LeadFieldDefinition | undefined {
+    const wanted = leadFieldKeyFromLabel(label.trim());
+    if (!wanted) return undefined;
+    return fields.find((field) => {
+        if (field.status === "archived" || field.status === "declined") return false;
+        const base = field.key.replace(/_custom$/, "").replace(/^field_/, "");
+        return field.key === wanted || base === wanted || leadFieldKeyFromLabel(field.label) === wanted;
+    });
+}
+
+/**
+ * Fields a file column can be imported into: every active or pending field, including
+ * lead-only fields created by earlier uploads (they are hidden from add-lead forms only).
+ */
+export function importableLeadFields(fields: LeadFieldDefinition[]): {
+    company: LeadFieldDefinition[];
+    leadOnly: LeadFieldDefinition[];
+} {
+    const usable = fields.filter((field) => field.status === "active" || field.status === "pending");
+    return {
+        company: usable.filter((field) => isUniversalLeadField(field)),
+        leadOnly: usable.filter((field) => !isUniversalLeadField(field)),
+    };
+}
+
 /**
  * Fields shown on add-lead / import: universal company fields plus any
  * definitions created in the current session so the user can fill them now.
