@@ -224,6 +224,10 @@ PROMPT,
         // named (update a lead, move a task, add a subtask) runs directly.
         // Content reads (emails, Drive files, drafts) are not listed: after
         // those, every write needs confirmation.
+        // Read tools whose data the app shows as a card (the daily plan).
+        // When no action ran in the turn, the reply carries the last such
+        // read's data as its payload, as the legacy engine did.
+        'card_reads' => ['planning.daily'],
         'lookup_reads' => [
             'crm.top_leads',
             'crm.follow_up_summary',

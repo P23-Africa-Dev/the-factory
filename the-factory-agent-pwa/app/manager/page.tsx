@@ -51,6 +51,7 @@ import {
 import { useUnreadCount } from '@/manager/features/notifications';
 import { NotificationPanel } from '@/manager/features/notifications/components/NotificationPanel';
 import { assistantApi } from '@/manager/features/assistant/api';
+import { resolveAssistantGeolocationContext } from '@/manager/features/assistant/geolocation';
 import {
   DailyPlanEditor,
   createInitialPlanEdits,
@@ -307,8 +308,11 @@ export default function ManagerHomeScreen() {
     setPlanDismissed(false);
 
     try {
+      // Same context as the assistant screen's plan: location, every focus area, up to 15 items.
+      const geoContext = await resolveAssistantGeolocationContext();
       const response = await assistantApi.sendMessage({
         message: 'Plan operational priorities and tasks for today across my team',
+        context: { ...geoContext, focus: 'all', limit: 15 },
       });
       setPlanSummaryText(response.content);
 
@@ -981,7 +985,7 @@ export default function ManagerHomeScreen() {
                       type="button"
                       onClick={() => {
                         setExecBriefOpen(false);
-                        router.push('/manager/assistant?prompt=Generate+this+week%27s+executive+summary');
+                        router.push('/manager/assistant?flow=weekly-summary');
                       }}
                       className="w-full h-11 rounded-2xl bg-[#75ADAF] text-[#0A1D25] text-xs font-extrabold flex items-center justify-center gap-2 active:scale-95 transition-transform"
                     >

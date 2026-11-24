@@ -36,13 +36,15 @@ import {
 } from '@/features/planning';
 import { InlineVoiceRecorder } from '@/components/ely/InlineVoiceRecorder';
 import { ActionReceipts, receiptsFromPayload } from '@/components/ely/ActionReceipts';
+import { ChatSwitcher } from '@/components/ely/ChatSwitcher';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 
 type LocalAction = 'liked' | 'disliked' | null;
 
+// Any reply carrying plan items shows the plan card, whatever tool produced it.
 function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined): DailyPlanPayload | null {
-  if (!payload || !Array.isArray(payload.items)) return null;
+  if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) return null;
   return payload as unknown as DailyPlanPayload;
 }
 
@@ -83,6 +85,10 @@ export default function AiAssistantPage() {
     clearCurrent,
     clearAll,
     threadId,
+    threads,
+    refreshThreads,
+    switchThread,
+    startNewChat,
   } = useAssistantConversation();
   const suggestions = useDynamicSuggestions();
   const acceptPlan = useAcceptDailyPlan();
@@ -149,11 +155,10 @@ export default function AiAssistantPage() {
 
   useEffect(() => {
     for (const msg of messages) {
-      if (msg.role !== 'assistant' || msg.tool !== 'planning.daily' || notifiedPlanIds.has(msg.id)) {
+      if (msg.role !== 'assistant' || notifiedPlanIds.has(msg.id)) {
         continue;
       }
-      const payload = msg.payload as DailyPlanPayload | null | undefined;
-      if (!payload?.items?.length) continue;
+      if (!asDailyPlanPayload(msg.payload)) continue;
 
       // eslint-disable-next-line react-hooks/set-state-in-effect -- mark assistant plan toast as shown once
       setNotifiedPlanIds((prev) => new Set(prev).add(msg.id));
@@ -247,8 +252,7 @@ export default function AiAssistantPage() {
       );
     }
 
-    const planPayload =
-      msg.tool === 'planning.daily' ? asDailyPlanPayload(msg.payload) : null;
+    const planPayload = asDailyPlanPayload(msg.payload);
     const planStorageKey = `plan-edit:${threadId ?? 'default'}:${msg.id}`;
     const planEdits =
       planPayload !== null
@@ -387,7 +391,10 @@ export default function AiAssistantPage() {
             <button
               type="button"
               aria-label="Conversation options"
-              onClick={() => setMenuOpen((v) => !v)}
+              onClick={() => {
+                  if (!menuOpen) void refreshThreads();
+                  setMenuOpen((v) => !v);
+                }}
               className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white focus:outline-none transition-colors"
             >
               <MoreVertical size={18} />
@@ -474,7 +481,7 @@ export default function AiAssistantPage() {
             <input
               type="file"
               ref={fileInputRef}
-              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv"
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -526,6 +533,23 @@ export default function AiAssistantPage() {
         <>
           <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-[200]" />
           <div className="fixed right-4 top-[72px] w-52 bg-[#0F2D3D] border border-white/10 rounded-2xl shadow-2xl z-[201] py-1 flex flex-col">
+            <ChatSwitcher
+              threads={threads}
+              activeThreadId={threadId}
+              disabled={isSending}
+              canStartNew={messages.length > 0 || threadId !== null}
+              onNewChat={() => {
+                setMenuOpen(false);
+                setAttachment(null);
+                startNewChat();
+              }}
+              onSelect={(id) => {
+                setMenuOpen(false);
+                void switchThread(id).then((ok) => {
+                  if (!ok) toast.error('Could not open that chat. Please try again.');
+                });
+              }}
+            />
             <button
               onClick={() => {
                 setMenuOpen(false);

@@ -198,12 +198,14 @@ class ConversationMemoryService
             ->filter()
             ->sortByDesc(static fn(array $thread): string => (string) ($thread['updated_at'] ?? ''))
             ->values()
-            ->map(static function (array $thread): array {
+            ->map(function (array $thread): array {
                 $messages = is_array($thread['messages'] ?? null) ? $thread['messages'] : [];
                 $lastMessage = count($messages) > 0 ? $messages[array_key_last($messages)] : null;
 
                 return [
                     'thread_id' => (string) $thread['thread_id'],
+                    // Shown in the chat switcher: the first thing the user asked.
+                    'title' => $this->threadTitle($messages),
                     'updated_at' => (string) ($thread['updated_at'] ?? ''),
                     'created_at' => (string) ($thread['created_at'] ?? ''),
                     'message_count' => count($messages),

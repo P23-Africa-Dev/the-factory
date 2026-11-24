@@ -41,8 +41,11 @@ import { useAuthStore } from "@/store/auth";
 import Image from "next/image";
 import Link from "next/link";
 import {
+  Check,
   ChevronLeft,
   Copy,
+  MessageSquare,
+  Plus,
   Paperclip,
   FileAudio,
   FileSpreadsheet,
@@ -61,6 +64,8 @@ import { InlineVoiceRecorder } from "@/components/ely/inline-voice-recorder";
 import { ImportLeadsButton } from "@/components/ely/import-leads-button";
 import { AgentConfirmationCard, agentConfirmationFromPayload, usesAgentCard } from "@/components/ely/agent-confirmation-card";
 import { resolveAvatarSrc } from "@/lib/avatar";
+import { prepareVoiceUpload, VOICE_UPLOAD_ACCEPT } from "@/lib/ely/audio-convert";
+import { formatThreadRelativeTime, threadDisplayTitle } from "@/lib/ely/threads";
 
 type MessageAction = "liked" | "disliked" | null;
 
@@ -366,6 +371,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
     isQueueingWeeklyReport,
     initialize,
     loadThread,
+    threadId: currentThreadId,
+    threads,
+    refreshThreads,
+    startNewChat,
     sendMessage: sendCopilotMessage,
     clearCurrentThread,
     queueWeeklyReport,
@@ -423,6 +432,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
   const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAiToolsOpen, setIsAiToolsOpen] = useState(false);
+  const [isChatsOpen, setIsChatsOpen] = useState(false);
+  const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -2365,6 +2376,33 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }
   }
 
+  function handleToggleChats() {
+    const next = !isChatsOpen;
+    setIsChatsOpen(next);
+    if (!next || !companyId) return;
+    setIsLoadingThreads(true);
+    refreshThreads(companyId)
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Unable to load chats."))
+      .finally(() => setIsLoadingThreads(false));
+  }
+
+  function handleNewChat() {
+    setIsMenuOpen(false);
+    setIsChatsOpen(false);
+    startNewChat();
+  }
+
+  async function handleSelectThread(targetThreadId: string) {
+    setIsMenuOpen(false);
+    setIsChatsOpen(false);
+    if (!companyId || targetThreadId === currentThreadId) return;
+    try {
+      await loadThread(targetThreadId, companyId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to open conversation.");
+    }
+  }
+
   async function handleVoiceFile(file: File) {
     setIsRunningQuickAction(true);
     setVoiceFileName(file.name);
@@ -2384,7 +2422,9 @@ export function AIChat({ open, onClose }: AIChatProps) {
     }, 3200);
 
     try {
-      const result = await runVoiceTranscription(file, companyId ?? undefined);
+      // GLM-ASR accepts only WAV/MP3: convert other formats in the browser.
+      const uploadFile = await prepareVoiceUpload(file);
+      const result = await runVoiceTranscription(uploadFile, companyId ?? undefined);
       const transcript = String(result?.transcript ?? "").trim();
       if (!transcript) {
         throw new Error(String(result?.error ?? "No speech was detected in this recording. Try a clearer voice note."));
@@ -2458,12 +2498,17 @@ export function AIChat({ open, onClose }: AIChatProps) {
     setIsRunningQuickAction(true);
     try {
       const result = await runTranscriptSummary(transcriptInput, companyId ?? undefined);
-      const summary = result?.summary as { key_points?: string[]; action_items?: string[] } | undefined;
+      const summary = result?.summary as
+        | { key_points?: string[]; action_items?: string[]; provider_summary?: string | null }
+        | undefined;
       const keyPoints = (summary?.key_points ?? []).slice(0, 5).map((item) => `• ${item}`).join("\n");
       const actionItems = (summary?.action_items ?? []).slice(0, 5).map((item) => `• ${item}`).join("\n");
+      const providerSummary = typeof summary?.provider_summary === "string" ? summary.provider_summary.trim() : "";
 
       void sendCopilotMessage({
-        message: `Transcript Summary\n\n**Key Points:**\n${keyPoints || "None"}\n\n**Action Items:**\n${actionItems || "None"}`,
+        message: providerSummary
+          ? `Transcript Summary\n\n${providerSummary}`
+          : `Transcript Summary\n\n**Key Points:**\n${keyPoints || "None"}\n\n**Action Items:**\n${actionItems || "None"}`,
         companyId: companyId ?? undefined,
       });
 
@@ -2570,8 +2615,8 @@ export function AIChat({ open, onClose }: AIChatProps) {
     try {
       await clearCurrentThread(companyId ?? undefined);
       toast.success("Conversation cleared");
-      // reset to initial state
-      await initialize(companyId ?? undefined);
+      // Show an empty new chat rather than loading the next older one.
+      startNewChat();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to clear conversation.");
     } finally {
@@ -2803,6 +2848,56 @@ export function AIChat({ open, onClose }: AIChatProps) {
                               </button>
                             </div>
                           )}
+
+                          <button
+                            onClick={handleToggleChats}
+                            aria-expanded={isChatsOpen}
+                            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-[13px] text-[#B9E9DD] hover:bg-white/5 transition-colors"
+                          >
+                            <span className="flex items-center gap-3"><MessageSquare className="w-4 h-4 flex-shrink-0" />Chats</span>
+                            <ChevronLeft className={`w-4 h-4 text-[#88B3B5] transition-transform ${isChatsOpen ? 'rotate-90' : '-rotate-90'}`} />
+                          </button>
+
+                          {isChatsOpen && (
+                            <div className="pl-4">
+                              <button
+                                onClick={handleNewChat}
+                                disabled={isStreaming}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-[13px] text-[#B9E9DD] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                              >
+                                <Plus className="w-4 h-4 flex-shrink-0" />
+                                <span className="flex-1">New chat</span>
+                                {!currentThreadId && <Check className="w-4 h-4 flex-shrink-0 text-[#7BB6B8]" aria-label="Current chat" />}
+                              </button>
+
+                              <div className="max-h-64 overflow-y-auto" data-testid="ely-chat-list">
+                                {isLoadingThreads && threads.length === 0 && (
+                                  <p className="px-4 py-3 text-[12px] text-[#88B3B5]">Loading chats…</p>
+                                )}
+                                {!isLoadingThreads && threads.length === 0 && (
+                                  <p className="px-4 py-3 text-[12px] text-[#88B3B5]">No previous chats</p>
+                                )}
+                                {threads.map((thread) => {
+                                  const isCurrent = thread.thread_id === currentThreadId;
+                                  return (
+                                    <button
+                                      key={thread.thread_id}
+                                      onClick={() => { void handleSelectThread(thread.thread_id); }}
+                                      disabled={isStreaming}
+                                      aria-current={isCurrent ? "true" : undefined}
+                                      className="w-full flex items-center gap-3 px-4 py-2.5 text-[13px] text-[#D8E4FF] hover:bg-white/5 disabled:opacity-50 transition-colors text-left"
+                                    >
+                                      <span className="flex-1 min-w-0">
+                                        <span className="block truncate">{threadDisplayTitle(thread)}</span>
+                                        <span className="block text-[11px] text-[#88B3B5]">{formatThreadRelativeTime(thread.updated_at)}</span>
+                                      </span>
+                                      {isCurrent && <Check className="w-4 h-4 flex-shrink-0 text-[#7BB6B8]" aria-label="Current chat" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="py-1 border-t border-white/10">
@@ -2881,7 +2976,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
             <input
               ref={voiceInputRef}
               type="file"
-              accept="audio/*"
+              accept={VOICE_UPLOAD_ACCEPT}
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -2892,7 +2987,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv"
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];

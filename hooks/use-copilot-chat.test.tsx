@@ -392,4 +392,143 @@ describe("useCopilotChat", () => {
         expect(queueWeeklySummaryReportMock).toHaveBeenCalledWith("test-token", 77);
         expect(getWeeklySummaryStatusMock).toHaveBeenCalledWith("weekly-1", "test-token", 77);
     });
+
+    describe("multiple chats", () => {
+        const threadOne = {
+            thread_id: "thread-1",
+            company_id: 77,
+            user_id: 33,
+            created_at: "2026-01-01T00:00:00.000Z",
+            updated_at: "2026-01-01T00:00:00.000Z",
+            messages: [
+                { id: "m1", role: "user", content: "First chat", sources: [], tool: null, payload: null, created_at: "2026-01-01T00:00:00.000Z" },
+            ],
+        };
+        const threadTwo = {
+            ...threadOne,
+            thread_id: "thread-2",
+            messages: [
+                { id: "m2", role: "user", content: "Second chat", sources: [], tool: null, payload: null, created_at: "2026-01-02T00:00:00.000Z" },
+            ],
+        };
+        const storageKeyName = "factory_copilot_thread:77:33";
+
+        beforeEach(() => {
+            localStorage.clear();
+            getCopilotThreadMock.mockImplementation(async (id: string) => ({
+                data: { thread: id === "thread-2" ? threadTwo : threadOne },
+            }));
+        });
+
+        it("lists recent chats with limit 30", async () => {
+            listCopilotThreadsMock.mockResolvedValue({
+                data: {
+                    items: [
+                        { thread_id: "thread-2", updated_at: "2026-01-02T00:00:00.000Z", created_at: "2026-01-02T00:00:00.000Z", message_count: 1, last_message_preview: "Second chat", title: "Second" },
+                        { thread_id: "thread-1", updated_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z", message_count: 1, last_message_preview: "First chat" },
+                    ],
+                },
+            });
+
+            const { result } = renderHook(() => useCopilotChat());
+            await act(async () => {
+                await result.current.refreshThreads(77);
+            });
+
+            expect(listCopilotThreadsMock).toHaveBeenCalledWith("test-token", 77, 30);
+            expect(result.current.threads.map((t) => t.thread_id)).toEqual(["thread-2", "thread-1"]);
+        });
+
+        it("starts a new chat without deleting anything and sends no thread_id next", async () => {
+            const { result } = renderHook(() => useCopilotChat());
+            await act(async () => {
+                await result.current.loadThread("thread-1", 77);
+            });
+            expect(result.current.threadId).toBe("thread-1");
+            expect(localStorage.getItem(storageKeyName)).toBe("thread-1");
+
+            act(() => {
+                result.current.startNewChat();
+            });
+
+            expect(result.current.threadId).toBeNull();
+            expect(result.current.messages).toEqual([]);
+            expect(result.current.threadPagination).toBeNull();
+            expect(localStorage.getItem(storageKeyName)).toBeNull();
+            expect(deleteCopilotThreadMock).not.toHaveBeenCalled();
+
+            listCopilotThreadsMock.mockResolvedValue({ data: { items: [] } });
+            sendCopilotMessageStreamMock.mockImplementation(async (_payload, _token, handlers) => {
+                handlers.onMeta?.({ thread_id: "thread-new" });
+                const done = { thread_id: "thread-new", message: "Hi", tool: null, sources: [], payload: null };
+                handlers.onDone?.(done);
+                return done;
+            });
+
+            await act(async () => {
+                await result.current.sendMessage({ message: "hello", companyId: 77 });
+            });
+
+            expect(sendCopilotMessageStreamMock.mock.calls[0][0].thread_id).toBeUndefined();
+            expect(result.current.threadId).toBe("thread-new");
+            // A send that creates a thread refreshes the chat list.
+            await waitFor(() => expect(listCopilotThreadsMock).toHaveBeenCalledWith("test-token", 77, 30));
+        });
+
+        it("does not refresh the chat list when replying in an existing chat", async () => {
+            const { result } = renderHook(() => useCopilotChat());
+            await act(async () => {
+                await result.current.loadThread("thread-1", 77);
+            });
+            sendCopilotMessageStreamMock.mockImplementation(async () => ({
+                thread_id: "thread-1", message: "Ok", tool: null, sources: [], payload: null,
+            }));
+
+            await act(async () => {
+                await result.current.sendMessage({ message: "more", companyId: 77 });
+            });
+
+            expect(sendCopilotMessageStreamMock.mock.calls[0][0].thread_id).toBe("thread-1");
+            expect(listCopilotThreadsMock).not.toHaveBeenCalled();
+        });
+
+        it("switches between chats", async () => {
+            const { result } = renderHook(() => useCopilotChat());
+            await act(async () => {
+                await result.current.loadThread("thread-1", 77);
+            });
+            expect(result.current.messages[0].content).toBe("First chat");
+
+            await act(async () => {
+                await result.current.loadThread("thread-2", 77);
+            });
+            expect(result.current.threadId).toBe("thread-2");
+            expect(result.current.messages[0].content).toBe("Second chat");
+            expect(localStorage.getItem(storageKeyName)).toBe("thread-2");
+        });
+
+        it("clearing a chat removes it from the chat list", async () => {
+            listCopilotThreadsMock.mockResolvedValue({
+                data: {
+                    items: [
+                        { thread_id: "thread-1", updated_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z", message_count: 1, last_message_preview: "First chat" },
+                    ],
+                },
+            });
+            deleteCopilotThreadMock.mockResolvedValue({ data: {} });
+            const { result } = renderHook(() => useCopilotChat());
+            await act(async () => {
+                await result.current.refreshThreads(77);
+                await result.current.loadThread("thread-1", 77);
+            });
+
+            await act(async () => {
+                await result.current.clearCurrentThread(77);
+            });
+
+            expect(deleteCopilotThreadMock).toHaveBeenCalledWith("thread-1", "test-token", 77);
+            expect(result.current.threads).toEqual([]);
+            expect(result.current.threadId).toBeNull();
+        });
+    });
 });

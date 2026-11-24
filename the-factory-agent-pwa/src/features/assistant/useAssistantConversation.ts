@@ -10,7 +10,7 @@ import {
   getActiveThreadId,
   setActiveThreadId,
 } from './storage';
-import type { AssistantMessage } from './types';
+import type { AssistantMessage, ThreadSummary } from './types';
 import {
   labelsForMessage,
   PROCESSING_LABEL_INTERVAL_MS,
@@ -20,6 +20,12 @@ let messageSeq = 0;
 function nextId(suffix: string): string {
   messageSeq += 1;
   return `${Date.now()}-${messageSeq}-${suffix}`;
+}
+
+/** True when the server says the chat is gone (deleted, or not this user's). */
+function isMissingThread(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 403;
 }
 
 /**
@@ -45,6 +51,9 @@ export function useAssistantConversation() {
   const [isRestoring, setIsRestoring] = useState(isAuthenticated);
   const [isSending, setIsSending] = useState(false);
   const [processingLabel, setProcessingLabel] = useState<string | null>(null);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  // Bumped on every switch / new chat so a slow load can't overwrite a newer choice.
+  const loadSeqRef = useRef(0);
 
   // Restore the most recent conversation on mount (and when the signed-in user
   // changes). Prefer the persisted active thread; otherwise fall back to the
@@ -56,23 +65,44 @@ export function useAssistantConversation() {
 
     (async () => {
       setIsRestoring(true);
+      const seq = loadSeqRef.current;
+      const isStale = () => cancelled || seq !== loadSeqRef.current;
       try {
-        let targetId = getActiveThreadId(userId);
-        if (!targetId) {
-          const threads = await assistantApi.listThreads();
-          targetId = threads[0]?.thread_id ?? null;
+        let list: ThreadSummary[] | null = null;
+        const loadList = async (): Promise<ThreadSummary[]> => {
+          const loaded = await assistantApi.listThreads();
+          list = loaded;
+          if (!isStale()) setThreads(loaded);
+          return loaded;
+        };
+
+        let detail: Awaited<ReturnType<typeof assistantApi.getThread>> | null = null;
+        const savedId = getActiveThreadId(userId);
+        if (savedId) {
+          try {
+            detail = await assistantApi.getThread(savedId);
+          } catch (err) {
+            if (!isMissingThread(err)) throw err;
+            // The saved chat was deleted (here or on another device): forget it
+            // and fall back to the newest chat instead of an empty screen.
+            clearActiveThreadId(userId);
+          }
         }
-        if (targetId) {
-          const detail = await assistantApi.getThread(targetId);
-          if (cancelled) return;
+        if (!detail) {
+          const newest = (await loadList()).find((t) => t.thread_id !== savedId);
+          if (newest) detail = await assistantApi.getThread(newest.thread_id);
+        }
+        if (isStale()) return;
+        if (detail) {
           setThreadId(detail.thread_id);
           setMessages(detail.messages);
           setActiveThreadId(userId, detail.thread_id);
         }
+        if (!list) void loadList().catch(() => undefined);
       } catch {
         // No recoverable conversation — start fresh with the empty state.
       } finally {
-        if (!cancelled) setIsRestoring(false);
+        if (!isStale()) setIsRestoring(false);
       }
     })();
 
@@ -167,6 +197,10 @@ export function useAssistantConversation() {
         if (result.thread_id) {
           setThreadId(result.thread_id);
           setActiveThreadId(userId, result.thread_id);
+          // A first message starts a new chat on the server: list it.
+          if (result.thread_id !== threadId) {
+            assistantApi.listThreads().then(setThreads).catch(() => undefined);
+          }
         }
       } catch {
         // Surface a recoverable error in-thread; the Axios interceptor already
@@ -231,8 +265,56 @@ export function useAssistantConversation() {
     }
   }, []);
 
+  const refreshThreads = useCallback(async () => {
+    try {
+      setThreads(await assistantApi.listThreads());
+    } catch {
+      // Keep the list we have.
+    }
+  }, []);
+
+  /** Opens another chat. Resolves false (and changes nothing) if it can't be loaded. */
+  const switchThread = useCallback(
+    async (id: string): Promise<boolean> => {
+      if (!id || id === threadId) return true;
+      loadSeqRef.current += 1;
+      const seq = loadSeqRef.current;
+      setIsRestoring(true);
+      try {
+        const detail = await assistantApi.getThread(id);
+        // A newer switch or new chat won; that is not a failure.
+        if (seq !== loadSeqRef.current) return true;
+        setThreadId(detail.thread_id);
+        setMessages(detail.messages);
+        setActiveThreadId(userId, detail.thread_id);
+        return true;
+      } catch (err) {
+        if (isMissingThread(err)) {
+          setThreads((prev) => prev.filter((t) => t.thread_id !== id));
+        }
+        return false;
+      } finally {
+        if (seq === loadSeqRef.current) setIsRestoring(false);
+      }
+    },
+    [threadId, userId],
+  );
+
+  /** Starts an empty chat; the server creates it with the first message. Deletes nothing. */
+  const startNewChat = useCallback(() => {
+    loadSeqRef.current += 1;
+    setIsRestoring(false);
+    setMessages([]);
+    setThreadId(null);
+    clearActiveThreadId(userId);
+  }, [userId]);
+
+  /** Deletes the open chat and leaves an empty new chat. */
   const clearCurrent = useCallback(async () => {
     const current = threadId;
+    loadSeqRef.current += 1;
+    setIsRestoring(false);
+    if (current) setThreads((prev) => prev.filter((t) => t.thread_id !== current));
     setMessages([]);
     setThreadId(null);
     clearActiveThreadId(userId);
@@ -246,6 +328,9 @@ export function useAssistantConversation() {
   }, [threadId, userId]);
 
   const clearAll = useCallback(async () => {
+    loadSeqRef.current += 1;
+    setIsRestoring(false);
+    setThreads([]);
     setMessages([]);
     setThreadId(null);
     clearActiveThreadId(userId);
@@ -269,5 +354,9 @@ export function useAssistantConversation() {
     runPlanMyDay,
     clearCurrent,
     clearAll,
+    threads,
+    refreshThreads,
+    switchThread,
+    startNewChat,
   };
 }

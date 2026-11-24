@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -25,6 +25,9 @@ import {
   useAssistantConversation,
   useDynamicSuggestions,
   assistantApi,
+  runWeeklySummary,
+  weeklySummaryMessage,
+  WeeklySummaryError,
   type AssistantMessage,
 } from '@/manager/features/assistant';
 import {
@@ -37,14 +40,17 @@ import {
 } from '@/manager/features/planning';
 import { InlineVoiceRecorder } from '@/components/ely/InlineVoiceRecorder';
 import { ActionReceipts, receiptsFromPayload } from '@/components/ely/ActionReceipts';
+import { ChatSwitcher } from '@/components/ely/ChatSwitcher';
+import { ForecastView } from '@/manager/features/assistant/ForecastView';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 import { showApiErrorToast } from '@/lib/api/errors';
 
 type LocalAction = 'liked' | 'disliked' | null;
 
+// Any reply carrying plan items shows the plan card, whatever tool produced it.
 function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined): DailyPlanPayload | null {
-  if (!payload || !Array.isArray(payload.items)) return null;
+  if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) return null;
   return payload as unknown as DailyPlanPayload;
 }
 
@@ -84,6 +90,11 @@ export default function AiAssistantPage() {
     clearCurrent,
     clearAll,
     threadId,
+    threads,
+    refreshThreads,
+    switchThread,
+    startNewChat,
+    appendAssistantMessage,
   } = useAssistantConversation();
   const suggestions = useDynamicSuggestions();
   const acceptPlan = useAcceptDailyPlan();
@@ -106,6 +117,8 @@ export default function AiAssistantPage() {
   const [forecastModalOpen, setForecastModalOpen] = useState(false);
   const [forecastData, setForecastData] = useState<Record<string, unknown> | null>(null);
   const [isLoadingForecast, setIsLoadingForecast] = useState(false);
+  const weeklyAbortRef = useRef<AbortController | null>(null);
+  const weeklyTriggeredRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -155,11 +168,10 @@ export default function AiAssistantPage() {
 
   useEffect(() => {
     for (const msg of messages) {
-      if (msg.role !== 'assistant' || msg.tool !== 'planning.daily' || notifiedPlanIds.has(msg.id)) {
+      if (msg.role !== 'assistant' || notifiedPlanIds.has(msg.id)) {
         continue;
       }
-      const payload = msg.payload as DailyPlanPayload | null | undefined;
-      if (!payload?.items?.length) continue;
+      if (!asDailyPlanPayload(msg.payload)) continue;
 
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotifiedPlanIds((prev) => new Set(prev).add(msg.id));
@@ -183,17 +195,40 @@ export default function AiAssistantPage() {
     });
   };
 
-  const handleGenerateWeeklySummary = async () => {
+  // The summary is a background job: queue it, poll until it is ready, then
+  // show ELY's narrative in the chat.
+  const handleGenerateWeeklySummary = useCallback(async () => {
+    if (weeklyAbortRef.current) return;
+    const controller = new AbortController();
+    weeklyAbortRef.current = controller;
     setIsGeneratingWeekly(true);
     try {
-      const res = await assistantApi.generateWeeklySummary();
-      void send(`Generate Weekly Executive Summary:\n\n${res.summary}`);
+      const result = await runWeeklySummary({ signal: controller.signal });
+      appendAssistantMessage(weeklySummaryMessage(result));
     } catch (err) {
-      showApiErrorToast(err, 'Failed to generate weekly executive summary');
+      if (err instanceof WeeklySummaryError && err.reason === 'aborted') return;
+      appendAssistantMessage(
+        err instanceof WeeklySummaryError
+          ? err.message
+          : "ELY couldn't start your weekly summary. Please try again.",
+        true,
+      );
     } finally {
-      setIsGeneratingWeekly(false);
+      if (weeklyAbortRef.current === controller) weeklyAbortRef.current = null;
+      if (!controller.signal.aborted) setIsGeneratingWeekly(false);
     }
-  };
+  }, [appendAssistantMessage]);
+
+  useEffect(() => () => weeklyAbortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (isRestoring || weeklyTriggeredRef.current) return;
+    if (searchParams.get('flow') !== 'weekly-summary') return;
+
+    weeklyTriggeredRef.current = true;
+    router.replace('/manager/assistant');
+    void handleGenerateWeeklySummary();
+  }, [isRestoring, searchParams, router, handleGenerateWeeklySummary]);
 
   const handleOpenForecast = async () => {
     setForecastModalOpen(true);
@@ -278,8 +313,7 @@ export default function AiAssistantPage() {
       );
     }
 
-    const planPayload =
-      msg.tool === 'planning.daily' ? asDailyPlanPayload(msg.payload) : null;
+    const planPayload = asDailyPlanPayload(msg.payload);
     const planStorageKey = `plan-edit:${threadId ?? 'default'}:${msg.id}`;
     const planEdits =
       planPayload !== null
@@ -422,7 +456,10 @@ export default function AiAssistantPage() {
               <button
                 type="button"
                 aria-label="Conversation options"
-                onClick={() => setMenuOpen((v) => !v)}
+                onClick={() => {
+                  if (!menuOpen) void refreshThreads();
+                  setMenuOpen((v) => !v);
+                }}
                 className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white focus:outline-none transition-colors"
               >
                 <MoreVertical size={18} />
@@ -495,6 +532,14 @@ export default function AiAssistantPage() {
               </div>
             )}
 
+            {isGeneratingWeekly && (
+              <div className="flex items-start">
+                <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
+                  ELY is preparing your weekly summary…
+                </div>
+              </div>
+            )}
+
             {isAnalyzingPhoto && (
               <div className="flex items-start">
                 <div className="bg-[#16384B]/80 text-[#D0E2E3]/80 border border-white/5 rounded-2xl px-5 py-3 text-xs font-semibold animate-pulse">
@@ -529,7 +574,7 @@ export default function AiAssistantPage() {
             <input
               type="file"
               ref={fileInputRef}
-              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv"
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -599,11 +644,7 @@ export default function AiAssistantPage() {
                 ) : !forecastData ? (
                   <p className="text-xs text-white/60 text-center py-8">No forecast data available yet.</p>
                 ) : (
-                  <pre className="text-xs text-white/85 whitespace-pre-wrap bg-white/5 p-3.5 rounded-2xl border border-white/10 overflow-x-auto">
-                    {typeof forecastData.summary === 'string'
-                      ? forecastData.summary
-                      : JSON.stringify(forecastData, null, 2)}
-                  </pre>
+                  <ForecastView data={forecastData} />
                 )}
               </div>
             </div>
@@ -617,6 +658,23 @@ export default function AiAssistantPage() {
           <>
             <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-[200]" />
             <div className="fixed right-4 top-[72px] w-52 bg-[#0F2D3D] border border-white/10 rounded-2xl shadow-2xl z-[201] py-1 flex flex-col">
+              <ChatSwitcher
+                threads={threads}
+                activeThreadId={threadId}
+                disabled={isSending}
+                canStartNew={messages.length > 0 || threadId !== null}
+                onNewChat={() => {
+                  setMenuOpen(false);
+                  setAttachment(null);
+                  startNewChat();
+                }}
+                onSelect={(id) => {
+                  setMenuOpen(false);
+                  void switchThread(id).then((ok) => {
+                    if (!ok) toast.error('Could not open that chat. Please try again.');
+                  });
+                }}
+              />
               <button
                 onClick={() => {
                   setMenuOpen(false);

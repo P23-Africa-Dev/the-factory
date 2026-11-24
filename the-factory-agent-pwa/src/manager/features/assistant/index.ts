@@ -4,6 +4,7 @@ export type {
   SendMessageResult,
   ThreadDetail,
   ThreadSummary,
+  WeeklySummaryStatus,
 } from './types';
 
 export { assistantApi } from './api';
@@ -15,3 +16,9 @@ export {
   setActiveThreadId,
   clearActiveThreadId,
 } from './storage';
+export {
+  runWeeklySummary,
+  weeklySummaryMessage,
+  WeeklySummaryError,
+  type WeeklySummaryResult,
+} from './weeklySummary';

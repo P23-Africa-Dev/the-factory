@@ -334,6 +334,25 @@ final class ElyAgentEngineTest extends TestCase
             ->assertJsonMissing(['thread_id' => $threadId]);
     }
 
+    public function test_chat_list_has_titles_newest_first_and_a_limit(): void
+    {
+        [$company, $admin] = $this->seedCompany();
+        $this->model->answers('First answer.')->answers('Second answer.');
+
+        $first = (string) $this->chat($admin, $company, 'How do I export leads?')->json('data.thread_id');
+        $this->travel(1)->minutes();
+        $second = (string) $this->chat($admin, $company, 'Plan my week')->json('data.thread_id');
+        $this->assertNotSame($first, $second);
+
+        $items = $this->actingAs($admin)->getJson('/api/v1/copilot/threads?company_id='.$company->id)
+            ->assertOk()->json('data.items');
+        $this->assertSame([$second, $first], array_column($items, 'thread_id'));
+        $this->assertSame(['Plan my week', 'How do I export leads?'], array_column($items, 'title'));
+
+        $this->actingAs($admin)->getJson('/api/v1/copilot/threads?limit=1&company_id='.$company->id)
+            ->assertOk()->assertJsonCount(1, 'data.items')->assertJsonPath('data.items.0.thread_id', $second);
+    }
+
     public function test_existing_confirm_cards_work_with_the_new_engine(): void
     {
         [$company, $admin, , $agent] = $this->seedCompany();
@@ -396,6 +415,38 @@ final class ElyAgentEngineTest extends TestCase
             'message' => "Plan today's priorities",
             'context' => ['latitude' => 6.45, 'longitude' => 3.39, 'focus' => 'visits'],
         ])->assertOk()->assertJsonPath('data.response.content', 'Here is your plan.');
+    }
+
+    public function test_plan_my_day_returns_the_plan_for_the_card(): void
+    {
+        [$company, , , $agent] = $this->seedCompany();
+        $items = [['type' => 'visit', 'title' => 'Visit Acme Retail', 'time' => '09:00']];
+
+        $this->mock(\App\Services\AI\Planning\DailyPlanningService::class, function ($mock) use ($items): void {
+            $mock->shouldReceive('buildPlan')->once()->andReturn([
+                'tool' => 'planning.daily',
+                'summary' => 'Your plan is ready.',
+                'payload' => ['items' => $items, 'date' => '2026-11-24'],
+                'sources' => ['planning.daily'],
+            ]);
+        });
+
+        // The model also looks at tasks after planning; the card still shows.
+        $this->model->callsTools([['planning.daily', []]])->callsTools([['tasks.list', []]])->answers('Here is your plan.');
+
+        $response = $this->actingAs($agent)->postJson('/api/v1/copilot/chat', [
+            'company_id' => $company->id,
+            'message' => 'Plan my day',
+        ])->assertOk();
+
+        $response->assertJsonPath('data.response.tool', 'planning.daily');
+        $response->assertJsonPath('data.response.payload.items.0.title', 'Visit Acme Retail');
+
+        // Reopening the chat shows the plan card again.
+        $threadId = (string) $response->json('data.thread_id');
+        $thread = $this->actingAs($agent)->getJson("/api/v1/copilot/threads/{$threadId}?company_id={$company->id}")->assertOk();
+        $last = collect($thread->json('data.thread.messages'))->last();
+        $this->assertSame('Visit Acme Retail', $last['payload']['items'][0]['title'] ?? null);
     }
 
     public function test_legacy_engine_is_used_when_agent_is_off(): void

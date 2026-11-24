@@ -16,6 +16,7 @@ import {
     CopilotChatContext,
     CopilotMessage,
     CopilotThread,
+    CopilotThreadSummary,
     ForecastHorizonDays,
     ForecastOverviewResponse,
     WeeklySummaryDownloadFormat,
@@ -45,6 +46,9 @@ import { useAuthStore } from "@/store/auth";
 function storageKey(companyId: string | number | undefined, userId: number | undefined): string {
     return `factory_copilot_thread:${String(companyId ?? "unknown")}:${String(userId ?? "unknown")}`;
 }
+
+/** How many recent chats the chat switcher lists. */
+export const THREAD_LIST_LIMIT = 30;
 
 function normalizeThreadMessages(thread: CopilotThread | null): CopilotMessage[] {
     if (!thread || !Array.isArray(thread.messages)) {
@@ -97,6 +101,7 @@ export function useCopilotChat() {
         loaded_count: number;
     } | null>(null);
     const [threadMessageCount, setThreadMessageCount] = useState<number | null>(null);
+    const [threads, setThreads] = useState<CopilotThreadSummary[]>([]);
     const [isStreaming, setIsStreaming] = useState(false);
     const [processingLabel, setProcessingLabel] = useState<string | null>(null);
     const processingLabelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -135,6 +140,29 @@ export function useCopilotChat() {
         [persistedKey, token]
     );
 
+    const refreshThreads = useCallback(
+        async (companyId?: string | number): Promise<CopilotThreadSummary[]> => {
+            if (!token) return [];
+            const res = await listCopilotThreads(token, companyId, THREAD_LIST_LIMIT);
+            const items = Array.isArray(res?.data?.items) ? res.data.items : [];
+            setThreads(items);
+            return items;
+        },
+        [token]
+    );
+
+    // Start an empty chat. Nothing is deleted on the server: the next message
+    // is sent without a thread_id, so the server opens a new thread for it.
+    const startNewChat = useCallback(() => {
+        setMessages([]);
+        setThreadId(null);
+        setThreadPagination(null);
+        setThreadMessageCount(null);
+        setError(null);
+        if (typeof localStorage !== "undefined") {
+            localStorage.removeItem(persistedKey);
+        }
+    }, [persistedKey]);
 
     const initialize = useCallback(
         async (companyId?: string | number) => {
@@ -227,6 +255,7 @@ export function useCopilotChat() {
         async (companyId?: string | number) => {
             if (!token || !threadId) return;
             await deleteCopilotThread(threadId, token, companyId);
+            setThreads((prev) => prev.filter((item) => item.thread_id !== threadId));
             setMessages([]);
             setThreadId(null);
             if (typeof localStorage !== "undefined") {
@@ -424,6 +453,8 @@ export function useCopilotChat() {
         async ({ message, companyId, actionArgs, actionConfirmed, idempotencyKey, context }: SendMessageParams) => {
             if (!token || !message.trim()) return;
 
+            const startsNewThread = !threadId;
+
             const userMessage: CopilotMessage = {
                 id: `local-user-${Date.now()}`,
                 role: "user",
@@ -525,6 +556,11 @@ export function useCopilotChat() {
                 if (typeof localStorage !== "undefined") {
                     localStorage.setItem(persistedKey, done.thread_id);
                 }
+
+                if (startsNewThread) {
+                    // The new chat should show up in the chat switcher.
+                    void refreshThreads(companyId).catch(() => undefined);
+                }
             } catch (err) {
                 const fallbackMessage = err instanceof Error ? err.message : "Unable to process ELY request.";
                 setError(fallbackMessage);
@@ -544,7 +580,7 @@ export function useCopilotChat() {
                 setProcessingLabel(null);
             }
         },
-        [clearProcessingLabelTimer, pathname, persistedKey, threadId, token]
+        [clearProcessingLabelTimer, pathname, persistedKey, refreshThreads, threadId, token]
     );
 
     return {
@@ -557,6 +593,9 @@ export function useCopilotChat() {
         error,
         weeklyReport,
         isQueueingWeeklyReport,
+        threads,
+        refreshThreads,
+        startNewChat,
         initialize,
         loadThread,
         sendMessage,
