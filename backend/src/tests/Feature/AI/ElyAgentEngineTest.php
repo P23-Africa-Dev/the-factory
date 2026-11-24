@@ -408,13 +408,20 @@ final class ElyAgentEngineTest extends TestCase
                 ->andReturn(['tool' => 'planning.daily', 'summary' => 'Your plan is ready.', 'payload' => [], 'sources' => ['planning.daily']]);
         });
 
-        $this->model->callsTools([['planning.daily', []]])->answers('Here is your plan.');
+        // The "Plan my day" button sends a focus, so the app runs the plan
+        // itself; the model only writes the answer.
+        $this->model->answers('Here is your plan.');
 
         $this->actingAs($agent)->postJson('/api/v1/copilot/chat', [
             'company_id' => $company->id,
             'message' => "Plan today's priorities",
             'context' => ['latitude' => 6.45, 'longitude' => 3.39, 'focus' => 'visits'],
-        ])->assertOk()->assertJsonPath('data.response.content', 'Here is your plan.');
+        ])->assertOk()
+            ->assertJsonPath('data.response.content', 'Here is your plan.')
+            ->assertJsonPath('data.response.tool', 'planning.daily');
+
+        // The model saw the plan as a tool result before answering.
+        $this->assertStringContainsString('Your plan is ready.', json_encode($this->model->requests[0]->messages));
     }
 
     public function test_plan_my_day_returns_the_plan_for_the_card(): void

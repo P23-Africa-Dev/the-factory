@@ -195,6 +195,27 @@ class ElyAgent
         $finalText = '';
         $lastResponse = null;
 
+        // The app's "Plan my day" buttons send a planning focus. Run the plan
+        // tool first so the reply always carries the plan card; the model then
+        // writes its answer around the result.
+        $planTool = $this->tools->get('planning.daily');
+        if (is_array($context->page['planning'] ?? null)
+            && isset($context->page['planning']['focus'])
+            && $planTool !== null
+            && $planTool->allowedFor($context->role)) {
+            $call = new ToolCall('plan-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(12)), 'planning.daily', []);
+            $messages[] = ChatMessage::assistant('', [$call]);
+            $this->threads->appendToolRequest($thread, '', [$call], 'app', 'planning', null, null);
+            [$content, $isError] = $this->runToolCall($context, $thread, $call, $planTool, $sawUntrusted, null, false, $onEvent);
+            $messages[] = ChatMessage::toolResult($call->id, $call->name, $content, $isError);
+            $this->threads->appendToolResult($thread, $call->id, $call->name, $content, $isError);
+            $toolCallCount++;
+            $lastTool = 'planning.daily';
+            if (! $isError) {
+                $sources[] = 'planning.daily';
+            }
+        }
+
         for ($step = 0; $step < $maxSteps; $step++) {
             if (microtime(true) > $deadline) {
                 break;
