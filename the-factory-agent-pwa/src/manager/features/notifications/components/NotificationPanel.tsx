@@ -101,7 +101,7 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps): Re
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 cursor-pointer"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] cursor-pointer"
           />
 
           {/* Drawer container (max-width matched to layout) */}
@@ -110,7 +110,7 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps): Re
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 250 }}
-            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-[#0A1D25] border-l border-white/10 z-50 flex flex-col shadow-2xl font-sans"
+            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-[#0A1D25] border-l border-white/10 z-[10000] flex flex-col shadow-2xl font-sans"
           >
             {/* Drawer Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">

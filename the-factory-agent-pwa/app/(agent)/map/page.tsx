@@ -491,7 +491,7 @@ function DestinationSearch({
   const hasSuggestions = results.length > 0;
 
   return (
-    <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
+    <div className="fixed inset-0 bg-[#051014]/75 z-[10000] overflow-y-auto flex flex-col font-sans">
       {/* Click outside backdrop overlay */}
       <div className="fixed inset-0 z-0" onClick={onClose} />
 
@@ -654,7 +654,7 @@ function OriginSearch({
   isResolving?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 bg-[#051014]/75 z-50 overflow-y-auto flex flex-col font-sans">
+    <div className="fixed inset-0 bg-[#051014]/75 z-[10000] overflow-y-auto flex flex-col font-sans">
       <div className="fixed inset-0 z-0" onClick={onClose} />
 
       <div className="relative z-10 w-full pt-4 flex-1 flex flex-col">

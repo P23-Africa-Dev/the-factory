@@ -501,7 +501,7 @@ export default function AiAssistantPage() {
 
       {/* Confirm modal — also in a portal for the same reason */}
       {confirmTarget && createPortal(
-        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
           <div
             onClick={() => !isClearing && setConfirmTarget(null)}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
