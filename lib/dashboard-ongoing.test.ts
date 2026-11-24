@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OngoingAgent } from "@/lib/api/dashboard";
 import {
-  badgePositionPercent,
+  badgeAnchor,
   buildOngoingSlides,
   clampPercent,
   firstName,
@@ -65,9 +65,23 @@ describe("dashboard-ongoing", () => {
   });
 
   it("keeps the badge inside the track at the extremes", () => {
-    expect(badgePositionPercent(0)).toBe(8);
-    expect(badgePositionPercent(50)).toBe(50);
-    expect(badgePositionPercent(100)).toBe(88);
+    // Anchored on the tip and shifted by the same share of its own width, so the
+    // badge's edges stay inside the track whatever the label width.
+    expect(badgeAnchor(0)).toEqual({ left: "0%", transform: "translateX(-0%)", pointerLeft: "12%" });
+    expect(badgeAnchor(5)).toEqual({ left: "5%", transform: "translateX(-5%)", pointerLeft: "12%" });
+    expect(badgeAnchor(50)).toEqual({ left: "50%", transform: "translateX(-50%)", pointerLeft: "50%" });
+    expect(badgeAnchor(95)).toEqual({ left: "95%", transform: "translateX(-95%)", pointerLeft: "88%" });
+    expect(badgeAnchor(140).left).toBe("100%");
+
+    // Right edge = track * p - badge * p + badge = track * p + badge * (1 - p) <= track.
+    const track = 300;
+    for (const badgeWidth of [70, 110, 160]) {
+      for (const p of [0, 5, 50, 95, 100]) {
+        const leftEdge = (track * p) / 100 - (badgeWidth * p) / 100;
+        expect(leftEdge).toBeGreaterThanOrEqual(0);
+        expect(leftEdge + badgeWidth).toBeLessThanOrEqual(track);
+      }
+    }
   });
 
   it("uses the first name for the badge", () => {

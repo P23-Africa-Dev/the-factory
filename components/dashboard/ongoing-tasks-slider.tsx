@@ -3,7 +3,7 @@
 import type { OngoingAgent, OngoingTask } from "@/lib/api/dashboard";
 import { resolveAvatarSrc } from "@/lib/avatar";
 import {
-  badgePositionPercent,
+  badgeAnchor,
   buildLegacyOngoingSlides,
   buildOngoingSlides,
   firstName,
@@ -54,7 +54,7 @@ export function OngoingTasksSlider({ agents, legacyTasks, isAgentView }: Props) 
   }, [count, paused]);
 
   const progress = active?.progress ?? 0;
-  const badgeLeft = badgePositionPercent(progress);
+  const anchor = badgeAnchor(progress);
 
   return (
     <div
@@ -76,8 +76,8 @@ export function OngoingTasksSlider({ agents, legacyTasks, isAgentView }: Props) 
         {active ? (
           <div
             key={`badge-${active.key}`}
-            className="absolute -top-7 -translate-x-1/2 flex items-center gap-1 rounded-full bg-[#FD6046] pl-0.5 pr-2 py-0.5 text-white shadow-md transition-[left] duration-500"
-            style={{ left: `${badgeLeft}%` }}
+            className="absolute -top-7 max-w-full flex items-center gap-1 rounded-full bg-[#FD6046] pl-0.5 pr-2 py-0.5 text-white shadow-md transition-[left,transform] duration-500"
+            style={{ left: anchor.left, transform: anchor.transform }}
           >
             {active.agent.avatar_url ? (
               <Image
@@ -85,18 +85,22 @@ export function OngoingTasksSlider({ agents, legacyTasks, isAgentView }: Props) 
                 alt={active.agent.name}
                 width={18}
                 height={18}
-                className="w-4.5 h-4.5 rounded-full object-cover bg-white"
+                className="w-4.5 h-4.5 shrink-0 rounded-full object-cover bg-white"
                 unoptimized
               />
             ) : (
-              <span className="w-4.5 h-4.5 rounded-full bg-white text-[#FD6046] text-[8px] font-bold flex items-center justify-center">
+              <span className="w-4.5 h-4.5 shrink-0 rounded-full bg-white text-[#FD6046] text-[8px] font-bold flex items-center justify-center">
                 {active.agent.initials}
               </span>
             )}
-            <span className="text-[10px] font-semibold whitespace-nowrap">
-              {firstName(active.agent.name)} · {progress}%
+            <span className="flex min-w-0 text-[10px] font-semibold whitespace-nowrap">
+              <span className="truncate">{firstName(active.agent.name)}</span>
+              <span className="shrink-0">&nbsp;· {progress}%</span>
             </span>
-            <span className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-1.5 bg-[#FD6046] [clip-path:polygon(0%_0%,100%_0%,50%_100%)]" />
+            <span
+              className="absolute -bottom-1 -translate-x-1/2 w-2 h-1.5 bg-[#FD6046] [clip-path:polygon(0%_0%,100%_0%,50%_100%)]"
+              style={{ left: anchor.pointerLeft }}
+            />
           </div>
         ) : null}
 

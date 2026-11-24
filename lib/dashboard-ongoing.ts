@@ -80,12 +80,30 @@ export function buildLegacyOngoingSlides(tasks: OngoingTask[] | undefined | null
   }));
 }
 
+export type BadgeAnchor = {
+  /** CSS `left` of the badge inside the track: the bar's tip. */
+  left: string;
+  /** CSS `transform`: shift back by the same share of the badge's own width. */
+  transform: string;
+  /** CSS `left` of the pointer inside the badge, so it points at the tip. */
+  pointerLeft: string;
+};
+
 /**
- * Horizontal position (in % of the track) for the avatar badge on the bar tip,
- * kept inside the track so it never falls off at 0% or 100%.
+ * Places the avatar badge on the bar tip and keeps it fully inside the track for
+ * any label width: at 0% its left edge meets the track's left edge, at 100% its
+ * right edge meets the track's right edge, sliding smoothly in between.
+ * (Centring it on a clamped point clipped long labels like "Donald · 95%".)
  */
-export function badgePositionPercent(progress: number, min = 8, max = 88): number {
-  return Math.max(min, Math.min(max, clampPercent(progress)));
+export function badgeAnchor(progress: number): BadgeAnchor {
+  const p = clampPercent(progress);
+  // Keep the pointer off the badge's rounded ends.
+  const pointer = Math.max(12, Math.min(88, p));
+  return {
+    left: `${p}%`,
+    transform: `translateX(-${p}%)`,
+    pointerLeft: `${pointer}%`,
+  };
 }
 
 export const ONGOING_STATE_LABEL: Record<OngoingTaskState, string> = {
