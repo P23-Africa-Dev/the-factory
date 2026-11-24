@@ -390,7 +390,7 @@ export default function ManagerTaskDetailScreen() {
       {/* ─── Reassign Task Modal ─── */}
       <AnimatePresence>
         {reassignOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/65 px-5">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-5">
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -442,7 +442,7 @@ export default function ManagerTaskDetailScreen() {
         {previewProofUrl && (
           <div
             onClick={() => setPreviewProofUrl(null)}
-            className="fixed inset-0 z-[150] flex flex-col items-center justify-center bg-black/90 p-4"
+            className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/90 p-4"
           >
             <img
               src={previewProofUrl}

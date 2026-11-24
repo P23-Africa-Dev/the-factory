@@ -11,6 +11,7 @@ export const notificationCategorySchema = z.enum([
   'crm',
   'workforce',
   'profile',
+  'drive',
   'system',
 ]);
 

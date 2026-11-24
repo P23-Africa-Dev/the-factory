@@ -24,7 +24,11 @@ export function useNotificationNavigation() {
 
   const navigateToNotification = (notification: AppNotification): void => {
     markNotificationNavigation();
-    router.push(resolveInAppNotificationTarget(notification));
+    const target = resolveInAppNotificationTarget(notification);
+    router.push(target);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('f23:notification-navigate', { detail: { target } }));
+    }
   };
 
   return { navigateToNotification };

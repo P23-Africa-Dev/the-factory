@@ -15,6 +15,8 @@ export type LeadContact = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     sort_order?: number;
 };
 

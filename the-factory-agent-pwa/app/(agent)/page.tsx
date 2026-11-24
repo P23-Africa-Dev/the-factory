@@ -86,6 +86,34 @@ export default function AgentDashboardPage() {
   const [meetingModalDate, setMeetingModalDate] = useState<Date | undefined>(undefined);
   const [isViewMeetingsOpen, setIsViewMeetingsOpen] = useState(false);
   const [recentLocations, setRecentLocations] = useState<RecentDestination[]>([]);
+  const [attendanceHighlighted, setAttendanceHighlighted] = useState(false);
+  const attendanceSectionRef = useRef<HTMLDivElement>(null);
+
+  const focusAttendanceSection = useCallback(() => {
+    setAttendanceHighlighted(true);
+    attendanceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => setAttendanceHighlighted(false), 2200);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('section') === 'attendance') {
+      const timer = window.setTimeout(focusAttendanceSection, 150);
+      return () => window.clearTimeout(timer);
+    }
+  }, [focusAttendanceSection]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onNotificationNavigate = (event: Event) => {
+      const detail = (event as CustomEvent<{ target?: string }>).detail;
+      if (detail?.target?.includes('section=attendance')) {
+        focusAttendanceSection();
+      }
+    };
+    window.addEventListener('f23:notification-navigate', onNotificationNavigate);
+    return () => window.removeEventListener('f23:notification-navigate', onNotificationNavigate);
+  }, [focusAttendanceSection]);
 
   // Swipable panel states
   const COLLAPSED_Y = 100;
@@ -629,7 +657,15 @@ export default function AgentDashboardPage() {
             </div>
 
             {/* Attendance card */}
-            <AttendanceCard />
+            <div
+              ref={attendanceSectionRef}
+              id="attendance-section"
+              className={`flex-1 flex rounded-[20px] transition-all duration-300 ${
+                attendanceHighlighted ? 'ring-2 ring-[#44AFCD] ring-offset-2 ring-offset-[#0A1D25]' : ''
+              }`}
+            >
+              <AttendanceCard />
+            </div>
           </div>
 
           {/* Field activity blocks are full-width; the -mx-4 cancels their own
@@ -821,7 +857,7 @@ export default function AgentDashboardPage() {
 
       {/* Logout modal */}
       {isLogoutModalOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
           <div onClick={() => !isLoggingOut && setIsLogoutModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer" />
           <div className="relative bg-[#0B1E26] border border-white/10 rounded-2xl w-full max-w-xs p-6 shadow-2xl z-10 flex flex-col gap-4 font-sans text-center">
             <h3 className="font-bold text-lg text-white">Log Out</h3>
