@@ -1,15 +1,16 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Mail, MapPin, Phone, Plus, Trash2, User } from "lucide-react";
+import { Briefcase, ChevronLeft, ChevronRight, Link2, Mail, MapPin, Phone, Plus, Trash2, User } from "lucide-react";
 import { useState } from "react";
 
 import { FormRow } from "@/components/payroll/payroll/form-row";
 import { InlineInput } from "@/components/payroll/payroll/inline-input";
 import PhoneNumberInput from "@/components/ui/phone-number-input";
 import { LeadDuplicateSuggestions } from "@/components/crm/lead-duplicate-suggestions";
+import { ProfileUrlInputs } from "@/components/crm/profile-url-inputs";
 import type { LeadContact, LeadDuplicateField, LeadDuplicateMatch } from "@/lib/api/crm";
 
-export type LeadContactErrors = Partial<Record<"name" | "email" | "phone" | "location", string>>;
+export type LeadContactErrors = Partial<Record<"name" | "email" | "phone" | "location" | "position" | "profileUrls", string>>;
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
@@ -46,7 +47,7 @@ export function LeadContactsSlider({
 
   if (!contact) return null;
 
-  const setField = (field: keyof Pick<LeadContact, "name" | "email" | "phone" | "location">, value: string) => {
+  const setField = (field: keyof Pick<LeadContact, "name" | "email" | "phone" | "location" | "position">, value: string) => {
     onChange(activeIndex, { ...contact, [field]: value });
     if (field === "name" || field === "email" || field === "phone") {
       onIdentityInput?.(field, value);
@@ -170,6 +171,24 @@ export function LeadContactsSlider({
           </FormRow>
           <FieldError message={contactErrors.location} />
         </div>
+
+        <div>
+          <FormRow label="Position" labelClassName="w-28">
+            <InlineInput
+              value={contact.position ?? ""}
+              onChange={(event) => setField("position", event.target.value)}
+              placeholder="E.g Head of Sales"
+              className="col-span-2"
+            />
+          </FormRow>
+          <FieldError message={contactErrors.position} />
+        </div>
+
+        <ProfileUrlInputs
+          values={contact.profile_urls?.length ? contact.profile_urls : [""]}
+          onChange={(values) => onChange(activeIndex, { ...contact, profile_urls: values })}
+          errors={contactErrors.profileUrls ? [contactErrors.profileUrls] : []}
+        />
       </div>
     </section>
   );
@@ -203,9 +222,26 @@ export function LeadContactsView({ contacts }: { contacts: LeadContact[] }) {
               )}
             </div>
             <div className="space-y-2 text-[11px] text-gray-500">
+              {contact.position && <p className="flex items-center gap-2"><Briefcase size={12} />{contact.position}</p>}
               {contact.email && <p className="flex items-center gap-2"><Mail size={12} />{contact.email}</p>}
               {contact.phone && <p className="flex items-center gap-2"><Phone size={12} />{contact.phone}</p>}
               {contact.location && <p className="flex items-center gap-2"><MapPin size={12} />{contact.location}</p>}
+              {contact.profile_urls && contact.profile_urls.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {contact.profile_urls.map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[10px] font-medium text-[#094B5C] hover:underline"
+                    >
+                      <Link2 size={10} />
+                      {url.replace(/^https?:\/\//i, "")}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </article>
         ))}
@@ -293,6 +329,30 @@ export function LeadContactHeroSlider({ contacts }: { contacts: LeadContact[] })
           <span className="mb-1 text-[11px] font-medium text-gray-400">Location</span>
           <p className="truncate text-[16px] font-semibold text-white">{contact.location || "N/A"}</p>
         </div>
+        {contact.position && (
+          <div className="flex min-w-0 flex-col">
+            <span className="mb-1 text-[11px] font-medium text-gray-400">Position</span>
+            <p className="truncate text-[16px] font-semibold text-white">{contact.position}</p>
+          </div>
+        )}
+        {contact.profile_urls && contact.profile_urls.length > 0 && (
+          <div className="flex min-w-0 flex-col min-[480px]:col-span-2">
+            <span className="mb-1 text-[11px] font-medium text-gray-400">Profile URLs</span>
+            <div className="flex flex-wrap gap-2">
+              {contact.profile_urls.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-[14px] font-semibold text-[#7DD3FC] hover:underline"
+                >
+                  {url}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

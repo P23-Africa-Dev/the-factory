@@ -14,8 +14,8 @@ describe('resolveAgentDeepLink (agent)', () => {
   it('maps field-activity and attendance dashboard urls', () => {
     expect(agent('/agent/field-activity')).toBe('/field-activity');
     expect(agent('/agent/field-activity?inbox=1')).toBe('/field-activity?inbox=1');
-    expect(agent('/agent/operations/attendance')).toBe('/');
-    expect(agent('/operations/attendance')).toBe('/');
+    expect(agent('/agent/operations/attendance')).toBe('/?section=attendance');
+    expect(agent('/operations/attendance')).toBe('/?section=attendance');
   });
 
   it('keeps known agent routes and map query strings', () => {

@@ -111,13 +111,23 @@ function sourcePath(source: NotificationTargetSource, mode: AppMode): string | n
         ? 'task'
         : type.startsWith('field_activity.') || ref === 'fieldstop' || ref === 'fielddailysummary'
           ? 'field'
-          : meetingId
-            ? 'meeting'
-            : leadId
-              ? 'crm'
-              : taskId
-                ? 'task'
-                : null;
+          : type.startsWith('attendance.') || ref === 'attendancerecord' || ref === 'attendancesetting'
+            ? 'attendance'
+            : type.startsWith('payroll.') || ref === 'attendancepayrollsummary' || ref === 'payrollsetting'
+              ? 'payroll'
+              : type.startsWith('project.') || ref === 'project'
+                ? 'project'
+                : type.startsWith('daily_plan.')
+                  ? 'daily_plan'
+                  : type.startsWith('workforce.')
+                    ? 'workforce'
+                    : meetingId
+                      ? 'meeting'
+                      : leadId
+                        ? 'crm'
+                        : taskId
+                          ? 'task'
+                          : null;
 
   switch (domain) {
     case 'meeting':
@@ -140,6 +150,23 @@ function sourcePath(source: NotificationTargetSource, mode: AppMode): string | n
       if (taskId) return `/tasks/${taskId}`;
       // Agent links carry `?inbox=1` for the pending-review pile.
       return actionPath.startsWith('/field-activity') ? actionUrl : '/field-activity';
+
+    case 'attendance':
+      return '/operations/attendance';
+
+    case 'payroll':
+      return '/payroll';
+
+    case 'project':
+      return refId ? `/projects/${refId}` : '/projects';
+
+    case 'daily_plan':
+      return type === 'daily_plan.accepted' ? '/tasks' : '/assistant';
+
+    case 'workforce':
+      if (actionPath === '/user/profile' || actionPath === '/profile') return '/profile';
+      if (type === 'workforce.internal_onboarding_completed') return '/internal-users/onboarding-status';
+      return actionUrl;
 
     default:
       return actionUrl;

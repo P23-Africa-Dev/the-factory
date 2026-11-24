@@ -29,7 +29,6 @@ interface AddLeadModalProps {
 interface FormState {
   companyName: string;
   website: string;
-  position: string;
   source: string;
   status: string;
   pipelineId: string;
@@ -39,23 +38,23 @@ interface FormState {
 const INITIAL_FORM: FormState = {
   companyName: '',
   website: '',
-  position: '',
   source: '',
   status: '',
   pipelineId: '',
   assignedToUserId: '',
 };
 
+type ContactFieldErrors = Partial<Record<'name' | 'email' | 'phone' | 'location' | 'position' | 'profileUrls', string>>;
+
 export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps): React.ReactElement | null {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
-  const [profileUrls, setProfileUrls] = useState<string[]>(['']);
-  const [errors, setErrors] = useState<Partial<Record<keyof FormState | 'profileUrls', string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
 
   const [contacts, setContacts] = useState<LeadContact[]>([
-    { name: '', email: '', phone: '', location: '' },
+    { name: '', email: '', phone: '', location: '', position: '', profile_urls: [''] },
   ]);
   const [activeContactIndex, setActiveContactIndex] = useState(0);
-  const [contactErrors, setContactErrors] = useState<Array<Partial<Record<'name' | 'email' | 'phone' | 'location', string>>>>([{}]);
+  const [contactErrors, setContactErrors] = useState<ContactFieldErrors[]>([{}]);
   const [customFields, setCustomFields] = useState<LeadCustomFields>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
   const [showFieldDialog, setShowFieldDialog] = useState(false);
@@ -83,9 +82,8 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
   const handleReset = () => {
     setForm(INITIAL_FORM);
-    setProfileUrls(['']);
     setErrors({});
-    setContacts([{ name: '', email: '', phone: '', location: '' }]);
+    setContacts([{ name: '', email: '', phone: '', location: '', position: '', profile_urls: [''] }]);
     setActiveContactIndex(0);
     setContactErrors([{}]);
     setCustomFields({});
@@ -94,25 +92,25 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   };
 
   const validate = (): boolean => {
-    const newContactErrors: Array<Partial<Record<'name' | 'email' | 'phone' | 'location', string>>> = contacts.map(
+    const newContactErrors: ContactFieldErrors[] = contacts.map(
       (c) => {
-        const errs: Partial<Record<'name' | 'email' | 'phone' | 'location', string>> = {};
+        const errs: ContactFieldErrors = {};
         if (!c.name.trim()) {
           errs.name = 'Name is required';
         }
         if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) {
           errs.email = 'Enter a valid email';
         }
+        if (parseProfileUrls(c.profile_urls ?? []).some((url) => !isValidUrl(url))) {
+          errs.profileUrls = 'One or more profile URLs are invalid';
+        }
         return errs;
       },
     );
 
-    const newErrors: Partial<Record<keyof FormState | 'profileUrls', string>> = {};
+    const newErrors: Partial<Record<keyof FormState, string>> = {};
     if (form.website.trim() && !isValidUrl(form.website)) {
       newErrors.website = 'Enter a valid website URL';
-    }
-    if (parseProfileUrls(profileUrls).some((url) => !isValidUrl(url))) {
-      newErrors.profileUrls = 'One or more profile URLs are invalid';
     }
     const nextCustomErrors = validateCustomFieldValues(leadFields, customFields);
 
@@ -147,29 +145,34 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
     const pipelineId = form.pipelineId ? Number(form.pipelineId) : defaultPipeline.id;
     const defaultStatus = labels[0]?.slug ?? 'newly_lead';
-    const cleanedProfileUrls = parseProfileUrls(profileUrls);
 
-    const normalizedContacts = contacts.map((contact, index) => ({
-      name: contact.name.trim(),
-      email: contact.email?.trim() || null,
-      phone: contact.phone?.trim() || null,
-      location: contact.location?.trim() || null,
-      sort_order: index,
-    }));
+    const normalizedContacts = contacts.map((contact, index) => {
+      const contactProfileUrls = parseProfileUrls(contact.profile_urls ?? []);
+      return {
+        name: contact.name.trim(),
+        email: contact.email?.trim() || null,
+        phone: contact.phone?.trim() || null,
+        location: contact.location?.trim() || null,
+        position: contact.position?.trim() || null,
+        profile_urls: contactProfileUrls.length > 0 ? contactProfileUrls : null,
+        sort_order: index,
+      };
+    });
     const primaryContact = normalizedContacts[0];
+    const resolvedLeadName = form.companyName.trim() || primaryContact.name;
 
     createLead({
       company_id: companyId,
       pipeline_id: pipelineId,
-      name: primaryContact.name,
+      name: resolvedLeadName,
       email: primaryContact.email,
       phone: primaryContact.phone,
       location: primaryContact.location,
       contacts: normalizedContacts,
       company_name: form.companyName.trim() || null,
       website: form.website.trim() ? normalizeWebsite(form.website) : null,
-      position: form.position.trim() || null,
-      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
+      position: primaryContact.position,
+      profile_urls: primaryContact.profile_urls,
       source: form.source.trim() || 'manager upload',
       status: form.status || defaultStatus,
       assigned_to_user_id: form.assignedToUserId ? Number(form.assignedToUserId) : null,
@@ -183,14 +186,17 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     onClose();
   };
 
-  const updateActiveContact = (key: keyof LeadContact, value: string) => {
+  const updateActiveContact = <K extends keyof LeadContact>(key: K, value: LeadContact[K]) => {
     setContacts((current) =>
       current.map((item, idx) => (idx === activeContactIndex ? { ...item, [key]: value } : item)),
     );
   };
 
   const addContact = () => {
-    setContacts((current) => [...current, { name: '', email: '', phone: '', location: '' }]);
+    setContacts((current) => [
+      ...current,
+      { name: '', email: '', phone: '', location: '', position: '', profile_urls: [''] },
+    ]);
     setContactErrors((current) => [...current, {}]);
     setActiveContactIndex(contacts.length);
   };
@@ -350,10 +356,28 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                     className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
                   />
                 </div>
+
+                <div className="flex flex-col">
+                  <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Position</label>
+                  <input
+                    type="text"
+                    value={currentContact.position ?? ''}
+                    onChange={(e) => updateActiveContact('position', e.target.value)}
+                    className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
+                  />
+                </div>
+
+                <PwaProfileUrlInputs
+                  values={currentContact.profile_urls?.length ? currentContact.profile_urls : ['']}
+                  onChange={(urls) => updateActiveContact('profile_urls', urls)}
+                />
+                {currentContactErrors.profileUrls && (
+                  <span className="text-[#EF4444] text-[11px] -mt-2 ml-1">{currentContactErrors.profileUrls}</span>
+                )}
               </div>
 
               <div className="h-px bg-white/10 my-2" />
-              <p className="text-[10px] text-white/45 -mt-1">Company &amp; professional fields below are optional.</p>
+              <p className="text-[10px] text-white/45 -mt-1">Company fields below are optional.</p>
 
               <div className="flex flex-col">
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Company Name</label>
@@ -379,21 +403,6 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
                   <span className="text-[#EF4444] text-[11px] mt-1 ml-1">{errors.website}</span>
                 )}
               </div>
-
-              <div className="flex flex-col">
-                <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Position</label>
-                <input
-                  type="text"
-                  value={form.position}
-                  onChange={(e) => setForm((f) => ({ ...f, position: e.target.value }))}
-                  className="h-12 border-1.5 border-white/12 rounded-xl px-3.5 text-sm text-white bg-white/5 placeholder-white/35 outline-none transition-colors focus:border-[#75ADAF]"
-                />
-              </div>
-
-              <PwaProfileUrlInputs values={profileUrls} onChange={setProfileUrls} />
-              {errors.profileUrls && (
-                <span className="text-[#EF4444] text-[11px] -mt-2 ml-1">{errors.profileUrls}</span>
-              )}
 
               <div className="flex flex-col">
                 <label className="text-xs font-semibold text-[#75ADAF] mb-1.5">Source</label>

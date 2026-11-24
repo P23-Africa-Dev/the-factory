@@ -17,6 +17,8 @@ class LeadContactResource extends JsonResource
             'email' => $this->email,
             'phone' => $this->phone,
             'location' => $this->location,
+            'position' => $this->position,
+            'profile_urls' => $this->profile_urls ?? [],
             'sort_order' => (int) $this->sort_order,
         ];
     }
