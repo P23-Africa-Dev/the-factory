@@ -69,7 +69,7 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
       toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your location has been recorded.');
       onClose();
       if (wasClockIn) {
-        router.push('/map?highlight=clock-in');
+        router.push('/manager/map?highlight=clock-in');
       } else {
         openDayReview();
       }

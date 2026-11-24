@@ -30,7 +30,7 @@ export function ZonesSettingsPanel() {
     enabled: !!token,
   });
 
-  const defaultCountry = profileData?.organization.company.country ?? "NG";
+  const defaultCountry = profileData?.organization.company.country ?? "GB";
   const { data: zones = [], isLoading } = useCompanyZones(companyId ?? undefined);
 
   const deleteMutation = useDeleteCompanyZone({

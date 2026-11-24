@@ -142,7 +142,7 @@ export default function FinancePage() {
       </div>
       {/* Main Content */}
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        <PaymentOverview overview={overview ?? null} currency={overview?.currency ?? existingPayroll?.currency ?? "USD"} />
+        <PaymentOverview overview={overview ?? null} currency={overview?.currency ?? existingPayroll?.currency ?? "GBP"} />
 
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">

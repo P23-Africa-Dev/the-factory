@@ -19,12 +19,14 @@ class LeadLabel extends Model
         'color',
         'sort_order',
         'is_default',
+        'is_won',
     ];
 
     protected function casts(): array
     {
         return [
             'is_default' => 'boolean',
+            'is_won' => 'boolean',
         ];
     }
 

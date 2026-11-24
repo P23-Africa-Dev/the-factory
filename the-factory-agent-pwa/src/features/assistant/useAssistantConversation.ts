@@ -115,6 +115,9 @@ export function useAssistantConversation() {
           focus?: 'all' | 'visits' | 'followups' | 'tasks';
           limit?: number;
         };
+        actionConfirmed?: boolean;
+        actionArgs?: Record<string, unknown>;
+        idempotencyKey?: string;
       },
     ) => {
       const content = text.trim();
@@ -147,6 +150,9 @@ export function useAssistantConversation() {
           message: content,
           threadId,
           context,
+          actionConfirmed: options?.actionConfirmed,
+          actionArgs: options?.actionArgs,
+          idempotencyKey: options?.idempotencyKey,
         });
         const aiMsg: AssistantMessage = {
           id: nextId('ai'),
@@ -189,6 +195,28 @@ export function useAssistantConversation() {
     });
   }, [send]);
 
+  /** Confirms the action ELY is waiting on (the confirmation card's button). */
+  const confirmAction = useCallback(
+    (actionLabel: string, actionArgs: Record<string, unknown>) => {
+      return send(`Confirm action: ${actionLabel}`, {
+        actionConfirmed: true,
+        actionArgs,
+        idempotencyKey: `confirm-${Date.now()}`,
+      });
+    },
+    [send],
+  );
+
+  /** Cancels the waiting action on the server, so it can't run later. */
+  const cancelAction = useCallback(async (pendingActionId: string) => {
+    try {
+      const reply = await assistantApi.cancelAction(pendingActionId);
+      setMessages((prev) => [...prev, { id: nextId('ai'), role: 'assistant', content: reply }]);
+    } catch {
+      // Already done, cancelled or expired: nothing is left to cancel.
+    }
+  }, []);
+
   const clearCurrent = useCallback(async () => {
     const current = threadId;
     setMessages([]);
@@ -221,6 +249,8 @@ export function useAssistantConversation() {
     isSending,
     processingLabel,
     send,
+    confirmAction,
+    cancelAction,
     runPlanMyDay,
     clearCurrent,
     clearAll,

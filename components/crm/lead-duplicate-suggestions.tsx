@@ -106,7 +106,7 @@ export function LeadDuplicateNotice({
 
 function SnapshotColumn({ title, snapshot }: { title: string; snapshot: LeadMergeSnapshot }) {
   const budget = snapshot.budget_amount != null
-    ? `${snapshot.budget_currency ?? "USD"} ${snapshot.budget_amount}`
+    ? `${snapshot.budget_currency ?? "GBP"} ${snapshot.budget_amount}`
     : "—";
 
   return (

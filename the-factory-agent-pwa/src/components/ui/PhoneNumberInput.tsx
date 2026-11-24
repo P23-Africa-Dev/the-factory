@@ -237,7 +237,7 @@ export default function PhoneNumberInput({
   value,
   onChange,
   placeholder = 'Phone number',
-  defaultCountry = 'NG',
+  defaultCountry = 'GB',
   disabled,
   className,
 }: PhoneNumberInputProps) {

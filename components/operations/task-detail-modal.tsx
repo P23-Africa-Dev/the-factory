@@ -5,7 +5,7 @@ import mapboxgl from 'mapbox-gl';
 import { useRouter } from 'next/navigation';
 import { X, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import type { DndItem } from '@/types/operations';
-import { DEFAULT_AVATAR } from '@/lib/avatar';
+import { getSafeAvatarSrc, resolveAvatarSrc } from '@/lib/avatar';
 import { ModalPortal } from "@/components/ui/modal-portal";
 import {
   useTaskDetail,
@@ -14,7 +14,9 @@ import {
   useAcceptTaskReassignment,
   useRejectTaskReassignment,
   useUpdateTaskStatus,
+  useUpdateTaskStatusAdmin,
   useUploadTaskProof,
+  useCreateTaskComment,
 } from '@/hooks/use-tasks';
 import { useInternalUsers } from '@/hooks/use-internal-users';
 import { useAuthStore } from '@/store/auth';
@@ -34,6 +36,9 @@ import { ObserverAvatar } from '@/components/operations/observer-avatars';
 import { useActiveTracking } from '@/components/tracking/active-tracking-provider';
 import { startTaskTracking } from '@/lib/api/tracking';
 import { ApiRequestError } from '@/lib/api/onboarding';
+import { getApiErrorMessage } from '@/lib/api/errors';
+import { isTaskManagerRole } from '@/lib/tasks/board-permissions';
+import { toBoardStatus } from '@/lib/tasks/board-status';
 import type { GeoReading } from '@/types/tracking';
 import { useEffectiveMapProvider } from '@/hooks/use-effective-map-provider';
 import { loadGoogleMapsApi } from '@/lib/map/google-loader';
@@ -60,23 +65,13 @@ interface TaskDetailModalProps {
   status: 'pending' | 'in-progress' | 'completed' | string;
   onToggleSubtask?: (id: string) => void;
   onSaveSubtasks?: (items: ProjectSubtask[]) => void;
-  onApiStatusUpdated?: () => void;
+  onApiStatusUpdated?: (nextStatus?: string) => void;
   localTask?: {
     comments: string[];
     onComment: (body: string) => void;
     onStatus: (status: ApiTaskStatus) => void;
     onAssign: (assignee: { id: number; name: string }) => void;
   };
-}
-
-function toBoardStatus(status?: string): 'pending' | 'in-progress' | 'completed' | 'cancelled' {
-  if (status === 'cancelled') return 'cancelled';
-  if (status === 'completed') return 'completed';
-  if (status === 'in_progress' || status === 'paused' || status === 'resumed') {
-    return 'in-progress';
-  }
-
-  return 'pending';
 }
 
 function TaskLocationMap({
@@ -234,7 +229,7 @@ function TaskLocationMap({
         'display:flex;align-items:center;gap:8px;padding:4px 8px;background:rgba(15,23,42,0.86);color:white;border-radius:999px;box-shadow:0 4px 12px rgba(2,6,23,0.35);font-size:11px;font-weight:700;';
 
       const avatar = document.createElement('img');
-      avatar.src = agentAvatar || DEFAULT_AVATAR;
+      avatar.src = resolveAvatarSrc(agentAvatar);
       avatar.alt = agentName;
       avatar.style.cssText =
         'width:22px;height:22px;border-radius:999px;border:2px solid rgba(255,255,255,0.9);object-fit:cover;';
@@ -312,16 +307,27 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   const [showLocationGate, setShowLocationGate] = useState(false);
   const [commencing, setCommencing] = useState(false);
   const [showCompleteSheet, setShowCompleteSheet] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
   const { startTracking, activeTaskId } = useActiveTracking();
+  // Managers (owner, admin, supervisor) change status through the admin endpoint;
+  // the agent endpoint rejects them.
+  const isManager = isTaskManagerRole(role);
 
-  const updateStatusMutation = useUpdateTaskStatus({
-    onSuccess: (updatedTask) => {
-      onApiStatusUpdated?.();
-      toast.success(`Task moved to ${updatedTask.status.replace('_', ' ')}`);
-    },
-  });
+  const onStatusUpdated = (updatedTask: { status: string }) => {
+    onApiStatusUpdated?.(updatedTask.status);
+    toast.success(`Task moved to ${updatedTask.status.replace('_', ' ')}`);
+  };
+  const updateStatusMutation = useUpdateTaskStatus({ onSuccess: onStatusUpdated });
+  const updateStatusAdminMutation = useUpdateTaskStatusAdmin({ onSuccess: onStatusUpdated });
+  const statusUpdatePending = updateStatusMutation.isPending || updateStatusAdminMutation.isPending;
   const uploadProofMutation = useUploadTaskProof({
     onSuccess: () => toast.success('Proof uploaded successfully.'),
+  });
+  const addNoteMutation = useCreateTaskComment(taskId, companyId ?? undefined, {
+    onSuccess: () => {
+      setNoteDraft('');
+      toast.success('Note added to the task comments.');
+    },
   });
   const assignTaskMutation = useAssignTask({
     onSuccess: () => {
@@ -343,7 +349,9 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
     (detailQuery.data?.assignee?.id ? String(detailQuery.data.assignee.id) : localTask ? task.projectChecklist?.assigneeId ?? '' : '');
 
   const apiStatus = detailQuery.data?.status;
-  const boardStatus = toBoardStatus(task.projectChecklist ? status : apiStatus ?? status);
+  // Prefer live API status so Start Task / admin updates refresh the badge even when
+  // the parent still passes the column id from when the modal opened.
+  const boardStatus = toBoardStatus(apiStatus ?? status);
   const isPending = boardStatus === 'pending';
   const isInProgress = boardStatus === 'in-progress';
   const isCompleted = boardStatus === 'completed';
@@ -358,12 +366,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   // Observers follow the task and comment on it; the assignee's actions are not theirs.
   const isObserver = Boolean(detailQuery.data?.is_observer ?? task.isObserver);
   const canDownloadProofs = role === 'owner' || role === 'admin';
-  const canOpenManagementMap =
-    role === 'owner' ||
-    role === 'admin' ||
-    role === 'management' ||
-    role === 'manager' ||
-    role === 'supervisor';
+  const canOpenManagementMap = isManager;
 
   const fullMapPath = canOpenManagementMap ? '/map' : '/agent/map';
   const title = detailQuery.data?.title || task.description;
@@ -384,7 +387,7 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   const descriptionLines = taskDescription.split('\n').filter(Boolean);
   const assignee = detailQuery.data?.assignee;
   const assigneeName = assignee?.name || task.label || 'Unassigned';
-  const assigneeAvatar = assignee?.avatar_url || task.avatar || null;
+  const assigneeAvatar = getSafeAvatarSrc(assignee?.avatar_url || task.avatar || null);
 
   const latitude = detailQuery.data?.latitude ?? null;
   const longitude = detailQuery.data?.longitude ?? null;
@@ -472,7 +475,10 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
   };
 
   const handleTaskDone = () => {
-    if (hasTrackableLocation) {
+    // A manager completes the task directly (managers cannot run tracking); the
+    // backend closes any open tracking session. Agents on a trackable task
+    // complete through tracking.
+    if (hasTrackableLocation && !isManager) {
       if (activeTaskId !== taskId) {
         toast.error('Start tracking before completing the task.');
         return;
@@ -509,10 +515,22 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
       toast.error('Company context is required.');
       return;
     }
-    updateStatusMutation.mutate(
+    const mutation = isManager ? updateStatusAdminMutation : updateStatusMutation;
+    mutation.mutate(
       { taskId, payload: { company_id: companyId, status: nextStatus } },
-      nextStatus === 'cancelled' ? { onSuccess: onClose } : undefined,
+      {
+        onSuccess: nextStatus === 'cancelled' ? () => onClose() : undefined,
+        onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to update task status.')),
+      },
     );
+  };
+
+  const saveNote = () => {
+    const body = noteDraft.trim();
+    if (!body || !taskId) return;
+    addNoteMutation.mutate(body, {
+      onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to add note.')),
+    });
   };
 
   const onProofSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -525,7 +543,10 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
     const formData = new FormData();
     formData.append('company_id', String(companyId));
     formData.append('file', file);
-    uploadProofMutation.mutate({ taskId, formData });
+    uploadProofMutation.mutate(
+      { taskId, formData },
+      { onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to upload proof.')) },
+    );
     event.currentTarget.value = '';
   };
 
@@ -558,14 +579,17 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
       return;
     }
 
-    assignTaskMutation.mutate({
-      taskId,
-      payload: {
-        company_id: companyId,
-        to_user_id: Number(resolvedSelectedAgentId),
-        reason: reassignmentReason.trim() ? reassignmentReason.trim() : undefined,
+    assignTaskMutation.mutate(
+      {
+        taskId,
+        payload: {
+          company_id: companyId,
+          to_user_id: Number(resolvedSelectedAgentId),
+          reason: reassignmentReason.trim() ? reassignmentReason.trim() : undefined,
+        },
       },
-    });
+      { onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to request reassignment.')) },
+    );
   };
 
   const respondToReassignment = (decision: 'accept' | 'reject') => {
@@ -573,17 +597,20 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
       return;
     }
 
+    const variables = {
+      reassignmentId: pendingInboxRequest.id,
+      payload: { company_id: companyId },
+    };
+
     if (decision === 'accept') {
-      acceptReassignmentMutation.mutate({
-        reassignmentId: pendingInboxRequest.id,
-        payload: { company_id: companyId },
+      acceptReassignmentMutation.mutate(variables, {
+        onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to accept reassignment.')),
       });
       return;
     }
 
-    rejectReassignmentMutation.mutate({
-      reassignmentId: pendingInboxRequest.id,
-      payload: { company_id: companyId },
+    rejectReassignmentMutation.mutate(variables, {
+      onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to reject reassignment.')),
     });
   };
 
@@ -785,13 +812,30 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                     <h3 className="text-[15px] font-bold text-dash-dark mb-2">Add Note</h3>
                     <div className="relative">
                       <textarea
+                        aria-label="Add a note to this task"
                         placeholder="Type your note here ..."
+                        value={noteDraft}
+                        maxLength={TASK_COMMENT_MAX_LENGTH}
+                        onChange={(event) => setNoteDraft(event.target.value)}
+                        disabled={!!localTask || addNoteMutation.isPending}
                         className="w-full h-28 bg-dash-bg rounded-[18px] px-5 py-4 text-[13px] text-dash-dark outline-none border border-transparent focus:border-gray-200 resize-none placeholder:text-gray-300"
                       />
                       <span className="absolute bottom-4 right-5 text-[10px] text-gray-300 font-medium">Optional</span>
                     </div>
+                    {!localTask && (
+                      <button
+                        type="button"
+                        onClick={saveNote}
+                        disabled={!noteDraft.trim() || addNoteMutation.isPending}
+                        className="mt-2 rounded-lg bg-[#094B5C] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        {addNoteMutation.isPending ? 'Saving…' : 'Save Note'}
+                      </button>
+                    )}
+                    <p className="mt-1 text-[10px] text-gray-400">Notes are posted to the task comments.</p>
                   </section>
                   <div className="flex gap-3">
+                    {!isManager && (
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-white border-2 border-gray-100 rounded-[18px] text-[13px] font-semibold text-gray-400 hover:bg-gray-50 transition-all"
@@ -801,8 +845,10 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                         <RefreshCw size={12} className="text-gray-400" />
                       </div>
                     </button>
+                    )}
                     <button
                       onClick={handleTaskDone}
+                      disabled={statusUpdatePending}
                       className="flex-1 flex items-center justify-center px-5 py-3.5 bg-[#7EB5AE] text-white rounded-[18px] text-[13px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all"
                     >
                       Task Done
@@ -819,8 +865,8 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                 </div>
               )}
 
-              {/* Pending: commence or status-only */}
-              {isPending && hasTrackableLocation && !isObserver && (
+              {/* Pending: agents commence tracking; managers and no-location tasks just start */}
+              {isPending && hasTrackableLocation && !isManager && !isObserver && (
                 <div className="mt-auto pt-6">
                   <button
                     onClick={handleCommenceAndTrack}
@@ -841,11 +887,11 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
                 </div>
               )}
 
-              {isPending && !hasTrackableLocation && !isObserver && (
+              {isPending && (!hasTrackableLocation || isManager) && !isObserver && (
                 <div className="mt-auto pt-6 space-y-2">
                   <button
                     onClick={() => updateTaskStatus('in_progress')}
-                    disabled={updateStatusMutation.isPending}
+                    disabled={statusUpdatePending}
                     className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-[#7EB5AE] text-white rounded-[20px] text-[15px] font-semibold shadow-lg shadow-[#7EB5AE]/20 hover:opacity-90 transition-all disabled:opacity-60"
                   >
                     Start Task
@@ -863,19 +909,39 @@ export function TaskDetailModal({ isOpen, onClose, task, status, onToggleSubtask
 
               {/* Completed */}
               {isCompleted && (
-                <div className="mt-auto pt-6">
+                <div className="mt-auto pt-6 space-y-2">
                   <div className="w-full flex items-center justify-center gap-3 px-8 py-4 bg-dash-teal/10 text-dash-teal rounded-[20px] text-[15px] font-semibold border border-dash-teal/20">
                     <CheckCircle size={20} />
                     Task Completed
                   </div>
+                  {isManager && !isObserver && (
+                    <button
+                      type="button"
+                      onClick={() => updateTaskStatus('in_progress')}
+                      disabled={statusUpdatePending}
+                      className="w-full flex items-center justify-center gap-2 px-8 py-3.5 bg-white border-2 border-gray-100 text-gray-700 rounded-[18px] text-[13px] font-semibold hover:bg-gray-50 transition-all disabled:opacity-60"
+                    >
+                      Reopen Task
+                    </button>
+                  )}
                 </div>
               )}
               {isCancelled && (
-                <div className="mt-auto pt-6">
+                <div className="mt-auto pt-6 space-y-2">
                   <div className="w-full flex items-center justify-center gap-3 px-8 py-4 bg-red-50 text-red-500 rounded-[20px] text-[15px] font-semibold border border-red-100">
                     <CheckCircle size={20} />
                     Task Cancelled
                   </div>
+                  {isManager && !isObserver && (
+                    <button
+                      type="button"
+                      onClick={() => updateTaskStatus('in_progress')}
+                      disabled={statusUpdatePending}
+                      className="w-full flex items-center justify-center gap-2 px-8 py-3.5 bg-white border-2 border-gray-100 text-gray-700 rounded-[18px] text-[13px] font-semibold hover:bg-gray-50 transition-all disabled:opacity-60"
+                    >
+                      Reopen Task
+                    </button>
+                  )}
                 </div>
               )}
               {detailQuery.data?.proofs?.length && taskId && companyId ? (

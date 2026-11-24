@@ -41,6 +41,8 @@ export interface DndItem {
   createdByUserId?: string;
   /** Everyone the task is assigned to, primary assignee first. */
   assigneeIds?: string[];
+  /** The task's real API status (a column can hold several, e.g. paused in In Progress). */
+  apiStatus?: 'pending' | 'in_progress' | 'paused' | 'resumed' | 'completed' | 'cancelled';
 }
 
 export interface DndContainer {

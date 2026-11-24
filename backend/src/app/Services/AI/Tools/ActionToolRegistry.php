@@ -264,6 +264,42 @@ class ActionToolRegistry
             'action_url' => $validated['action_url'] ?? '/tasks',
         ];
 
+        // Supervisors may only notify the agents they supervise. A role
+        // broadcast becomes a message to their own team, and owner/admin
+        // recipients are refused.
+        $role = (string) $this->companyContextService->resolve($user, $companyId)['role'];
+        if ($role === 'supervisor') {
+            $teamIds = DB::table('users')
+                ->join('company_users', 'company_users.user_id', '=', 'users.id')
+                ->where('company_users.company_id', $companyId)
+                ->where('users.supervisor_user_id', $user->id)
+                ->pluck('users.id')
+                ->map(static fn ($id): int => (int) $id)
+                ->all();
+
+            if ($hasRoles && ! $hasUsers) {
+                if (array_diff($validated['roles'], ['agent']) !== []) {
+                    throw ValidationException::withMessages([
+                        'roles' => ['Supervisors can only send notifications to the agents they supervise.'],
+                    ]);
+                }
+                if ($teamIds === []) {
+                    throw ValidationException::withMessages([
+                        'roles' => ['You do not supervise any agents yet, so there is no one to notify.'],
+                    ]);
+                }
+                $validated['user_ids'] = $teamIds;
+                $hasUsers = true;
+            } elseif ($hasUsers) {
+                $outsideTeam = array_diff(array_map('intval', $validated['user_ids']), $teamIds);
+                if ($outsideTeam !== []) {
+                    throw ValidationException::withMessages([
+                        'user_ids' => ['Supervisors can only send notifications to the agents they supervise.'],
+                    ]);
+                }
+            }
+        }
+
         if ($hasUsers) {
             $userIds = array_map('intval', $validated['user_ids']);
             $count = DB::table('company_users')
@@ -322,7 +358,12 @@ class ActionToolRegistry
             : '';
         unset($validated['notes']);
 
-        foreach (['industry', 'contact_person'] as $metaField) {
+        // Industry is a first-class lead column; only contact_person stays in meta.
+        if (isset($validated['industry']) && is_string($validated['industry'])) {
+            $validated['industry'] = trim($validated['industry']) !== '' ? trim($validated['industry']) : null;
+        }
+
+        foreach (['contact_person'] as $metaField) {
             if (isset($validated[$metaField]) && is_string($validated[$metaField]) && trim($validated[$metaField]) !== '') {
                 $meta[$metaField] = trim($validated[$metaField]);
             }
@@ -489,9 +530,9 @@ class ActionToolRegistry
             'assigned_zone' => ['nullable', 'string', 'min:2', 'max:120'],
             'assigned_zone_ids' => ['nullable', 'array', 'max:50'],
             'assigned_zone_ids.*' => ['integer', 'exists:company_zones,id'],
-            'work_days' => ['required', 'array', 'min:1', 'max:7'],
+            'work_days' => ['nullable', 'array', 'max:7'],
             'work_days.*' => ['string', Rule::in(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])],
-            'base_salary' => ['required', 'numeric', 'min:0'],
+            'base_salary' => ['nullable', 'numeric', 'min:0'],
             'salary_type' => ['nullable', 'string', Rule::in(PayrollSalaryType::values())],
             'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
             'commission_enabled' => ['nullable', 'boolean'],

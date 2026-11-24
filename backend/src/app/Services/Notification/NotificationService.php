@@ -105,6 +105,10 @@ class NotificationService
             'title' => $notification->title,
             'message' => $notification->message,
             'action_url' => $notification->action_url,
+            'action_route' => $notification->action_route,
+            'reference_type' => $notification->reference_type,
+            'reference_id' => $notification->reference_id,
+            'metadata' => $notification->metadata,
             'is_in_app_visible' => $notification->is_in_app_visible,
         ]);
 

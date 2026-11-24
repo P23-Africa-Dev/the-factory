@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { Search, SlidersHorizontal, BookmarkPlus, User } from 'lucide-react';
 import Arrow57Deg from '@/assets/images/arrow-57deg.png';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -14,23 +13,17 @@ import ConfirmDeleteModal from '@/components/ui/confirm-delete-modal';
 import { useAuthStore } from '@/store/auth';
 import { useDeleteKpi, useKpis, useUpdateKpiStatus } from '@/hooks/use-kpi';
 import { getActiveCompanyContext } from '@/lib/company-context';
+import { getApiErrorMessage } from '@/lib/api/errors';
+import { isTaskManagerRole } from '@/lib/tasks/board-permissions';
 import type { DndContainer, DndItem } from '@/types/operations';
 import { TaskBoardSkeleton } from './skeletons/task-board-skeleton';
 import type { KpiItem, KpiStatus, KpiStatusCards } from '@/lib/api/kpi';
 import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
+import { moveCardToColumn } from "@/lib/dnd/board-moves";
 // import { OperationsCalendar } from './operations-calendar';
 
 // ─── KPI Stats Panel ──────────────────────────────────────────────────────────
-const KPI_PENDING_DATA = [
-  { value: 30 }, { value: 20 }, { value: 34 }, { value: 22 },
-  { value: 30 }, { value: 28 }, { value: 15 }, { value: 32 },
-];
-const KPI_INPROGRESS_DATA = [
-  { value: 20 }, { value: 35 }, { value: 28 }, { value: 42 },
-  { value: 30 }, { value: 38 }, { value: 25 }, { value: 45 },
-];
-
 const KPI_ARC_LENGTH = 188.5;
 const KPI_CIRCUMFERENCE = 251.3;
 
@@ -134,19 +127,6 @@ function KpiStatsPanel({
             <Image src={Arrow57Deg} alt="" width={7.5} height={7.5} />
           </span>
         </div>
-        <div className="w-full h-14.5 mt-auto">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={KPI_PENDING_DATA} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gradKpiPending" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#E8875B" stopOpacity={1} />
-                  <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Area type="monotone" dataKey="value" stroke="#E8875B" strokeWidth={3} fillOpacity={1} fill="url(#gradKpiPending)" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
       </div>
 
       {/* In Progress KPIs */}
@@ -162,19 +142,6 @@ function KpiStatsPanel({
             All
             <Image src={Arrow57Deg} alt="" width={7.5} height={7.5} />
           </span>
-        </div>
-        <div className="w-full h-14.5 mt-auto">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={KPI_INPROGRESS_DATA} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gradKpiProgress" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3AB37E" stopOpacity={1} />
-                  <stop offset="95%" stopColor="#D9D9D9" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Area type="monotone" dataKey="value" stroke="#3AB37E" strokeWidth={3} fillOpacity={1} fill="url(#gradKpiProgress)" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
         </div>
       </div>
 
@@ -246,9 +213,10 @@ export function AllTasksView() {
 
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(user);
-  const canManage =
-    role === 'owner' || role === 'admin' || role === 'management' || role === 'manager' || role === 'supervisor';
+  // Managers and agents may drag KPI cards to any status column.
+  const canManage = isTaskManagerRole(role);
   const isAgent = role === 'agent';
+  const canDragStatuses = canManage || isAgent;
 
   const { data: kpisData, isPending } = useKpis(
     {
@@ -350,41 +318,13 @@ export function AllTasksView() {
   }, []);
 
   const moveToContainer = useCallback((activeId: string, overContainerId: string) => {
-    setBoardContainers((prev) => {
-      const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
-      const activeItem = activeContainer?.items.find((item) => item.id === activeId);
-      if (!activeContainer || !activeItem) return prev;
-      return prev.map((container) => {
-        if (container.id === activeContainer.id)
-          return { ...container, items: container.items.filter((item) => item.id !== activeId) };
-        if (container.id === overContainerId)
-          return { ...container, items: [...container.items, activeItem] };
-        return container;
-      });
-    });
+    setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId));
   }, []);
 
   const moveBetweenContainers = useCallback(
     (activeId: string, overId: string, activeContainerId: string, overContainerId: string) => {
-      setBoardContainers((prev) => {
-        const activeContainer = prev.find((c) => c.id === activeContainerId);
-        const overContainer = prev.find((c) => c.id === overContainerId);
-        if (!activeContainer || !overContainer) return prev;
-        const activeItem = activeContainer.items.find((item) => item.id === activeId);
-        if (!activeItem) return prev;
-        const overIndex = overContainer.items.findIndex((item) => item.id === overId);
-        const insertionIndex = overIndex >= 0 ? overIndex : overContainer.items.length;
-        return prev.map((container) => {
-          if (container.id === activeContainerId)
-            return { ...container, items: container.items.filter((item) => item.id !== activeId) };
-          if (container.id === overContainerId) {
-            const nextItems = [...overContainer.items];
-            nextItems.splice(insertionIndex, 0, activeItem);
-            return { ...container, items: nextItems };
-          }
-          return container;
-        });
-      });
+      if (activeContainerId === overContainerId) return;
+      setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId, overId));
     },
     []
   );
@@ -405,6 +345,7 @@ export function AllTasksView() {
       },
       {
         onSuccess: () => toast.success('KPI status updated.'),
+        // useUpdateKpiStatus already toasts the backend's error message.
         onError: () => {
           setBoardContainers(serverContainers);
         },
@@ -534,6 +475,7 @@ export function AllTasksView() {
           <KpiBoard
             containers={displayContainers}
             canManageCards={canManage || isAgent}
+            canDrag={canDragStatuses}
             findContainer={findContainer}
             moveItem={moveItem}
             moveToContainer={moveToContainer}
@@ -573,10 +515,10 @@ export function AllTasksView() {
         onClose={() => setKpiToDelete(null)}
         onConfirm={() => {
           if (!kpiToDelete || !companyId) return;
-          deleteKpiMutation.mutate({
-            kpiId: kpiToDelete.id,
-            companyId,
-          });
+          deleteKpiMutation.mutate(
+            { kpiId: kpiToDelete.id, companyId },
+            { onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to delete KPI.')) },
+          );
         }}
         title="Delete KPI"
         description={`Are you sure you want to delete "${kpiToDelete?.name ?? 'this KPI'}"? This action cannot be undone.`}

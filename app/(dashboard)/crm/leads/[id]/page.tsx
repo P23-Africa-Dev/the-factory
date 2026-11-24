@@ -25,8 +25,9 @@ import {
   Activity,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useRef, useState, useEffect } from "react";
-import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmAssignees, useCrmPipelines, useLeadFields } from "@/hooks/use-crm";
+import { useRef, useState, useEffect, useMemo } from "react";
+import { LEAD_INDUSTRIES, LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
+import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmAssignees, useCrmLabels, useCrmPipelines, useLeadFields } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -76,8 +77,8 @@ interface LeadDetail {
 const MOCK_LEAD: LeadDetail = {
   id: "lead-1",
   name: "Lane Wade",
-  phone: "+234 0000000000",
-  location: "Ikeja GRA ...",
+  phone: "+44 7700 900000",
+  location: "Shoreditch, London ...",
   statusTag: "Contacted",
   status: "Contacted",
   statusColor: "#E879A0",
@@ -94,15 +95,6 @@ const MOCK_LEAD: LeadDetail = {
   time: "2 days ago",
 };
 
-const STATUS_OPTIONS = [
-  { label: "Contacted", color: "#E879A0" },
-  { label: "New Lead", color: "#2563EB" },
-  { label: "Proposal Sent", color: "#F59E0B" },
-  { label: "Qualified", color: "#10B981" },
-  { label: "Unqualified", color: "#1A1F2C" },
-  { label: "Lost", color: "#EF4444" },
-  { label: "Won", color: "#166534" },
-];
 
 const PRIORITY_OPTIONS = [
   { label: "Low", color: "#6B7280" },
@@ -495,6 +487,7 @@ type EditLeadForm = {
   companyName: string;
   website: string;
   position: string;
+  industry: string;
   profileUrls: string[];
   status: ApiLeadStatus;
   pipeline_id: string;
@@ -518,6 +511,13 @@ export default function LeadDetailsPage() {
   const { data: leadData, isLoading } = useLead(leadId, companyId, "/admin");
   const { data: leadFields = [] } = useLeadFields(companyId, "/admin");
   const { data: pipelines = [] } = useCrmPipelines(companyId, "/admin");
+  // The company's real stages (labels). Hard-coded names produced slugs that
+  // didn't exist ("new_lead", "won"…), so status changes here failed with 422.
+  const { data: stageLabels = [] } = useCrmLabels(companyId, "/admin");
+  const statusOptions = useMemo(
+    () => stageLabels.map((label) => ({ label: label.name, color: label.color, value: label.slug })),
+    [stageLabels]
+  );
   const [showFieldDialog, setShowFieldDialog] = useState(false);
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
@@ -540,6 +540,7 @@ export default function LeadDetailsPage() {
     companyName: "",
     website: "",
     position: "",
+    industry: "",
     profileUrls: [""],
     status: "new",
     pipeline_id: "",
@@ -565,6 +566,7 @@ export default function LeadDetailsPage() {
     companyName: lead.company_name || "",
     website: lead.website || "",
     position: lead.position || "",
+    industry: lead.industry || "",
     profileUrls: lead.profile_urls?.length ? lead.profile_urls : [""],
     status: lead.status || "new",
     pipeline_id: lead.pipeline_id != null ? String(lead.pipeline_id) : "",
@@ -671,6 +673,7 @@ export default function LeadDetailsPage() {
       company_name: editForm.companyName.trim() || null,
       website: editForm.website.trim() ? normalizeWebsite(editForm.website) : null,
       position: editForm.position.trim() || null,
+      industry: editForm.industry.trim() || null,
       profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       status: editForm.status,
       pipeline_id: Number(editForm.pipeline_id),
@@ -919,6 +922,34 @@ export default function LeadDetailsPage() {
 
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Industry
+                    </label>
+                    {isEditing ? (
+                      <>
+                        <input
+                          type="text"
+                          list="lead-detail-industry-options"
+                          maxLength={LEAD_INDUSTRY_MAX_LENGTH}
+                          value={editForm.industry}
+                          onChange={(e) => updateField("industry", e.target.value)}
+                          placeholder="Pick or type an industry"
+                          className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                        />
+                        <datalist id="lead-detail-industry-options">
+                          {LEAD_INDUSTRIES.map((option) => (
+                            <option key={option} value={option} />
+                          ))}
+                        </datalist>
+                      </>
+                    ) : (
+                      <p className="text-white text-[16px] font-semibold truncate">
+                        {leadData.industry || "N/A"}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
                       Profile URLs
                     </label>
                     {isEditing ? (
@@ -989,12 +1020,15 @@ export default function LeadDetailsPage() {
                     Status
                   </label>
                   <PillDropdown
-                    value={isEditing ? (STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === editForm.status)?.label || "New Lead") : (STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === leadData.status)?.label || "New Lead")}
-                    color={STATUS_OPTIONS.find(o => o.label.toLowerCase().replace(' ', '_') === (isEditing ? editForm.status : leadData.status))?.color || "#2563EB"}
-                    options={STATUS_OPTIONS}
+                    value={
+                      statusOptions.find((o) => o.value === (isEditing ? editForm.status : leadData.status))?.label
+                      ?? String((isEditing ? editForm.status : leadData.status) || "—").replace(/_/g, " ")
+                    }
+                    color={statusOptions.find((o) => o.value === (isEditing ? editForm.status : leadData.status))?.color || "#6B7280"}
+                    options={statusOptions}
                     onChange={(label) => {
-                      const value = label.toLowerCase().replace(' ', '_');
-                      updateField("status", value as ApiLeadStatus);
+                      const option = statusOptions.find((o) => o.label === label);
+                      if (option) updateField("status", option.value as ApiLeadStatus);
                     }}
                     disabled={!isEditing}
                   />

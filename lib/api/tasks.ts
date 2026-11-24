@@ -266,6 +266,8 @@ export type TaskReassignmentsInboxData = {
 export type UpdateTaskStatusPayload = {
   company_id?: number | string;
   status: ApiTaskStatus;
+  /** When completing with unfinished checklist items after the user confirms. */
+  complete_incomplete_subtasks?: boolean;
 };
 
 export type UpdateTaskPayload = {

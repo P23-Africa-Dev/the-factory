@@ -31,6 +31,8 @@ class ImportLeadsRequest extends FormRequest
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'pipeline_id' => ['required', 'integer'],
             'rows' => ['required', 'array', 'min:1', 'max:500'],
+            // Position of this batch within the original file (client batches big files).
+            'row_offset' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'rows.*' => ['array'],
             'duplicate_policy' => ['required', Rule::in(['create', 'skip', 'update'])],
         ];

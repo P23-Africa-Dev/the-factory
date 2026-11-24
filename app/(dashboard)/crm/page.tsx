@@ -6,6 +6,9 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
+import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
+import { getApiErrorMessage } from "@/lib/api/errors";
+import { crmFiltersToQuery, useCrmFilters } from "@/hooks/use-crm-filters";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
 import { useAgentUploadsOverview, useCrmAssignees, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
@@ -18,7 +21,9 @@ import { CRMPageSkeleton } from "@/components/crm/crm-page-skeleton";
 import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
 import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
+import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { useDroppable } from "@dnd-kit/core";
+import { useBoardCollisionDetection } from "@/lib/dnd/use-board-collision";
 import {
   DndContext,
   DragEndEvent,
@@ -28,7 +33,6 @@ import {
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
-  closestCorners,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -45,7 +49,6 @@ import {
   ChevronRight,
   LayoutGrid,
   List,
-  MoreHorizontal,
   Pencil,
   Plus,
   Loader2,
@@ -55,8 +58,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict, parseISO } from "date-fns";
 
@@ -92,7 +95,8 @@ function mapLeadToItem(lead: LeadApiItem): DndItem {
 function buildContainers(leads: LeadApiItem[], stages: Array<{ id: ApiLeadStatus; title: string; color: string }>): DndContainer[] {
   const grouped = new Map<ApiLeadStatus, DndItem[]>();
   stages.forEach((s) => grouped.set(s.id, []));
-  leads.forEach((lead) => {
+  // A lead that just moved can sit in two stage pages for a moment; draw it once.
+  dedupeLeadsById(leads).forEach((lead) => {
     const status = (lead.status ?? "newly_lead") as ApiLeadStatus;
     const target = grouped.has(status) ? status : ("__uncategorized__" as ApiLeadStatus);
     grouped.get(target)?.push(mapLeadToItem(lead));
@@ -107,16 +111,9 @@ function findContainerForItem(containers: DndContainer[], id: string): DndContai
 
 /* ─── Lead Card ─────────────────────────────────────────── */
 
-function LeadCard({
-  item,
-  isDragOverlay,
-  basePath = "/crm",
-  stages,
-  currentStageId,
-  onMoveToStage,
-  onEditClick,
-  onDeleteClick,
-}: {
+const UNCATEGORIZED_STAGE_ID = "__uncategorized__";
+
+type LeadCardProps = {
   item: DndItem;
   isDragOverlay?: boolean;
   basePath?: string;
@@ -125,15 +122,57 @@ function LeadCard({
   onMoveToStage?: (leadId: string, targetStageId: string) => void;
   onEditClick?: (leadId: string) => void;
   onDeleteClick?: (leadId: string) => void;
+};
+
+/** Sortable card on the board. */
+function LeadCard(props: LeadCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.item.id });
+
+  return (
+    <LeadCardView
+      {...props}
+      dnd={{
+        setNodeRef,
+        attributes: attributes as unknown as Record<string, unknown>,
+        listeners: (listeners ?? {}) as Record<string, unknown>,
+        style: { transform: CSS.Transform.toString(transform), transition },
+        isDragging,
+      }}
+    />
+  );
+}
+
+/**
+ * Presentational card. The DragOverlay renders this directly: giving the overlay
+ * its own useSortable with the same id registers a second draggable and made
+ * drops resolve onto the dragged card itself (cards "refused" to move).
+ */
+function LeadCardView({
+  item,
+  isDragOverlay,
+  basePath = "/crm",
+  stages,
+  currentStageId,
+  onMoveToStage,
+  onEditClick,
+  onDeleteClick,
+  dnd,
+}: LeadCardProps & {
+  dnd?: {
+    setNodeRef: (el: HTMLElement | null) => void;
+    attributes: Record<string, unknown>;
+    listeners: Record<string, unknown>;
+    style: CSSProperties;
+    isDragging: boolean;
+  };
 }) {
   const router = useRouter();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const setNodeRef = dnd?.setNodeRef;
+  const style = dnd?.style;
+  const attributes = dnd?.attributes ?? {};
+  const listeners = dnd?.listeners ?? {};
+  const isDragging = dnd?.isDragging ?? false;
 
   const amount = item.value || "$ 0";
 
@@ -215,11 +254,13 @@ function LeadCard({
               onClick={(e) => e.stopPropagation()}
               className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-[11px] font-semibold py-1 pl-2.5 pr-6 rounded-lg focus:outline-none cursor-pointer"
             >
-              {stages.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
+              {stages
+                .filter((s) => s.id !== UNCATEGORIZED_STAGE_ID || s.id === currentStageId)
+                .map((s) => (
+                  <option key={s.id} value={s.id} disabled={s.id === UNCATEGORIZED_STAGE_ID}>
+                    {s.title}
+                  </option>
+                ))}
             </select>
             <ChevronDown
               size={10}
@@ -267,7 +308,9 @@ function LeadColumn({
   isFetchingMore?: boolean;
   onLoadMore?: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+  // "Uncategorized" holds leads whose stage was deleted; it isn't a real stage,
+  // so cards can be dragged out of it but not into it.
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: id === UNCATEGORIZED_STAGE_ID });
 
   return (
     <div
@@ -330,7 +373,7 @@ function LeadColumn({
           </button>
         )}
 
-        {id !== "__uncategorized__" && (
+        {id !== UNCATEGORIZED_STAGE_ID && (
           <button
             onClick={() => onAddCard()}
             className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group mt-4"
@@ -352,10 +395,16 @@ function LeadListView({
   containers,
   basePath = "/crm",
   stageMeta,
+  budgetTotal,
+  onAddClick,
+  onEditLeadClick,
 }: {
   containers: DndContainer[];
   basePath?: string;
-  stageMeta?: Record<string, { total: number }>;
+  stageMeta?: Record<string, { total: number; hasMore?: boolean }>;
+  budgetTotal?: number;
+  onAddClick?: (status: ApiLeadStatus) => void;
+  onEditLeadClick?: (leadId: string) => void;
 }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -380,7 +429,8 @@ function LeadListView({
 
       {containers.map((container) => {
         const isOpen = !collapsed[container.id];
-        const total = container.items.reduce((s) => s + 40010, 0);
+        const total = container.items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0);
+        const stageHasMore = Boolean(stageMeta?.[container.id]?.hasMore);
 
         return (
           <div key={container.id} className="mb-2">
@@ -398,7 +448,8 @@ function LeadListView({
                 {(stageMeta?.[container.id]?.total ?? container.items.length).toLocaleString()} leads
               </span>
               <span className="text-[12px] font-semibold text-gray-500 mr-2">
-                $ {(total).toLocaleString()}
+                {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {stageHasMore ? " (loaded)" : ""}
               </span>
               <ChevronRight
                 size={14}
@@ -443,32 +494,49 @@ function LeadListView({
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        $ {Number(item.location).toLocaleString()}
+                        {item.value || "$ 0"}
                       </span>
 
                       {/* Priority badge */}
-                      <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit">
-                        Medium
+                      <span className="bg-[#DCFCE7] text-[#16A34A] text-[11px] font-semibold px-2.5 py-0.5 rounded-full w-fit capitalize">
+                        {item.priority ?? "medium"}
                       </span>
 
                       {/* Assigned */}
                       <span className="text-[12px] text-gray-400">{item.assignedBy ?? "Unassigned"}</span>
                     </div>
 
-                    {/* Actions */}
-                    <button className="absolute right-4 top-3 md:relative md:top-auto md:right-auto opacity-100 md:opacity-0 md:group-hover/row:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-gray-100">
-                      <MoreHorizontal size={14} className="text-gray-400" />
-                    </button>
+                    {/* Actions -- */}
+                    {onEditLeadClick && (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${item.label}`}
+                        title="Edit lead"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditLeadClick(item.id);
+                        }}
+                        className="absolute right-4 top-3 md:relative md:top-auto md:right-auto opacity-100 md:opacity-0 md:group-hover/row:opacity-100 focus:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-gray-100"
+                      >
+                        <Pencil size={14} className="text-gray-400" />
+                      </button>
+                    )}
                   </div>
                 ))}
 
                 {/* Add row */}
-                <button className="flex items-center gap-2 px-4 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group/add w-full">
+                {onAddClick && container.id !== UNCATEGORIZED_STAGE_ID && (
+                <button
+                  type="button"
+                  onClick={() => onAddClick(container.id as ApiLeadStatus)}
+                  className="flex items-center gap-2 px-4 py-2.5 text-gray-400 hover:text-[#0B1215] transition-colors group/add w-full"
+                >
                   <div className="w-5 h-5 rounded-full border border-dashed border-gray-300 flex items-center justify-center group-hover/add:border-[#0B1215] transition-colors">
                     <Plus size={11} />
                   </div>
                   <span className="text-[11px] font-medium">Add lead</span>
                 </button>
+                )}
               </div>
             )}
 
@@ -488,7 +556,10 @@ function LeadListView({
           ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          $ {(allLeads.length * 40010).toLocaleString()} pipeline value
+          {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}{" "}
+          pipeline value
         </span>
       </div>
     </div>
@@ -507,6 +578,7 @@ function LeadBoard({
   isLoading,
   stageMeta,
   onLoadMore,
+  budgetTotal,
 }: {
   basePath?: string;
   leadListUrl?: string;
@@ -519,6 +591,7 @@ function LeadBoard({
   isLoading?: boolean;
   stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
   onLoadMore?: (stageId: string) => void;
+  budgetTotal?: number;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -579,6 +652,8 @@ function LeadBoard({
     }
   }
 
+  const { collisionDetection, markMoved, resetDrag } = useBoardCollisionDetection();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
@@ -586,6 +661,7 @@ function LeadBoard({
   );
 
   function handleDragStart(event: DragStartEvent) {
+    resetDrag();
     const itemId = String(event.active.id);
     const container = findContainerForItem(containersRef.current, itemId);
     dragOriginRef.current = container?.id ?? null;
@@ -601,14 +677,18 @@ function LeadBoard({
       const ac = findContainerForItem(prev, activeId);
       const oc = findContainerForItem(prev, overId);
       if (!ac || !oc || ac.id === oc.id) return prev;
+      if (oc.id === UNCATEGORIZED_STAGE_ID) return prev;
       const item = ac.items.find((i) => i.id === activeId);
       if (!item) return prev;
       const next = prev.map((c) => ({ ...c, items: [...c.items] }));
       const na = next.find((c) => c.id === ac.id)!;
       const no2 = next.find((c) => c.id === oc.id)!;
       na.items = na.items.filter((i) => i.id !== activeId);
+      // Never hold the same lead twice in one column (duplicate React keys).
+      no2.items = no2.items.filter((i) => i.id !== activeId);
       const oi = no2.items.findIndex((i) => i.id === overId);
       if (oi >= 0) no2.items.splice(oi, 0, item); else no2.items.push(item);
+      markMoved();
       return next;
     });
   }
@@ -623,6 +703,7 @@ function LeadBoard({
     const dest = findContainerForItem(containersRef.current, activeId);
     if (!dest) { apply(initialContainersRef.current); return; }
     if (origin === dest.id) return; // same column reorder, no API call needed
+    if (dest.id === UNCATEGORIZED_STAGE_ID) { apply(initialContainersRef.current); return; }
     try {
       await persistStageMove(activeId, dest.id as ApiLeadStatus);
     } catch {
@@ -702,14 +783,21 @@ function LeadBoard({
 
       {viewMode === "list" ? (
         <div className="flex-1 overflow-y-auto">
-          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} />
+          <LeadListView
+            containers={containers}
+            basePath={basePath}
+            stageMeta={stageMeta}
+            budgetTotal={budgetTotal}
+            onAddClick={onAddClick}
+            onEditLeadClick={onEditLeadClick}
+          />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
           <DndContext
             id="crm-board"
             sensors={sensors}
-            collisionDetection={closestCorners}
+            collisionDetection={collisionDetection}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
@@ -758,7 +846,7 @@ function LeadBoard({
 
             <DragOverlay>
               {activeItem ? (
-                <LeadCard
+                <LeadCardView
                   item={activeItem}
                   isDragOverlay
                   basePath={basePath}
@@ -776,18 +864,27 @@ function LeadBoard({
 
 function AgentUploadsCard({
   basePath = "/crm",
-  leadListUrl,
   totalUploadedLeads = 0,
   topAgentAvatarUrl,
   topAgentName,
+  topAgentUploads,
+  topAgentId,
 }: {
   basePath?: string;
   leadListUrl?: string;
   totalUploadedLeads?: number;
   topAgentAvatarUrl?: string | null;
   topAgentName?: string | null;
+  topAgentUploads?: number | null;
+  topAgentId?: number | null;
 }) {
   const router = useRouter();
+  // "View Leads" opens the list filtered to the agent shown on the card. The card
+  // counts uploads across every pipeline, so the list must too ("all"): scoped to
+  // the current pipeline it came up empty whenever the agent's leads sat elsewhere.
+  const viewLeadsUrl = topAgentId
+    ? `${basePath}/leads${crmFiltersToQuery({ pipeline: "all", source: "agent_upload", created_by: String(topAgentId) })}`
+    : `${basePath}/leads${crmFiltersToQuery({ pipeline: "all", source: "agent_upload" })}`;
 
   return (
     <div className="se-stat-card bg-white rounded-[20px] p-6 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex items-center gap-5 min-w-0 sm:min-w-70">
@@ -819,16 +916,19 @@ function AgentUploadsCard({
           <span className="text-[36px] font-bold text-[#0B1215] leading-none">{totalUploadedLeads.toLocaleString()}</span>
           <span className="text-[#9CA3AF] text-[13px] font-medium">Leads</span>
         </div>
-        <p className="text-[#6B7280] text-[12px]">
-          Uploaded by{" "}
-          {topAgentName ? (
-            <span className="font-bold text-[#0B1215]">{topAgentName}</span>
-          ) : (
-            "your Agents"
-          )}
-        </p>
-        <button onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)} className="se-stat-link flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity">
-          View Leads
+        <p className="text-[#6B7280] text-[12px]">Uploaded by your agents</p>
+        {topAgentName ? (
+          <p className="text-[#6B7280] text-[11px]">
+            Top: <span className="font-bold text-[#0B1215]">{topAgentName}</span>
+            {typeof topAgentUploads === "number" ? ` (${topAgentUploads.toLocaleString()})` : ""}
+          </p>
+        ) : null}
+        <button
+          onClick={() => router.push(viewLeadsUrl)}
+          title={topAgentName ? `View leads uploaded by ${topAgentName}` : "View leads uploaded by agents"}
+          className="se-stat-link flex items-center gap-1 text-[12px] font-semibold text-[#0B1215] mt-1 hover:opacity-70 transition-opacity"
+        >
+          {topAgentName ? `View ${topAgentName.split(" ")[0]}'s Leads` : "View Leads"}
           <ChevronRight size={14} />
         </button>
       </div>
@@ -840,11 +940,12 @@ export default function CRMPage() {
   const basePath = "/crm";
   const apiBasePath = "/admin" as const;
   const router = useRouter();
-  const searchParams = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
+  // All filters live in the URL: they survive reloads and carry over to the list view.
+  const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
 
-  const sourceParam = (searchParams.get("source") ?? "").trim().toLowerCase();
+  const sourceParam = (filters.source ?? "").trim().toLowerCase();
   const agentUploadScope = [
     "agent_upload",
     "agent uploaded",
@@ -872,22 +973,14 @@ export default function CRMPage() {
       ? "sales_engine"
       : sourceParam || undefined;
 
-  const leadListUrl = salesEngineScope
-    ? `${basePath}/leads?source=sales_engine`
-    : agentUploadScope
-      ? `${basePath}/leads?source=${encodeURIComponent(AGENT_UPLOAD_SOURCE_FILTER)}`
-      : `${basePath}/leads`;
+  // Carry every active filter to the list view.
+  const leadListUrl = `${basePath}/leads${filterQuery}`;
 
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [search, setSearch] = useState(() => filters.q ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(() => (filters.q ?? "").trim());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<ApiLeadStatus>("newly_lead");
-  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
-  const [prevDefaultPipelineId, setPrevDefaultPipelineId] = useState<number | null>(null);
-  const [selectedLabel, setSelectedLabel] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
-  const [createdBy, setCreatedBy] = useState("");
-  const [dateRange, setDateRange] = useState<CrmDateRange>(EMPTY_DATE_RANGE);
   const [showPipelineModal, setShowPipelineModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadApiItem | null>(null);
@@ -909,10 +1002,33 @@ export default function CRMPage() {
     [pipelines, preferences?.preferred_pipeline_id, preferences?.company_default_pipeline_id]
   );
 
-  if (defaultPipelineId != null && defaultPipelineId !== prevDefaultPipelineId) {
-    setPrevDefaultPipelineId(defaultPipelineId);
-    setSelectedPipelineId(defaultPipelineId);
-  }
+  // ?pipeline=<id> or "all"; absent = the user's default. The URL is the source of
+  // truth, so a preferences refetch can no longer yank the user to another pipeline.
+  const selectedPipelineId: number | null =
+    filters.pipeline === "all"
+      ? null
+      : filters.pipeline && Number.isFinite(Number(filters.pipeline))
+        ? Number(filters.pipeline)
+        : defaultPipelineId ?? null;
+  const setSelectedPipelineId = (pipelineId: number | null) =>
+    setFilter("pipeline", pipelineId == null ? "all" : pipelineId === defaultPipelineId ? null : pipelineId);
+
+  // Ignore a stage that no longer exists (renamed/deleted label) instead of showing an empty board.
+  const selectedLabel: string =
+    filters.stage && (labels.length === 0 || labels.some((label) => label.slug === filters.stage))
+      ? filters.stage
+      : "all";
+  const setSelectedLabel = (label: string) => setFilter("stage", label === "all" ? null : label);
+
+  const createdBy = filters.created_by ?? "";
+  const setCreatedBy = (userId: string) => setFilter("created_by", userId || null);
+  const assignedTo = filters.assigned_to ?? "";
+  const setAssignedTo = (userId: string) => setFilter("assigned_to", userId || null);
+  const dateRange: CrmDateRange = filters.from || filters.to
+    ? { preset: null, from: filters.from ?? "", to: filters.to ?? "" }
+    : EMPTY_DATE_RANGE;
+  const setDateRange = (range: CrmDateRange) => setFilters({ from: range.from || "", to: range.to || "" });
+  const industryFilter = filters.industry ?? "";
 
   const stages = useMemo(() => {
     if (!labels.length) return DEFAULT_STAGES;
@@ -936,6 +1052,12 @@ export default function CRMPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Mirror the settled search into the URL (replace, so no history entry per keystroke).
+  useEffect(() => {
+    if ((filters.q ?? "") !== debouncedSearch) setFilter("q", debouncedSearch || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
+
   // Picked days are local; send the instants that bound them so "today" means the viewer's today.
   const createdFrom = dateRange.from ? new Date(`${dateRange.from}T00:00:00`).toISOString() : undefined;
   const createdTo = dateRange.to ? new Date(`${dateRange.to}T23:59:59.999`).toISOString() : undefined;
@@ -943,6 +1065,8 @@ export default function CRMPage() {
     created_by_user_id: createdBy || undefined,
     created_from: createdFrom,
     created_to: createdTo,
+    assigned_to_user_id: filters.assigned_to || undefined,
+    industry: industryFilter || undefined,
   };
 
   const stageQuery = useLeadStagePages(
@@ -970,41 +1094,25 @@ export default function CRMPage() {
     apiBasePath
   );
 
+  const pipelineFiltered = selectedPipelineId !== defaultPipelineId;
   const activeFilterCount =
-    (selectedPipelineId !== defaultPipelineId ? 1 : 0) +
+    (pipelineFiltered ? 1 : 0) +
     (selectedLabel !== "all" ? 1 : 0) +
     (createdBy ? 1 : 0) +
-    (dateRange.from || dateRange.to ? 1 : 0);
+    (dateRange.from || dateRange.to ? 1 : 0) +
+    (industryFilter ? 1 : 0) +
+    (filters.assigned_to ? 1 : 0);
   const isSearchPending = search.trim() !== debouncedSearch || (Boolean(debouncedSearch) && stageQuery.isRefreshing);
 
-  const isSalesEngineLead = (lead: LeadApiItem): boolean => {
-    const s = (lead.source ?? "").toLowerCase().trim();
-    const loc = (lead.location ?? "").toLowerCase().trim();
-    const comp = (lead.company_name ?? "").toLowerCase().trim();
-    return (
-      s.includes("sales") ||
-      s.includes("smart_lead") ||
-      s.includes("smart lead") ||
-      loc.includes("sales engine") ||
-      comp.includes("sales engine")
-    );
-  };
-
-  const visibleStagePages = useMemo(() => {
-    const rawStages = stageQuery.stages.filter(
-      (stage) => stage.id !== "__uncategorized__" || stage.total > 0
-    );
-    if (!salesEngineScope) return rawStages;
-
-    return rawStages.map((stage) => {
-      const matchingLeads = stage.leads.filter(isSalesEngineLead);
-      return {
-        ...stage,
-        leads: matchingLeads,
-        total: matchingLeads.length,
-      };
-    });
-  }, [stageQuery.stages, salesEngineScope]);
+  // The sales-engine scope is filtered on the server (source=sales_engine), so stage totals,
+  // pagination and the summary cards all count the same leads.
+  const visibleStagePages = useMemo(
+    () =>
+      stageQuery.stages.filter(
+        (stage) => stage.id !== "__uncategorized__" || stage.total > 0
+      ),
+    [stageQuery.stages],
+  );
 
   const loadedLeads = useMemo(
     () => visibleStagePages.flatMap((stage) => stage.leads),
@@ -1035,13 +1143,13 @@ export default function CRMPage() {
         visibleStagePages.map((stage) => [
           stage.id,
           {
-            total: salesEngineScope ? stage.leads.length : stage.total,
-            hasMore: salesEngineScope ? false : stage.hasMore,
+            total: stage.total,
+            hasMore: stage.hasMore,
             isFetchingMore: stage.isFetchingMore,
           },
         ]),
       ),
-    [visibleStagePages, salesEngineScope],
+    [visibleStagePages],
   );
 
   const updateMutation = useUpdateLead(undefined, apiBasePath);
@@ -1073,7 +1181,7 @@ export default function CRMPage() {
     deleteLeadMutation.mutate(
       { leadId: deleteTarget.id, companyId: companyId ?? undefined },
       {
-        onError: () => toast.error("Could not delete the lead. Please try again."),
+        onError: (err) => toast.error(getApiErrorMessage(err, "Could not delete the lead. Please try again.")),
       }
     );
     setDeleteTarget(null);
@@ -1083,8 +1191,8 @@ export default function CRMPage() {
     try {
       await updateMutation.mutateAsync({ leadId, payload: { company_id: companyId ?? "", status } });
       toast.success("Lead status updated");
-    } catch {
-      toast.error("Could not update lead status. Reverting...");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Could not update lead status. Reverting..."));
       throw new Error("status update failed");
     }
   }
@@ -1133,15 +1241,19 @@ export default function CRMPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowPipelineModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
-              {selectedPipelineId
-                ? (pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name ?? "All Pipeline")
-                : "All Pipeline"}
-              <ChevronDown size={13} />
-            </button>
+            <PipelineSwitcher
+              pipelines={pipelines}
+              selectedPipelineId={selectedPipelineId}
+              defaultPipelineId={defaultPipelineId}
+              onSelect={setSelectedPipelineId}
+              onManage={() => setShowPipelineModal(true)}
+              className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
+              activeClassName="se-control-active"
+            />
             <MapLeadsToolbarButton
               pipelines={pipelines}
               selectedPipelineId={selectedPipelineId}
+              fallbackPipelineId={defaultPipelineId}
               onPipelineChange={setSelectedPipelineId}
             />
             <button onClick={() => setShowLabelModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
@@ -1152,7 +1264,8 @@ export default function CRMPage() {
               type="button"
               aria-expanded={showFilter}
               onClick={() => setShowFilter((prev) => !prev)}
-              className={`se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${showFilter ? "ring-1 ring-[#2ae9c9]/60" : ""}`}
+              aria-pressed={activeFilterCount > 0}
+              className={`se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${activeFilterCount > 0 ? "se-control-active" : showFilter ? "ring-1 ring-[#2ae9c9]/60" : ""}`}
             >
               <SlidersHorizontal size={13} />
               Filter
@@ -1173,11 +1286,12 @@ export default function CRMPage() {
                 pipeline_id: selectedPipelineId ?? undefined,
                 status: selectedLabel === "all" ? undefined : selectedLabel,
                 source: effectiveSourceFilter,
+                ...creatorAndDateFilters,
               }}
               onViewImportedPipeline={(pipelineId) => {
-                setSelectedPipelineId(pipelineId);
-                setSelectedLabel("all");
                 setSearch("");
+                setDebouncedSearch("");
+                setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
               }}
               onViewAllLeads={() => router.push(`${basePath}/leads`)}
             />
@@ -1200,7 +1314,7 @@ export default function CRMPage() {
             </div>
             <button
               type="button"
-              onClick={() => router.push(basePath)}
+              onClick={() => setFilter("source", null)}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-xs hover:bg-slate-100 transition cursor-pointer"
             >
               <span>Clear Filter</span>
@@ -1222,13 +1336,15 @@ export default function CRMPage() {
             loadingPeople={loadingPeople}
             createdBy={createdBy}
             onCreatedByChange={setCreatedBy}
+            assignedTo={assignedTo}
+            onAssignedToChange={setAssignedTo}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
+            industry={industryFilter}
+            onIndustryChange={(value) => setFilter("industry", value || null)}
             onClear={() => {
-              setSelectedPipelineId(defaultPipelineId);
-              setSelectedLabel("all");
-              setCreatedBy("");
-              setDateRange(EMPTY_DATE_RANGE);
+              // Keep search and the source scope; reset everything in the panel.
+              setFilters((current) => ({ q: current.q, source: current.source }));
             }}
           />
         )}
@@ -1254,13 +1370,15 @@ export default function CRMPage() {
             totalUploadedLeads={agentUploadsOverview?.total_uploaded_leads ?? 0}
             topAgentAvatarUrl={agentUploadsOverview?.top_agent?.avatar_url ?? null}
             topAgentName={agentUploadsOverview?.top_agent?.name ?? null}
+            topAgentUploads={agentUploadsOverview?.top_agent?.total_uploads ?? null}
+            topAgentId={agentUploadsOverview?.top_agent?.id ?? null}
           />
         </div>
 
         {/* Pipeline board */}
         <LeadBoard
           basePath={basePath}
-          leadListUrl={agentUploadScope ? leadListUrl : undefined}
+          leadListUrl={leadListUrl}
           boardKey={boardKey}
           initialContainers={initialContainers}
           onStatusChange={persistStatusChange}
@@ -1270,6 +1388,7 @@ export default function CRMPage() {
           isLoading={stageQuery.isLoading}
           stageMeta={stageMeta}
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
+          budgetTotal={leadsAnalytics?.budget_total}
         />
       </div>
 

@@ -373,6 +373,9 @@ class TaskManagementTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        // Supervisors may only assign agents under their direct supervision.
+        $agent->forceFill(['supervisor_user_id' => $supervisor->id])->save();
+
         $project = Project::create([
             'company_id' => $company->id,
             'created_by_user_id' => $admin->id,

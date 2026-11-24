@@ -7,8 +7,8 @@ export const LEADS_TREND_BAR_COLORS = {
 
 export const LEADS_TREND_BUCKET_COUNT = 6;
 
-/** Minimum rendered bar height so zero-count days still show a visible trend slot. */
-export const LEADS_TREND_MIN_BAR_VALUE = 1;
+/** Zero-count days render as zero (no fake bar), so the chart matches the real counts. */
+export const LEADS_TREND_MIN_BAR_VALUE = 0;
 
 export function normalizeLeadsTrendBuckets(
   points: LeadsTrendPoint[] | undefined | null,
@@ -37,8 +37,7 @@ export function hasLeadsTrendData(
 }
 
 /**
- * Normalize to six buckets and apply a display floor so every trend slot
- * renders a visible bar. Actual counts above the floor scale proportionally.
+ * Normalize to six buckets (oldest day first, today last) with the real counts.
  */
 export function buildCalibratedLeadsTrendChart(
   points: LeadsTrendPoint[] | undefined | null,

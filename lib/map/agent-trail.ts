@@ -1,3 +1,4 @@
+import { getSafeAvatarSrc } from "@/lib/avatar";
 import { getAgentInitials } from "@/lib/tracking/map-visualization";
 
 /**
@@ -115,13 +116,14 @@ export function createLiveAgentMarkerElement(
     root.style.zIndex = next.selected ? "40" : "20";
     avatar.style.transform = next.selected ? "scale(1.12)" : "scale(1)";
 
-    if (next.avatarUrl !== renderedAvatarUrl || next.agentName !== renderedName) {
-      renderedAvatarUrl = next.avatarUrl;
+    const resolvedAvatarUrl = getSafeAvatarSrc(next.avatarUrl);
+    if (resolvedAvatarUrl !== renderedAvatarUrl || next.agentName !== renderedName) {
+      renderedAvatarUrl = resolvedAvatarUrl;
       renderedName = next.agentName;
       content.replaceChildren();
-      if (next.avatarUrl) {
+      if (resolvedAvatarUrl) {
         const img = document.createElement("img");
-        img.src = next.avatarUrl;
+        img.src = resolvedAvatarUrl;
         img.alt = next.agentName;
         img.style.cssText = "width:100%;height:100%;object-fit:cover";
         content.appendChild(img);

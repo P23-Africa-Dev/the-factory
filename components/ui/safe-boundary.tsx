@@ -165,7 +165,23 @@ function SectionRecovery({
         <RefreshCw size={12} className="text-[#09232d]" />
         Refresh
       </button>
+      <ErrorDetails error={error} />
     </div>
+  );
+}
+
+/** Collapsed by default: lets a user screenshot the cause for support. */
+function ErrorDetails({ error }: { error: Error & { digest?: string } }) {
+  const message = error?.message?.trim();
+  if (!message && !error?.digest) return null;
+  return (
+    <details className="mt-1 max-w-full text-[11px] text-[#8a8b8c]">
+      <summary className="cursor-pointer select-none">Technical details</summary>
+      <p className="mt-1 break-words font-mono">
+        {message || "Unknown error"}
+        {error.digest ? ` (ref ${error.digest})` : ""}
+      </p>
+    </details>
   );
 }
 

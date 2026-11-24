@@ -65,13 +65,13 @@ export function TopCustomers() {
   );
 
   const fallbackRate = useMemo(
-    () => getLeadConversionRate(overview?.crm_pipeline_snapshot, overview?.kpis),
-    [overview?.crm_pipeline_snapshot, overview?.kpis],
+    () => getLeadConversionRate(overview?.kpis),
+    [overview?.kpis],
   );
 
   const chartData = useMemo(
-    () => buildTopLeadsChartData(topProspects, fallbackRate),
-    [topProspects, fallbackRate],
+    () => buildTopLeadsChartData(topProspects, fallbackRate, overview?.stage_progress),
+    [topProspects, fallbackRate, overview?.stage_progress],
   );
 
   const centerRate = useMemo(

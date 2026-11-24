@@ -34,10 +34,11 @@ export async function POST(request: NextRequest) {
   }
 
   const level = payload.data.support_session?.access_level as SupportAccessLevel;
-  const dashboardPath =
-    payload.data.support_session?.dashboard_path === "/agent/dashboard"
-      ? "/agent/dashboard"
-      : "/dashboard";
+  const supportSession = payload.data.support_session;
+  const isAgentTarget =
+    supportSession?.dashboard_path === "/agent/dashboard" ||
+    supportSession?.company?.role === "agent";
+  const dashboardPath = isAgentTarget ? "/agent/dashboard" : "/dashboard";
   const response = NextResponse.redirect(new URL(dashboardPath, request.url), 303);
   const secure = process.env.NODE_ENV === "production";
   const maxAge = 15 * 60;

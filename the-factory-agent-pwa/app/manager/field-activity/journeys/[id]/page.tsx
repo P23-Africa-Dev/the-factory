@@ -43,7 +43,7 @@ export default function JourneyDetailPage(): React.ReactElement {
         <div className="mt-3 flex gap-2">
           {navigation?.previous_id ? (
             <Link
-              href={`/field-activity/journeys/${navigation.previous_id}`}
+              href={`/manager/field-activity/journeys/${navigation.previous_id}`}
               className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white"
             >
               ← Prev day
@@ -51,7 +51,7 @@ export default function JourneyDetailPage(): React.ReactElement {
           ) : null}
           {navigation?.next_id ? (
             <Link
-              href={`/field-activity/journeys/${navigation.next_id}`}
+              href={`/manager/field-activity/journeys/${navigation.next_id}`}
               className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-white"
             >
               Next day →

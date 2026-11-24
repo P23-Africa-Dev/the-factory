@@ -9,7 +9,8 @@ import {
   subDays,
   subMonths,
 } from "date-fns";
-import { CalendarDays, ChevronDown, GitBranch, RotateCcw, Tag, UserRound, X } from "lucide-react";
+import { Briefcase, CalendarDays, ChevronDown, GitBranch, RotateCcw, Tag, UserRound, X } from "lucide-react";
+import { LEAD_INDUSTRIES } from "@/lib/crm/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { CrmAssignee, CrmLabel, CrmPipeline } from "@/lib/api/crm";
 
@@ -56,19 +57,31 @@ type CrmFilterBarProps = {
   onPipelineChange: (pipelineId: number | null) => void;
   selectedLabel: string;
   onLabelChange: (label: string) => void;
-  /** "Added by" shows only when a handler is passed. */
+  /** "Added by" / "Assigned to" show when their handlers are passed. */
   people?: CrmAssignee[];
   loadingPeople?: boolean;
   createdBy?: string;
   onCreatedByChange?: (userId: string) => void;
+  assignedTo?: string;
+  onAssignedToChange?: (userId: string) => void;
   /** "Date added" shows only when a handler is passed. */
   dateRange?: CrmDateRange;
   onDateRangeChange?: (range: CrmDateRange) => void;
+  /** Shown when "Added by" was set from a link before people loaded. */
+  createdByLabel?: string | null;
+  assignedToLabel?: string | null;
+  /** "Industry" shows only when a handler is passed. */
+  industry?: string;
+  onIndustryChange?: (industry: string) => void;
   onClear: () => void;
 };
 
 const FIELD_CLS =
   "w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[12px] text-white transition-colors hover:border-white/20 cursor-pointer";
+/** A field that currently filters the list is highlighted so users can see what's applied. */
+const FIELD_ACTIVE_CLS =
+  "w-full rounded-xl border border-[#2ae9c9]/70 bg-[#2ae9c9]/[0.12] px-3 py-2.5 text-[12px] font-semibold text-white shadow-[0_0_0_1px_rgb(42_233_201/0.25)] transition-colors cursor-pointer";
+const fieldCls = (active: boolean) => (active ? FIELD_ACTIVE_CLS : FIELD_CLS);
 
 function FieldLabel({ icon, children, htmlFor }: { icon: React.ReactNode; children: React.ReactNode; htmlFor?: string }) {
   return (
@@ -80,6 +93,7 @@ function FieldLabel({ icon, children, htmlFor }: { icon: React.ReactNode; childr
 }
 
 function DateRangeField({ value, onChange }: { value: CrmDateRange; onChange: (range: CrmDateRange) => void }) {
+  const hasValue = Boolean(value.from || value.to);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
@@ -112,7 +126,7 @@ function DateRangeField({ value, onChange }: { value: CrmDateRange; onChange: (r
         aria-controls={panelId}
         aria-label="Date added"
         onClick={() => setOpen((current) => !current)}
-        className={`${FIELD_CLS} flex items-center gap-2 text-left ${open ? "border-[#2ae9c9]/40 bg-white/[0.08]" : ""}`}
+        className={`${fieldCls(hasValue)} flex items-center gap-2 text-left ${open && !hasValue ? "border-[#2ae9c9]/40 bg-white/[0.08]" : ""}`}
       >
         <CalendarDays size={13} className="shrink-0 text-white/40" aria-hidden="true" />
         <span className={`flex-1 truncate ${summary ? "" : "text-white/30"}`}>{summary ?? "Any time"}</span>
@@ -224,13 +238,21 @@ export function CrmFilterBar({
   loadingPeople,
   createdBy = "",
   onCreatedByChange,
+  assignedTo = "",
+  onAssignedToChange,
   dateRange = EMPTY_DATE_RANGE,
   onDateRangeChange,
+  createdByLabel = null,
+  assignedToLabel = null,
+  industry = "",
+  onIndustryChange,
   onClear,
 }: CrmFilterBarProps) {
   const pipelineName = pipelines.find((pipeline) => pipeline.id === selectedPipelineId)?.name;
   const labelName = labels.find((label) => label.slug === selectedLabel)?.name;
-  const personName = people.find((person) => String(person.id) === createdBy)?.name;
+  const personName = people.find((person) => String(person.id) === createdBy)?.name ?? createdByLabel ?? undefined;
+  const assigneeName = people.find((person) => String(person.id) === assignedTo)?.name ?? assignedToLabel ?? undefined;
+  const pipelineActive = selectedPipelineId !== defaultPipelineId;
   const dateSummary = describeDateRange(dateRange);
 
   const chips = [
@@ -240,10 +262,24 @@ export function CrmFilterBar({
       labelName && { key: "label", label: `Label: ${labelName}`, remove: () => onLabelChange("all") },
     onCreatedByChange &&
       createdBy && { key: "person", label: `Added by ${personName ?? "selected person"}`, remove: () => onCreatedByChange("") },
+    onAssignedToChange &&
+      assignedTo && { key: "assignee", label: `Assigned to ${assigneeName ?? "selected person"}`, remove: () => onAssignedToChange("") },
     onDateRangeChange &&
       dateSummary && { key: "date", label: `Added ${dateSummary}`, remove: () => onDateRangeChange(EMPTY_DATE_RANGE) },
+    onIndustryChange &&
+      industry && { key: "industry", label: `Industry: ${industry}`, remove: () => onIndustryChange("") },
   ].filter(Boolean) as { key: string; label: string; remove: () => void }[];
-  const fieldCount = 2 + (onCreatedByChange ? 1 : 0) + (onDateRangeChange ? 1 : 0);
+  const fieldCount =
+    2 +
+    (onCreatedByChange ? 1 : 0) +
+    (onAssignedToChange ? 1 : 0) +
+    (onDateRangeChange ? 1 : 0) +
+    (onIndustryChange ? 1 : 0);
+  const industryOptions = [
+    { value: "", label: "Any industry" },
+    ...(industry && !(LEAD_INDUSTRIES as readonly string[]).includes(industry) ? [{ value: industry, label: industry }] : []),
+    ...LEAD_INDUSTRIES.map((option) => ({ value: option, label: option })),
+  ];
 
   return (
     <section
@@ -271,7 +307,7 @@ export function CrmFilterBar({
         </button>
       </div>
 
-      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${fieldCount === 4 ? "xl:grid-cols-4" : fieldCount === 3 ? "xl:grid-cols-3" : ""}`}>
+      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${fieldCount >= 6 ? "xl:grid-cols-6" : fieldCount >= 5 ? "xl:grid-cols-5" : fieldCount === 4 ? "xl:grid-cols-4" : fieldCount === 3 ? "xl:grid-cols-3" : ""}`}>
         <div>
           <FieldLabel icon={<GitBranch size={11} />}>Pipeline</FieldLabel>
           <SearchableSelect
@@ -284,7 +320,7 @@ export function CrmFilterBar({
             ]}
             placeholder="Choose a pipeline"
             searchPlaceholder="Search pipelines…"
-            className={FIELD_CLS}
+            className={fieldCls(pipelineActive)}
           />
         </div>
 
@@ -300,7 +336,7 @@ export function CrmFilterBar({
             ]}
             placeholder="Choose a label"
             searchPlaceholder="Search labels…"
-            className={FIELD_CLS}
+            className={fieldCls(selectedLabel !== "all")}
           />
         </div>
 
@@ -317,7 +353,40 @@ export function CrmFilterBar({
             ]}
             placeholder={loadingPeople ? "Loading people…" : "Choose a person"}
             searchPlaceholder="Search people…"
-            className={FIELD_CLS}
+            className={fieldCls(Boolean(createdBy))}
+          />
+        </div>
+        )}
+
+        {onAssignedToChange && (
+        <div>
+          <FieldLabel icon={<UserRound size={11} />}>Assigned to</FieldLabel>
+          <SearchableSelect
+            variant="enterprise"
+            value={assignedTo || UNSET}
+            onChange={onAssignedToChange}
+            options={[
+              { value: "", label: "Anyone" },
+              ...people.map((person) => ({ value: String(person.id), label: person.name })),
+            ]}
+            placeholder={loadingPeople ? "Loading people…" : "Choose a person"}
+            searchPlaceholder="Search people…"
+            className={fieldCls(Boolean(assignedTo))}
+          />
+        </div>
+        )}
+
+        {onIndustryChange && (
+        <div>
+          <FieldLabel icon={<Briefcase size={11} />}>Industry</FieldLabel>
+          <SearchableSelect
+            variant="enterprise"
+            value={industry || UNSET}
+            onChange={onIndustryChange}
+            options={industryOptions}
+            placeholder="Any industry"
+            searchPlaceholder="Search industries…"
+            className={fieldCls(Boolean(industry))}
           />
         </div>
         )}

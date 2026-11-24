@@ -9,7 +9,7 @@ import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { useCancelMeeting, useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
 import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { DEFAULT_AVATAR } from "@/lib/avatar";
+import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
 import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
 import { cn } from "@/lib/utils/sample";
 import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
@@ -682,11 +682,12 @@ export function WeeklyTasksAgents() {
               <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
                 {ongoingTask?.agent?.avatar_url ? (
                   <Image
-                    src={ongoingTask.agent.avatar_url}
+                    src={resolveAvatarSrc(ongoingTask.agent.avatar_url)}
                     alt={ongoingTask.agent.name}
                     width={16}
                     height={16}
                     className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
+                    unoptimized
                   />
                 ) : (
                   <div className="w-4 h-4 rounded-full bg-white text-[#FD6046] text-[7px] font-bold flex items-center justify-center z-20">

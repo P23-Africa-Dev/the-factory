@@ -253,7 +253,7 @@ export function JourneyHistoryPanel({ agentName }: JourneyHistoryPanelProps) {
               <JourneyEntry
                 key={journey.id}
                 journey={journey}
-                href={`/field-activity/journeys/${journey.id}`}
+                href={`/manager/field-activity/journeys/${journey.id}`}
               />
             ))}
           </div>

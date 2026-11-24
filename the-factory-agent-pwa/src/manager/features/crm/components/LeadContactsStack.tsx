@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
-import { Mail, MapPin, Phone, User, ChevronsLeftRight } from 'lucide-react';
+import { Briefcase, Link2, Mail, MapPin, Phone, User, ChevronsLeftRight } from 'lucide-react';
 import type { LeadContact } from '../types';
 
 interface LeadContactsStackProps {
@@ -39,6 +39,12 @@ export function LeadContactsStack({ contacts }: LeadContactsStackProps) {
         </div>
 
         <div className="flex flex-col gap-3 text-sm text-white/70">
+          {contact.position && (
+            <div className="flex items-center gap-2.5">
+              <Briefcase size={14} className="text-[#44AFCD]/80 shrink-0" />
+              <span className="truncate">{contact.position}</span>
+            </div>
+          )}
           {contact.email && (
             <a href={`mailto:${contact.email}`} className="flex items-center gap-2.5 hover:text-white transition-colors">
               <Mail size={14} className="text-[#44AFCD]/80" />
@@ -57,7 +63,23 @@ export function LeadContactsStack({ contacts }: LeadContactsStackProps) {
               <span className="truncate">{contact.location}</span>
             </div>
           )}
-          {!contact.email && !contact.phone && !contact.location && (
+          {contact.profile_urls && contact.profile_urls.length > 0 && (
+            <div className="flex flex-col gap-1.5 pt-1">
+              {contact.profile_urls.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-[#44AFCD] hover:underline truncate"
+                >
+                  <Link2 size={12} className="shrink-0" />
+                  <span className="truncate">{url.replace(/^https?:\/\//i, '')}</span>
+                </a>
+              ))}
+            </div>
+          )}
+          {!contact.position && !contact.email && !contact.phone && !contact.location && (!contact.profile_urls || contact.profile_urls.length === 0) && (
             <span className="text-xs text-white/40 italic">No contact details recorded.</span>
           )}
         </div>
@@ -201,7 +223,13 @@ function SwipeableCard({ contact, isTop, stackIndex, onSwipe }: SwipeableCardPro
         </div>
       </div>
 
-      <div className="flex flex-col gap-2.5 text-xs text-white/70">
+      <div className="flex flex-col gap-2 text-xs text-white/70 overflow-y-auto">
+        {contact.position && (
+          <div className="flex items-center gap-2 truncate">
+            <Briefcase size={12} className="text-[#44AFCD]/70 shrink-0" />
+            <span className="truncate">{contact.position}</span>
+          </div>
+        )}
         {contact.email && (
           <a href={`mailto:${contact.email}`} className="flex items-center gap-2 hover:text-white transition-colors truncate">
             <Mail size={12} className="text-[#44AFCD]/70 shrink-0" />
@@ -220,7 +248,18 @@ function SwipeableCard({ contact, isTop, stackIndex, onSwipe }: SwipeableCardPro
             <span className="truncate">{contact.location}</span>
           </div>
         )}
-        {!contact.email && !contact.phone && !contact.location && (
+        {contact.profile_urls && contact.profile_urls.length > 0 && (
+          <a
+            href={contact.profile_urls[0]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-[#44AFCD] hover:underline truncate"
+          >
+            <Link2 size={12} className="shrink-0" />
+            <span className="truncate">{contact.profile_urls[0].replace(/^https?:\/\//i, '')}</span>
+          </a>
+        )}
+        {!contact.position && !contact.email && !contact.phone && !contact.location && (!contact.profile_urls || contact.profile_urls.length === 0) && (
           <span className="text-xs text-white/30 italic">No details provided.</span>
         )}
       </div>

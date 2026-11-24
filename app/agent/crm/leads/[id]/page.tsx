@@ -75,8 +75,8 @@ interface LeadDetail {
 const MOCK_LEAD: LeadDetail = {
   id: "lead-1",
   name: "Lane Wade",
-  phone: "+234 0000000000",
-  location: "Ikeja GRA ...",
+  phone: "+44 7700 900000",
+  location: "Shoreditch, London ...",
   statusTag: "Contacted",
   status: "Contacted",
   statusColor: "#E879A0",
@@ -839,6 +839,14 @@ export default function LeadDetailsPage() {
                     </label>
                     <p className="text-white text-[16px] font-semibold truncate">
                       {leadData.position || "N/A"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-gray-400 text-[11px] font-medium mb-1">
+                      Industry
+                    </label>
+                    <p className="text-white text-[16px] font-semibold truncate">
+                      {leadData.industry || "N/A"}
                     </p>
                   </div>
                   <div className="flex flex-col">

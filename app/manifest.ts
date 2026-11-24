@@ -16,19 +16,20 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#0A1D25",
     icons: [
       {
-        src: "/icon?size=192",
-        sizes: "192x192",
-        type: "image/png",
-      },
-      {
-        src: "/icon?size=512",
+        src: "/icon",
         sizes: "512x512",
         type: "image/png",
+        purpose: "any",
       },
       {
         src: "/apple-icon",
         sizes: "180x180",
         type: "image/png",
+      },
+      {
+        src: "/favicon.ico",
+        sizes: "48x48",
+        type: "image/x-icon",
       },
     ],
     shortcuts: [

@@ -30,6 +30,7 @@ class UpdateTaskStatusRequest extends FormRequest
         return [
             'status' => ['required', 'string', Rule::in(TaskStatus::values())],
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'complete_incomplete_subtasks' => ['sometimes', 'boolean'],
         ];
     }
 }

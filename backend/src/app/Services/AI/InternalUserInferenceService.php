@@ -29,8 +29,8 @@ class InternalUserInferenceService
             'role' => $role,
             'assigned_zone' => $this->extractAssignedZone($message) ?? '',
             'assigned_zone_ids' => $zoneIds,
-            'work_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-            'base_salary' => 0,
+            'work_days' => null,
+            'base_salary' => null,
             'salary_type' => 'monthly',
             'commission_enabled' => false,
             'supervisor_user_id' => $supervisorId,
@@ -66,8 +66,8 @@ class InternalUserInferenceService
                 static fn (mixed $day): string => strtolower(trim((string) $day)),
                 $normalized['work_days'],
             ))
-            : ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-        $normalized['base_salary'] = is_numeric($normalized['base_salary'] ?? null) ? (float) $normalized['base_salary'] : 0;
+            : null; // optional at hire time; not configured until set
+        $normalized['base_salary'] = is_numeric($normalized['base_salary'] ?? null) ? (float) $normalized['base_salary'] : null;
         $normalized['salary_type'] = $this->normalizeSalaryType((string) ($normalized['salary_type'] ?? 'monthly'));
         $normalized['commission_enabled'] = (bool) ($normalized['commission_enabled'] ?? false);
 

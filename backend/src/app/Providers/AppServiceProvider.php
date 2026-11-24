@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\AI\Agent\Tools\ElyToolCatalog;
+use App\Services\AI\Agent\Tools\ToolRegistry;
 use App\Support\LoginRateLimiter;
 use App\Models\Company;
 use App\Models\Lead;
@@ -30,7 +32,19 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // ELY tool registry: the wrapped legacy tools plus any class tagged 'ely.tools'.
+        // To give ELY a new capability, write an ElyTool class and add it here.
+        $this->app->tag([
+            \App\Services\AI\Agent\Tools\Crm\UpdateLeadTool::class,
+            \App\Services\AI\Agent\Tools\Crm\AddLeadNoteTool::class,
+        ], 'ely.tools');
+
+        $this->app->scoped(ToolRegistry::class, static fn ($app): ToolRegistry => new ToolRegistry([
+            ...$app->make(ElyToolCatalog::class)->tools(),
+            ...$app->make(\App\Services\AI\Agent\Tools\ElyServiceToolCatalog::class)->tools(),
+            ...$app->make(\App\Services\AI\Agent\Tools\ElyOperationsToolCatalog::class)->tools(),
+            ...$app->tagged('ely.tools'),
+        ]));
     }
 
     /**
@@ -91,6 +105,17 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) use ($userOrIp) {
             return Limit::perMinute((int) config('rate_limits.api_per_minute', 300))
                 ->by($userOrIp($request));
+        });
+
+        // ELY requests call a paid LLM, so they get their own per-user budget
+        // on top of the general API limit.
+        RateLimiter::for('ely', function (Request $request) use ($userOrIp) {
+            $key = 'ely|' . $userOrIp($request);
+
+            return [
+                Limit::perMinute((int) config('rate_limits.ely_per_minute', 20))->by($key),
+                Limit::perDay((int) config('rate_limits.ely_per_day', 400))->by($key),
+            ];
         });
 
         RateLimiter::for('api-heavy', function (Request $request) use ($userOrIp) {

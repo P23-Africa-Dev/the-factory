@@ -12,6 +12,7 @@ import {
     createCrmPipeline,
     deleteCrmPipeline,
     createLead,
+    bulkDeleteLeads,
     deleteLead,
     downloadCrmLeadsExport,
     getAgentUploadsOverview,
@@ -110,7 +111,7 @@ export function useCrmAssignees(
         queryKey: CRM_KEYS.assignees(companyId, basePath),
         queryFn: async (): Promise<CrmAssignee[]> =>
             (await listCrmAssignees(companyId!, token, basePath)).data.items,
-        enabled: hasActiveApiSession(token) && companyId != null && basePath === "/admin",
+        enabled: hasActiveApiSession(token) && companyId != null && (basePath === "/admin" || basePath === "/agent"),
         staleTime: 1000 * 60 * 5,
     });
 }
@@ -635,6 +636,20 @@ export function useUpdateLead(
     });
 }
 
+export function useBulkDeleteLeads(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({ leadIds, companyId }: { leadIds: Array<number | string>; companyId: number | string | undefined }) =>
+            bulkDeleteLeads(leadIds, companyId, token, basePath),
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            queryClient.invalidateQueries({ queryKey: SAVED_LOCATION_KEYS.all });
+        },
+    });
+}
+
 export function useDeleteLead(
     options?: { onSuccess?: (deletedLeadId: number) => void },
     basePath: ApiRoleBasePath = "/admin"
@@ -708,8 +723,11 @@ export function useCreateCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string; name: string }) =>
-            createCrmPipeline(payload, token, basePath),
+        mutationFn: (payload: {
+            company_id: number | string;
+            name: string;
+            currency_code?: string;
+        }) => createCrmPipeline(payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
         },
@@ -726,7 +744,12 @@ export function useUpdateCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
             payload,
         }: {
             pipelineId: number | string;
-            payload: { company_id?: number | string; name?: string; sort_order?: number };
+            payload: {
+                company_id?: number | string;
+                name?: string;
+                sort_order?: number;
+                currency_code?: string;
+            };
         }) => updateCrmPipeline(pipelineId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
@@ -744,7 +767,11 @@ export function useDeleteCrmPipeline(basePath: ApiRoleBasePath = "/admin") {
             payload,
         }: {
             pipelineId: number | string;
-            payload: { company_id?: number | string; force?: boolean };
+            payload: {
+                company_id?: number | string;
+                force?: boolean;
+                reassign_to_pipeline_id?: number | null;
+            };
         }) => deleteCrmPipeline(pipelineId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
@@ -757,7 +784,7 @@ export function useCreateCrmLabel(basePath: ApiRoleBasePath = "/admin") {
     const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
 
     return useMutation({
-        mutationFn: (payload: { company_id: number | string; name: string; color: string }) =>
+        mutationFn: (payload: { company_id: number | string; name: string; color: string; is_won?: boolean }) =>
             createCrmLabel(payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
@@ -775,7 +802,7 @@ export function useUpdateCrmLabel(basePath: ApiRoleBasePath = "/admin") {
             payload,
         }: {
             labelId: number | string;
-            payload: { company_id?: number | string; name?: string; color?: string };
+            payload: { company_id?: number | string; name?: string; color?: string; is_won?: boolean };
         }) => updateCrmLabel(labelId, payload, token, basePath),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });

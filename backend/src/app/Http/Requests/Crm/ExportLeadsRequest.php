@@ -45,6 +45,11 @@ class ExportLeadsRequest extends FormRequest
             'pipeline_id' => ['nullable', 'integer'],
             'source' => ['nullable', 'string', 'max:120'],
             'assigned_to_user_id' => ['nullable', 'integer'],
+            // "Current view" exports carry every list filter.
+            'created_by_user_id' => ['nullable', 'integer', 'min:1'],
+            'created_from' => ['nullable', 'date'],
+            'created_to' => ['nullable', 'date', 'after_or_equal:created_from'],
+            'industry' => ['nullable', 'string', 'max:120'],
             'lead_ids' => ['nullable', 'array', 'max:1000'],
             'lead_ids.*' => ['integer'],
         ];

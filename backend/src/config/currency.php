@@ -3,28 +3,28 @@
 declare(strict_types=1);
 
 return [
-    'default' => env('PAYROLL_DEFAULT_CURRENCY', env('INTERNAL_DEFAULT_CURRENCY', 'USD')),
+    'default' => env('PAYROLL_DEFAULT_CURRENCY', env('INTERNAL_DEFAULT_CURRENCY', 'GBP')),
 
     'supported' => [
-        'USD' => [
-            'name' => 'US Dollar',
-            'symbol' => '$',
-        ],
         'GBP' => [
             'name' => 'British Pound',
             'symbol' => 'GBP',
+        ],
+        'USD' => [
+            'name' => 'US Dollar',
+            'symbol' => '$',
         ],
         'CAD' => [
             'name' => 'Canadian Dollar',
             'symbol' => 'CA$',
         ],
-        'NGN' => [
-            'name' => 'Nigerian Naira',
-            'symbol' => 'NGN',
-        ],
         'EUR' => [
             'name' => 'Euro',
             'symbol' => 'EUR',
+        ],
+        'NGN' => [
+            'name' => 'Nigerian Naira',
+            'symbol' => 'NGN',
         ],
         'AED' => [
             'name' => 'UAE Dirham',

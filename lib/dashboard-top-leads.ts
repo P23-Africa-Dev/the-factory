@@ -1,5 +1,4 @@
 import type { DashboardKpis, TopProspect } from "@/lib/api/dashboard";
-import type { PipelineSnapshot } from "@/lib/api/crm";
 
 export const TOP_LEADS_FILTER_OPTIONS = ["Weekly", "Monthly", "Yearly"] as const;
 
@@ -14,6 +13,7 @@ export type TopLeadsChartItem = {
   fill: string;
 };
 
+/** Fallback only, used when the API does not send `stage_progress`. */
 const LEAD_STATUS_PROGRESS: Record<string, number> = {
   new: 15,
   newly_lead: 15,
@@ -56,29 +56,33 @@ export function getTopLeadsDateRange(
   };
 }
 
-export function getLeadStatusProgress(status?: string | null): number {
+/**
+ * How far along the pipeline a lead's stage is (0-100).
+ * Uses the server's per-company `stage_progress` (label order, won = 100) when given.
+ */
+export function getLeadStatusProgress(
+  status?: string | null,
+  stageProgress?: Record<string, number> | null,
+): number {
   if (!status) {
     return LEAD_STATUS_PROGRESS.new;
+  }
+
+  const fromCompany = stageProgress?.[status];
+  if (typeof fromCompany === "number") {
+    return fromCompany;
   }
 
   return LEAD_STATUS_PROGRESS[status.toLowerCase()] ?? LEAD_STATUS_PROGRESS.new;
 }
 
+/**
+ * Share of leads in scope that are converted (sitting in a stage flagged "won").
+ * Both KPIs share the same scope: whole company for managers, created-or-assigned for agents.
+ */
 export function getLeadConversionRate(
-  pipeline?: PipelineSnapshot,
   kpis?: Pick<DashboardKpis, "total_leads" | "converted_leads">,
 ): number {
-  const pipelineTotal = pipeline?.total ?? 0;
-
-  if (pipelineTotal > 0) {
-    const wonCount = (pipeline?.stages ?? []).reduce((sum, stage) => {
-      const status = (stage.status ?? "").toLowerCase();
-      return status === "won" ? sum + stage.count : sum;
-    }, 0);
-
-    return Math.round((wonCount / pipelineTotal) * 100);
-  }
-
   const totalLeads = kpis?.total_leads ?? 0;
   const convertedLeads = kpis?.converted_leads ?? 0;
 
@@ -96,6 +100,7 @@ export function getTopLeadsCenterRate(chartData: TopLeadsChartItem[]): number {
 export function buildTopLeadsChartData(
   prospects: TopProspect[],
   conversionRate: number,
+  stageProgress?: Record<string, number> | null,
 ): TopLeadsChartItem[] {
   if (prospects.length === 0) {
     return TOP_LEADS_RING_COLORS.map((fill, index) => ({
@@ -109,7 +114,7 @@ export function buildTopLeadsChartData(
   return prospects.slice(0, 3).map((prospect, index) => ({
     id: String(prospect.id),
     name: prospect.name,
-    value: getLeadStatusProgress(prospect.status),
+    value: getLeadStatusProgress(prospect.status, stageProgress),
     fill: TOP_LEADS_RING_COLORS[index] ?? TOP_LEADS_RING_COLORS[0],
   }));
 }

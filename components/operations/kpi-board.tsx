@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import {
   DndContext,
-  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -13,10 +12,11 @@ import {
   DragOverlay,
   DragStartEvent,
 } from "@dnd-kit/core";
+import { useBoardCollisionDetection } from "@/lib/dnd/use-board-collision";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { DndContainer, DndItem } from "@/types/operations";
 import { KpiColumn } from "./kpi-column";
-import { KpiCard } from "./kpi-card";
+import { KpiCardView } from "./kpi-card";
 
 interface KpiBoardProps {
   containers: DndContainer[];
@@ -24,6 +24,8 @@ interface KpiBoardProps {
   onKpiEdit?: (item: DndItem, containerId: string) => void;
   onKpiDelete?: (item: DndItem, containerId: string) => void;
   canManageCards?: boolean;
+  /** Managers can drag; agents get non-draggable cards. */
+  canDrag?: boolean;
   findContainer: (id: string) => DndContainer | undefined;
   moveItem: (activeId: string, overId: string, containerId: string) => void;
   moveToContainer: (activeId: string, overContainerId: string) => void;
@@ -43,6 +45,7 @@ export function KpiBoard({
   onKpiEdit,
   onKpiDelete,
   canManageCards = false,
+  canDrag = canManageCards,
   findContainer,
   moveItem,
   moveToContainer,
@@ -53,12 +56,15 @@ export function KpiBoard({
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [dragStartContainerId, setDragStartContainerId] = useState<string | null>(null);
 
+  const { collisionDetection, markMoved, resetDrag } = useBoardCollisionDetection();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   function handleDragStart(event: DragStartEvent) {
+    resetDrag();
     const { active } = event;
     onDragStateChange?.(true);
     const container = findContainer(active.id as string);
@@ -80,8 +86,10 @@ export function KpiBoard({
     if (!activeContainer || !overContainer) return;
     if (activeContainer.id === overContainer.id) return;
     if (overIsContainer) {
+      markMoved();
       moveToContainer(activeId, overId);
     } else {
+      markMoved();
       moveBetweenContainers(activeId, overId, activeContainer.id, overContainer.id);
     }
   }
@@ -101,7 +109,10 @@ export function KpiBoard({
     const overContainer = overIsContainer
       ? containers.find((c) => c.id === overId)
       : findContainer(overId);
-    if (!activeContainer || !overContainer) return;
+    if (!activeContainer || !overContainer) {
+      setDragStartContainerId(null);
+      return;
+    }
     if (activeId !== overId && activeContainer.id === overContainer.id) {
       moveItem(activeId, overId, activeContainer.id);
     }
@@ -121,7 +132,7 @@ export function KpiBoard({
     <DndContext
       id="kpi-board-context"
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -135,6 +146,7 @@ export function KpiBoard({
             title={container.title}
             color={container.color}
             items={container.items}
+            canDrag={canDrag}
             onKpiClick={(item) => onKpiClick?.(item, container.id)}
             onKpiEdit={canManageCards ? (item) => onKpiEdit?.(item, container.id) : undefined}
             onKpiDelete={canManageCards ? (item) => onKpiDelete?.(item, container.id) : undefined}
@@ -145,7 +157,7 @@ export function KpiBoard({
       <DragOverlay>
         {activeItem ? (
           <div className="shadow-2xl scale-105 pointer-events-none">
-            <KpiCard item={activeItem} />
+            <KpiCardView item={activeItem} />
           </div>
         ) : null}
       </DragOverlay>

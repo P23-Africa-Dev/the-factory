@@ -6,7 +6,14 @@ import type {
   AgentLocationSnapshotItem,
 } from "@/types/tracking";
 import type { TaskApiItem } from "@/lib/api/tasks";
+import { getSafeAvatarSrc } from "@/lib/avatar";
 import { resolveLivePolylineForHydrate } from "@/lib/tracking/live-polyline";
+
+function resolveTrackingAvatar(
+  url: string | null | undefined,
+): string | undefined {
+  return getSafeAvatarSrc(url) ?? undefined;
+}
 
 const MAX_POLYLINE_PTS = 2000;
 const COMPLETED_LINGER_MS = 5_000;
@@ -143,7 +150,7 @@ function mergeAgentAvatarUrl(
   params: { userId: number; agentAvatarUrl?: string },
   prev: LiveTaskState | undefined,
 ): string | undefined {
-  if (params.agentAvatarUrl) return params.agentAvatarUrl;
+  if (params.agentAvatarUrl) return resolveTrackingAvatar(params.agentAvatarUrl);
   if (prev && prev.userId === params.userId) return prev.agentAvatarUrl;
   return undefined;
 }
@@ -179,7 +186,7 @@ function buildFromEnvelope(
     trackingSessionId: payload.tracking_session_id,
     userId: payload.user_id,
     agentName: payload.data?.agent?.name ?? "",
-    agentAvatarUrl: payload.data?.agent?.avatar_url ?? undefined,
+    agentAvatarUrl: resolveTrackingAvatar(payload.data?.agent?.avatar_url),
     taskTitle: payload.data?.task?.title ?? "",
     projectName: payload.data?.task?.project?.name ?? undefined,
     taskAddress: payload.data?.task?.address ?? payload.data?.task?.location ?? undefined,
@@ -204,7 +211,8 @@ function buildFromEnvelope(
     trackingSessionId: payload.tracking_session_id,
     userId: payload.user_id,
     agentName: payload.data?.agent?.name ?? base.agentName,
-    agentAvatarUrl: payload.data?.agent?.avatar_url ?? base.agentAvatarUrl,
+    agentAvatarUrl:
+      resolveTrackingAvatar(payload.data?.agent?.avatar_url) ?? base.agentAvatarUrl,
     taskTitle: payload.data?.task?.title ?? base.taskTitle,
     projectName: payload.data?.task?.project?.name ?? base.projectName,
     taskAddress:
@@ -481,7 +489,8 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
         trackingSessionId: prev?.trackingSessionId ?? 0,
         userId: task.assignee?.id ?? prev?.userId ?? 0,
         agentName: task.assignee?.name ?? prev?.agentName ?? "",
-        agentAvatarUrl: task.assignee?.avatar_url ?? prev?.agentAvatarUrl,
+        agentAvatarUrl:
+          resolveTrackingAvatar(task.assignee?.avatar_url) ?? prev?.agentAvatarUrl,
         taskTitle: task.title,
         projectName: task.project?.name ?? prev?.projectName,
         taskAddress: task.address ?? task.location,
@@ -572,7 +581,8 @@ export const useTrackingStore = create<TrackingStore>((set, get) => ({
             item.task.tracking_session_id ?? prev?.trackingSessionId ?? 0,
           userId: item.agent.id,
           agentName: item.agent.name ?? prev?.agentName ?? `Agent #${item.agent.id}`,
-          agentAvatarUrl: item.agent.avatar_url ?? prev?.agentAvatarUrl,
+          agentAvatarUrl:
+            resolveTrackingAvatar(item.agent.avatar_url) ?? prev?.agentAvatarUrl,
           taskTitle: item.task.title ?? prev?.taskTitle ?? `Task #${taskId}`,
           projectName: prev?.projectName,
           taskAddress: item.task.address ?? item.task.location ?? prev?.taskAddress,

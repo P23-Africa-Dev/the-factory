@@ -3,7 +3,6 @@
 import { Suspense } from "react";
 // import { useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-// import { ProjectsView } from "@/components/operations/projects-view";
 import { AllTasksView } from "@/components/operations/all-tasks-view";
 import { AllProjectsTasksView } from "@/components/operations/all-projects-tasks-view";
 // import { useProjects } from "@/hooks/use-projects";
@@ -81,15 +80,6 @@ function ProjectsContent() {
               Project management is available to owner, admin, and supervisor roles only.
             </div>
           ) : (
-            // <ProjectsView
-            //   projects={projects}
-            //   analytics={analytics}
-            //   onViewProject={handleViewProject}
-            //   isLoading={isLoading}
-            //   pagination={pagination}
-            //   currentPage={page}
-            //   onPageChange={setPage}
-            // />
             <AllProjectsTasksView enableProjectChecklist />
           )
         ) : (

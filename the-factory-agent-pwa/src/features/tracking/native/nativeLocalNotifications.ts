@@ -1,5 +1,11 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
+import {
+  openNotificationTarget,
+  resolveNotificationTargetFromPayload,
+  type NotificationClickPayload,
+} from '@/lib/notifications/notificationTarget';
+import { markNotificationOpened } from '@/lib/notifications/openNotification';
 import { isNativeAndroid } from './capacitorPlatform';
 
 const ALERTS_CHANNEL_ID = 'tracking_alerts';
@@ -71,20 +77,27 @@ export async function ensureNativeLocalNotificationPermission(): Promise<boolean
   }
 }
 
-/** Attach once: tapping a notification opens the deep link path in the WebView. */
+/** Attach once: tapping a tray alert opens its source screen in the WebView. */
 export function attachNativeNotificationClickHandler(): void {
   if (!isNativeAndroid() || clickListenerAttached) return;
   clickListenerAttached = true;
 
   void LocalNotifications.addListener('localNotificationActionPerformed', (event) => {
-    const raw = event.notification.extra?.url;
-    const path = typeof raw === 'string' ? raw : null;
-    if (!path) return;
     try {
-      if (typeof window !== 'undefined') {
-        const url = resolveAgentDeepLink(path);
-        window.location.assign(url.startsWith('http') ? url : url);
-      }
+      const extra = (event.notification.extra ?? {}) as {
+        url?: unknown;
+        payload?: NotificationClickPayload | null;
+      };
+      const payload = extra.payload && typeof extra.payload === 'object' ? extra.payload : null;
+      const rawUrl = typeof extra.url === 'string' ? extra.url : null;
+      if (!payload && !rawUrl) return;
+
+      // Re-resolve at tap time so the route matches the current session mode.
+      const target = payload
+        ? resolveNotificationTargetFromPayload(payload)
+        : resolveAgentDeepLink(rawUrl, { allowAbsolute: false });
+      if (payload) markNotificationOpened(payload.notification_id);
+      openNotificationTarget(target);
     } catch {
       // ignore
     }
@@ -96,6 +109,8 @@ export type NativeAlertPayload = {
   body: string;
   tag: string;
   url: string;
+  /** Raw notification data so the tap can be re-resolved for the current mode. */
+  payload?: NotificationClickPayload | null;
 };
 
 /**
@@ -122,7 +137,11 @@ export async function notifyNative(payload: NativeAlertPayload): Promise<boolean
             : `Factory 23 Agent · ${payload.title}`,
           body: payload.body,
           channelId: ALERTS_CHANNEL_ID,
-          extra: { url: resolveAgentDeepLink(payload.url), tag: payload.tag },
+          extra: {
+            url: resolveAgentDeepLink(payload.url, { allowAbsolute: false }),
+            tag: payload.tag,
+            payload: payload.payload ?? null,
+          },
           schedule: { at: new Date(Date.now() + 250) },
           autoCancel: true,
         },
@@ -177,7 +196,10 @@ export async function showOngoingTrackingNotification(
           channelId: LIVE_CHANNEL_ID,
           ongoing: true,
           autoCancel: false,
-          extra: { url: resolveAgentDeepLink(payload.url), tag: 'live-tracking-active' },
+          extra: {
+            url: resolveAgentDeepLink(payload.url, { allowAbsolute: false }),
+            tag: 'live-tracking-active',
+          },
           // Immediate (or near-immediate) display
           schedule: { at: new Date(Date.now() + 100) },
         },

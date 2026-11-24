@@ -15,22 +15,90 @@ final class CopilotPhaseFiveInnovationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_voice_transcription_endpoint_accepts_audio_upload(): void
+    public function test_voice_transcription_uses_openai_whisper_regardless_of_chat_stack(): void
+    {
+        // Chat stack is GLM (no speech-to-text), but OpenAI is configured.
+        config([
+            'services.ai.stack' => 'glm',
+            'services.ai.glm.api_key' => '',
+            'services.ai.openai.api_key' => 'test-key',
+            'services.ai.openai.base_url' => 'https://api.openai.test/v1',
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            'api.openai.test/*' => \Illuminate\Support\Facades\Http::response(['text' => 'Create a task for Ada tomorrow at 9am'], 200),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'ely').'.mp3';
+        file_put_contents($path, 'fake-audio-bytes');
+        $audio = new UploadedFile($path, 'note.mp3', 'audio/mpeg', null, true);
+
+        $result = app(\App\Services\AI\Providers\AiProviderRouter::class)
+            ->transcribeAudio($audio, 'transcribe', ['purpose' => 'operational']);
+
+        @unlink($path);
+
+        $this->assertNotNull($result);
+        $this->assertSame('openai', $result->provider);
+        $this->assertSame('Create a task for Ada tomorrow at 9am', $result->text);
+
+        \Illuminate\Support\Facades\Http::assertSent(
+            static fn ($request): bool => str_contains($request->url(), '/audio/transcriptions'),
+        );
+    }
+
+    public function test_voice_transcription_explains_an_empty_openai_account(): void
     {
         [$company, $admin] = $this->seedCompanyUser('admin');
+
+        config(['services.ai.openai.api_key' => 'test-key', 'services.ai.openai.base_url' => 'https://api.openai.test/v1', 'services.ai.glm.api_key' => '']);
+        \Illuminate\Support\Facades\Http::fake([
+            'api.openai.test/*' => \Illuminate\Support\Facades\Http::response([
+                'error' => [
+                    'message' => 'You have no credits remaining.',
+                    'type' => 'insufficient_quota',
+                    'code' => 'credit_balance_exhausted',
+                ],
+            ], 429),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'ely').'.mp3';
+        file_put_contents($path, 'fake-audio-bytes');
+        $result = app(\App\Services\AI\Innovation\PhaseFiveCopilotService::class)->transcribeVoice(
+            $admin,
+            new UploadedFile($path, 'note.mp3', 'audio/mpeg', null, true),
+            (int) $company->id,
+        );
+        @unlink($path);
+
+        $this->assertFalse($result['transcribed']);
+        $this->assertSame('', $result['transcript']);
+        $this->assertSame('quota_exceeded', $result['error_code']);
+        $this->assertStringContainsString('run out of credit', (string) $result['error']);
+
+        // The raw reason is kept for platform admins in the AI logs.
+        $this->assertDatabaseHas('ai_logs', ['provider' => 'openai']);
+    }
+
+    public function test_voice_transcription_returns_a_clear_error_when_not_configured(): void
+    {
+        [$company, $admin] = $this->seedCompanyUser('admin');
+
+        config(['services.ai.openai.api_key' => '', 'services.ai.glm.api_key' => '']);
 
         $response = $this
             ->actingAs($admin)
             ->postJson('/api/v1/copilot/voice/transcriptions', [
                 'company_id' => $company->id,
-                'audio' => UploadedFile::fake()->create('meeting-note.mp3', 120, 'audio/mpeg'),
+                'audio' => UploadedFile::fake()->create('note.mp3', 120, 'audio/mpeg'),
             ]);
 
+        // No fake placeholder transcript; a real reason is surfaced instead.
         $response
             ->assertOk()
-            ->assertJsonPath('data.pipeline', 'voice.input.v1')
-            ->assertJsonPath('data.company_id', $company->id)
-            ->assertJsonPath('data.transcript', 'Voice transcription pipeline is active. Provider transcription integration can now be attached to this endpoint.');
+            ->assertJsonPath('data.transcribed', false)
+            ->assertJsonPath('data.transcript', '');
+        $response->assertJsonPath('data.error_code', 'not_configured');
+        $this->assertStringContainsString('not set up', (string) $response->json('data.error'));
     }
 
     public function test_file_analysis_endpoint_accepts_supported_file_types(): void

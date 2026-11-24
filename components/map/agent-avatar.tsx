@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { getSafeAvatarSrc } from "@/lib/avatar";
 import { getAgentInitials } from "@/lib/tracking/map-visualization";
 
 export function AgentAvatar({
@@ -20,7 +21,8 @@ export function AgentAvatar({
   const [imageFailed, setImageFailed] = useState(false);
 
   const initials = getAgentInitials(name);
-  const showImage = !!avatarUrl && !imageFailed;
+  const resolvedUrl = getSafeAvatarSrc(avatarUrl);
+  const showImage = !!resolvedUrl && !imageFailed;
 
   return (
     <div
@@ -28,7 +30,7 @@ export function AgentAvatar({
     >
       {showImage ? (
         <img
-          src={avatarUrl}
+          src={resolvedUrl}
           className="w-full h-full object-cover"
           alt={name || "Agent"}
           onError={() => setImageFailed(true)}

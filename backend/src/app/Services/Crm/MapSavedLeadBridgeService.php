@@ -51,7 +51,7 @@ class MapSavedLeadBridgeService
         return LeadPipeline::query()->create([
             'company_id' => $companyId,
             'name' => self::MAP_PIPELINE_NAME,
-            'currency_code' => 'USD',
+            'currency_code' => 'GBP',
             'sort_order' => $maxSortOrder + 1,
             'is_default' => false,
             'system_key' => self::MAP_PIPELINE_SYSTEM_KEY,

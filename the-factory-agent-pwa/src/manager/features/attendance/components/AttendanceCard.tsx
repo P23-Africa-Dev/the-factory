@@ -26,11 +26,11 @@ export function AttendanceCard(): React.ReactElement {
 
   return (
     <div
-      onClick={() => router.push('/workforce')}
+      onClick={() => router.push('/manager/workforce')}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') router.push('/workforce');
+        if (e.key === 'Enter' || e.key === ' ') router.push('/manager/workforce');
       }}
       className="w-[90px] h-[154px] bg-[#0B3343] rounded-[20px] overflow-hidden flex flex-col justify-between py-3 px-1.5 shadow-md flex-shrink-0 select-none cursor-pointer active:scale-95 transition-transform"
     >
@@ -66,7 +66,7 @@ export function AttendanceCard(): React.ReactElement {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              router.push('/workforce');
+              router.push('/manager/workforce');
             }}
             className="w-[67px] h-[32px] rounded-xl bg-[#75ADAF]/20 hover:bg-[#75ADAF]/30 border border-[#75ADAF]/40 flex items-center justify-center gap-1 px-1 text-[#75ADAF] transition-all outline-none"
           >

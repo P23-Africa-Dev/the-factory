@@ -8,7 +8,11 @@ import {
   attachNativeNotificationClickHandler,
   ensureNativeLocalNotificationPermission,
 } from '@/features/tracking/native/nativeLocalNotifications';
-import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
+import {
+  resolveNotificationTargetFromPayload,
+  type NotificationClickPayload,
+} from '@/lib/notifications/notificationTarget';
+import { useNotificationClickRouting } from '@/lib/notifications/openNotification';
 import {
   isDocumentHidden,
   notifyTrackingArrived,
@@ -28,6 +32,8 @@ export function useDeviceNotificationBridge(): void {
   const lastStatusRef = useRef<Record<number, string>>({});
   const bootstrappedRef = useRef(false);
 
+  useNotificationClickRouting();
+
   useEffect(() => {
     if (!isNativeAndroid() || bootstrappedRef.current) return;
     bootstrappedRef.current = true;
@@ -38,13 +44,22 @@ export function useDeviceNotificationBridge(): void {
 
   useEffect(() => {
     if (!pending) return;
-    const url = resolveAgentDeepLink(pending.action_url);
+    const clickPayload: NotificationClickPayload = {
+      notification_id: pending.notification_id,
+      type: pending.type,
+      action_url: pending.action_url,
+      action_route: pending.action_route ?? null,
+      reference_type: pending.reference_type ?? null,
+      reference_id: pending.reference_id ?? null,
+      metadata: pending.metadata ?? null,
+    };
 
     const payload = {
       title: pending.title || 'New notification',
       body: pending.message || '',
       tag: `inbox-${pending.notification_id}`,
-      url,
+      url: resolveNotificationTargetFromPayload(clickPayload),
+      payload: clickPayload,
     };
 
     void (async () => {

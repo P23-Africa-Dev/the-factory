@@ -92,7 +92,7 @@ const BLANK_ICP_CONFIG: IcpConfig = {
   industries: ["FMCG & Retail"],
   companySizes: ["51-200"],
   revenueRanges: ["$1M - $10M"],
-  territories: ["Lagos, Nigeria"],
+  territories: ["London, England"],
   companyLocations: [],
   decisionMakers: ["Head of Sales"],
   minMatchScore: 60,
@@ -169,14 +169,15 @@ const AVAILABLE_REVENUE_RANGES = [
 ];
 
 const AVAILABLE_TERRITORIES = [
+  "London, England",
+  "Manchester, England",
+  "Berlin, Germany",
+  "Amsterdam, Netherlands",
   "Lagos, Nigeria",
   "Abuja, Nigeria",
   "Nairobi, Kenya",
   "Accra, Ghana",
   "Johannesburg, South Africa",
-  "London, England",
-  "Berlin, Germany",
-  "Amsterdam, Netherlands",
 ];
 
 const AVAILABLE_DECISION_MAKERS = [
@@ -1302,7 +1303,7 @@ export function IcpBuilderModal({
                       onBlur={() =>
                         setTouchedFields((prev) => ({ ...prev, description: true }))
                       }
-                      placeholder="e.g. Clients for our KYC API among Lagos fintechs · Reliable cocoa bean suppliers in Ghana · Investors for our agritech startup…"
+                      placeholder="e.g. Clients for our KYC API among London fintechs · Reliable cocoa bean suppliers in Ghana · Investors for our agritech startup…"
                       className={`w-full rounded-xl border px-4 py-2.5 text-[12px] text-[#09232D] outline-none transition-all placeholder:text-gray-400 ${
                         showDescriptionError
                           ? "border-red-400 bg-red-50/20 focus:border-red-500 focus:ring-2 focus:ring-red-500/10"

@@ -53,6 +53,8 @@ class PhaseFiveCopilotService
             ],
         );
 
+        $transcript = is_string($transcriptResult?->text) ? trim($transcriptResult->text) : '';
+
         return [
             'company_id' => $resolvedCompanyId,
             'role' => (string) $context['role'],
@@ -60,9 +62,32 @@ class PhaseFiveCopilotService
             'file_name' => (string) $audio->getClientOriginalName(),
             'mime_type' => (string) ($audio->getMimeType() ?? 'application/octet-stream'),
             'size_bytes' => (int) $audio->getSize(),
-            'transcript' => $transcriptResult?->text
-                ?? 'Voice transcription pipeline is active. Provider transcription integration can now be attached to this endpoint.',
+            'transcript' => $transcript,
+            // No placeholder text: when transcription fails the frontend shows
+            // this real reason instead of inserting fake text into the chat.
+            'transcribed' => $transcript !== '',
+            'error' => $transcript !== '' ? null : $this->voiceErrorMessage($transcriptResult),
+            'error_code' => $transcript !== '' ? null : ($transcriptResult?->errorClass ?? 'transcription_failed'),
         ];
+    }
+
+    /**
+     * A message the person in the chat can act on. The provider's raw error is
+     * kept in /admin/ai/logs and the application log.
+     */
+    private function voiceErrorMessage(?\App\Services\AI\Providers\AiGenerationResult $result): string
+    {
+        return match ($result?->errorClass) {
+            'quota_exceeded' => 'Voice input is unavailable right now: the speech-to-text service has run out of credit. Please type your message for now, and let your administrator know.',
+            'auth_failed' => 'Voice input is unavailable right now: the speech-to-text service is not authorised. Please type your message for now, and let your administrator know.',
+            'not_configured' => 'Voice input is not set up yet. Please type your message for now.',
+            'rate_limited' => 'Too many voice requests at the moment. Please try again in a minute.',
+            'timeout', 'unreachable', 'provider_error' => 'The speech-to-text service did not respond. Please try again.',
+            'empty_audio' => 'The recording was empty. Check that your microphone is working and try again.',
+            'unsupported_format' => 'This audio format could not be transcribed. Please record with the microphone button, or upload a WAV or MP3 file.',
+            'empty_transcript' => 'No speech was detected. Speak a little closer to the microphone and try again.',
+            default => 'The audio could not be transcribed. Please try again.',
+        };
     }
 
     public function analyzeFile(User $user, UploadedFile $file, ?int $companyId = null): array

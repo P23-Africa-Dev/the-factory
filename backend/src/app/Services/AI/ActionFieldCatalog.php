@@ -81,6 +81,14 @@ final class ActionFieldCatalog
                 ],
                 'required' => ['name', 'objective', 'target_value', 'expected_outcome'],
             ],
+            'kpis.update' => [
+                'editable' => [
+                    'kpi_id', 'name', 'objective', 'target_value', 'expected_outcome',
+                    'priority', 'start_date', 'end_date', 'assigned_to_user_id',
+                ],
+                'preview' => ['kpi_id', 'name', 'target_value', 'priority', 'end_date', 'assigned_to_user_id'],
+                'required' => ['kpi_id'],
+            ],
             'org.users.create' => [
                 'editable' => [
                     'full_name', 'email', 'role', 'assigned_zone_ids', 'work_days',
@@ -107,7 +115,8 @@ final class ActionFieldCatalog
 
     public static function label(string $field): string
     {
-        return self::labels()[$field] ?? str_replace('_', ' ', $field);
+        // e.g. "supervisor_user_id" -> "Supervisor user", "assigned_zone_ids" -> "Assigned zone"
+        return self::labels()[$field] ?? ucfirst(str_replace('_', ' ', (string) preg_replace('/_ids?$/', '', $field)));
     }
 
     /**
@@ -146,6 +155,7 @@ final class ActionFieldCatalog
             'phone' => 'Phone',
             'objective' => 'Objective',
             'target_value' => 'Target value',
+            'kpi_id' => 'KPI',
             'expected_outcome' => 'Expected outcome',
             'start_at' => 'Start',
             'end_at' => 'End',

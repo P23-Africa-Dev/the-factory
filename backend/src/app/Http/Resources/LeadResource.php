@@ -28,6 +28,7 @@ class LeadResource extends JsonResource
             'contacts' => LeadContactResource::collection($this->whenLoaded('contacts')),
             'company_name' => $this->company_name,
             'company_email' => $this->company_email,
+            'industry' => $this->industry,
             'website' => $this->website,
             'position' => $this->position,
             'profile_urls' => $this->profile_urls ?? [],
@@ -37,7 +38,7 @@ class LeadResource extends JsonResource
             'budget_amount' => $this->budget_amount !== null ? (float) $this->budget_amount : null,
             'budget_currency' => $this->budget_currency,
             'budget' => $this->budget_amount !== null
-                ? trim(($this->budget_currency ?? 'USD').' '.number_format((float) $this->budget_amount, 2, '.', ''))
+                ? trim(($this->budget_currency ?? 'GBP').' '.number_format((float) $this->budget_amount, 2, '.', ''))
                 : null,
             'next_action' => $this->next_action,
             'last_interaction' => $this->last_interaction,

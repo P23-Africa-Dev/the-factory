@@ -56,6 +56,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ElyActionReceipts, receiptsFromPayload } from "@/components/ely/action-receipts";
+import { InlineVoiceRecorder } from "@/components/ely/inline-voice-recorder";
+import { ImportLeadsButton } from "@/components/ely/import-leads-button";
+import { AgentConfirmationCard, agentConfirmationFromPayload, usesAgentCard } from "@/components/ely/agent-confirmation-card";
 import { resolveAvatarSrc } from "@/lib/avatar";
 
 type MessageAction = "liked" | "disliked" | null;
@@ -371,6 +375,10 @@ export function AIChat({ open, onClose }: AIChatProps) {
     runTranscriptSummary,
     loadForecastOverview,
     searchAssignees,
+    undoAction,
+    attachFile,
+    confirmAction,
+    cancelAction,
   } = useCopilotChat();
 
   const canAnalyzeFile = user?.access_role ? user.access_role !== "agent" : true;
@@ -1214,8 +1222,18 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const merged: Record<string, unknown> = { ...baseArgs, ...draft };
 
       if (Object.prototype.hasOwnProperty.call(draft, "base_salary")) {
-        const salary = Number(String(draft.base_salary ?? "").trim());
-        merged.base_salary = Number.isFinite(salary) ? salary : 0;
+        const raw = String(draft.base_salary ?? "").trim();
+        if (raw === "") {
+          // Leave blank = not configured (do not invent 0).
+          delete merged.base_salary;
+        } else {
+          const salary = Number(raw);
+          if (Number.isFinite(salary) && salary >= 0) {
+            merged.base_salary = salary;
+          } else {
+            delete merged.base_salary;
+          }
+        }
       }
 
       if (Object.prototype.hasOwnProperty.call(draft, "commission_enabled")) {
@@ -1226,10 +1244,15 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const workDaysSource = Object.prototype.hasOwnProperty.call(draft, "work_days")
         ? String(draft.work_days ?? "")
         : (Array.isArray(baseArgs.work_days) ? baseArgs.work_days.join(",") : String(baseArgs.work_days ?? ""));
-      merged.work_days = workDaysSource
+      const workDays = workDaysSource
         .split(",")
         .map((item) => item.trim().toLowerCase())
         .filter((item) => item !== "");
+      if (workDays.length > 0) {
+        merged.work_days = workDays;
+      } else {
+        delete merged.work_days;
+      }
 
       const zoneIdsSource = Object.prototype.hasOwnProperty.call(draft, "assigned_zone_ids")
         ? String(draft.assigned_zone_ids ?? "")
@@ -2212,6 +2235,14 @@ export function AIChat({ open, onClose }: AIChatProps) {
     submitConfirmedAction(index, msg);
   }
 
+  // Agent engine: a plain "Cancel" withdraws the action waiting for confirmation.
+  function handleCancelAction() {
+    void sendCopilotMessage({
+      message: "Cancel",
+      companyId: companyId ?? undefined,
+    });
+  }
+
   function handleEditActionDetails(index: number) {
     const priorPrompt = findActionContextForConfirm(index);
     if (!priorPrompt.trim()) return;
@@ -2356,7 +2387,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
       const result = await runVoiceTranscription(file, companyId ?? undefined);
       const transcript = String(result?.transcript ?? "").trim();
       if (!transcript) {
-        throw new Error("No speech was detected in this recording. Try a clearer voice note.");
+        throw new Error(String(result?.error ?? "No speech was detected in this recording. Try a clearer voice note."));
       }
       setVoiceTranscript(transcript);
       setVoiceTranscriptSummary(`Transcript from: ${file.name}`);
@@ -3264,6 +3295,18 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     >
                       <span className="inline-flex items-center gap-1"><FileAudio className="h-3.5 w-3.5" /> {isVoiceTranscriptionLoading ? "Processing…" : "Voice Input"}</span>
                     </button>
+                    <ImportLeadsButton
+                      disabled={isRunningQuickAction || isStreaming}
+                      onAttach={(file) => attachFile(file, companyId ?? undefined)}
+                      onAttached={(attachment) =>
+                        void sendCopilotMessage({
+                          message: `Import the leads in ${attachment.name}`,
+                          companyId: companyId ?? undefined,
+                          context: { attachment: { id: attachment.id, name: attachment.name } },
+                        })
+                      }
+                      onError={(message) => toast.error(message)}
+                    />
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isRunningQuickAction || isStreaming}
@@ -3393,7 +3436,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
                           ))}
                         </div>
                       )}
-                      {messagePayload(msg)?.confirmation_required === true && index === messages.length - 1 && (
+                      {(() => {
+                        const agentCard = usesAgentCard(msg.payload) ? agentConfirmationFromPayload(msg.payload) : null;
+                        if (!agentCard || index !== messages.length - 1) return null;
+                        const report = (err: unknown) => {
+                          toast.error(err instanceof Error ? err.message : "Could not complete that.");
+                          return null;
+                        };
+                        return (
+                          <AgentConfirmationCard
+                            payload={agentCard}
+                            disabled={isStreaming}
+                            onConfirm={(pendingId, edits) => confirmAction(pendingId, edits, companyId ?? undefined).catch(report)}
+                            onCancel={(pendingId) => cancelAction(pendingId, companyId ?? undefined).catch(report)}
+                          />
+                        );
+                      })()}
+                      {messagePayload(msg)?.confirmation_required === true && !usesAgentCard(msg.payload) && index === messages.length - 1 && (
                         <div className="pl-1">
                           {(() => {
                             const previewRows = confirmationPreviewRows(msg);
@@ -3653,8 +3712,33 @@ export function AIChat({ open, onClose }: AIChatProps) {
                             >
                               Confirm Action
                             </button>
+                            {messagePayload(msg)?.engine === "agent" && (
+                              <button
+                                onClick={() => handleCancelAction()}
+                                disabled={isStreaming}
+                                className="rounded-full border border-white/20 px-3 py-2 text-[11px] font-semibold text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                            )}
                           </div>
                         </div>
+                      )}
+
+                      {msg.role === "assistant" && (
+                        <ElyActionReceipts
+                          receipts={receiptsFromPayload(msg.payload)}
+                          isAgent={isAgent}
+                          disabled={isStreaming}
+                          onUndo={async (auditId) => {
+                            try {
+                              return await undoAction(auditId, companyId ?? undefined);
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Could not undo that action.");
+                              return null;
+                            }
+                          }}
+                        />
                       )}
 
                       {/* Actions */}
@@ -3723,7 +3807,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
 
             {/* Bottom input */}
             <div className="px-6 pb-6 pt-3 flex-shrink-0">
-              <div className="flex items-center gap-2 bg-[#DCE0E1] rounded-[40px] p-1.5 pl-4 shadow-lg">
+              <div className="relative flex items-center gap-2 bg-[#DCE0E1] rounded-[40px] p-1.5 pl-4 shadow-lg">
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="w-8 h-8 flex items-center justify-center text-[#091519] hover:text-black transition-colors flex-shrink-0"
@@ -3741,6 +3825,23 @@ export function AIChat({ open, onClose }: AIChatProps) {
                     className="flex-1 bg-transparent text-[#091519] text-[14px] placeholder:text-[#091519]/60 font-medium outline-none min-w-0"
                   />
                 </div>
+                {/* Voice dictation — always available, to the right of the input. */}
+                <InlineVoiceRecorder
+                  disabled={isStreaming}
+                  onTranscribe={async (file) => {
+                    const result = await runVoiceTranscription(file, companyId ?? undefined);
+                    const transcript = String(result?.transcript ?? "").trim();
+                    if (!transcript) {
+                      throw new Error(String(result?.error ?? "No speech was detected. Try again, closer to the microphone."));
+                    }
+                    return transcript;
+                  }}
+                  onTranscribed={(text) => {
+                    setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+                    setTimeout(() => inputRef.current?.focus(), 0);
+                  }}
+                  onError={(message) => toast.error(message)}
+                />
                 {input.trim() && (
                   <button
                     onClick={() => sendMessage()}
@@ -3767,7 +3868,7 @@ export function AIChat({ open, onClose }: AIChatProps) {
           isOpen={showCreateZoneModal}
           onClose={() => setShowCreateZoneModal(false)}
           companyId={companyId}
-          defaultCountry="NG"
+          defaultCountry="GB"
         />
       ) : null}
     </>

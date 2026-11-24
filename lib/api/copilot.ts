@@ -2,6 +2,7 @@
 
 import { API_BASE_URL, apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
 import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
+import type { ElyPageContext } from "@/lib/ely/page-context";
 
 export type CopilotSource = string;
 
@@ -62,6 +63,9 @@ export type CopilotChatContext = {
     longitude?: number;
     focus?: "all" | "visits" | "followups" | "tasks";
     limit?: number;
+    page?: ElyPageContext;
+    /** A file attached in the chat for this message (agent engine). */
+    attachment?: { id: string; name: string };
 };
 
 export type CopilotChatRequest = {
@@ -94,6 +98,8 @@ export type CopilotChatResponse = {
 
 export type StreamEventProcessing = {
     label: string;
+    /** "tool" when the agent engine reports the tool it is running right now. */
+    source?: "tool";
 };
 
 export type StreamEventMeta = {
@@ -301,6 +307,71 @@ export function sendCopilotMessage(
             ...payload,
             stream: false,
         },
+        token,
+    });
+}
+
+export type CopilotAttachment = { id: string; name: string; rows: number };
+
+/** Attach a CSV to the ELY chat (e.g. a lead list to import). */
+export function attachCopilotFile(
+    file: File,
+    token: string,
+    companyId?: number | string
+): Promise<ApiEnvelope<{ attachment: CopilotAttachment }>> {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (companyId !== undefined && companyId !== null) {
+        formData.append("company_id", String(companyId));
+    }
+
+    return apiRequest<{ attachment: CopilotAttachment }>({
+        method: "POST",
+        path: "/copilot/attachments",
+        body: formData,
+        token,
+    });
+}
+
+/** Confirm an action ELY prepared (agent engine), with any edits from the card. */
+export function confirmCopilotAction(
+    pendingId: string,
+    actionArgs: Record<string, unknown>,
+    token: string,
+    companyId?: number | string
+): Promise<ApiEnvelope<CopilotChatResponse>> {
+    return apiRequest<CopilotChatResponse>({
+        method: "POST",
+        path: `/copilot/actions/${encodeURIComponent(pendingId)}/confirm`,
+        body: { company_id: companyId, action_args: actionArgs },
+        token,
+    });
+}
+
+/** Cancel an action ELY prepared (agent engine). */
+export function cancelCopilotAction(
+    pendingId: string,
+    token: string,
+    companyId?: number | string
+): Promise<ApiEnvelope<CopilotChatResponse>> {
+    return apiRequest<CopilotChatResponse>({
+        method: "POST",
+        path: `/copilot/actions/${encodeURIComponent(pendingId)}/cancel`,
+        body: { company_id: companyId },
+        token,
+    });
+}
+
+/** Undo an action ELY ran (agent engine). Returns the assistant reply to show. */
+export function undoCopilotAction(
+    auditId: number,
+    token: string,
+    companyId?: number | string
+): Promise<ApiEnvelope<CopilotChatResponse>> {
+    return apiRequest<CopilotChatResponse>({
+        method: "POST",
+        path: `/copilot/actions/undo/${encodeURIComponent(String(auditId))}`,
+        body: { company_id: companyId },
         token,
     });
 }

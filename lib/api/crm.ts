@@ -15,6 +15,8 @@ export type LeadContact = {
     email?: string | null;
     phone?: string | null;
     location?: string | null;
+    position?: string | null;
+    profile_urls?: string[] | null;
     sort_order?: number;
 };
 
@@ -71,6 +73,7 @@ export type LeadApiItem = {
     contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -121,6 +124,7 @@ export type ListLeadsParams = {
     /** ISO instants bounding when the lead was added (inclusive). */
     created_from?: string;
     created_to?: string;
+    industry?: string;
     per_page?: number;
     page?: number;
     uncategorized?: boolean;
@@ -139,11 +143,14 @@ export type PipelineStage = {
     status: ApiLeadStatus;
     name?: string;
     color?: string;
+    is_won?: boolean;
     count: number;
 };
 
 export type PipelineSnapshot = {
     total: number;
+    /** Leads whose status matches no current label (stages + uncategorized = total). */
+    uncategorized?: number;
     stages: PipelineStage[];
 };
 
@@ -157,6 +164,7 @@ export type CreateLeadPayload = {
     contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -183,6 +191,7 @@ export type UpdateLeadPayload = {
     contacts?: LeadContact[];
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[] | null;
@@ -231,6 +240,8 @@ export type CrmLabel = {
     color: string;
     sort_order: number;
     is_default: boolean;
+    /** Leads in this stage count as won/converted. */
+    is_won?: boolean;
 };
 
 export type LeadFieldType =
@@ -303,8 +314,10 @@ export type ImportLeadRow = {
     phone?: string;
     location?: string;
     company_name?: string;
+    company_email?: string;
     website?: string;
     position?: string;
+    industry?: string;
     profile_urls?: string | string[];
     source?: string;
     status?: string;
@@ -332,7 +345,7 @@ export function formatLeadBudgetDisplay(
     if (amount <= 0) {
         return "$ 0";
     }
-    const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "USD";
+    const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "GBP";
     return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
@@ -340,6 +353,10 @@ export type FailedImportRow = {
     row_index: number;
     data: ImportLeadRow;
     errors: string[];
+    /** The same problems keyed by field ("email", "custom_fields.region"). */
+    field_errors?: Record<string, string>;
+    /** Failed on our side, not because of the row's values. */
+    server_error?: boolean;
 };
 
 export type SkippedImportRow = {
@@ -361,8 +378,10 @@ export type ImportLeadsResult = {
 export type ImportPreviewDuplicateRow = {
     row_index: number;
     data: ImportLeadRow;
-    existing_lead_id: number;
+    existing_lead_id: number | null;
     existing_lead_name: string;
+    /** Duplicate of an earlier row in the same file. */
+    in_file?: boolean;
 };
 
 export type ImportPreviewResult = {
@@ -378,6 +397,8 @@ export type ImportLeadsPayload = {
     pipeline_id: number | string;
     rows: ImportLeadRow[];
     duplicate_policy?: DuplicatePolicy;
+    /** Position of this batch in the original file, so row numbers match the file. */
+    row_offset?: number;
 };
 
 export type ExportLeadsParams = {
@@ -389,6 +410,10 @@ export type ExportLeadsParams = {
     pipeline_id?: number | string;
     source?: string;
     assigned_to_user_id?: number | string;
+    created_by_user_id?: number | string;
+    created_from?: string;
+    created_to?: string;
+    industry?: string;
     lead_ids?: Array<number | string>;
 };
 
@@ -420,6 +445,8 @@ export type CrmDailyTrendPoint = {
 
 export type CrmLeadsAnalytics = {
     total_leads: number;
+    /** Sum of budget_amount for the leads in scope (currencies not converted). */
+    budget_total?: number;
     week_growth_percent: number;
     week_growth_direction: "up" | "down" | "flat";
     daily_trend: CrmDailyTrendPoint[];
@@ -438,6 +465,8 @@ export type CrmLeadsAnalyticsParams = Pick<
     | "created_by_user_id"
     | "created_from"
     | "created_to"
+    | "assigned_to_user_id"
+    | "industry"
 >;
 
 function buildQuery(params: Record<string, string | number | undefined>) {
@@ -487,6 +516,7 @@ export function listLeads(
         created_by_user_id: params.created_by_user_id,
         created_from: params.created_from,
         created_to: params.created_to,
+        industry: params.industry,
         per_page: params.per_page,
         page: params.page,
         uncategorized: params.uncategorized ? 1 : undefined,
@@ -547,6 +577,7 @@ export type LeadMergeSnapshot = {
     location?: string | null;
     company_name?: string | null;
     company_email?: string | null;
+    industry?: string | null;
     website?: string | null;
     position?: string | null;
     profile_urls?: string[];
@@ -638,6 +669,26 @@ export function deleteLead(
     });
 }
 
+export type BulkDeleteLeadsResult = {
+    deleted_ids: number[];
+    failed: Array<{ id: number; message: string }>;
+};
+
+/** Delete many leads at once; failures are reported per lead. */
+export function bulkDeleteLeads(
+    leadIds: Array<number | string>,
+    companyId: number | string | undefined,
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<BulkDeleteLeadsResult>> {
+    return apiRequest<BulkDeleteLeadsResult>({
+        method: "POST",
+        path: withBase(basePath, "/crm/leads/bulk-delete"),
+        body: { company_id: companyId, lead_ids: leadIds.map(Number) },
+        token,
+    });
+}
+
 export function getLeadPipeline(
     params: Pick<ListLeadsParams, "company_id">,
     token: string,
@@ -694,7 +745,7 @@ export function listCrmPipelines(
 }
 
 export function createCrmPipeline(
-    payload: { company_id: number | string; name: string },
+    payload: { company_id: number | string; name: string; currency_code?: string },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
@@ -708,7 +759,7 @@ export function createCrmPipeline(
 
 export function updateCrmPipeline(
     pipelineId: number | string,
-    payload: { company_id?: number | string; name?: string; sort_order?: number },
+    payload: { company_id?: number | string; name?: string; sort_order?: number; currency_code?: string },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ pipeline: CrmPipeline }>> {
@@ -722,7 +773,11 @@ export function updateCrmPipeline(
 
 export function deleteCrmPipeline(
     pipelineId: number | string,
-    payload: { company_id?: number | string; force?: boolean },
+    payload: {
+        company_id?: number | string;
+        force?: boolean;
+        reassign_to_pipeline_id?: number | null;
+    },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<
@@ -805,7 +860,7 @@ export function listCrmLabels(
 }
 
 export function createCrmLabel(
-    payload: { company_id: number | string; name: string; color: string },
+    payload: { company_id: number | string; name: string; color: string; is_won?: boolean },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ label: CrmLabel }>> {
@@ -819,7 +874,7 @@ export function createCrmLabel(
 
 export function updateCrmLabel(
     labelId: number | string,
-    payload: { company_id?: number | string; name?: string; color?: string },
+    payload: { company_id?: number | string; name?: string; color?: string; is_won?: boolean },
     token: string,
     basePath: ApiRoleBasePath = "/admin"
 ): Promise<ApiEnvelope<{ label: CrmLabel }>> {
@@ -1021,6 +1076,8 @@ export function getCrmLeadsAnalytics(
         created_by_user_id: params.created_by_user_id,
         created_from: params.created_from,
         created_to: params.created_to,
+        assigned_to_user_id: params.assigned_to_user_id,
+        industry: params.industry,
     });
 
     return apiRequest<CrmLeadsAnalytics>({

@@ -6,8 +6,6 @@ namespace Tests\Feature\Admin;
 
 use App\Models\Admin;
 use App\Models\Company;
-use App\Models\Lead;
-use App\Models\LeadPipeline;
 use App\Models\SupportAccessSession;
 use App\Models\User;
 use App\Services\Admin\SupportAccessService;
@@ -208,7 +206,7 @@ class SupportAccessTest extends TestCase
         ])->assertTooManyRequests();
     }
 
-    public function test_agent_target_receives_company_wide_management_data(): void
+    public function test_agent_target_keeps_agent_role_and_agent_api_scope(): void
     {
         [$admin, $target, $company] = $this->fixtures();
         $target->forceFill([
@@ -220,59 +218,66 @@ class SupportAccessTest extends TestCase
             ->where('user_id', $target->id)
             ->update(['role' => 'agent']);
 
-        $owner = User::factory()->create([
-            'is_active' => true,
-            'onboarding_completed_at' => now(),
-            'email_verified_at' => now(),
-        ]);
-        DB::table('company_users')->insert([
-            'company_id' => $company->id,
-            'user_id' => $owner->id,
-            'role' => 'owner',
-            'joined_at' => now(),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $created = $this->createGrant($admin, $target, $company, 'read_only');
 
-        $pipeline = LeadPipeline::query()->create([
-            'company_id' => $company->id,
-            'name' => 'Support Visibility Pipeline',
-            'currency_code' => 'NGN',
-            'sort_order' => 0,
-            'is_default' => true,
-        ]);
-        Lead::query()->create([
-            'company_id' => $company->id,
-            'pipeline_id' => $pipeline->id,
-            'created_by_user_id' => $owner->id,
-            'assigned_to_user_id' => $owner->id,
-            'name' => 'Company Wide Lead',
-            'status' => 'newly_lead',
-            'priority' => 'medium',
-        ]);
+        $exchange = $this->postJson('/api/v1/support-access/exchange', [
+            'code' => $created['exchange_code'],
+        ])->assertOk()
+            ->assertJsonPath('data.support_session.company.role', 'agent')
+            ->assertJsonPath('data.support_session.dashboard_path', '/agent/dashboard');
 
-        $token = $this->exchangeGrant($admin, $target, $company, 'read_only');
+        $token = (string) $exchange->json('data.token');
 
         $this->withToken($token)
             ->getJson('/api/v1/user/me')
             ->assertOk()
             ->assertJsonPath('data.active_company.id', $company->id)
-            ->assertJsonPath('data.active_company.role', 'owner');
+            ->assertJsonPath('data.active_company.role', 'agent');
 
         $this->withToken($token)
-            ->getJson('/api/v1/admin/dashboard/overview?company_id=999999')
-            ->assertOk()
-            ->assertJsonPath('data.kpis.total_leads', 1);
+            ->getJson('/api/v1/admin/crm/leads')
+            ->assertForbidden();
 
         $this->withToken($token)
-            ->getJson('/api/v1/admin/crm/leads?company_id=999999')
-            ->assertOk()
-            ->assertJsonPath('data.pagination.total', 1)
-            ->assertJsonPath('data.items.0.name', 'Company Wide Lead');
-
-        $this->withToken($token)
-            ->getJson('/api/v1/admin/internal-users?company_id=999999')
+            ->getJson('/api/v1/agent/tasks')
             ->assertOk();
+    }
+
+    public function test_supervisor_target_keeps_supervisor_role_and_management_api_scope(): void
+    {
+        [$admin, $target, $company] = $this->fixtures();
+        $target->forceFill([
+            'internal_role' => 'supervisor',
+            'internal_onboarding_completed_at' => now(),
+        ])->save();
+        DB::table('company_users')
+            ->where('company_id', $company->id)
+            ->where('user_id', $target->id)
+            ->update(['role' => 'supervisor']);
+
+        $created = $this->createGrant($admin, $target, $company, 'read_only');
+
+        $exchange = $this->postJson('/api/v1/support-access/exchange', [
+            'code' => $created['exchange_code'],
+        ])->assertOk()
+            ->assertJsonPath('data.support_session.company.role', 'supervisor')
+            ->assertJsonPath('data.support_session.dashboard_path', '/dashboard');
+
+        $token = (string) $exchange->json('data.token');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/user/me')
+            ->assertOk()
+            ->assertJsonPath('data.active_company.id', $company->id)
+            ->assertJsonPath('data.active_company.role', 'supervisor');
+
+        $this->withToken($token)
+            ->getJson('/api/v1/admin/crm/leads')
+            ->assertOk();
+
+        $this->withToken($token)
+            ->getJson('/api/v1/agent/tasks')
+            ->assertForbidden();
     }
 
     public function test_removed_company_membership_revokes_active_support_session(): void

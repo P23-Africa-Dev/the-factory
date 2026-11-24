@@ -23,6 +23,8 @@ import {
 
 interface TaskCardProps {
   item: DndItem;
+  /** Managers may move tasks they only observe; agents may not. */
+  observerDragAllowed?: boolean;
   checklistUserId?: string;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onAddSubtask?: (taskId: string, title: string) => void;
@@ -31,9 +33,49 @@ interface TaskCardProps {
   onViewMap?: (item: DndItem) => void;
   onEdit?: (item: DndItem) => void;
   onDelete?: (item: DndItem) => void;
+  /** True when the viewer may not move cards between columns (agents). */
+  dragDisabled?: boolean;
 }
 
-export function TaskCard({
+type CardDnd = {
+  setNodeRef?: (el: HTMLElement | null) => void;
+  style?: React.CSSProperties;
+  attributes?: Record<string, unknown>;
+  listeners?: Record<string, unknown>;
+  isDragging?: boolean;
+};
+
+/** Sortable card on the board. */
+export function TaskCard(props: TaskCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.item.id,
+    // Agent observers follow a task but cannot move it between status columns.
+    // Managers (owner/admin/supervisor) may move any task, observed or not.
+    disabled:
+      Boolean(props.dragDisabled) ||
+      (Boolean(props.item.isObserver) && !props.observerDragAllowed),
+  });
+
+  return (
+    <TaskCardView
+      {...props}
+      dnd={{
+        setNodeRef,
+        style: { transform: CSS.Transform.toString(transform), transition },
+        attributes: attributes as unknown as Record<string, unknown>,
+        listeners: (listeners ?? {}) as Record<string, unknown>,
+        isDragging,
+      }}
+    />
+  );
+}
+
+/**
+ * Presentational card. The board's DragOverlay renders this directly: a second
+ * useSortable with the dragged card's id made dnd-kit resolve drops onto the card
+ * itself, so moves between columns were silently lost.
+ */
+export function TaskCardView({
   item,
   onClick,
   onViewMap,
@@ -43,29 +85,20 @@ export function TaskCard({
   onToggleSubtask,
   onAddSubtask,
   onReorderSubtasks,
-}: TaskCardProps) {
+  dnd,
+}: TaskCardProps & { dnd?: CardDnd }) {
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
   const [subtaskDraft, setSubtaskDraft] = useState('');
   const subtaskInputRef = useRef<HTMLInputElement | null>(null);
+  // Read the clock once per mount: rendering must stay pure.
+  const [now] = useState(() => Date.now());
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: item.id,
-    // Observers follow a task but cannot move it between status columns.
-    disabled: Boolean(item.isObserver),
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const setNodeRef = dnd?.setNodeRef;
+  const style = dnd?.style;
+  const attributes = dnd?.attributes ?? {};
+  const listeners = dnd?.listeners ?? {};
+  const isDragging = dnd?.isDragging ?? false;
 
   const isFallbackLocation =
     !item.location ||
@@ -94,7 +127,6 @@ export function TaskCard({
   }
 
   const createdAt = item.createdAt ? Date.parse(item.createdAt) : NaN;
-  const now = Date.now();
   let creationAge = item.time;
   if (Number.isFinite(createdAt)) {
     const elapsed = now - createdAt;

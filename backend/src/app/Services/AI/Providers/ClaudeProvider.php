@@ -32,7 +32,7 @@ class ClaudeProvider implements AiProviderContract
         }
 
         $timeoutMs = (int) config('services.ai.request_timeout_ms', 30000);
-        $baseUrl = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
+        $baseUrl = ClaudeModelResolver::baseUrl();
 
         $configuredMaxTokens = max(64, (int) config('services.ai.max_tokens', 4000));
         $requestedMaxTokens = (int) ($options['max_tokens'] ?? $configuredMaxTokens);

@@ -20,6 +20,10 @@ return [
     'api_per_minute' => (int) env('RATE_LIMIT_API_PER_MINUTE', 300),
     'api_heavy_per_minute' => (int) env('RATE_LIMIT_API_HEAVY_PER_MINUTE', 600),
 
+    // ELY (AI assistant) requests that call an LLM, per user.
+    'ely_per_minute' => (int) env('RATE_LIMIT_ELY_PER_MINUTE', 20),
+    'ely_per_day' => (int) env('RATE_LIMIT_ELY_PER_DAY', 400),
+
     /*
     |--------------------------------------------------------------------------
     | Abuse-sensitive public/auth endpoints (always per IP)

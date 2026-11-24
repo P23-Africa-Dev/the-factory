@@ -39,6 +39,18 @@ return [
     // Ops alert: tracking:health --fail-on-alert exits 1 when abandoned open sessions exceed this.
     'health_abandoned_alert_threshold' => (int) env('TASK_TRACKING_HEALTH_ABANDONED_ALERT_THRESHOLD', 50),
 
+    // Realtime relay monitoring (tracking:health). Null URL = relay check skipped.
+    'realtime_health_url' => env('TRACKING_REALTIME_HEALTH_URL'),
+    'realtime_health_timeout_seconds' => (int) env('TRACKING_REALTIME_HEALTH_TIMEOUT_SECONDS', 3),
+    // Alert when the relay saw more failed socket logins than this in its 15-min window.
+    'health_relay_auth_failures_alert_threshold' => (int) env('TRACKING_HEALTH_RELAY_AUTH_FAILURES_ALERT_THRESHOLD', 50),
+    // Optional: comma-separated emails that receive tracking alerts (tracking:health --notify).
+    'alert_emails' => array_values(array_filter(array_map('trim', explode(',', (string) env('TRACKING_ALERT_EMAILS', ''))))),
+    // Mailer used for alert emails (e.g. "smtp"); null = the app's default mailer.
+    'alert_mailer' => env('TRACKING_ALERT_MAILER'),
+    // Minimum minutes between repeat alert emails for the same alert.
+    'alert_cooldown_minutes' => (int) env('TRACKING_ALERT_COOLDOWN_MINUTES', 60),
+
     // Anti-spoof / clock-skew guards for client-supplied recorded_at values.
     'max_recorded_at_future_skew_seconds' => (int) env('TASK_TRACKING_MAX_RECORDED_AT_FUTURE_SKEW_SECONDS', 120),
     'max_recorded_at_past_skew_seconds' => (int) env('TASK_TRACKING_MAX_RECORDED_AT_PAST_SKEW_SECONDS', 86400),

@@ -212,7 +212,14 @@ class KpiService
         }
 
         $current = $kpi->status?->value;
-        $this->assertAgentStatusTransition($current, $status);
+        // Agents may drag KPI cards to any status column, matching the task board.
+        // As on the task board, only a manager can reopen a cancelled card.
+        if ($current === KpiStatus::CANCELLED->value && $status !== $current) {
+            throw ValidationException::withMessages([
+                'status' => ['Cancelled KPIs can only be reopened by a manager.'],
+            ]);
+        }
+        $this->assertManagerStatusTransition($current, $status);
 
         if ($current !== $status) {
             $kpi->update($this->buildStatusUpdatePayload($kpi, $user->id, $status));
@@ -330,36 +337,6 @@ class KpiService
         return $context->isAgent() && (int) $kpi->assigned_to_user_id === (int) $user->id;
     }
 
-    private function assertAgentStatusTransition(?string $currentStatus, string $nextStatus): void
-    {
-        if ($currentStatus === null) {
-            throw ValidationException::withMessages([
-                'status' => ['KPI status is not initialized.'],
-            ]);
-        }
-
-        if ($currentStatus === $nextStatus) {
-            return;
-        }
-
-        if (in_array($currentStatus, [KpiStatus::COMPLETED->value, KpiStatus::CANCELLED->value], true)) {
-            throw ValidationException::withMessages([
-                'status' => ['Completed or cancelled KPIs cannot be changed by agents.'],
-            ]);
-        }
-
-        $allowed = [
-            KpiStatus::PENDING->value => [KpiStatus::IN_PROGRESS->value, KpiStatus::CANCELLED->value],
-            KpiStatus::IN_PROGRESS->value => [KpiStatus::COMPLETED->value, KpiStatus::CANCELLED->value],
-        ];
-
-        if (! in_array($nextStatus, $allowed[$currentStatus] ?? [], true)) {
-            throw ValidationException::withMessages([
-                'status' => ['Invalid KPI status transition.'],
-            ]);
-        }
-    }
-
     private function assertManagerStatusTransition(?string $currentStatus, string $nextStatus): void
     {
         if ($currentStatus === null) {
@@ -368,20 +345,11 @@ class KpiService
             ]);
         }
 
-        if ($currentStatus === $nextStatus) {
-            return;
-        }
-
-        $allowed = [
-            KpiStatus::PENDING->value => [KpiStatus::IN_PROGRESS->value, KpiStatus::CANCELLED->value],
-            KpiStatus::IN_PROGRESS->value => [KpiStatus::PENDING->value, KpiStatus::COMPLETED->value, KpiStatus::CANCELLED->value],
-            KpiStatus::COMPLETED->value => [KpiStatus::IN_PROGRESS->value, KpiStatus::PENDING->value],
-            KpiStatus::CANCELLED->value => [KpiStatus::PENDING->value],
-        ];
-
-        if (! in_array($nextStatus, $allowed[$currentStatus] ?? [], true)) {
+        // Managers may move a KPI between any two statuses, including reopening
+        // completed or cancelled KPIs (the payload builder clears their timestamps).
+        if (! in_array($nextStatus, KpiStatus::values(), true)) {
             throw ValidationException::withMessages([
-                'status' => ['Invalid KPI status transition.'],
+                'status' => ['Invalid KPI status.'],
             ]);
         }
     }

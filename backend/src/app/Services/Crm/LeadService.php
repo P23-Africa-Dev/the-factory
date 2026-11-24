@@ -13,6 +13,7 @@ use App\Models\LeadLabel;
 use App\Models\LeadNote;
 use App\Models\LeadPipeline;
 use App\Models\User;
+use App\Services\Analytics\AggregateCacheService;
 use App\Services\Company\CompanyContextService;
 use App\Services\Security\SecurityAuditLogger;
 use App\Services\Notification\NotificationService;
@@ -35,13 +36,16 @@ use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 class LeadService
 {
     private const LEAD_EXPORT_HEADERS = [
+        'Lead ID',
         'Name',
         'Email',
         'Phone',
         'Location',
         'Company Name',
+        'Company Email',
         'Website',
         'Position',
+        'Industry',
         'Profile URLs',
         'Source',
         'Status',
@@ -50,6 +54,7 @@ class LeadService
         'Budget Currency',
         'Pipeline',
         'Assigned To',
+        'Created By',
         'Created At',
         'Updated At',
     ];
@@ -59,6 +64,7 @@ class LeadService
         private readonly NotificationService $notificationService,
         private readonly MapSavedLeadBridgeService $mapSavedLeadBridgeService,
         private readonly SecurityAuditLogger $securityAudit,
+        private readonly AggregateCacheService $aggregateCache,
     ) {}
 
     public function listForUser(User $user, array $filters): Paginator
@@ -119,6 +125,9 @@ class LeadService
         }
 
         $this->assertPipelineInCompany($companyId, $pipelineId);
+        if (trim((string) ($data['status'] ?? '')) === '') {
+            $data['status'] = $this->defaultLabelSlug($companyId);
+        }
         $this->assertLabelExists($companyId, (string) $data['status']);
 
         if ($assignedToUserId !== null) {
@@ -130,7 +139,17 @@ class LeadService
             $role,
         );
 
-        $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source): Lead {
+        $contacts = $this->contactPayloads($data);
+        $primaryContact = $contacts[0] ?? null;
+
+        $lead = DB::transaction(function () use ($companyId, $pipelineId, $user, $assignedToUserId, $data, $source, $contacts, $primaryContact): Lead {
+            $position = array_key_exists('position', $data)
+                ? $this->nullableTrimmed($data['position'] ?? null)
+                : ($primaryContact['position'] ?? null);
+            $profileUrls = ! empty($data['profile_urls'])
+                ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls'])
+                : ($primaryContact['profile_urls'] ?? null);
+
             $lead = Lead::create([
                 'company_id' => $companyId,
                 'pipeline_id' => $pipelineId,
@@ -144,8 +163,9 @@ class LeadService
                 'company_name' => $data['company_name'] ?? null,
                 'company_email' => $data['company_email'] ?? null,
                 'website' => isset($data['website']) ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null,
-                'position' => $data['position'] ?? null,
-                'profile_urls' => ! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null,
+                'position' => $position,
+                'industry' => $this->nullableTrimmed($data['industry'] ?? null),
+                'profile_urls' => $profileUrls,
                 'source' => $source,
                 'status' => $data['status'],
                 'priority' => $data['priority'],
@@ -160,19 +180,21 @@ class LeadService
                 'custom_fields' => $this->resolvedCustomFields($companyId, $data, [], 'create') ?? [],
             ]);
 
-            $this->replaceContacts($lead, $this->contactPayloads($data));
+            $this->replaceContacts($lead, $contacts);
 
             return $lead;
         });
 
-        $this->notifyLeadRecipients(
-            lead: $lead,
-            actor: $user,
-            type: 'crm.lead_created',
-            title: 'New CRM lead created',
-            message: "Lead '{$lead->name}' has been created.",
-            priority: NotificationPriority::HIGH->value,
-        );
+        if (empty($data['suppress_notifications'])) {
+            $this->notifyLeadRecipients(
+                lead: $lead,
+                actor: $user,
+                type: 'crm.lead_created',
+                title: 'New CRM lead created',
+                message: "Lead '{$lead->name}' has been created.",
+                priority: NotificationPriority::HIGH->value,
+            );
+        }
 
         return $this->findForUser($user, $lead, $companyId);
     }
@@ -396,6 +418,7 @@ class LeadService
             'company_email',
             'website',
             'position',
+            'industry',
             'profile_urls',
             'next_action',
         ];
@@ -518,7 +541,7 @@ class LeadService
             }
 
             $allowedFields = $editsContacts
-                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location', 'custom_fields']
+                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location', 'industry', 'custom_fields']
                 : ['company_id', 'pipeline_id', 'status', 'custom_fields'];
             $forbiddenFields = collect(array_keys($data))
                 ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
@@ -593,7 +616,17 @@ class LeadService
             'update',
         );
 
-        $lead = DB::transaction(function () use ($lead, $data, $customFields): Lead {
+        $contacts = array_key_exists('contacts', $data) ? $this->contactPayloads($data) : null;
+        $primaryContact = $contacts[0] ?? null;
+
+        $lead = DB::transaction(function () use ($lead, $data, $customFields, $contacts, $primaryContact): Lead {
+            $position = array_key_exists('position', $data)
+                ? $this->nullableTrimmed($data['position'])
+                : ($contacts !== null ? ($primaryContact['position'] ?? null) : $lead->position);
+            $profileUrls = array_key_exists('profile_urls', $data)
+                ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
+                : ($contacts !== null ? ($primaryContact['profile_urls'] ?? null) : $lead->profile_urls);
+
             $lead->update([
                 'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
                 'assigned_to_user_id' => array_key_exists('assigned_to_user_id', $data)
@@ -608,10 +641,9 @@ class LeadService
                 'website' => array_key_exists('website', $data)
                     ? ($data['website'] !== null ? LeadFieldNormalizer::normalizeWebsite((string) $data['website']) : null)
                     : $lead->website,
-                'position' => array_key_exists('position', $data) ? $data['position'] : $lead->position,
-                'profile_urls' => array_key_exists('profile_urls', $data)
-                    ? (! empty($data['profile_urls']) ? LeadFieldNormalizer::normalizeProfileUrls($data['profile_urls']) : null)
-                    : $lead->profile_urls,
+                'position' => $position,
+                'industry' => array_key_exists('industry', $data) ? $this->nullableTrimmed($data['industry']) : $lead->industry,
+                'profile_urls' => $profileUrls,
                 'source' => array_key_exists('source', $data) ? $data['source'] : $lead->source,
                 'status' => $data['status'] ?? $lead->status,
                 'priority' => $data['priority'] ?? $lead->priority,
@@ -664,6 +696,51 @@ class LeadService
         $this->mapSavedLeadBridgeService->unlinkLeadFromLocation($lead);
         $lead->update(['company_location_id' => null]);
         $lead->delete();
+    }
+
+    /**
+     * Delete several leads; one failure doesn't stop the rest.
+     *
+     * @param  array<int, int>  $leadIds
+     * @return array{deleted_ids: array<int, int>, failed: array<int, array{id: int, message: string}>}
+     */
+    public function bulkDelete(User $user, array $leadIds, ?int $companyId = null): array
+    {
+        $context = $this->companyContextService->resolve($user, $companyId);
+        $resolvedCompanyId = (int) $context['company']->id;
+        $this->ensureCanManage((string) $context['role']);
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $leadIds), static fn(int $id): bool => $id > 0)));
+        $leads = Lead::query()
+            ->where('company_id', $resolvedCompanyId)
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+
+        $deleted = [];
+        $failed = [];
+
+        foreach ($ids as $id) {
+            $lead = $leads->get($id);
+            if ($lead === null) {
+                $failed[] = ['id' => $id, 'message' => 'Lead not found in this company.'];
+                continue;
+            }
+
+            try {
+                DB::transaction(function () use ($lead): void {
+                    $this->mapSavedLeadBridgeService->unlinkLeadFromLocation($lead);
+                    $lead->update(['company_location_id' => null]);
+                    $lead->delete();
+                });
+                $deleted[] = $id;
+            } catch (\Throwable $e) {
+                report($e);
+                $failed[] = ['id' => $id, 'message' => 'Could not delete this lead.'];
+            }
+        }
+
+        return ['deleted_ids' => $deleted, 'failed' => $failed];
     }
 
     public function addNote(User $user, Lead $lead, string $note, ?int $companyId = null): LeadNote
@@ -742,7 +819,7 @@ class LeadService
         $labels = LeadLabel::query()
             ->where('company_id', $resolvedCompanyId)
             ->orderBy('sort_order')
-            ->get(['slug', 'name', 'color']);
+            ->get(['slug', 'name', 'color', 'is_won']);
 
         $countsQuery = Lead::query()->where('company_id', $resolvedCompanyId);
         if ($role === 'agent') {
@@ -756,14 +833,18 @@ class LeadService
             ->all();
 
         $total = (int) array_sum(array_map(static fn($value): int => (int) $value, $counts));
+        $categorized = (int) $labels->sum(static fn(LeadLabel $label): int => (int) ($counts[$label->slug] ?? 0));
 
         return [
             'total' => $total,
+            // Leads whose status matches no current label; stages + uncategorized = total.
+            'uncategorized' => max(0, $total - $categorized),
             'stages' => $labels->map(static function (LeadLabel $label) use ($counts): array {
                 return [
                     'status' => $label->slug,
                     'name' => $label->name,
                     'color' => $label->color,
+                    'is_won' => (bool) $label->is_won,
                     'count' => (int) ($counts[$label->slug] ?? 0),
                 ];
             })->all(),
@@ -809,24 +890,16 @@ class LeadService
                     'total_uploads' => (int) $topUploader->total_uploads,
                 ];
             }
-        }
-
-        if ($topAgent === null) {
-            $fallbackAgent = $this->resolveFallbackAgentForUploadsOverview(
-                companyId: $resolvedCompanyId,
-                role: $role,
-                actor: $user,
-            );
-
-            if ($fallbackAgent !== null) {
-                $topAgent = [
-                    'id' => (int) $fallbackAgent->id,
-                    'name' => (string) $fallbackAgent->name,
-                    'email' => (string) $fallbackAgent->email,
-                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($fallbackAgent->avatar, $fallbackAgent->gender),
-                    'total_uploads' => 0,
-                ];
-            }
+        } elseif ($role === 'agent') {
+            // Agent CRM card is "uploaded by you" — always surface the current
+            // user's avatar even when they have zero uploads yet.
+            $topAgent = [
+                'id' => (int) $user->id,
+                'name' => (string) $user->name,
+                'email' => (string) $user->email,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($user->avatar, $user->gender),
+                'total_uploads' => 0,
+            ];
         }
 
         $recentLeads = (clone $baseQuery)
@@ -864,6 +937,7 @@ class LeadService
      * @param  array<string,mixed>  $filters
      * @return array{
      *     total_leads: int,
+     *     budget_total: float,
      *     week_growth_percent: int,
      *     week_growth_direction: string,
      *     daily_trend: array<int, array{day: string, value: int, date: string}>,
@@ -883,17 +957,20 @@ class LeadService
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
         $totalLeads = (int) (clone $query)->count();
+        // Sum of lead budgets in scope (same filters as total_leads). Currencies are not converted.
+        $budgetTotal = round((float) (clone $query)->sum('budget_amount'), 2);
 
-        $currentWeekStart = now()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
-        $currentWeekEnd = now()->endOfWeek(CarbonInterface::SUNDAY)->endOfDay();
+        $now = now();
+        $currentWeekStart = $now->copy()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
         $previousWeekStart = $currentWeekStart->copy()->subWeek();
-        $previousWeekEnd = $currentWeekEnd->copy()->subWeek();
+        // Compare like with like: this week so far vs. the same elapsed span of last week.
+        $previousWeekSameMoment = $now->copy()->subWeek();
 
         $currentWeekCreated = (int) (clone $query)
-            ->whereBetween('created_at', [$currentWeekStart, $currentWeekEnd])
+            ->whereBetween('created_at', [$currentWeekStart, $now])
             ->count();
         $previousWeekCreated = (int) (clone $query)
-            ->whereBetween('created_at', [$previousWeekStart, $previousWeekEnd])
+            ->whereBetween('created_at', [$previousWeekStart, $previousWeekSameMoment])
             ->count();
 
         if ($previousWeekCreated > 0) {
@@ -917,13 +994,14 @@ class LeadService
             4 => 'Thurs',
             5 => 'Fri',
             6 => 'Sat',
+            0 => 'Sun',
         ];
 
         $dailyTrend = [];
         $highlightDay = null;
         $highlightValue = -1;
 
-        for ($offset = 0; $offset < 6; $offset++) {
+        for ($offset = 0; $offset < 7; $offset++) {
             $day = $currentWeekStart->copy()->addDays($offset);
             $dayStart = $day->copy()->startOfDay();
             $dayEnd = $day->copy()->endOfDay();
@@ -938,7 +1016,7 @@ class LeadService
                 'date' => $day->toDateString(),
             ];
 
-            if ($value > $highlightValue) {
+            if ($value > 0 && $value > $highlightValue) {
                 $highlightValue = $value;
                 $highlightDay = $label;
             }
@@ -951,6 +1029,7 @@ class LeadService
 
         return [
             'total_leads' => $totalLeads,
+            'budget_total' => $budgetTotal,
             'week_growth_percent' => $weekGrowthPercent,
             'week_growth_direction' => $weekGrowthDirection,
             'daily_trend' => $dailyTrend,
@@ -958,25 +1037,6 @@ class LeadService
             'month_label' => now()->format('F'),
             'highlight_day' => $highlightDay,
         ];
-    }
-
-    private function resolveFallbackAgentForUploadsOverview(int $companyId, string $role, User $actor): ?User
-    {
-        if ($role === 'agent') {
-            return $actor;
-        }
-
-        return User::query()
-            ->select('users.id', 'users.name', 'users.email', 'users.avatar', 'users.gender')
-            ->join('company_users', 'company_users.user_id', '=', 'users.id')
-            ->where('company_users.company_id', $companyId)
-            ->where(function (Builder $builder): void {
-                $builder->where('company_users.role', 'agent')
-                    ->orWhere('users.internal_role', 'agent');
-            })
-            ->orderBy('users.created_at')
-            ->orderBy('users.id')
-            ->first();
     }
 
     public function listPipelines(User $user, ?int $companyId = null): Collection
@@ -1020,10 +1080,14 @@ class LeadService
 
         $maxSortOrder = (int) LeadPipeline::query()->where('company_id', $companyId)->max('sort_order');
 
+        $currency = isset($payload['currency_code']) && is_string($payload['currency_code']) && $payload['currency_code'] !== ''
+            ? strtoupper($payload['currency_code'])
+            : 'GBP';
+
         return LeadPipeline::query()->create([
             'company_id' => $companyId,
             'name' => (string) $payload['name'],
-            'currency_code' => 'USD',
+            'currency_code' => $currency,
             'sort_order' => $maxSortOrder + 1,
             'is_default' => false,
         ]);
@@ -1054,10 +1118,15 @@ class LeadService
             }
         }
 
-        $pipeline->update([
+        $updates = [
             'name' => $payload['name'] ?? $pipeline->name,
             'sort_order' => isset($payload['sort_order']) ? (int) $payload['sort_order'] : $pipeline->sort_order,
-        ]);
+        ];
+        if (array_key_exists('currency_code', $payload) && is_string($payload['currency_code']) && $payload['currency_code'] !== '') {
+            $updates['currency_code'] = strtoupper($payload['currency_code']);
+        }
+
+        $pipeline->update($updates);
 
         return $pipeline->fresh();
     }
@@ -1231,7 +1300,7 @@ class LeadService
             ->where('pipeline_id', $pipeline->id)
             ->count();
 
-        $fallbackPipeline = LeadPipeline::query()
+        $fallbackCandidates = LeadPipeline::query()
             ->where('company_id', $companyId)
             ->where('id', '!=', $pipeline->id)
             ->where(function ($query): void {
@@ -1241,9 +1310,9 @@ class LeadService
             ->orderByDesc('is_default')
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->first();
+            ->get();
 
-        if ($fallbackPipeline === null) {
+        if ($fallbackCandidates->isEmpty()) {
             throw ValidationException::withMessages([
                 'pipeline' => ['This pipeline cannot be deleted because no fallback pipeline is available.'],
             ]);
@@ -1255,6 +1324,19 @@ class LeadService
             throw ValidationException::withMessages([
                 'pipeline' => ["This pipeline currently has {$assignedCount} leads. Confirm deletion to continue."],
                 'pipeline_usage_count' => [(string) $assignedCount],
+            ]);
+        }
+
+        $requestedTargetId = isset($payload['reassign_to_pipeline_id'])
+            ? (int) $payload['reassign_to_pipeline_id']
+            : null;
+        $fallbackPipeline = $requestedTargetId
+            ? $fallbackCandidates->firstWhere('id', $requestedTargetId)
+            : $fallbackCandidates->first();
+
+        if ($fallbackPipeline === null) {
+            throw ValidationException::withMessages([
+                'reassign_to_pipeline_id' => ['Choose a valid pipeline in this company to move leads into.'],
             ]);
         }
 
@@ -1312,14 +1394,20 @@ class LeadService
         $slug = $this->uniqueLabelSlug($companyId, $slug);
         $maxSortOrder = (int) LeadLabel::query()->where('company_id', $companyId)->max('sort_order');
 
-        return LeadLabel::query()->create([
+        $label = LeadLabel::query()->create([
             'company_id' => $companyId,
-            'name' => (string) $payload['name'],
+            'name' => trim((string) $payload['name']),
             'slug' => $slug,
             'color' => (string) ($payload['color'] ?? '#2563EB'),
             'sort_order' => $maxSortOrder + 1,
             'is_default' => false,
+            'is_won' => (bool) ($payload['is_won'] ?? false),
         ]);
+
+        // New stage = new board column; dashboards/aggregates must refresh too.
+        $this->aggregateCache->bumpCompanyVersion($companyId);
+
+        return $label;
     }
 
     public function updateLabel(User $user, int $labelId, array $payload): LeadLabel
@@ -1336,6 +1424,8 @@ class LeadService
         $nextName = isset($payload['name']) ? (string) $payload['name'] : $label->name;
         $nextColor = isset($payload['color']) ? (string) $payload['color'] : $label->color;
 
+        $nextName = trim($nextName);
+        $previousSlug = $label->slug;
         $nextSlug = $label->slug;
         if (isset($payload['name']) && $nextName !== $label->name) {
             $baseSlug = Str::of($nextName)->slug('_')->toString();
@@ -1345,17 +1435,34 @@ class LeadService
                 ]);
             }
             $nextSlug = $this->uniqueLabelSlug($companyId, $baseSlug, $label->id);
-            Lead::query()
-                ->where('company_id', $companyId)
-                ->where('status', $label->slug)
-                ->update(['status' => $nextSlug]);
         }
 
-        $label->update([
-            'name' => $nextName,
-            'slug' => $nextSlug,
-            'color' => $nextColor,
-        ]);
+        $wasWon = (bool) $label->is_won;
+        $nextIsWon = array_key_exists('is_won', $payload) ? (bool) $payload['is_won'] : $wasWon;
+
+        // Label + its leads change together: a failure halfway must not leave
+        // leads pointing at a slug that no longer exists.
+        DB::transaction(function () use ($companyId, $label, $previousSlug, $nextSlug, $nextName, $nextColor, $nextIsWon, $wasWon): void {
+            if ($nextSlug !== $previousSlug) {
+                Lead::query()
+                    ->where('company_id', $companyId)
+                    ->where('status', $previousSlug)
+                    ->update(['status' => $nextSlug]);
+            }
+
+            $label->update([
+                'name' => $nextName,
+                'slug' => $nextSlug,
+                'color' => $nextColor,
+                'is_won' => $nextIsWon,
+            ]);
+
+            if ($nextIsWon !== $wasWon) {
+                $this->syncConvertedAtForLabel($companyId, $nextSlug, $nextIsWon);
+            }
+        });
+
+        $this->aggregateCache->bumpCompanyVersion($companyId);
 
         return $label->fresh();
     }
@@ -1409,6 +1516,14 @@ class LeadService
 
         $forceDelete = (bool) ($payload['force'] ?? false);
 
+        // Every lead needs a stage, and an empty label list is re-seeded with the
+        // defaults on the next request, so the last label can't be removed.
+        if ($fallbackLabel === null) {
+            throw ValidationException::withMessages([
+                'label' => ['Keep at least one label. Create another label before deleting this one.'],
+            ]);
+        }
+
         if ($assignedCount > 0 && ! $forceDelete) {
             throw ValidationException::withMessages([
                 'label' => ["This label is currently assigned to {$assignedCount} leads. Confirm deletion to continue."],
@@ -1428,10 +1543,16 @@ class LeadService
                     ->where('company_id', $companyId)
                     ->where('status', $label->slug)
                     ->update(['status' => $fallbackLabel->slug]);
+
+                if ((bool) $label->is_won !== (bool) $fallbackLabel->is_won) {
+                    $this->syncConvertedAtForLabel($companyId, $fallbackLabel->slug, (bool) $fallbackLabel->is_won);
+                }
             }
 
             $label->delete();
         });
+
+        $this->aggregateCache->bumpCompanyVersion($companyId);
 
         return [
             'deleted_label_id' => (int) $label->id,
@@ -1458,22 +1579,28 @@ class LeadService
 
         $duplicatePolicy = (string) ($payload['duplicate_policy'] ?? 'create');
         $labelLookup = $this->buildLabelLookup($companyId);
+        $defaultStatusSlug = $this->defaultLabelSlug($companyId);
         $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
+        // Large files are sent in batches; keep row numbers matching the file.
+        $rowOffset = max(0, (int) ($payload['row_offset'] ?? 0));
 
         $importedCount = 0;
         $updatedCount = 0;
         $failedRows = [];
         $skippedRows = [];
+        $seenInFile = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
+            $rowNumber = $rowOffset + $index + 1;
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $rowNumber, $defaultStatusSlug);
 
             if ($validation['errors'] !== []) {
                 $failedRows[] = [
-                    'row_index' => $index + 1,
+                    'row_index' => $rowNumber,
                     'data' => $row,
                     'errors' => $validation['errors'],
+                    'field_errors' => $validation['field_errors'] ?? [],
                 ];
 
                 continue;
@@ -1481,70 +1608,113 @@ class LeadService
 
             $data = $validation['normalized'];
 
-            $duplicate = $duplicatePolicy === 'create'
-                ? null
-                : $this->resolveDuplicateLead($companyId, $data['email'], $data['phone']);
-
-            if ($duplicate !== null && $duplicatePolicy === 'skip') {
+            // Same email/phone twice in one file: with "skip", keep only the first.
+            $inFileMatch = $this->matchInFileDuplicate($seenInFile, $data['email'], $data['phone'], $rowNumber);
+            if ($inFileMatch !== null && $duplicatePolicy === 'skip') {
                 $skippedRows[] = [
-                    'row_index' => $index + 1,
+                    'row_index' => $rowNumber,
                     'data' => $row,
-                    'reason' => "A lead with the same email or phone already exists ('{$duplicate->name}').",
+                    'reason' => "Duplicate of row {$inFileMatch} in this file (same email or phone).",
                 ];
 
                 continue;
             }
 
-            if ($duplicate !== null && $duplicatePolicy === 'update') {
-                if (
-                    $role === 'agent'
-                    && (int) $duplicate->created_by_user_id !== (int) $user->id
-                    && (int) ($duplicate->assigned_to_user_id ?? 0) !== (int) $user->id
-                ) {
+            try {
+                $duplicate = $duplicatePolicy === 'create'
+                    ? null
+                    : $this->resolveDuplicateLead($companyId, $data['email'], $data['phone']);
+
+                if ($duplicate !== null && $duplicatePolicy === 'skip') {
                     $skippedRows[] = [
-                        'row_index' => $index + 1,
+                        'row_index' => $rowNumber,
                         'data' => $row,
-                        'reason' => "A matching lead exists ('{$duplicate->name}') but is not assigned to you, so it was not updated.",
+                        'reason' => "A lead with the same email or phone already exists ('{$duplicate->name}').",
                     ];
 
                     continue;
                 }
 
-                DB::transaction(function () use ($duplicate, $row, $data, $pipelineId): void {
-                    $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data, $pipelineId));
-                    $this->syncPrimaryContactFromLead($duplicate->fresh());
-                });
-                $updatedCount++;
+                if ($duplicate !== null && $duplicatePolicy === 'update') {
+                    if (
+                        $role === 'agent'
+                        && (int) $duplicate->created_by_user_id !== (int) $user->id
+                        && (int) ($duplicate->assigned_to_user_id ?? 0) !== (int) $user->id
+                    ) {
+                        $skippedRows[] = [
+                            'row_index' => $rowNumber,
+                            'data' => $row,
+                            'reason' => "A matching lead exists ('{$duplicate->name}') but is not assigned to you, so it was not updated.",
+                        ];
 
-                continue;
+                        continue;
+                    }
+
+                    DB::transaction(function () use ($duplicate, $row, $data, $pipelineId): void {
+                        $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data, $pipelineId));
+                        $this->syncPrimaryContactFromLead($duplicate->fresh());
+                    });
+                    $updatedCount++;
+
+                    continue;
+                }
+
+                $normalizedSource = $data['source'];
+                if ($role === 'agent' && $normalizedSource === null) {
+                    $normalizedSource = 'agent_upload';
+                }
+
+                $this->create($user, [
+                    'company_id' => $companyId,
+                    'pipeline_id' => $pipelineId,
+                    'name' => $data['name'],
+                    'email' => $data['email'],
+                    'phone' => $data['phone'],
+                    'location' => $data['location'],
+                    'company_name' => $data['company_name'] ?? null,
+                    'company_email' => $data['company_email'] ?? null,
+                    'website' => $data['website'] ?? null,
+                    'position' => $data['position'] ?? null,
+                    'industry' => $data['industry'] ?? null,
+                    'profile_urls' => $data['profile_urls'] ?? null,
+                    'source' => $normalizedSource,
+                    'status' => $data['status'],
+                    'priority' => $data['priority'],
+                    'budget_amount' => $data['budget_amount'] ?? null,
+                    'budget_currency' => $data['budget_currency'] ?? null,
+                    'custom_fields' => $data['custom_fields'] ?? [],
+                    'custom_fields_mode' => 'import',
+                    'assigned_to_user_id' => $role === 'agent' ? (int) $user->id : null,
+                    'suppress_notifications' => true,
+                ]);
+                $importedCount++;
+            } catch (ValidationException $exception) {
+                $fieldErrors = [];
+                foreach ($exception->errors() as $key => $messages) {
+                    $fieldErrors[(string) $key] ??= (string) ($messages[0] ?? '');
+                }
+                $failedRows[] = [
+                    'row_index' => $rowNumber,
+                    'data' => $row,
+                    'errors' => collect($exception->errors())->flatten()->map(static fn($m): string => (string) $m)->values()->all(),
+                    'field_errors' => $fieldErrors,
+                ];
+            } catch (\Throwable $exception) {
+                // One bad row must not abort the batch (earlier rows are already saved).
+                // Not something the user can fix by editing the row, so say so plainly.
+                report($exception);
+                $failedRows[] = [
+                    'row_index' => $rowNumber,
+                    'data' => $row,
+                    'errors' => ['We could not save this row because of a problem on our side, not with your data. Retry the failed rows; if it keeps failing, contact support.'],
+                    'field_errors' => [],
+                    'server_error' => true,
+                ];
             }
+        }
 
-            $normalizedSource = $data['source'];
-            if ($role === 'agent' && $normalizedSource === null) {
-                $normalizedSource = 'agent_upload';
-            }
-
-            $this->create($user, [
-                'company_id' => $companyId,
-                'pipeline_id' => $pipelineId,
-                'name' => $data['name'],
-                'email' => $data['email'],
-                'phone' => $data['phone'],
-                'location' => $data['location'],
-                'company_name' => $data['company_name'] ?? null,
-                'website' => $data['website'] ?? null,
-                'position' => $data['position'] ?? null,
-                'profile_urls' => $data['profile_urls'] ?? null,
-                'source' => $normalizedSource,
-                'status' => $data['status'],
-                'priority' => $data['priority'],
-                'budget_amount' => $data['budget_amount'] ?? null,
-                'budget_currency' => $data['budget_currency'] ?? null,
-                'custom_fields' => $data['custom_fields'] ?? [],
-                'custom_fields_mode' => 'import',
-                'assigned_to_user_id' => $role === 'agent' ? (int) $user->id : null,
-            ]);
-            $importedCount++;
+        if ($importedCount + $updatedCount > 0) {
+            $this->notifyImportSummary($companyId, $user, $importedCount, $updatedCount, count($skippedRows), count($failedRows));
         }
 
         return [
@@ -1554,6 +1724,76 @@ class LeadService
             'failed_rows' => $failedRows,
             'skipped_rows' => $skippedRows,
         ];
+    }
+
+    /**
+     * Track email/phone seen earlier in the same import; returns the earlier row number.
+     *
+     * @param  array<string, int>  $seen
+     */
+    private function matchInFileDuplicate(array &$seen, ?string $email, ?string $phone, int $rowNumber): ?int
+    {
+        $keys = [];
+        if ($email !== null && trim($email) !== '') {
+            $keys[] = 'e:' . strtolower(trim($email));
+        }
+        $digits = $phone !== null ? preg_replace('/\D+/', '', $phone) : '';
+        if (is_string($digits) && strlen($digits) >= 6) {
+            $keys[] = 'p:' . $digits;
+        }
+
+        foreach ($keys as $key) {
+            if (isset($seen[$key])) {
+                return $seen[$key];
+            }
+        }
+        foreach ($keys as $key) {
+            $seen[$key] = $rowNumber;
+        }
+
+        return null;
+    }
+
+    private function notifyImportSummary(int $companyId, User $actor, int $created, int $updated, int $skipped, int $failed): void
+    {
+        $recipientIds = DB::table('company_users')
+            ->where('company_id', $companyId)
+            ->whereIn('role', ['owner', 'admin', 'supervisor'])
+            ->pluck('user_id')
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->push((int) $actor->id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $parts = ["{$created} created"];
+        if ($updated > 0) {
+            $parts[] = "{$updated} updated";
+        }
+        if ($skipped > 0) {
+            $parts[] = "{$skipped} skipped";
+        }
+        if ($failed > 0) {
+            $parts[] = "{$failed} failed";
+        }
+        $message = ($actor->name ?: 'A team member') . ' imported leads: ' . implode(', ', $parts) . '.';
+        $batchKey = 'crm.leads_imported:' . $actor->id . ':' . now()->format('YmdHisv');
+
+        foreach ($recipientIds as $recipientId) {
+            $this->notificationService->notifyUser($recipientId, [
+                'company_id' => $companyId,
+                'type' => 'crm.leads_imported',
+                'category' => NotificationCategory::CRM->value,
+                'title' => 'Lead import finished',
+                'message' => $message,
+                'action_url' => '/crm/leads',
+                'action_route' => 'crm.leads.index',
+                'priority' => NotificationPriority::NORMAL->value,
+                'created_by_user_id' => (int) $actor->id,
+                'metadata' => compact('created', 'updated', 'skipped', 'failed'),
+                'dedupe_key' => $batchKey . ':' . $recipientId,
+            ]);
+        }
     }
 
     /**
@@ -1574,19 +1814,23 @@ class LeadService
         $this->assertPipelineInCompany($companyId, $pipelineId);
 
         $labelLookup = $this->buildLabelLookup($companyId);
+        $defaultStatusSlug = $this->defaultLabelSlug($companyId);
         $fieldDefinitions = LeadCustomFieldValues::visibleDefinitions($companyId);
         $rows = collect($payload['rows'] ?? []);
 
         $validCount = 0;
         $errorRows = [];
         $duplicateRows = [];
+        $rowOffset = max(0, (int) ($payload['row_offset'] ?? 0));
+        $seenInFile = [];
 
         foreach ($rows as $index => $row) {
-            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $index + 1);
+            $rowNumber = $rowOffset + $index + 1;
+            $validation = $this->validateImportRow($labelLookup, $fieldDefinitions, $row, $rowNumber, $defaultStatusSlug);
 
             if ($validation['errors'] !== []) {
                 $errorRows[] = [
-                    'row_index' => $index + 1,
+                    'row_index' => $rowNumber,
                     'data' => $row,
                     'errors' => $validation['errors'],
                 ];
@@ -1595,11 +1839,25 @@ class LeadService
             }
 
             $data = $validation['normalized'];
+
+            $inFileMatch = $this->matchInFileDuplicate($seenInFile, $data['email'], $data['phone'], $rowNumber);
+            if ($inFileMatch !== null) {
+                $duplicateRows[] = [
+                    'row_index' => $rowNumber,
+                    'data' => $row,
+                    'existing_lead_id' => null,
+                    'existing_lead_name' => "row {$inFileMatch} of this file",
+                    'in_file' => true,
+                ];
+
+                continue;
+            }
+
             $duplicate = $this->resolveDuplicateLead($companyId, $data['email'], $data['phone']);
 
             if ($duplicate !== null) {
                 $duplicateRows[] = [
-                    'row_index' => $index + 1,
+                    'row_index' => $rowNumber,
                     'data' => $row,
                     'existing_lead_id' => (int) $duplicate->id,
                     'existing_lead_name' => (string) $duplicate->name,
@@ -1635,14 +1893,28 @@ class LeadService
         $filename = sprintf('crm-leads-export-%s.%s', now()->format('Y-m-d'), $format === 'xlsx' ? 'xlsx' : 'csv');
 
         if ($format === 'xlsx') {
+            // Build the workbook *before* responding: a failure inside the
+            // download stream would hand the user a corrupt file instead of an error.
+            $xlsxPath = $this->buildLeadsXlsxFile($companyId, $user, $role, $filters);
+
             return [
                 'filename' => $filename,
                 'content_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'stream' => function () use ($companyId, $user, $role, $filters, $format): void {
+                'stream' => function () use ($companyId, $user, $filters, $format, $xlsxPath): void {
                     $this->securityAudit->dataExport(SecurityAuditLogger::EXPORT_LEADS, $user, $companyId, [
                         'format' => $format,
                     ]);
-                    $this->streamLeadsXlsxExport($companyId, $user, $role, $filters);
+                    try {
+                        $reader = fopen($xlsxPath, 'rb');
+                        if (is_resource($reader)) {
+                            fpassthru($reader);
+                            fclose($reader);
+                        }
+                    } finally {
+                        if (is_file($xlsxPath)) {
+                            @unlink($xlsxPath);
+                        }
+                    }
                 },
             ];
         }
@@ -1686,7 +1958,7 @@ class LeadService
 
     /**
      * @param  array<string, mixed>  $data
-     * @return array<int, array{name:string,email:?string,phone:?string,location:?string}>
+     * @return array<int, array{name:string,email:?string,phone:?string,location:?string,position:?string,profile_urls:?array<int,string>}>
      */
     private function contactPayloads(array $data): array
     {
@@ -1697,18 +1969,29 @@ class LeadService
                 'email' => $data['email'] ?? null,
                 'phone' => $data['phone'] ?? null,
                 'location' => $data['location'] ?? null,
+                'position' => $data['position'] ?? null,
+                'profile_urls' => $data['profile_urls'] ?? null,
             ]];
 
-        return array_map(static fn(array $contact): array => [
-            'name' => trim((string) $contact['name']),
-            'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
-            'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
-            'location' => isset($contact['location']) && $contact['location'] !== '' ? trim((string) $contact['location']) : null,
-        ], $contacts);
+        return array_map(static function (array $contact): array {
+            $rawProfileUrls = $contact['profile_urls'] ?? null;
+            $normalizedUrls = is_array($rawProfileUrls) && $rawProfileUrls !== []
+                ? LeadFieldNormalizer::normalizeProfileUrls($rawProfileUrls)
+                : [];
+
+            return [
+                'name' => trim((string) $contact['name']),
+                'email' => isset($contact['email']) && $contact['email'] !== '' ? trim((string) $contact['email']) : null,
+                'phone' => isset($contact['phone']) && $contact['phone'] !== '' ? trim((string) $contact['phone']) : null,
+                'location' => isset($contact['location']) && $contact['location'] !== '' ? trim((string) $contact['location']) : null,
+                'position' => isset($contact['position']) && trim((string) $contact['position']) !== '' ? trim((string) $contact['position']) : null,
+                'profile_urls' => $normalizedUrls !== [] ? $normalizedUrls : null,
+            ];
+        }, $contacts);
     }
 
     /**
-     * @param  array<int, array{name:string,email:?string,phone:?string,location:?string}>  $contacts
+     * @param  array<int, array{name:string,email:?string,phone:?string,location:?string,position:?string,profile_urls:?array<int,string>}>  $contacts
      */
     private function replaceContacts(Lead $lead, array $contacts): void
     {
@@ -1733,6 +2016,8 @@ class LeadService
                 'email' => $lead->email,
                 'phone' => $lead->phone,
                 'location' => $lead->location,
+                'position' => $lead->position,
+                'profile_urls' => $lead->profile_urls,
             ],
         );
         $lead->unsetRelation('contacts');
@@ -1743,7 +2028,7 @@ class LeadService
      */
     private function containsPrimaryContactFields(array $data): bool
     {
-        return array_intersect(['name', 'email', 'phone', 'location'], array_keys($data)) !== [];
+        return array_intersect(['name', 'email', 'phone', 'location', 'position', 'profile_urls'], array_keys($data)) !== [];
     }
 
     private function baseQuery(int $companyId): Builder
@@ -1837,6 +2122,10 @@ class LeadService
             $query->where('priority', (string) $filters['priority']);
         }
 
+        if (! empty($filters['industry'])) {
+            $query->where('industry', trim((string) $filters['industry']));
+        }
+
         if (! empty($filters['pipeline_id'])) {
             $query->where('pipeline_id', (int) $filters['pipeline_id']);
         }
@@ -1851,11 +2140,11 @@ class LeadService
 
         // Instants from the client, so a picked day matches the viewer's timezone.
         if (! empty($filters['created_from'])) {
-            $query->where('created_at', '>=', Carbon::parse((string) $filters['created_from'])->utc());
+            $query->where('created_at', '>=', Carbon::parse((string) $filters['created_from'])->setTimezone(config('app.timezone')));
         }
 
         if (! empty($filters['created_to'])) {
-            $query->where('created_at', '<=', Carbon::parse((string) $filters['created_to'])->utc());
+            $query->where('created_at', '<=', Carbon::parse((string) $filters['created_to'])->setTimezone(config('app.timezone')));
         }
 
         if (! empty($filters['source'])) {
@@ -1863,6 +2152,8 @@ class LeadService
 
             if ($this->isAgentUploadSourceFilter($source)) {
                 $this->applyAgentUploadedSourceFilter($query);
+            } elseif ($this->isSalesEngineSourceFilter($source)) {
+                $this->applySalesEngineSourceFilter($query);
             } else {
                 $query->where('source', 'like', '%' . $source . '%');
             }
@@ -1921,6 +2212,24 @@ class LeadService
         }
     }
 
+    /**
+     * Bulk-align converted_at with a label's won flag (bulk updates skip the Lead observer).
+     */
+    private function syncConvertedAtForLabel(int $companyId, string $slug, bool $isWon): void
+    {
+        $query = Lead::query()
+            ->where('company_id', $companyId)
+            ->where('status', $slug);
+
+        if ($isWon) {
+            $query->whereNull('converted_at')->update(['converted_at' => DB::raw('updated_at')]);
+
+            return;
+        }
+
+        $query->whereNotNull('converted_at')->update(['converted_at' => null]);
+    }
+
     private function assertLabelExists(int $companyId, string $status): void
     {
         $exists = LeadLabel::query()
@@ -1969,20 +2278,36 @@ class LeadService
         ], true);
     }
 
+    /**
+     * "Uploaded by agents" = created by a member whose role in this company is agent,
+     * whatever source text the lead carries.
+     */
     private function applyAgentUploadedSourceFilter(Builder $query): void
     {
-        $accepted = [
-            'agent upload',
-            'agent uploaded',
-            'uploaded by agent',
-            'uploaded by agents',
-        ];
+        $query->whereExists(function ($subquery): void {
+            $subquery->selectRaw('1')
+                ->from('company_users')
+                ->whereColumn('company_users.user_id', 'leads.created_by_user_id')
+                ->whereColumn('company_users.company_id', 'leads.company_id')
+                ->where('company_users.role', 'agent');
+        });
+    }
 
-        $quoted = implode(',', array_map(static fn(string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
+    private function applySalesEngineSourceFilter(Builder $query): void
+    {
+        $query->where(function (Builder $builder): void {
+            $builder->whereRaw("LOWER(COALESCE(source, '')) LIKE ?", ['%sales%'])
+                ->orWhereRaw("LOWER(REPLACE(REPLACE(COALESCE(source, ''), '_', ' '), '-', ' ')) LIKE ?", ['%smart lead%'])
+                ->orWhereRaw("LOWER(COALESCE(location, '')) LIKE ?", ['%sales engine%'])
+                ->orWhereRaw("LOWER(COALESCE(company_name, '')) LIKE ?", ['%sales engine%']);
+        });
+    }
 
-        $query->whereRaw(
-            "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
-        );
+    private function isSalesEngineSourceFilter(string $source): bool
+    {
+        $normalized = Str::of($source)->replace(['-', '_'], ' ')->trim()->lower()->value();
+
+        return in_array($normalized, ['sales engine', 'smart lead', 'smart leads'], true);
     }
 
     private function ensureDefaultCrmSetup(int $companyId): void
@@ -1993,7 +2318,7 @@ class LeadService
                 [
                     'company_id' => $companyId,
                     'name' => 'Default Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 0,
                     'is_default' => true,
                     'created_at' => now(),
@@ -2002,7 +2327,7 @@ class LeadService
                 [
                     'company_id' => $companyId,
                     'name' => 'Sales Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 1,
                     'is_default' => false,
                     'created_at' => now(),
@@ -2011,7 +2336,7 @@ class LeadService
                 [
                     'company_id' => $companyId,
                     'name' => 'Marketing Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 2,
                     'is_default' => false,
                     'created_at' => now(),
@@ -2066,44 +2391,141 @@ class LeadService
             ]);
         }
 
-        $defaultPipeline = LeadPipeline::query()
-            ->where('company_id', $companyId)
-            ->orderByDesc('is_default')
-            ->orderBy('sort_order')
-            ->first();
-
-        if ($defaultPipeline !== null) {
-            Lead::query()
-                ->where('company_id', $companyId)
-                ->whereNull('pipeline_id')
-                ->update(['pipeline_id' => $defaultPipeline->id]);
-        }
-
-        Lead::query()
-            ->where('company_id', $companyId)
-            ->where(function (Builder $builder): void {
-                $builder->whereIn('status', ['new', ''])
-                    ->orWhereNull('status');
-            })
-            ->update(['status' => 'newly_lead']);
+        // Leads are normalised to a pipeline and a real stage when saved
+        // (LeadObserver) and existing rows were backfilled by migration
+        // 2026_11_19_100000_normalize_lead_stages. Reads no longer write, and a
+        // user-created stage with slug "new" is no longer rewritten.
     }
 
     /**
-     * Lookup of lowercase label slugs AND display names to their canonical slug,
-     * so import rows can reference a status either way (e.g. "New Lead" or "newly_lead").
+     * Lookup of lowercase label slugs, display names, and common aliases to their
+     * canonical slug so import rows accept "New Lead", "new_lead", or "newly_lead".
      *
      * @return array<string, string>
      */
     private function buildLabelLookup(int $companyId): array
     {
         $lookup = [];
+        $labels = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->get(['slug', 'name', 'is_default']);
 
-        foreach (LeadLabel::query()->where('company_id', $companyId)->get(['slug', 'name']) as $label) {
-            $lookup[Str::lower(trim((string) $label->slug))] = (string) $label->slug;
-            $lookup[Str::lower(trim((string) $label->name))] = (string) $label->slug;
+        foreach ($labels as $label) {
+            $slug = (string) $label->slug;
+            foreach ($this->labelLookupKeys($slug, (string) $label->name) as $key) {
+                $lookup[$key] = $slug;
+            }
+        }
+
+        // Seeded companies use newly_lead; labels created/renamed via API slug to new_lead.
+        // Cross-link both (and plain "new") only onto the company's New Lead label.
+        $newLeadSlug = null;
+        foreach ($labels as $label) {
+            $slugLower = Str::lower(trim((string) $label->slug));
+            $nameLower = Str::lower(trim((string) $label->name));
+            if (in_array($slugLower, ['newly_lead', 'new_lead'], true) || $nameLower === 'new lead') {
+                $newLeadSlug = (string) $label->slug;
+                break;
+            }
+        }
+
+        if ($newLeadSlug !== null) {
+            foreach (['newly_lead', 'new_lead', 'new lead', 'new'] as $alias) {
+                $lookup[$this->normalizeLabelKey($alias)] = $newLeadSlug;
+                $lookup[Str::lower(trim($alias))] = $newLeadSlug;
+            }
         }
 
         return $lookup;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, LeadLabel>  $labels
+     */
+    private function defaultLabelSlugFromCollection($labels): ?string
+    {
+        $default = $labels->firstWhere('is_default', true)
+            ?? $labels->first(static fn($label): bool => Str::lower(trim((string) $label->name)) === 'new lead')
+            ?? $labels->first();
+
+        if ($default === null) {
+            return null;
+        }
+
+        $slug = trim((string) $default->slug);
+
+        return $slug !== '' ? $slug : null;
+    }
+
+    private function defaultLabelSlug(int $companyId): string
+    {
+        $labels = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->orderByDesc('is_default')
+            ->orderBy('sort_order')
+            ->get(['slug', 'name', 'is_default']);
+
+        return $this->defaultLabelSlugFromCollection($labels) ?? 'newly_lead';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function labelLookupKeys(string $slug, string $name): array
+    {
+        $keys = [];
+        $candidates = [
+            $slug,
+            $name,
+            Str::slug($name, '_'),
+            Str::slug($name, '-'),
+            str_replace(['_', '-'], ' ', $slug),
+            str_replace(['_', '-'], ' ', $name),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $lower = Str::lower(trim((string) $candidate));
+            if ($lower !== '') {
+                $keys[$lower] = true;
+            }
+
+            $normalized = $this->normalizeLabelKey((string) $candidate);
+            if ($normalized !== '') {
+                $keys[$normalized] = true;
+            }
+        }
+
+        return array_keys($keys);
+    }
+
+    private function normalizeLabelKey(string $value): string
+    {
+        return (string) Str::of($value)
+            ->lower()
+            ->replaceMatches('/[\s_\-]+/', '_')
+            ->trim('_');
+    }
+
+    /**
+     * @param  array<string, string>  $labelLookup
+     */
+    private function resolveLabelSlug(array $labelLookup, string $status): ?string
+    {
+        $trimmed = trim($status);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $lower = Str::lower($trimmed);
+        if (isset($labelLookup[$lower])) {
+            return $labelLookup[$lower];
+        }
+
+        $normalized = $this->normalizeLabelKey($trimmed);
+
+        return $labelLookup[$normalized] ?? null;
     }
 
     /**
@@ -2111,19 +2533,27 @@ class LeadService
      */
     private function suggestClosestLabel(array $labelLookup, string $status): ?string
     {
-        $needle = Str::lower(trim($status));
-        $bestKey = null;
+        $needles = array_values(array_unique(array_filter([
+            Str::lower(trim($status)),
+            $this->normalizeLabelKey($status),
+        ])));
+        $bestSlug = null;
         $bestDistance = PHP_INT_MAX;
 
         foreach (array_keys($labelLookup) as $candidate) {
-            $distance = levenshtein($needle, $candidate);
-            if ($distance < $bestDistance) {
-                $bestDistance = $distance;
-                $bestKey = $candidate;
+            foreach ($needles as $needle) {
+                if ($needle === '') {
+                    continue;
+                }
+                $distance = levenshtein($needle, $candidate);
+                if ($distance < $bestDistance) {
+                    $bestDistance = $distance;
+                    $bestSlug = $labelLookup[$candidate];
+                }
             }
         }
 
-        return ($bestKey !== null && $bestDistance <= 4) ? $labelLookup[$bestKey] : null;
+        return ($bestSlug !== null && $bestDistance <= 4) ? $bestSlug : null;
     }
 
     /**
@@ -2154,7 +2584,7 @@ class LeadService
         ));
 
         $updates = [];
-        foreach (['email', 'phone', 'location', 'company_name', 'company_email', 'position', 'source', 'next_action'] as $field) {
+        foreach (['email', 'phone', 'location', 'company_name', 'company_email', 'position', 'industry', 'source', 'next_action'] as $field) {
             $incoming = $this->nullableTrimmed($data[$field] ?? null);
             if ($this->isBlankMergeValue($lead->{$field}) && $incoming !== null) {
                 $updates[$field] = $incoming;
@@ -2175,7 +2605,7 @@ class LeadService
 
         if ($lead->budget_amount === null && isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null) {
             $updates['budget_amount'] = $data['budget_amount'];
-            $updates['budget_currency'] = $this->nullableTrimmed($data['budget_currency'] ?? null) ?? $lead->budget_currency ?? 'USD';
+            $updates['budget_currency'] = $this->nullableTrimmed($data['budget_currency'] ?? null) ?? $lead->budget_currency ?? 'GBP';
         }
 
         $contactsToAdd = [];
@@ -2200,6 +2630,7 @@ class LeadService
             'company_email',
             'website',
             'position',
+            'industry',
             'source',
             'next_action',
             'budget_amount',
@@ -2246,6 +2677,7 @@ class LeadService
             'company_email' => $lead->company_email,
             'website' => $lead->website,
             'position' => $lead->position,
+            'industry' => $lead->industry,
             'source' => $lead->source,
             'next_action' => $lead->next_action,
             'budget_amount' => $lead->budget_amount,
@@ -2270,6 +2702,7 @@ class LeadService
             'company_email' => $values['company_email'] ?? null,
             'website' => $values['website'] ?? null,
             'position' => $values['position'] ?? null,
+            'industry' => $values['industry'] ?? null,
             'profile_urls' => array_values($values['profile_urls'] ?? []),
             'source' => $values['source'] ?? null,
             'budget_amount' => isset($values['budget_amount']) && $values['budget_amount'] !== null
@@ -2305,6 +2738,7 @@ class LeadService
             'company_email' => $this->nullableTrimmed($data['company_email'] ?? null),
             'website' => LeadFieldNormalizer::normalizeWebsite($this->nullableTrimmed($data['website'] ?? null)),
             'position' => $this->nullableTrimmed($data['position'] ?? null),
+            'industry' => $this->nullableTrimmed($data['industry'] ?? null),
             'source' => $this->nullableTrimmed($data['source'] ?? null),
             'next_action' => $this->nullableTrimmed($data['next_action'] ?? null),
             'budget_amount' => isset($data['budget_amount']) && $data['budget_amount'] !== '' && $data['budget_amount'] !== null
@@ -2548,15 +2982,24 @@ class LeadService
     ): array {
         // "Target Pipeline" applies to both newly created and updated rows.
         $update = ['pipeline_id' => $targetPipelineId];
-        $provided = static fn(string $key): bool => trim((string) ($row[$key] ?? '')) !== '';
+        // Cells can arrive as lists (profile_urls): casting an array to string threw
+        // "Array to string conversion" and failed every row that matched a lead.
+        $provided = static function (string $key) use ($row): bool {
+            $value = $row[$key] ?? null;
+            if (is_array($value)) {
+                return array_filter($value, static fn($v): bool => is_scalar($v) && trim((string) $v) !== '') !== [];
+            }
 
-        foreach (['name', 'email', 'phone', 'location', 'company_name', 'website', 'position', 'source'] as $field) {
+            return is_scalar($value) && trim((string) $value) !== '';
+        };
+
+        foreach (['name', 'email', 'phone', 'location', 'company_name', 'company_email', 'website', 'position', 'industry', 'source'] as $field) {
             if ($provided($field) && $normalized[$field] !== null) {
                 $update[$field] = $normalized[$field];
             }
         }
 
-        if ($provided('profile_urls') || (is_array($row['profile_urls'] ?? null) && ($row['profile_urls'] ?? []) !== [])) {
+        if ($provided('profile_urls')) {
             if (! empty($normalized['profile_urls'])) {
                 $update['profile_urls'] = $normalized['profile_urls'];
             }
@@ -2607,7 +3050,10 @@ class LeadService
     /**
      * @param  array<string, mixed>  $filters
      */
-    private function streamLeadsXlsxExport(int $companyId, User $user, string $role, array $filters): void
+    /**
+     * Writes the XLSX export to a temp file and returns its path (caller deletes it).
+     */
+    private function buildLeadsXlsxFile(int $companyId, User $user, string $role, array $filters): string
     {
         if (! extension_loaded('zip') || ! class_exists(\ZipArchive::class)) {
             Log::error('CRM leads XLSX export failed: zip extension missing.', [
@@ -2663,12 +3109,9 @@ class LeadService
             });
 
             $writer->close();
+            $writer = null;
 
-            $reader = fopen($tmpFile, 'rb');
-            if (is_resource($reader)) {
-                fpassthru($reader);
-                fclose($reader);
-            }
+            return $tmpFile;
         } catch (\Throwable $exception) {
             Log::error('CRM leads XLSX export failed.', [
                 'company_id' => $companyId,
@@ -2677,10 +3120,6 @@ class LeadService
                 'exception_message' => $exception->getMessage(),
             ]);
 
-            throw ValidationException::withMessages([
-                'export' => ['Unable to generate the Excel export file.'],
-            ]);
-        } finally {
             if ($writer instanceof XlsxWriter) {
                 try {
                     $writer->close();
@@ -2688,10 +3127,13 @@ class LeadService
                     // ignore close failures during cleanup
                 }
             }
-
             if (is_file($tmpFile)) {
                 @unlink($tmpFile);
             }
+
+            throw ValidationException::withMessages([
+                'export' => ['Unable to generate the Excel export file.'],
+            ]);
         }
     }
 
@@ -2709,7 +3151,7 @@ class LeadService
 
         $query = Lead::query()
             ->where('company_id', $companyId)
-            ->with(['pipeline:id,name', 'assignee:id,name,email']);
+            ->with(['pipeline:id,name', 'assignee:id,name,email', 'creator:id,name,email']);
 
         $this->applyLeadListFilters($query, $user, $role, $filters);
 
@@ -2722,13 +3164,16 @@ class LeadService
             foreach ($leads as $lead) {
                 $storedCustomFields = is_array($lead->custom_fields) ? $lead->custom_fields : [];
                 $row = [
+                    (string) $lead->id,
                     (string) $lead->name,
                     (string) ($lead->email ?? ''),
                     (string) ($lead->phone ?? ''),
                     (string) ($lead->location ?? ''),
                     (string) ($lead->company_name ?? ''),
+                    (string) ($lead->company_email ?? ''),
                     (string) ($lead->website ?? ''),
                     (string) ($lead->position ?? ''),
+                    (string) ($lead->industry ?? ''),
                     implode(', ', is_array($lead->profile_urls) ? $lead->profile_urls : []),
                     (string) ($lead->source ?? ''),
                     (string) ($labelNames[$lead->status] ?? $lead->status ?? ''),
@@ -2737,6 +3182,7 @@ class LeadService
                     (string) ($lead->budget_currency ?? ''),
                     (string) ($lead->pipeline?->name ?? ''),
                     (string) ($lead->assignee?->name ?? $lead->assignee?->email ?? ''),
+                    (string) ($lead->creator?->name ?? $lead->creator?->email ?? ''),
                     $lead->created_at?->toIso8601String() ?? '',
                     $lead->updated_at?->toIso8601String() ?? '',
                 ];
@@ -2766,7 +3212,7 @@ class LeadService
     {
         return array_merge(
             self::LEAD_EXPORT_HEADERS,
-            $exportFields->map(static fn (LeadFieldDefinition $field): string => $field->label)->all(),
+            $exportFields->map(static fn(LeadFieldDefinition $field): string => $field->label)->all(),
         );
     }
 
@@ -2801,12 +3247,18 @@ class LeadService
      * @param  Collection<string, LeadFieldDefinition>  $fieldDefinitions
      * @return array{normalized:array<string,mixed>,errors:array<int,string>}
      */
-    private function validateImportRow(array $labelLookup, Collection $fieldDefinitions, mixed $row, int $rowIndex): array
-    {
+    private function validateImportRow(
+        array $labelLookup,
+        Collection $fieldDefinitions,
+        mixed $row,
+        int $rowIndex,
+        string $defaultStatusSlug = 'newly_lead',
+    ): array {
         if (! is_array($row)) {
             return [
                 'normalized' => [],
                 'errors' => ['Row must be an object-like payload.'],
+                'field_errors' => [],
             ];
         }
 
@@ -2817,73 +3269,118 @@ class LeadService
         $companyName = trim((string) ($row['company_name'] ?? ''));
         $websiteRaw = trim((string) ($row['website'] ?? ''));
         $position = trim((string) ($row['position'] ?? ''));
+        $companyEmail = trim((string) ($row['company_email'] ?? ''));
+        $industry = trim((string) ($row['industry'] ?? ''));
         $profileUrlsRaw = $row['profile_urls'] ?? null;
         $source = trim((string) ($row['source'] ?? ''));
-        $status = trim((string) ($row['status'] ?? 'newly_lead'));
+        $statusRaw = trim((string) ($row['status'] ?? ''));
+        $status = $statusRaw !== '' ? $statusRaw : $defaultStatusSlug;
         $priority = strtolower(trim((string) ($row['priority'] ?? 'medium')));
         $budgetAmountRaw = trim((string) ($row['budget_amount'] ?? ''));
         $budgetCurrency = strtoupper(trim((string) ($row['budget_currency'] ?? '')));
 
         $errors = [];
+        // Same messages keyed by the import field, so the retry form can point at the input.
+        $fieldErrors = [];
+        $fail = static function (string $field, string $message) use (&$errors, &$fieldErrors): void {
+            $errors[] = $message;
+            $fieldErrors[$field] ??= $message;
+        };
 
         if ($name === '') {
-            $errors[] = 'Name is required.';
+            $fail('name', 'Name is required.');
         }
 
         if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Email is invalid.';
+            $fail('email', "Email '{$email}' is not a valid email address.");
         }
 
+        if ($companyEmail !== '' && ! filter_var($companyEmail, FILTER_VALIDATE_EMAIL)) {
+            $fail('company_email', "Company email '{$companyEmail}' is not a valid email address.");
+        }
+
+        // Same limits as the database columns, so a long cell is a row error
+        // instead of a SQL failure that aborts the import halfway.
+        foreach (
+            [
+                'name' => ['Name', $name, 255],
+                'email' => ['Email', $email, 255],
+                'phone' => ['Phone', $phone, 40],
+                'location' => ['Location', $location, 255],
+                'company_name' => ['Company name', $companyName, 255],
+                'company_email' => ['Company email', $companyEmail, 255],
+                'website' => ['Website', $websiteRaw, 255],
+                'position' => ['Position', $position, 120],
+                'industry' => ['Industry', $industry, 120],
+                'source' => ['Source', $source, 120],
+            ] as $field => [$label, $value, $max]
+        ) {
+            if (mb_strlen($value) > $max) {
+                $fail($field, "{$label} must be {$max} characters or fewer (it has " . mb_strlen($value) . ').');
+            }
+        }
+
+        // The normalizer drops values it can't parse; report them instead of losing them silently.
         $website = $websiteRaw !== '' ? LeadFieldNormalizer::normalizeWebsite($websiteRaw) : null;
-        if ($websiteRaw !== '' && ! LeadFieldNormalizer::isValidWebsite($website)) {
-            $errors[] = 'Website is invalid.';
+        if ($websiteRaw !== '' && ($website === null || ! LeadFieldNormalizer::isValidWebsite($website))) {
+            $fail('website', "Website '{$websiteRaw}' is not a valid web address (e.g. https://acme.com).");
         }
 
         $profileUrls = LeadFieldNormalizer::normalizeProfileUrls($profileUrlsRaw);
-        $invalidProfileUrls = LeadFieldNormalizer::invalidProfileUrls($profileUrls);
+        $rawProfileEntries = is_string($profileUrlsRaw)
+            ? array_map('trim', explode(',', $profileUrlsRaw))
+            : (is_array($profileUrlsRaw) ? array_map(static fn($v): string => trim((string) $v), $profileUrlsRaw) : []);
+        $invalidProfileUrls = array_merge(
+            array_values(array_filter(
+                $rawProfileEntries,
+                static fn(string $entry): bool => $entry !== '' && LeadFieldNormalizer::normalizeWebsite($entry) === null,
+            )),
+            LeadFieldNormalizer::invalidProfileUrls($profileUrls),
+        );
         if ($invalidProfileUrls !== []) {
-            $errors[] = 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '.';
+            $fail('profile_urls', 'Profile URLs contain invalid entries: ' . implode(', ', $invalidProfileUrls) . '. Separate several links with commas.');
         }
 
         if (! in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
-            $errors[] = 'Priority must be one of low, medium, high, urgent.';
+            $fail('priority', "Priority '{$priority}' is not valid. Choose low, medium, high or urgent.");
         }
 
         $budgetAmount = null;
         if ($budgetAmountRaw !== '') {
             if (! is_numeric(str_replace(',', '', $budgetAmountRaw))) {
-                $errors[] = 'Budget amount must be numeric.';
+                $fail('budget_amount', "Budget amount '{$budgetAmountRaw}' must be a number (e.g. 5000).");
             } else {
                 $budgetAmount = (float) str_replace(',', '', $budgetAmountRaw);
                 if ($budgetAmount < 0) {
-                    $errors[] = 'Budget amount must be zero or greater.';
+                    $fail('budget_amount', 'Budget amount must be zero or greater.');
                 }
             }
         }
 
         if ($budgetCurrency !== '' && ! preg_match('/^[A-Z]{3}$/', $budgetCurrency)) {
-            $errors[] = 'Budget currency must be a 3-letter ISO code.';
+            $fail('budget_currency', "Budget currency '{$budgetCurrency}' must be a 3-letter code such as USD or NGN.");
         }
 
-        $resolvedStatus = $labelLookup[Str::lower($status)] ?? null;
+        $resolvedStatus = $this->resolveLabelSlug($labelLookup, $status);
         if ($resolvedStatus === null) {
             $suggestion = $this->suggestClosestLabel($labelLookup, $status);
-            $errors[] = $suggestion !== null
-                ? "Status/label '{$status}' is not recognized. Did you mean '{$suggestion}'?"
-                : "Status/label '{$status}' is not recognized.";
+            $fail('status', $suggestion !== null
+                ? "Status '{$status}' is not one of your stages. Did you mean '{$suggestion}'?"
+                : "Status '{$status}' is not one of your stages. Pick a stage from the list.");
         }
 
         $customFields = [];
         if (array_key_exists('custom_fields', $row)) {
             if (! is_array($row['custom_fields'])) {
-                $errors[] = 'Custom fields must be an object.';
+                $fail('custom_fields', 'Custom fields must be an object.');
             } else {
                 try {
                     $customFields = LeadCustomFieldValues::normalize($fieldDefinitions, $row['custom_fields'], [], 'import');
                 } catch (ValidationException $exception) {
-                    foreach ($exception->errors() as $messages) {
+                    foreach ($exception->errors() as $key => $messages) {
+                        $field = str_starts_with((string) $key, 'custom_fields.') ? (string) $key : 'custom_fields';
                         foreach ($messages as $message) {
-                            $errors[] = (string) $message;
+                            $fail($field, (string) $message);
                         }
                     }
                 }
@@ -2897,18 +3394,21 @@ class LeadService
                 'phone' => $phone !== '' ? $phone : null,
                 'location' => $location !== '' ? $location : null,
                 'company_name' => $companyName !== '' ? $companyName : null,
+                'company_email' => $companyEmail !== '' ? $companyEmail : null,
                 'website' => $website,
                 'position' => $position !== '' ? $position : null,
+                'industry' => $industry !== '' ? $industry : null,
                 'profile_urls' => $profileUrls !== [] ? $profileUrls : null,
                 'source' => $source !== '' ? $source : null,
                 'status' => $resolvedStatus ?? $status,
                 'priority' => $priority,
                 'budget_amount' => $budgetAmount,
-                'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'USD' : null),
+                'budget_currency' => $budgetCurrency !== '' ? $budgetCurrency : ($budgetAmount !== null ? 'GBP' : null),
                 'custom_fields' => $customFields,
                 'row_index' => $rowIndex,
             ],
             'errors' => $errors,
+            'field_errors' => $fieldErrors,
         ];
     }
 

@@ -29,6 +29,7 @@ class Lead extends Model
         'location',
         'company_name',
         'company_email',
+        'industry',
         'website',
         'position',
         'profile_urls',

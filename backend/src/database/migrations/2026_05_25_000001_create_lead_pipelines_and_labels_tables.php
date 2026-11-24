@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('company_id')->constrained()->cascadeOnDelete();
             $table->string('name', 120);
-            $table->string('currency_code', 3)->default('USD');
+            $table->string('currency_code', 3)->default('GBP');
             $table->unsignedInteger('sort_order')->default(0);
             $table->boolean('is_default')->default(false);
             $table->timestamps();
@@ -49,7 +49,7 @@ return new class extends Migration
             $defaultPipelineId = DB::table('lead_pipelines')->insertGetId([
                 'company_id' => $companyId,
                 'name' => 'Default Pipeline',
-                'currency_code' => 'USD',
+                'currency_code' => 'GBP',
                 'sort_order' => 0,
                 'is_default' => true,
                 'created_at' => now(),
@@ -60,7 +60,7 @@ return new class extends Migration
                 [
                     'company_id' => $companyId,
                     'name' => 'Sales Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 1,
                     'is_default' => false,
                     'created_at' => now(),
@@ -69,7 +69,7 @@ return new class extends Migration
                 [
                     'company_id' => $companyId,
                     'name' => 'Marketing Pipeline',
-                    'currency_code' => 'USD',
+                    'currency_code' => 'GBP',
                     'sort_order' => 2,
                     'is_default' => false,
                     'created_at' => now(),

@@ -546,6 +546,13 @@ export function SetReminderConfirmModal({
 }) {
   const initial = (prospectName || "P").trim().charAt(0).toUpperCase();
   const [remindAt, setRemindAt] = useState(defaultReminderInputValue);
+  // new Date("") is invalid and toISOString() throws, so guard an empty/bad value.
+  const remindAtDate = remindAt ? new Date(remindAt) : null;
+  const remindAtError = !remindAtDate || Number.isNaN(remindAtDate.getTime())
+    ? "Pick a date and time for the reminder."
+    : remindAtDate.getTime() <= Date.now()
+      ? "Pick a time in the future."
+      : null;
 
   return (
     <ConfirmActionShell
@@ -557,7 +564,11 @@ export function SetReminderConfirmModal({
       icon={<Bell size={18} />}
       confirmLabel="Confirm Reminder"
       isConfirming={isConfirming}
-      onConfirm={() => onConfirm(new Date(remindAt).toISOString())}
+      confirmDisabled={remindAtError !== null}
+      onConfirm={() => {
+        if (remindAtError || !remindAtDate) return;
+        onConfirm(remindAtDate.toISOString());
+      }}
     >
       {/* Target Prospect & Company Card */}
       <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5">
@@ -592,8 +603,12 @@ export function SetReminderConfirmModal({
             aria-label="Reminder date and time"
             value={remindAt}
             onChange={(event) => setRemindAt(event.target.value)}
+            aria-invalid={remindAtError ? true : undefined}
             className="mt-2 h-8 rounded-lg border border-amber-200 bg-white px-2 text-[11px] text-amber-950"
           />
+          {remindAtError && (
+            <p data-field-error="" role="alert" className="mt-1 text-[11px] text-red-600">{remindAtError}</p>
+          )}
         </div>
       </div>
 

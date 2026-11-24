@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Trash2 } from "lucide-react";
 import { ModalPortal } from "@/components/ui/modal-portal";
@@ -11,6 +12,8 @@ type ConfirmDeleteModalProps = {
   title?: string;
   description?: string;
   confirmLabel?: string;
+  /** Extra content between the description and action buttons (e.g. a target picker). */
+  children?: ReactNode;
   /** When false, caller controls closing (e.g. after async success). Default true. */
   closeOnConfirm?: boolean;
   confirmDisabled?: boolean;
@@ -23,6 +26,7 @@ export default function ConfirmDeleteModal({
   title = "Delete",
   description = "Are you sure you want to delete this? This action cannot be undone.",
   confirmLabel = "Delete",
+  children,
   closeOnConfirm = true,
   confirmDisabled = false,
 }: ConfirmDeleteModalProps) {
@@ -53,7 +57,8 @@ export default function ConfirmDeleteModal({
               </div>
 
               <h3 className="text-[17px] font-bold text-[#0B1215] mb-2">{title}</h3>
-              <p className="text-[13px] text-gray-500 leading-relaxed mb-6">{description}</p>
+              <p className="text-[13px] text-gray-500 leading-relaxed mb-4">{description}</p>
+              {children ? <div className="w-full mb-6 text-left">{children}</div> : <div className="mb-6" />}
 
               <div className="flex gap-3 w-full">
                 <button

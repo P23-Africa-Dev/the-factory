@@ -169,7 +169,7 @@ final class CopilotAutomationFlowTest extends TestCase
 
         $response
             ->assertStatus(422)
-            ->assertJsonValidationErrors(['action_args.task_id', 'action_args.assignee_id']);
+            ->assertJsonValidationErrors(['action_args.task_id', 'action_args.to_user_id']);
     }
 
     /**

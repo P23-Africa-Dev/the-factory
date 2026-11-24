@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Dashboard;
 
-use App\Enums\LeadStatus;
 use App\Models\AppNotification;
 use App\Models\AttendanceRecord;
 use App\Models\Lead;
 use App\Models\LeadActivity;
+use App\Models\LeadLabel;
 use App\Models\LeadNote;
 use App\Models\PayrollSetting;
 use App\Models\Project;
@@ -69,8 +69,8 @@ class DashboardAggregateService
                     ->whereBetween('created_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()]);
 
                 if ($role === 'agent') {
-                    $this->applyAgentUploadedLeadScope($allLeads, (int) $user->id);
-                    $this->applyAgentUploadedLeadScope($leadsInWindow, (int) $user->id);
+                    $this->applyAgentLeadScope($allLeads, (int) $user->id);
+                    $this->applyAgentLeadScope($leadsInWindow, (int) $user->id);
                 }
 
                 $activeAgents = User::query()
@@ -144,7 +144,10 @@ class DashboardAggregateService
                         'tasks_created' => (int) (clone $tasksInWindow)->count(),
                         'tasks_completed' => (int) (clone $tasksInWindow)->where('status', 'completed')->count(),
                         'leads_created' => (int) (clone $leadsInWindow)->count(),
-                        'leads_won' => (int) (clone $leadsInWindow)->where('status', LeadStatus::WON->value)->count(),
+                        // Leads (any creation date) that reached a won stage inside the window.
+                        'leads_won' => (int) (clone $allLeads)
+                            ->whereBetween('converted_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
+                            ->count(),
                     ],
                     'self_task_slices' => [
                         'pending' => (int) (clone $selfTaskBase)->where('status', 'pending')->count(),
@@ -157,6 +160,7 @@ class DashboardAggregateService
                         ->when($role === 'agent', function (Builder $query) use ($user): void {
                             $this->applyAgentLeadScope($query, (int) $user->id);
                         })
+                        ->whereBetween('updated_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
                         ->orderByDesc('updated_at')
                         ->limit(5)
                         ->get(['id', 'name', 'status', 'priority', 'assigned_to_user_id'])
@@ -174,6 +178,7 @@ class DashboardAggregateService
                         ->values()
                         ->all(),
                     'crm_pipeline_snapshot' => $this->leadService->pipelineSummary($user, $resolvedCompanyId),
+                    'stage_progress' => $this->buildStageProgress($resolvedCompanyId),
                     'calendar_task_feed' => $upcomingTasks->map(static fn(Task $task): array => [
                         'id' => $task->id,
                         'title' => $task->title,
@@ -674,26 +679,35 @@ class DashboardAggregateService
         });
     }
 
-    private function applyAgentUploadedLeadScope(Builder $query, int $userId): void
+    /**
+     * Progress (0-100) of each CRM stage, from its position in the company's label order.
+     * Won stages are always 100.
+     *
+     * @return array<string, int>
+     */
+    private function buildStageProgress(int $companyId): array
     {
-        $query->where('created_by_user_id', $userId);
-        $this->applyAgentUploadedSourceFilter($query);
-    }
+        $labels = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get(['slug', 'is_won']);
 
-    private function applyAgentUploadedSourceFilter(Builder $query): void
-    {
-        $accepted = [
-            'agent upload',
-            'agent uploaded',
-            'uploaded by agent',
-            'uploaded by agents',
-        ];
+        $ordinary = $labels->reject(static fn (LeadLabel $label): bool => (bool) $label->is_won)->values();
+        $steps = max(1, $ordinary->count());
+        $progress = [];
 
-        $quoted = implode(',', array_map(static fn (string $value): string => "'" . str_replace("'", "''", $value) . "'", $accepted));
+        foreach ($ordinary as $index => $label) {
+            $progress[(string) $label->slug] = (int) round((($index + 1) / ($steps + 1)) * 100);
+        }
 
-        $query->whereRaw(
-            "LOWER(TRIM(REPLACE(REPLACE(COALESCE(source, ''), '-', ' '), '_', ' '))) IN ($quoted)"
-        );
+        foreach ($labels as $label) {
+            if ((bool) $label->is_won) {
+                $progress[(string) $label->slug] = 100;
+            }
+        }
+
+        return $progress;
     }
 
     /**
@@ -704,7 +718,7 @@ class DashboardAggregateService
         $query = Lead::query()->where('company_id', $companyId);
 
         if ($role === 'agent') {
-            $this->applyAgentUploadedLeadScope($query, $userId);
+            $this->applyAgentLeadScope($query, $userId);
         }
 
         $points = [];

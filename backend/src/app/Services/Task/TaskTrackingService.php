@@ -857,7 +857,10 @@ class TaskTrackingService
         $context = $this->accessService->resolve($user, $filters['company_id'] ?? null);
         $this->assertTaskInCompany($task, $context->company->id);
 
-        if (! $context->canManageTasks()) {
+        if ($context->role === 'supervisor') {
+            // Route history is location data: same rule as live map/snapshots.
+            $this->ensureSupervisorCanViewRoute($task, $user);
+        } elseif (! $context->canManageTasks()) {
             $this->ensureAssignedUser($task, $user);
         }
 
@@ -1365,6 +1368,43 @@ class TaskTrackingService
         if (! $isPrimaryAssignee && ! $isCurrentAssignee) {
             throw ValidationException::withMessages([
                 'authorization' => ['You can only track tasks currently assigned to you.'],
+            ]);
+        }
+    }
+
+    /**
+     * Supervisors may only see the route trail of tasks they created, are
+     * assigned to, or that are assigned to an agent they supervise
+     * (mirrors AgentLocationSnapshotService and the realtime relay).
+     */
+    private function ensureSupervisorCanViewRoute(Task $task, User $supervisor): void
+    {
+        if ((int) $task->created_by_user_id === (int) $supervisor->id) {
+            return;
+        }
+
+        $assigneeIds = DB::table('task_assignments')
+            ->where('task_id', $task->id)
+            ->where('is_current', true)
+            ->pluck('assigned_agent_id')
+            ->push($task->assigned_agent_id)
+            ->filter()
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($assigneeIds->contains((int) $supervisor->id)) {
+            return;
+        }
+
+        $supervisesAssignee = $assigneeIds->isNotEmpty() && DB::table('users')
+            ->whereIn('id', $assigneeIds->all())
+            ->where('supervisor_user_id', $supervisor->id)
+            ->exists();
+
+        if (! $supervisesAssignee) {
+            throw ValidationException::withMessages([
+                'authorization' => ['Supervisors can only view route history of agents assigned to them.'],
             ]);
         }
     }

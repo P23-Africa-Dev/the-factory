@@ -18,8 +18,10 @@ use App\Http\Resources\LeadNoteResource;
 use App\Http\Resources\LeadResource;
 use App\Models\Lead;
 use App\Services\Crm\LeadService;
+use App\Support\CurrencyCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LeadController extends Controller
@@ -128,6 +130,7 @@ class LeadController extends Controller
             'location' => ['nullable', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
             'company_email' => ['nullable', 'email', 'max:255'],
+            'industry' => ['nullable', 'string', 'max:120'],
             'website' => ['nullable', 'string', 'max:255'],
             'position' => ['nullable', 'string', 'max:120'],
             'profile_urls' => ['nullable', 'array'],
@@ -212,6 +215,7 @@ class LeadController extends Controller
             'contacts.*.location' => ['nullable', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
             'company_email' => ['nullable', 'email', 'max:255'],
+            'industry' => ['nullable', 'string', 'max:120'],
             'website' => ['nullable', 'string', 'max:255'],
             'position' => ['nullable', 'string', 'max:120'],
             'profile_urls' => ['nullable', 'array'],
@@ -275,6 +279,32 @@ class LeadController extends Controller
         return $this->success(
             message: 'CRM lead deleted successfully.',
             data: ['deleted_lead_id' => $lead->id],
+        );
+    }
+
+    /** Delete many leads in one request and report which ones failed. */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable'],
+            'lead_ids' => ['required', 'array', 'min:1', 'max:500'],
+            'lead_ids.*' => ['integer', 'min:1'],
+        ]);
+
+        $result = $this->leadService->bulkDelete(
+            $request->user(),
+            array_map('intval', $data['lead_ids']),
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        $deleted = count($result['deleted_ids']);
+        $failed = count($result['failed']);
+
+        return $this->success(
+            message: $failed === 0
+                ? "{$deleted} lead(s) deleted."
+                : "{$deleted} lead(s) deleted, {$failed} could not be deleted.",
+            data: $result,
         );
     }
 
@@ -348,6 +378,7 @@ class LeadController extends Controller
                 'status' => $request->string('status')->toString(),
                 'pipeline_id' => $request->input('pipeline_id'),
                 'source' => $request->string('source')->toString(),
+                'assigned_to_user_id' => $request->input('assigned_to_user_id'),
                 ...$this->creatorAndDateFilters($request),
             ],
         );
@@ -374,8 +405,12 @@ class LeadController extends Controller
         $validated = $request->validate([
             'company_id' => ['nullable'],
             'name' => ['required', 'string', 'max:120'],
+            'currency_code' => ['nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+        if (isset($validated['currency_code'])) {
+            $validated['currency_code'] = strtoupper((string) $validated['currency_code']);
+        }
 
         $pipeline = $this->leadService->createPipeline($request->user(), $validated);
 
@@ -392,8 +427,12 @@ class LeadController extends Controller
             'company_id' => ['nullable'],
             'name' => ['sometimes', 'required', 'string', 'max:120'],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
+            'currency_code' => ['sometimes', 'nullable', 'string', 'size:3', Rule::in(CurrencyCatalog::codes())],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
+        if (isset($validated['currency_code'])) {
+            $validated['currency_code'] = strtoupper((string) $validated['currency_code']);
+        }
 
         $updated = $this->leadService->updatePipeline($request->user(), $pipeline, $validated);
 
@@ -408,6 +447,7 @@ class LeadController extends Controller
         $validated = $request->validate([
             'company_id' => ['nullable'],
             'force' => ['sometimes', 'boolean'],
+            'reassign_to_pipeline_id' => ['sometimes', 'nullable', 'integer', 'exists:lead_pipelines,id'],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
 
@@ -477,7 +517,8 @@ class LeadController extends Controller
         $validated = $request->validate([
             'company_id' => ['nullable'],
             'name' => ['required', 'string', 'max:120'],
-            'color' => ['nullable', 'string', 'max:20'],
+            'color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'is_won' => ['sometimes', 'boolean'],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
 
@@ -495,7 +536,8 @@ class LeadController extends Controller
         $validated = $request->validate([
             'company_id' => ['nullable'],
             'name' => ['sometimes', 'required', 'string', 'max:120'],
-            'color' => ['sometimes', 'required', 'string', 'max:20'],
+            'color' => ['sometimes', 'required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'is_won' => ['sometimes', 'boolean'],
         ]);
         $validated['company_id'] = $this->resolveCompanyContextId($request->input('company_id'));
 
@@ -588,11 +630,12 @@ class LeadController extends Controller
             'created_by_user_id' => ['nullable', 'integer', 'min:1'],
             'created_from' => ['nullable', 'date'],
             'created_to' => ['nullable', 'date', 'after_or_equal:created_from'],
+            'industry' => ['nullable', 'string', 'max:120'],
         ]);
     }
 
     /**
-     * @return array{created_by_user_id: mixed, created_from: string, created_to: string}
+     * @return array{created_by_user_id: mixed, created_from: string, created_to: string, industry: string}
      */
     private function creatorAndDateFilters(Request $request): array
     {
@@ -600,6 +643,7 @@ class LeadController extends Controller
             'created_by_user_id' => $request->input('created_by_user_id'),
             'created_from' => $request->string('created_from')->toString(),
             'created_to' => $request->string('created_to')->toString(),
+            'industry' => $request->string('industry')->toString(),
         ];
     }
 }

@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import {
   DndContext,
-  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -13,17 +12,22 @@ import {
   DragOverlay,
   DragStartEvent,
 } from '@dnd-kit/core';
+import { useBoardCollisionDetection } from '@/lib/dnd/use-board-collision';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import type { DndContainer, DndItem, TaskCategory } from '@/types/operations';
 import type { ProjectSubtask } from '@/lib/tasks/project-checklist';
 import { TaskColumn } from './task-column';
-import { TaskCard } from './task-card';
+import { TaskCardView } from './task-card';
 
 interface TaskBoardProps {
   containers: DndContainer[];
   activeTab: TaskCategory;
-  onAddCard: (containerId: string, item: DndItem) => void;
-  onOpenCreateTask?: () => void;
+  /** Opens the create-task flow preset to the column the button was clicked in. */
+  onOpenCreateTask?: (containerId: string) => void;
+  /** False for users who may not move cards (agents): cards render non-draggable. */
+  canDrag?: boolean;
+  /** True for managers: they may also move tasks they only observe. */
+  observerDragAllowed?: boolean;
   checklistUserId?: string;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onAddSubtask?: (taskId: string, title: string) => void;
@@ -48,7 +52,6 @@ interface TaskBoardProps {
 export function TaskBoard({
   containers,
   activeTab,
-  onAddCard,
   findContainer,
   moveItem,
   moveToContainer,
@@ -64,6 +67,8 @@ export function TaskBoard({
   onViewMap,
   onStatusDrop,
   onDragStateChange,
+  canDrag = true,
+  observerDragAllowed = false,
 }: TaskBoardProps) {
   const [activeItem, setActiveItem] = useState<DndItem | null>(null);
   const [dragStartContainerId, setDragStartContainerId] = useState<string | null>(null);
@@ -77,12 +82,15 @@ export function TaskBoard({
         : c.items.filter((item) => item.category === activeTab),
   }));
 
+  const { collisionDetection, markMoved, resetDrag } = useBoardCollisionDetection();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   function handleDragStart(event: DragStartEvent) {
+    resetDrag();
     const { active } = event;
     onDragStateChange?.(true);
     const container = findContainer(active.id as string);
@@ -101,14 +109,15 @@ export function TaskBoard({
     const overContainer = overIsContainer
       ? containers.find((c) => c.id === overId)
       : findContainer(overId);
-    if (!activeContainer || !overContainer) {
-      setDragStartContainerId(null);
-      return;
-    }
+    // A single hover frame can fail to resolve (e.g. while the board re-renders);
+    // keep the drag's start column so the drop still reports a status change.
+    if (!activeContainer || !overContainer) return;
     if (activeContainer.id === overContainer.id) return;
     if (overIsContainer) {
+      markMoved();
       moveToContainer(activeId, overId);
     } else {
+      markMoved();
       moveBetweenContainers(activeId, overId, activeContainer.id, overContainer.id);
     }
   }
@@ -128,7 +137,10 @@ export function TaskBoard({
     const overContainer = overIsContainer
       ? containers.find((c) => c.id === overId)
       : findContainer(overId);
-    if (!activeContainer || !overContainer) return;
+    if (!activeContainer || !overContainer) {
+      setDragStartContainerId(null);
+      return;
+    }
     if (activeId !== overId && activeContainer.id === overContainer.id) {
       moveItem(activeId, overId, activeContainer.id);
     }
@@ -154,7 +166,7 @@ export function TaskBoard({
     <DndContext
       id="board-context"
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -163,7 +175,13 @@ export function TaskBoard({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {filteredContainers.map((container) => (
           <TaskColumn
-            onOpenCreateTask={onOpenCreateTask}
+            onOpenCreateTask={
+              onOpenCreateTask && container.id !== 'cancelled'
+                ? () => onOpenCreateTask(container.id)
+                : undefined
+            }
+            canDrag={canDrag}
+            observerDragAllowed={observerDragAllowed}
             checklistUserId={checklistUserId}
             onToggleSubtask={onToggleSubtask}
             onAddSubtask={onAddSubtask}
@@ -173,7 +191,6 @@ export function TaskBoard({
             title={container.title}
             color={container.color}
             items={container.items}
-            onAddCard={(item) => onAddCard(container.id, item)}
             onTaskClick={(item) => onTaskClick?.(item, container.id)}
             onTaskEdit={onTaskEdit ? (item) => onTaskEdit(item, container.id) : undefined}
             onTaskDelete={onTaskDelete ? (item) => onTaskDelete(item, container.id) : undefined}
@@ -185,7 +202,7 @@ export function TaskBoard({
       <DragOverlay>
         {activeItem ? (
           <div className="shadow-2xl scale-105 pointer-events-none">
-            <TaskCard item={activeItem} />
+            <TaskCardView item={activeItem} />
           </div>
         ) : null}
       </DragOverlay>

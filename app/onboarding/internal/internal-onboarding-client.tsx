@@ -2,18 +2,11 @@
 
 import OnboardingForm from "@/components/forms/onboarding-form";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 
 export default function InternalOnboardingClient() {
   const searchParams = useSearchParams();
-  const [invitationId] = useState(() => searchParams.get("invitation_id") ?? "");
-  const [token] = useState(() => searchParams.get("token") ?? "");
-
-  useEffect(() => {
-    if (!invitationId || !token) return;
-    if (!searchParams.get("invitation_id") && !searchParams.get("token")) return;
-    window.history.replaceState(window.history.state, "", "/onboarding/internal");
-  }, [invitationId, token, searchParams]);
+  const invitationId = searchParams.get("invitation_id") ?? "";
+  const token = searchParams.get("token") ?? "";
 
   return (
     <div className="w-full max-w-115 flex flex-col gap-8 md:mt-0 lg:-mt-12">

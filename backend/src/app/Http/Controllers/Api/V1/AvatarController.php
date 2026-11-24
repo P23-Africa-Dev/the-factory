@@ -39,45 +39,36 @@ class AvatarController
             ]);
         }
 
-        $avatarPath = "{$this->avatarStorage->avatarRoot()}/{$normalizedGender}";
-        $disk = $this->avatarStorage->disk();
+        // Bump cache key when listing strategy changes so old manifests that
+        // inlined multi‑MB SVG bodies / blank webp-in-svg URLs are not reused.
+        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.v4.%s', $normalizedGender);
 
-        if (! $disk->exists($avatarPath)) {
+        try {
+            $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use ($normalizedGender): array {
+                return $this->avatarStorage->catalogManifest($normalizedGender);
+            });
+        } catch (\Throwable) {
             $manifest = $this->avatarStorage->catalogManifest($normalizedGender);
-
-            if ($manifest === []) {
-                throw ValidationException::withMessages([
-                    'gender' => ['No avatars available for this gender.'],
-                ]);
-            }
         }
 
-        $manifestCacheKey = sprintf('internal_onboarding.avatar_manifest.%s', $normalizedGender);
-
-        $manifest = Cache::remember($manifestCacheKey, now()->addMinutes(15), function () use ($normalizedGender): array {
-            return $this->avatarStorage->catalogManifest($normalizedGender);
-        });
+        if ($manifest === []) {
+            throw ValidationException::withMessages([
+                'gender' => ['No avatars available for this gender.'],
+            ]);
+        }
 
         $total = count($manifest);
         $page = array_slice($manifest, $cursor, $limit);
 
-        $avatars = array_map(function (array $item) use ($disk): array {
-            $svgContent = is_string($item['svg'] ?? null) ? $item['svg'] : null;
-            $file = $item['file'] ?? null;
-            $extension = $item['extension'] ?? null;
-
-            if ($svgContent === null && $extension === 'svg' && is_string($file)) {
-                try {
-                    $svgContent = $disk->get($file);
-                } catch (\Throwable) {
-                    // Non-fatal: URL fallback will be used.
-                }
-            }
+        // Serve public URLs only for storage-backed avatars. Pulling SVG bodies
+        // from object storage made list requests exceed the onboarding client timeout.
+        $avatars = array_map(static function (array $item): array {
+            $url = $item['url'] ?? null;
 
             return [
                 'key' => (string) $item['key'],
-                'url' => $item['url'] ?? null,
-                'svg' => $svgContent,
+                'url' => $url,
+                'svg' => null,
             ];
         }, $page);
 

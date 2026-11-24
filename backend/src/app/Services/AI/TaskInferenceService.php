@@ -399,7 +399,7 @@ class TaskInferenceService
 
     private function extractGeographicLocation(string $message): ?string
     {
-        if (preg_match('/\bat\s+((?:lekki|ikeja|victoria\s+island|vi|ajah|yaba|surulere|mainland|island|phase\s+[ivx0-9]+)[^,\.;]*)/i', $message, $m) === 1) {
+        if (preg_match('/\bat\s+((?:canary\s+wharf|shoreditch|soho|westminster|manchester|birmingham|lekki|ikeja|victoria\s+island|vi|ajah|yaba|surulere|mainland|island|phase\s+[ivx0-9]+)[^,\.;]*)/i', $message, $m) === 1) {
             return $this->stripTrailingClauses(trim((string) $m[1]));
         }
 
@@ -626,7 +626,7 @@ User request:
 Return ONLY JSON with keys:
 title, description, type, location, address, due_date, assignee, priority
 Use null when unknown. type must be one of: sales_visit, inspection, delivery, collection, awareness.
-Keep title short. Keep location as the place name only (e.g. "Lekki Phase II"), not assignment clauses.
+Keep title short. Keep location as the place name only (e.g. "Canary Wharf"), not assignment clauses.
 PROMPT);
 
         try {

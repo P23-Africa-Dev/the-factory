@@ -16,6 +16,21 @@ class ClaudeModelResolver
     private const CACHE_TTL_SECONDS = 3600;
 
     /**
+     * The Anthropic API base URL, always ending in /v1. Accepts both
+     * "https://api.anthropic.com" (the Anthropic SDK convention) and
+     * "https://api.anthropic.com/v1" in ANTHROPIC_BASE_URL.
+     */
+    public static function baseUrl(): string
+    {
+        $url = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
+        if ($url === '') {
+            $url = 'https://api.anthropic.com/v1';
+        }
+
+        return preg_match('#/v\d+$#', $url) === 1 ? $url : $url.'/v1';
+    }
+
+    /**
      * Resolve the Claude model id to use for a given purpose.
      */
     public function resolve(string $purpose = 'default', ?string $requestedModel = null): string
@@ -95,7 +110,7 @@ class ClaudeModelResolver
     {
         try {
             Cache::forget(self::CACHE_KEY_MODELS);
-            foreach (['default', 'analyst', 'report', 'exec', 'operational'] as $purpose) {
+            foreach (['default', 'analyst', 'report', 'exec', 'operational', 'routing'] as $purpose) {
                 Cache::forget(self::CACHE_KEY_RESOLVED . $purpose);
             }
         } catch (\Throwable) {
@@ -119,7 +134,7 @@ class ClaudeModelResolver
         }
 
         try {
-            $baseUrl = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
+            $baseUrl = self::baseUrl();
             $response = Http::timeout(12)
                 ->withHeaders([
                     'x-api-key' => $apiKey,
@@ -149,10 +164,9 @@ class ClaudeModelResolver
     private function staticFallbackIds(): array
     {
         return [
-            'claude-sonnet-4-6',
-            'claude-sonnet-4-5-20250929',
-            'claude-haiku-4-5-20251001',
-            'claude-opus-4-8',
+            'claude-opus-5-5',
+            'claude-sonnet-5-5',
+            'claude-haiku-5-5',
         ];
     }
 
@@ -169,9 +183,9 @@ class ClaudeModelResolver
         }
 
         $preferencePatterns = match ($purpose) {
-            'analyst', 'report' => ['sonnet', 'opus', 'haiku'],
+            'analyst', 'report' => ['opus', 'sonnet', 'haiku'],
             'routing' => ['haiku', 'sonnet'],
-            default => ['sonnet', 'haiku', 'opus'],
+            default => ['opus', 'sonnet', 'haiku'],
         };
 
         foreach ($preferencePatterns as $pattern) {
@@ -190,16 +204,24 @@ class ClaudeModelResolver
         return $usable[0];
     }
 
+    /**
+     * Higher is newer. Version (major.minor) dominates; an 8-digit date suffix
+     * only breaks ties between snapshots of the same version.
+     * "claude-opus-5-5" > "claude-opus-5" > "claude-sonnet-4-5-20250929".
+     */
     private function modelRecencyScore(string $modelId): int
     {
-        if (preg_match('/(\d+)-(\d+)/', $modelId, $matches)) {
-            return ((int) $matches[1] * 100) + (int) $matches[2];
+        $withoutDate = preg_replace('/-\d{8}$/', '', $modelId) ?? $modelId;
+        $date = preg_match('/-(\d{8})$/', $modelId, $dateMatch) === 1 ? (int) $dateMatch[1] : 0;
+
+        $major = 0;
+        $minor = 0;
+        if (preg_match('/-(\d{1,2})(?:-(\d{1,2}))?$/', $withoutDate, $matches) === 1) {
+            $major = (int) $matches[1];
+            $minor = isset($matches[2]) ? (int) $matches[2] : 0;
         }
 
-        if (preg_match('/(\d{8})/', $modelId, $matches)) {
-            return (int) $matches[1];
-        }
-
-        return 0;
+        // Dates are at most 99_991_231, so scale the version above that range.
+        return ($major * 100 + $minor) * 100_000_000 + $date;
     }
 }

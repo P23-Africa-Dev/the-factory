@@ -5,6 +5,7 @@ import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { Clock3, Crosshair, Eye, EyeOff, Users } from "lucide-react";
 import type { AttendanceMapSnapshotItem } from "@/lib/api/attendance";
+import { getSafeAvatarSrc } from "@/lib/avatar";
 import { getAgentInitials } from "@/lib/tracking/map-visualization";
 
 type ClockedInPanelProps = {
@@ -165,11 +166,12 @@ function ClockInListAvatar({
   avatarUrl: string | null;
 }) {
   const [failed, setFailed] = useState(false);
-  if (avatarUrl && !failed) {
+  const resolvedUrl = getSafeAvatarSrc(avatarUrl);
+  if (resolvedUrl && !failed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={avatarUrl}
+        src={resolvedUrl}
         alt=""
         className="h-10 w-10 rounded-full object-cover"
         onError={() => setFailed(true)}

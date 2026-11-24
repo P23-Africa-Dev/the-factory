@@ -18,8 +18,8 @@ vi.mock("@/hooks/use-crm", () => ({
 
 describe("PipelineManagerModal", () => {
   const pipelines: CrmPipeline[] = [
-    { id: 1, name: "Outbound Sales", is_default: true, sort_order: 0 },
-    { id: 2, name: "Enterprise Deals", is_default: false, sort_order: 1 },
+    { id: 1, company_id: 10, name: "Outbound Sales", currency_code: "USD", is_default: true, sort_order: 0 },
+    { id: 2, company_id: 10, name: "Enterprise Deals", currency_code: "NGN", is_default: false, sort_order: 1 },
   ];
 
   it("selects pipeline and closes modal when clicking anywhere on a pipeline card", () => {

@@ -36,7 +36,8 @@ describe("dashboard-leads-chart", () => {
     ]);
   });
 
-  it("floors zero buckets to the minimum display height", () => {
+  it("keeps zero buckets at zero (no display floor)", () => {
+    expect(LEADS_TREND_MIN_BAR_VALUE).toBe(0);
     expect(buildCalibratedLeadsTrendChart([])).toEqual(
       Array.from({ length: LEADS_TREND_BUCKET_COUNT }, (_, index) => ({
         name: String(index + 1),
@@ -46,7 +47,7 @@ describe("dashboard-leads-chart", () => {
     );
   });
 
-  it("floors only the zero side when one metric is missing", () => {
+  it("keeps the missing metric at zero when only one side has data", () => {
     expect(
       buildCalibratedLeadsTrendChart([{ name: "1", v1: 10, v2: 0 }]),
     ).toEqual([
@@ -70,7 +71,7 @@ describe("dashboard-leads-chart", () => {
     ]);
   });
 
-  it("preserves values above the minimum floor", () => {
+  it("preserves real values", () => {
     expect(
       buildCalibratedLeadsTrendChart([
         { name: "1", v1: 12, v2: 5 },

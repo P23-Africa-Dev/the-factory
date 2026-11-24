@@ -29,7 +29,7 @@ class InternalUserResource extends JsonResource
                 'state_name' => (string) $zone->state_name,
                 'lga_name' => (string) $zone->lga_name,
             ])->values()->all(),
-            'work_days' => $this->work_days ?? [],
+            'work_days' => $this->work_days,
             'base_salary' => $this->base_salary,
             'payroll_salary_type' => $this->payroll_salary_type,
             'salary_currency' => $this->salary_currency,
@@ -39,9 +39,8 @@ class InternalUserResource extends JsonResource
             'gender' => $this->gender,
             'avatar_key' => $this->avatar,
             'avatar_url' => $avatarUrl,
-            'avatar_svg' => $this->avatar && $this->gender
-                ? config("internal_onboarding.avatar_catalog.{$this->gender}.{$this->avatar}")
-                : null,
+            // Always null — clients must use avatar_url (optimized Spaces objects).
+            'avatar_svg' => null,
             'internal_onboarding_completed_at' => $this->internal_onboarding_completed_at?->toIso8601String(),
             'is_active' => (bool) $this->is_active,
             'created_at' => $this->created_at?->toIso8601String(),

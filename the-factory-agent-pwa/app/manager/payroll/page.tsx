@@ -109,7 +109,7 @@ export default function ManagerPayrollPage() {
             <p className="text-xl font-black text-white mt-2">
               {isLoadingOverview
                 ? '…'
-                : `${overview?.currency ?? 'NGN'} ${(overview?.total_estimated_payout ?? 0).toLocaleString()}`}
+                : `${overview?.currency ?? 'GBP'} ${(overview?.total_estimated_payout ?? 0).toLocaleString()}`}
             </p>
           </div>
 
@@ -183,7 +183,7 @@ export default function ManagerPayrollPage() {
                     <div>
                       <span className="text-[9px] uppercase text-white/40 block">Net Pay</span>
                       <span className="text-xs font-black text-[#75ADAF]">
-                        {agent.currency ?? 'NGN'} {(agent.net_pay ?? 0).toLocaleString()}
+                        {agent.currency ?? 'GBP'} {(agent.net_pay ?? 0).toLocaleString()}
                       </span>
                     </div>
                   </div>

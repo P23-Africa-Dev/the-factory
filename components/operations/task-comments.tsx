@@ -6,7 +6,9 @@ import { toast } from 'sonner';
 import { useCreateTaskComment, useTaskComments } from '@/hooks/use-tasks';
 import { ApiRequestError } from '@/lib/api/onboarding';
 import { TASK_COMMENT_MAX_LENGTH, type TaskCommentItem } from '@/lib/api/tasks';
-import { DEFAULT_AVATAR } from '@/lib/avatar';
+import { resolveAvatarSrc } from '@/lib/avatar';
+import { FieldError } from '@/components/ui/field-error';
+import { scrollToFirstError } from '@/lib/forms/scroll-to-first-error';
 
 type TaskCommentsProps = {
   taskId: number | string;
@@ -41,7 +43,7 @@ function CommentRow({ comment }: { comment: TaskCommentItem }) {
     <li className="flex gap-3">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={comment.author?.avatar_url || DEFAULT_AVATAR}
+        src={resolveAvatarSrc(comment.author?.avatar_url)}
         alt=""
         className="w-8 h-8 rounded-full object-cover shrink-0 bg-gray-100"
       />
@@ -103,10 +105,12 @@ export function TaskComments({ taskId, companyId, className = '' }: TaskComments
     const body = draft.trim();
     if (!body) {
       setFieldError('Comment cannot be empty.');
+      void scrollToFirstError();
       return;
     }
     if (body.length > TASK_COMMENT_MAX_LENGTH) {
       setFieldError(`Comment may not be longer than ${TASK_COMMENT_MAX_LENGTH} characters.`);
+      void scrollToFirstError();
       return;
     }
 
@@ -116,6 +120,7 @@ export function TaskComments({ taskId, companyId, className = '' }: TaskComments
         const bodyError = apiError?.errors?.body?.[0];
         if (bodyError) {
           setFieldError(bodyError);
+          void scrollToFirstError();
           return;
         }
         toast.error(error.message || 'Unable to post your comment. Please try again.');
@@ -162,7 +167,7 @@ export function TaskComments({ taskId, companyId, className = '' }: TaskComments
           <label htmlFor={`task-comment-input-${taskId}`} className="sr-only">
             Add a comment
           </label>
-          <div className="relative">
+          <div data-field="body" className="relative">
             <textarea
               id={`task-comment-input-${taskId}`}
               value={draft}
@@ -192,11 +197,7 @@ export function TaskComments({ taskId, companyId, className = '' }: TaskComments
               {createMutation.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
           </div>
-          {fieldError && (
-            <p id={`task-comment-error-${taskId}`} className="text-red-400 text-[11px] mt-1">
-              {fieldError}
-            </p>
-          )}
+          <FieldError id={`task-comment-error-${taskId}`} message={fieldError || undefined} />
         </form>
       )}
     </section>

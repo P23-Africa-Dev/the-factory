@@ -7,11 +7,12 @@ export type ResolvedMapViewport = {
     countryCode: string | null;
 };
 
+/** Last-resort map center when GPS/IP/locale give no country signal. */
 const GLOBAL_VIEWPORT: ResolvedMapViewport = {
-    center: [0, 20],
-    zoom: 1.9,
-    granularity: "global",
-    countryCode: null,
+    center: [-3.4, 55.4],
+    zoom: 5.2,
+    granularity: "country",
+    countryCode: "GB",
 };
 
 const GPS_ZOOM = 15.2;
@@ -33,8 +34,8 @@ const COUNTRY_VIEWPORTS: Record<string, { center: [number, number]; zoom: number
 };
 
 const TIMEZONE_TO_COUNTRY: Array<{ prefix: string; country: string }> = [
-    { prefix: "Africa/Lagos", country: "NG" },
     { prefix: "Europe/London", country: "GB" },
+    { prefix: "Africa/Lagos", country: "NG" },
     { prefix: "America/New_York", country: "US" },
     { prefix: "America/Chicago", country: "US" },
     { prefix: "America/Denver", country: "US" },

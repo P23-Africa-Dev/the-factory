@@ -57,17 +57,19 @@ class EnforceSupportAccessSession
         }
 
         $user = $request->user();
-        $hasLiveMembership = $user instanceof User
+        $liveMembership = $user instanceof User
             && (int) $user->id === (int) $session->target_user_id
             && $user->canAuthenticate()
-            && DB::table('company_users')
+            ? DB::table('company_users')
                 ->join('companies', 'companies.id', '=', 'company_users.company_id')
                 ->where('company_users.user_id', $user->id)
                 ->where('company_users.company_id', $session->company_id)
                 ->where('companies.status', 'active')
-                ->exists();
+                ->select(['company_users.role'])
+                ->first()
+            : null;
 
-        if (! $hasLiveMembership) {
+        if (! $liveMembership) {
             $this->supportAccessService->revoke(
                 $session,
                 $request,
@@ -79,7 +81,13 @@ class EnforceSupportAccessSession
         $companyId = (int) $session->company_id;
         $request->attributes->set('support_access_session', $session);
         $request->attributes->set('support_company_id', $companyId);
-        $request->attributes->set('support_effective_role', 'owner');
+        $request->attributes->set(
+            'support_effective_role',
+            $this->resolveEffectiveRole(
+                (string) ($liveMembership->role ?? ''),
+                (string) $session->target_company_role_snapshot,
+            ),
+        );
         $request->query->set('company_id', $companyId);
         $request->request->set('company_id', $companyId);
 
@@ -103,6 +111,14 @@ class EnforceSupportAccessSession
         }
 
         return $next($request);
+    }
+
+    private function resolveEffectiveRole(string $liveRole, string $snapshotRole): string
+    {
+        $allowed = ['owner', 'admin', 'supervisor', 'agent'];
+        $candidate = $liveRole !== '' ? $liveRole : $snapshotRole;
+
+        return in_array($candidate, $allowed, true) ? $candidate : 'owner';
     }
 
     private function isAlwaysAllowed(Request $request): bool

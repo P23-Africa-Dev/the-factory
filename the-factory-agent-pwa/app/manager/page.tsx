@@ -24,6 +24,9 @@ import {
   Activity,
   DollarSign,
   ArrowRightLeft,
+  UserRound,
+  LogOut,
+  TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -269,7 +272,7 @@ export default function ManagerHomeScreen() {
     (agentId: number) => {
       setSheetExpanded(false);
       setWhereToQuery('');
-      router.push(`/map?agentId=${agentId}`);
+      router.push(`/manager/map?agentId=${agentId}`);
     },
     [router],
   );
@@ -285,7 +288,7 @@ export default function ManagerHomeScreen() {
         destName: place.name,
         destAddr: place.address ?? '',
       });
-      router.push(`/map?${params.toString()}`);
+      router.push(`/manager/map?${params.toString()}`);
     },
     [router],
   );
@@ -356,7 +359,7 @@ export default function ManagerHomeScreen() {
       {/* Background gradients */}
       <div
         className="fixed inset-0 z-0 bg-cover bg-center pointer-events-none opacity-40 mix-blend-overlay"
-        style={{ backgroundImage: "url('/assets/home-background-gradient.png')" }}
+        style={{ backgroundImage: "url('/assets/app-background.png')" }}
       />
       <div className="fixed inset-0 z-0 bg-gradient-to-b from-[#0A1D25]/85 via-[#0D252F]/90 to-[#0A1D25]/97 pointer-events-none" />
 
@@ -412,7 +415,7 @@ export default function ManagerHomeScreen() {
                       }}
                       className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-white hover:bg-white/5 flex items-center gap-2.5"
                     >
-                      <img src="/assets/user-round.png" alt="Profile" className="w-4 h-4 object-contain" />
+                      <UserRound size={15} className="text-[#75ADAF]" aria-hidden="true" />
                       Profile &amp; Settings
                     </button>
                     <div className="h-px bg-white/10 mx-2.5" />
@@ -471,7 +474,7 @@ export default function ManagerHomeScreen() {
                       }}
                       className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-[#EF4444] hover:bg-white/5 flex items-center gap-2.5"
                     >
-                      <img src="/assets/log-out.png" alt="Sign Out" className="w-4 h-4 object-contain" />
+                      <LogOut size={15} className="text-[#EF4444]" aria-hidden="true" />
                       Sign Out
                     </button>
                   </motion.div>
@@ -588,7 +591,7 @@ export default function ManagerHomeScreen() {
         {pendingReassignmentsCount > 0 && (
           <button
             type="button"
-            onClick={() => router.push('/tasks?tab=reassignments')}
+            onClick={() => router.push('/manager/tasks?tab=reassignments')}
             className="mb-3 flex w-full items-center justify-between rounded-2xl border border-[#FD6046]/40 bg-[#FD6046]/12 px-4 py-3 text-left active:scale-[0.99] transition-transform"
           >
             <div className="flex items-center gap-2.5">
@@ -619,7 +622,10 @@ export default function ManagerHomeScreen() {
               if (e.key === 'Enter' || e.key === ' ') router.push('/manager/crm');
             }}
             className="flex-1 h-[147px] rounded-[20px] bg-cover bg-center overflow-hidden shadow-lg border border-white/5 relative flex flex-col justify-between py-[18px] px-4 select-none cursor-pointer active:scale-[0.99] transition-transform"
-            style={{ backgroundImage: "url('/assets/lead-added-card-gradient.png')" }}
+            style={{
+              backgroundImage:
+                'radial-gradient(120% 140% at 100% 0%, rgba(68,175,205,0.28) 0%, rgba(68,175,205,0) 55%), linear-gradient(135deg, #12313D 0%, #0E2530 60%, #0B1E26 100%)',
+            }}
           >
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
@@ -636,11 +642,12 @@ export default function ManagerHomeScreen() {
               </span>
 
               <div className="flex items-center gap-1.5">
-                <img
-                  src="/assets/conversion-badge.png"
-                  alt="Conversion"
-                  className="w-7 h-7 object-contain"
-                />
+                <div
+                  className="w-7 h-7 rounded-full bg-[#75ADAF]/15 border border-[#75ADAF]/30 flex items-center justify-center shrink-0"
+                  aria-hidden="true"
+                >
+                  <TrendingUp size={14} className="text-[#75ADAF]" />
+                </div>
                 <div className="flex flex-col">
                   <span className="font-sans text-[10px] font-semibold text-[#75ADAF]">
                     Conversion
@@ -974,7 +981,7 @@ export default function ManagerHomeScreen() {
                       type="button"
                       onClick={() => {
                         setExecBriefOpen(false);
-                        router.push('/assistant?prompt=Generate+this+week%27s+executive+summary');
+                        router.push('/manager/assistant?prompt=Generate+this+week%27s+executive+summary');
                       }}
                       className="w-full h-11 rounded-2xl bg-[#75ADAF] text-[#0A1D25] text-xs font-extrabold flex items-center justify-center gap-2 active:scale-95 transition-transform"
                     >
@@ -985,7 +992,7 @@ export default function ManagerHomeScreen() {
                       type="button"
                       onClick={() => {
                         setExecBriefOpen(false);
-                        router.push('/tasks?create=1');
+                        router.push('/manager/tasks?create=1');
                       }}
                       className="w-full h-11 rounded-2xl bg-[#FD6046] text-white text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
                     >
@@ -1091,7 +1098,7 @@ export default function ManagerHomeScreen() {
                   <button
                     onClick={() => {
                       setDayScheduleVisible(false);
-                      router.push('/tasks?create=1');
+                      router.push('/manager/tasks?create=1');
                     }}
                     className="px-3 py-1.5 rounded-lg bg-[#FD6046]/20 border border-[#FD6046]/40 text-xs text-[#FD6046] font-semibold"
                   >
@@ -1124,7 +1131,7 @@ export default function ManagerHomeScreen() {
                             key={task.id}
                             onClick={() => {
                               setDayScheduleVisible(false);
-                              router.push(`/task/${task.id}`);
+                              router.push(`/manager/task/${task.id}`);
                             }}
                             className="flex items-center bg-white/5 hover:bg-white/10 rounded-xl p-3 cursor-pointer transition-colors"
                           >
@@ -1180,7 +1187,7 @@ export default function ManagerHomeScreen() {
                             key={m.id}
                             onClick={() => {
                               setDayScheduleVisible(false);
-                              router.push(`/meetings/${m.id}`);
+                              router.push(`/manager/meetings/${m.id}`);
                             }}
                             className="flex items-center bg-white/5 hover:bg-white/10 rounded-xl p-3 cursor-pointer transition-colors"
                           >

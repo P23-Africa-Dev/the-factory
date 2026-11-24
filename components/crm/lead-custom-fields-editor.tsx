@@ -43,7 +43,7 @@ export function LeadCustomFieldsEditor({
                     </span>
                     <FieldControl field={field} value={values[field.key]} disabled={disabled} onChange={(value) => onChange(field.key, value)} />
                     {field.description ? <span className="mt-1 block text-[11px] text-gray-400">{field.description}</span> : null}
-                    {errors?.[field.key] ? <span className="mt-1 block text-[11px] text-red-500">{errors[field.key]}</span> : null}
+                    {errors?.[field.key] ? <span data-field-error="" role="alert" className="mt-1 block text-[11px] text-red-500">{errors[field.key]}</span> : null}
                 </label>
             ))}
             {showAdd && onAddField ? (

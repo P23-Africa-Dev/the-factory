@@ -199,7 +199,7 @@ export function PayrollView() {
       </div>
       {/* Main Content */}
       <div className="py-6 space-y-6">
-        <PaymentOverview overview={overview ?? null} currency={overview?.currency ?? existingPayroll?.currency ?? "USD"} />
+        <PaymentOverview overview={overview ?? null} currency={overview?.currency ?? existingPayroll?.currency ?? "GBP"} />
 
         {/* Payroll List + Sidebar */}
         <div className="flex flex-col xl:flex-row gap-6">

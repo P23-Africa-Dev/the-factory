@@ -30,6 +30,10 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  if (session.role === "agent") {
+    redirect("/agent/dashboard");
+  }
+
   if (!session.onboardingCompleted) {
     redirect("/complete-onboarding");
   }

@@ -113,6 +113,8 @@ export type DashboardOverviewData = {
     self_task_slices: SelfTaskSlices;
     top_prospects: TopProspect[];
     crm_pipeline_snapshot: PipelineSnapshot;
+    /** Progress 0-100 per stage slug, from the company's label order (won stages = 100). */
+    stage_progress?: Record<string, number>;
     calendar_task_feed: CalendarTaskItem[];
     agent_live_activity: AgentLiveActivity;
     activity_metric: ActivityMetric;

@@ -69,6 +69,10 @@ class CopilotIntentResolver
 
         if ($this->isNaturalLanguageConfirmation($message)) {
             $pendingTool = $this->resolvePendingActionToolFromThread($threadId, $companyId, $userId);
+            // A "yes" only confirms an action the user has actually been shown.
+            // When nothing is pending we may still guess the tool from the
+            // conversation, but only to prepare a preview, never to execute.
+            $confirmsShownDraft = $pendingTool !== null;
             if ($pendingTool === null
                 && ! $this->readToolArgsResolver->latestAssistantTurnOffersListExpansion($threadId, $companyId, $userId)
             ) {
@@ -78,7 +82,7 @@ class CopilotIntentResolver
             if (is_string($pendingTool) && $pendingTool !== '') {
                 return $this->buildResult(
                     ['type' => 'action', 'tool' => $pendingTool, 'confidence' => 0.95],
-                    true,
+                    $confirmsShownDraft,
                     $actionArgs,
                     $message,
                     $threadId,
@@ -722,7 +726,7 @@ class CopilotIntentResolver
             return false;
         }
 
-        return preg_match('/\b(for\s+[a-z]|visit|tomorrow|priority|description|due|title|shoprite|kelvin)\b/i', $blob) === 1;
+        return preg_match('/\b(for\s+[a-z]|visit|tomorrow|priority|description|due|title)\b/i', $blob) === 1;
     }
 
     /**

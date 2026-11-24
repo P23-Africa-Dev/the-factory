@@ -8,8 +8,9 @@ import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { TaskBoard } from "@/components/operations/task-board";
 import { OperationsCalendar } from "@/components/operations/operations-calendar";
-import { CreateTaskModal } from "@/components/operations/create-task-modal";
+import { CreateTaskModal, type CreateTaskStatus } from "@/components/operations/create-task-modal";
 import { TaskDetailModal } from "@/components/operations/task-detail-modal";
+import ConfirmStatusMoveModal from "@/components/ui/confirm-status-move-modal";
 import { ProjectDetailsSkeleton } from "@/components/operations/skeletons/project-details-skeleton";
 import { useProject } from "@/hooks/use-projects";
 import { useTasks, useUpdateTaskStatusAdmin } from "@/hooks/use-tasks";
@@ -17,8 +18,22 @@ import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiTaskStatus, TaskApiItem } from "@/lib/api/tasks";
 import { formatTaskLocationLabel, hasTrackableTaskLocation } from "@/lib/tasks/location";
 import { buildTaskMapUrl } from "@/lib/tasks/map-navigation";
+import { checklistFromTask } from "@/lib/tasks/project-checklist";
+import { completionBlockerLabels } from "@/lib/tasks/status-move-blockers";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import { getApiErrorMessage } from "@/lib/api/errors";
+import { isTaskManagerRole } from "@/lib/tasks/board-permissions";
+import { moveCardToColumn } from "@/lib/dnd/board-moves";
+import { resolveAvatarSrc } from "@/lib/avatar";
+
+const STATUS_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "pending", label: "Pending" },
+  { id: "in-progress", label: "In Progress" },
+  { id: "completed", label: "Completed" },
+  { id: "cancelled", label: "Cancelled" },
+] as const;
 
 // ─── Pie chart label ──────────────────────────────────────────────────────────
 function CustomLabel({
@@ -48,19 +63,27 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
   const router = useRouter();
   const authUser = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId, role } = getActiveCompanyContext(authUser);
-  const canManageTaskStatuses =
-    role === "owner" ||
-    role === "admin" ||
-    role === "management" ||
-    role === "manager" ||
-    role === "supervisor";
+  // Managers (owner, admin, supervisor) may drag a task to any column.
+  const canManageTaskStatuses = isTaskManagerRole(role);
 
   const { data: project, isPending: loadingProject } = useProject(projectId, basePath);
   const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });
   const statusMutation = useUpdateTaskStatusAdmin();
 
   const [showModal, setShowModal] = useState(false);
+  const [createStatus, setCreateStatus] = useState<CreateTaskStatus>("pending");
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
+  const [pendingStatusMove, setPendingStatusMove] = useState<{
+    activeId: string;
+    previousStatus: ApiTaskStatus;
+    nextStatus: ApiTaskStatus;
+    blockers: string[];
+    snapshot: DndContainer[];
+  } | null>(null);
+  const [confirmingStatusMove, setConfirmingStatusMove] = useState(false);
   const serverContainers = useMemo(
     () => buildContainers(tasksData?.tasks ?? []),
     [tasksData?.tasks],
@@ -123,104 +146,37 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
 
   const moveToContainer = useCallback((activeId: string, overContainerId: string) => {
     if (!canManageTaskStatuses) return;
-
-    setBoardContainers((prev) => {
-      const activeContainer = prev.find((container) =>
-        container.items.some((item) => item.id === activeId)
-      );
-      const overContainer = prev.find((container) => container.id === overContainerId);
-      if (!activeContainer || !overContainer) return prev;
-
-      const activeItem = activeContainer.items.find((item) => item.id === activeId);
-      if (!activeItem) return prev;
-
-      return prev.map((container) => {
-        if (container.id === activeContainer.id) {
-          return {
-            ...container,
-            items: container.items.filter((item) => item.id !== activeId),
-          };
-        }
-
-        if (container.id === overContainerId) {
-          return {
-            ...container,
-            items: [...container.items, activeItem],
-          };
-        }
-
-        return container;
-      });
-    });
+    setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId));
   }, [canManageTaskStatuses]);
 
   const moveBetweenContainers = useCallback(
     (activeId: string, overId: string, activeContainerId: string, overContainerId: string) => {
       if (!canManageTaskStatuses) return;
-
-      setBoardContainers((prev) => {
-        const activeContainer = prev.find((container) => container.id === activeContainerId);
-        const overContainer = prev.find((container) => container.id === overContainerId);
-        if (!activeContainer || !overContainer) return prev;
-
-        const activeItem = activeContainer.items.find((item) => item.id === activeId);
-        if (!activeItem) return prev;
-
-        const overIndex = overContainer.items.findIndex((item) => item.id === overId);
-        const insertionIndex = overIndex >= 0 ? overIndex : overContainer.items.length;
-
-        return prev.map((container) => {
-          if (container.id === activeContainerId) {
-            return {
-              ...container,
-              items: container.items.filter((item) => item.id !== activeId),
-            };
-          }
-
-          if (container.id === overContainerId) {
-            const nextItems = [...overContainer.items];
-            nextItems.splice(insertionIndex, 0, activeItem);
-            return {
-              ...container,
-              items: nextItems,
-            };
-          }
-
-          return container;
-        });
-      });
+      if (activeContainerId === overContainerId) return;
+      setBoardContainers((prev) => moveCardToColumn(prev, activeId, overContainerId, overId));
     },
     [canManageTaskStatuses]
   );
 
-  const handleStatusDrop = useCallback(
-    (activeId: string, fromContainerId: string, toContainerId: string) => {
-      const nextStatus = containerToApiStatus(toContainerId);
-      const previousStatus = containerToApiStatus(fromContainerId);
-
-      if (!nextStatus || !previousStatus || nextStatus === previousStatus) {
-        return;
-      }
-
-      if (!canManageTaskStatuses) {
-        toast.error("Only management users can move task status on this board.");
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
-        return;
-      }
-
+  const commitStatusMove = useCallback(
+    (
+      activeId: string,
+      previousStatus: ApiTaskStatus,
+      nextStatus: ApiTaskStatus,
+      snapshot: DndContainer[],
+      completeIncompleteSubtasks = false,
+    ) => {
       if (!companyId) {
         toast.error("Company context is required.");
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
+        setBoardContainers(snapshot);
         return;
       }
 
       const taskId = Number(activeId);
       if (!Number.isFinite(taskId)) {
-        setBoardContainers(buildContainers(tasksData?.tasks ?? []));
+        setBoardContainers(snapshot);
         return;
       }
-
-      const snapshot = boardContainers;
 
       statusMutation.mutate(
         {
@@ -228,6 +184,7 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
           payload: {
             company_id: companyId,
             status: nextStatus,
+            ...(completeIncompleteSubtasks ? { complete_incomplete_subtasks: true } : {}),
           },
         },
         {
@@ -238,43 +195,165 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
                 items: container.items.map((item) =>
                   item.id === activeId
                     ? {
-                      ...item,
-                      statusLabel: mapStatusToLabel(response.data.task.status),
-                    }
+                        ...item,
+                        apiStatus: response.data.task.status,
+                        statusLabel: mapStatusToLabel(response.data.task.status),
+                        projectChecklist: item.projectChecklist
+                          ? {
+                              ...item.projectChecklist,
+                              subtasks: item.projectChecklist.subtasks.map((subtask) =>
+                                completeIncompleteSubtasks
+                                  ? {
+                                      ...subtask,
+                                      isCompleted: true,
+                                      completedAt: subtask.completedAt ?? new Date().toISOString(),
+                                    }
+                                  : subtask,
+                              ),
+                            }
+                          : item.projectChecklist,
+                      }
                     : item
                 ),
               }))
             );
 
             toast.success(getStatusTransitionMessage(previousStatus, nextStatus));
+            setPendingStatusMove(null);
+            setConfirmingStatusMove(false);
           },
-          onError: () => {
+          onError: (err) => {
             setBoardContainers(snapshot);
-            toast.error("Failed to update task status. Board state has been restored.");
+            setConfirmingStatusMove(false);
+            toast.error(getApiErrorMessage(err, "Failed to update task status."));
           },
         }
       );
     },
-    [boardContainers, canManageTaskStatuses, companyId, statusMutation, tasksData?.tasks]
+    [companyId, statusMutation]
   );
+
+  const handleStatusDrop = useCallback(
+    (activeId: string, fromContainerId: string, toContainerId: string) => {
+      const nextStatus = containerToApiStatus(toContainerId);
+      const draggedItem = boardContainers.flatMap((c) => c.items).find((item) => item.id === activeId);
+      // Use the task's real status: the In Progress column also holds paused/resumed tasks.
+      const previousStatus = draggedItem?.apiStatus ?? containerToApiStatus(fromContainerId);
+
+      if (!nextStatus || !previousStatus || nextStatus === previousStatus) {
+        return;
+      }
+
+      const fallback = buildContainers(tasksData?.tasks ?? []);
+
+      if (!canManageTaskStatuses) {
+        setBoardContainers(fallback);
+        return;
+      }
+
+      if (!companyId) {
+        toast.error("Company context is required.");
+        setBoardContainers(fallback);
+        return;
+      }
+
+      const snapshot = boardContainers;
+      const blockers =
+        nextStatus === "completed" ? completionBlockerLabels(draggedItem) : [];
+
+      if (blockers.length > 0) {
+        setBoardContainers(fallback);
+        setPendingStatusMove({
+          activeId,
+          previousStatus,
+          nextStatus,
+          blockers,
+          snapshot: fallback,
+        });
+        return;
+      }
+
+      commitStatusMove(activeId, previousStatus, nextStatus, snapshot);
+    },
+    [
+      boardContainers,
+      canManageTaskStatuses,
+      commitStatusMove,
+      companyId,
+      tasksData?.tasks,
+    ]
+  );
+
+  const confirmPendingStatusMove = useCallback(() => {
+    if (!pendingStatusMove) return;
+    setConfirmingStatusMove(true);
+    const { activeId, previousStatus, nextStatus, snapshot } = pendingStatusMove;
+    setBoardContainers((prev) => {
+      const activeContainer = prev.find((c) => c.items.some((item) => item.id === activeId));
+      const activeItem = activeContainer?.items.find((item) => item.id === activeId);
+      if (!activeContainer || !activeItem) return prev;
+      return prev.map((container) => {
+        if (container.id === activeContainer.id)
+          return { ...container, items: container.items.filter((item) => item.id !== activeId) };
+        if (container.id === "completed")
+          return { ...container, items: [...container.items, activeItem] };
+        return container;
+      });
+    });
+    commitStatusMove(activeId, previousStatus, nextStatus, snapshot, true);
+  }, [commitStatusMove, pendingStatusMove]);
+
+  const cancelPendingStatusMove = useCallback(() => {
+    if (!pendingStatusMove) return;
+    setBoardContainers(pendingStatusMove.snapshot);
+    setPendingStatusMove(null);
+    setConfirmingStatusMove(false);
+  }, [pendingStatusMove]);
 
   const stats = useMemo(() => {
     const total = boardContainers.reduce((s, c) => s + c.items.length, 0);
-    if (total === 0) return [
-      { name: "Pending", value: 0, color: "#BD7A22" },
-      { name: "In Progress", value: 0, color: "#094B5C" },
-      { name: "Complete", value: 0, color: "#4FD1C5" },
-    ];
-    const pending = boardContainers.find((c) => c.id === "pending")?.items.length ?? 0;
-    const inProgress = boardContainers.find((c) => c.id === "in-progress")?.items.length ?? 0;
-    const completed = boardContainers.find((c) => c.id === "completed")?.items.length ?? 0;
+    const count = (id: string) => boardContainers.find((c) => c.id === id)?.items.length ?? 0;
+    const pct = (value: number) => (total === 0 ? 0 : Math.round((value / total) * 100));
 
     return [
-      { name: "Pending", value: Math.round((pending / total) * 100), color: "#BD7A22" },
-      { name: "In Progress", value: Math.round((inProgress / total) * 100), color: "#094B5C" },
-      { name: "Complete", value: Math.round((completed / total) * 100), color: "#4FD1C5" },
+      { name: "Pending", value: pct(count("pending")), color: "#BD7A22" },
+      { name: "In Progress", value: pct(count("in-progress")), color: "#094B5C" },
+      { name: "Complete", value: pct(count("completed")), color: "#4FD1C5" },
+      { name: "Cancelled", value: pct(count("cancelled")), color: "#6B7280" },
     ];
   }, [boardContainers]);
+
+  const assigneeOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const task of tasksData?.tasks ?? []) {
+      for (const user of task.assigned_users ?? []) byId.set(String(user.id), user.name);
+      if (task.assignee && task.assigned_agent_id != null) {
+        byId.set(String(task.assigned_agent_id), task.assignee.name);
+      }
+    }
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [tasksData?.tasks]);
+
+  const filtersActive = statusFilter !== "all" || assigneeFilter !== "all";
+
+  const displayContainers = useMemo<DndContainer[]>(
+    () =>
+      boardContainers
+        .filter((c) => statusFilter === "all" || c.id === statusFilter)
+        .map((c) =>
+          assigneeFilter === "all"
+            ? c
+            : { ...c, items: c.items.filter((item) => item.assigneeIds?.includes(assigneeFilter)) },
+        ),
+    [assigneeFilter, boardContainers, statusFilter],
+  );
+
+  const openCreateTask = (containerId?: string) => {
+    setCreateStatus(containerId === "in-progress" || containerId === "completed" ? containerId : "pending");
+    setShowModal(true);
+  };
 
   if (loadingProject) {
     return <ProjectDetailsSkeleton />;
@@ -319,15 +398,26 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
 
                   <div className="flex flex-wrap items-center gap-3">
                     <button
-                      className="flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 rounded-xl transition-all cursor-pointer bg-white border border-[#D1D1D1] shadow-sm hover:bg-gray-50 flex-1 sm:flex-initial justify-center"
+                      type="button"
+                      onClick={() => setShowFilters((v) => !v)}
+                      aria-expanded={showFilters}
+                      className={`flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 rounded-xl transition-all cursor-pointer border shadow-sm flex-1 sm:flex-initial justify-center ${
+                        showFilters || filtersActive
+                          ? "bg-[#34373C] border-[#34373C] text-white"
+                          : "bg-white border-[#D1D1D1] text-gray-500 hover:bg-gray-50"
+                      }`}
                     >
-                      <SlidersHorizontal size={16} strokeWidth={2} className="text-gray-400" />
-                      <span className="text-gray-500 text-[12px] font-medium">Filter</span>
+                      <SlidersHorizontal
+                        size={16}
+                        strokeWidth={2}
+                        className={showFilters || filtersActive ? "text-white" : "text-gray-400"}
+                      />
+                      <span className="text-[12px] font-medium">Filter{filtersActive ? " (on)" : ""}</span>
                     </button>
 
                     {canManageTaskStatuses && (
                       <button
-                        onClick={() => setShowModal(true)}
+                        onClick={() => openCreateTask()}
                         className="flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-md cursor-pointer whitespace-nowrap flex-1 sm:flex-initial justify-center"
                       >
                         <BookmarkPlus size={16} strokeWidth={2} />
@@ -363,15 +453,69 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
             </div>
           </div>
 
+          {showFilters && (
+            <div className="flex flex-wrap items-end gap-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-bold text-gray-400 px-1">Task Status</span>
+                <div className="flex gap-1 flex-wrap" role="group" aria-label="Filter by status">
+                  {STATUS_FILTERS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={statusFilter === option.id}
+                      onClick={() => setStatusFilter(option.id)}
+                      className={`px-4 py-2 rounded-full text-[12px] font-bold transition-all ${
+                        statusFilter === option.id
+                          ? "bg-[#0B1215] text-white"
+                          : "bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-bold text-gray-400 px-1">Assignee</span>
+                <select
+                  value={assigneeFilter}
+                  onChange={(e) => setAssigneeFilter(e.target.value)}
+                  className="h-9 min-w-44 rounded-full border border-gray-200 bg-gray-50 px-4 text-[12px] font-bold text-gray-600 outline-none focus:border-[#094B5C]"
+                >
+                  <option value="all">All assignees</option>
+                  {assigneeOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {filtersActive && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setAssigneeFilter("all");
+                  }}
+                  className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
           {loadingTasks ? (
             <div className="py-20 flex justify-center text-gray-400">
               <Loader2 className="animate-spin" />
             </div>
           ) : (
             <TaskBoard
-              containers={boardContainers}
+              containers={displayContainers}
               activeTab="all"
-              onAddCard={() => { }}
+              canDrag={canManageTaskStatuses}
+              observerDragAllowed={canManageTaskStatuses}
+              onOpenCreateTask={canManageTaskStatuses ? openCreateTask : undefined}
               findContainer={findContainer}
               moveItem={moveItem}
               moveToContainer={moveToContainer}
@@ -443,12 +587,35 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         projectId={projectId}
+        initialStatus={createStatus}
+      />
+      <ConfirmStatusMoveModal
+        isOpen={Boolean(pendingStatusMove)}
+        onClose={cancelPendingStatusMove}
+        onConfirm={confirmPendingStatusMove}
+        confirming={confirmingStatusMove}
+        title="Complete unfinished checklist items?"
+        description="This task still has open checklist items. Confirming marks them complete and moves the card to Completed."
+        confirmLabel="Confirm & complete"
+        items={pendingStatusMove?.blockers ?? []}
       />
       <TaskDetailModal
         isOpen={!!selectedTask}
         onClose={() => setSelectedTask(null)}
         task={selectedTask?.item ?? null}
         status={selectedTask?.containerId ?? ""}
+        onApiStatusUpdated={(nextStatus) => {
+          if (!nextStatus) return;
+          const containerId =
+            nextStatus === "in_progress" || nextStatus === "paused" || nextStatus === "resumed"
+              ? "in-progress"
+              : nextStatus === "completed"
+                ? "completed"
+                : nextStatus === "cancelled"
+                  ? "cancelled"
+                  : "pending";
+          setSelectedTask((prev) => (prev ? { ...prev, containerId } : prev));
+        }}
       />
     </div>
   );
@@ -458,6 +625,7 @@ function containerToApiStatus(containerId: string): ApiTaskStatus | null {
   if (containerId === "pending") return "pending";
   if (containerId === "in-progress") return "in_progress";
   if (containerId === "completed") return "completed";
+  if (containerId === "cancelled") return "cancelled";
   return null;
 }
 
@@ -476,6 +644,9 @@ function getStatusTransitionMessage(from: ApiTaskStatus, to: ApiTaskStatus): str
   if (from === "in_progress" && to === "pending") return "Task moved back to Pending.";
   if (from === "completed" && to === "in_progress") return "Task reopened and moved back to In Progress.";
   if (from === "completed" && to === "pending") return "Task reverted to Pending.";
+  if (to === "cancelled") return "Task cancelled.";
+  if (from === "cancelled") return "Task reopened.";
+  if (to === "completed") return "Task marked as Completed successfully.";
 
   return "Task status updated successfully.";
 }
@@ -491,6 +662,10 @@ function buildContainers(tasks: TaskApiItem[]): DndContainer[] {
 
   const completedItems = tasks
     .filter((task) => task.status === "completed")
+    .map(mapTaskToDnd);
+
+  const cancelledItems = tasks
+    .filter((task) => task.status === "cancelled")
     .map(mapTaskToDnd);
 
   return [
@@ -512,6 +687,12 @@ function buildContainers(tasks: TaskApiItem[]): DndContainer[] {
       color: "#4FD1C5",
       items: completedItems,
     },
+    {
+      id: "cancelled",
+      title: "Cancelled Task",
+      color: "#6B7280",
+      items: cancelledItems,
+    },
   ];
 }
 
@@ -532,15 +713,27 @@ function mapTaskToDnd(apiTask: TaskApiItem): DndItem {
     longitude: apiTask.longitude ?? null,
     hasTrackableLocation: hasTrackableTaskLocation(apiTask),
     time: "",
-    avatar: apiTask.assignee?.avatar_url || undefined,
+    avatar: apiTask.assignee?.avatar_url
+      ? resolveAvatarSrc(apiTask.assignee.avatar_url)
+      : undefined,
     category: (apiTask.type || "agent") as DndItem["category"],
     dueDate: apiTask.due_date ? new Date(apiTask.due_date).toLocaleDateString() : undefined,
     createdAt: apiTask.created_at ?? undefined,
     assignedBy: apiTask.creator?.name || `User ID: ${apiTask.created_by_user_id}`,
     addedDescription: apiTask.description,
+    projectChecklist: checklistFromTask(apiTask),
     observers: apiTask.observers ?? [],
     isObserver: Boolean(apiTask.is_observer),
     createdByUserId: apiTask.created_by_user_id != null ? String(apiTask.created_by_user_id) : undefined,
+    assigneeIds: assigneeIdsFor(apiTask),
     statusLabel,
+    apiStatus: apiTask.status,
   };
+}
+
+/** Current assignee ids with the primary assignee first. */
+function assigneeIdsFor(apiTask: TaskApiItem): string[] {
+  const ids = (apiTask.assigned_users ?? []).map((user) => String(user.id));
+  const primary = apiTask.assigned_agent_id != null ? String(apiTask.assigned_agent_id) : null;
+  return primary ? [primary, ...ids.filter((id) => id !== primary)] : ids;
 }

@@ -1,0 +1,47 @@
+{
+    "description": "More action coverage so every write tool has at least one eval case.",
+    "cases": [
+        {
+            "id": "task-update-due-date",
+            "role": "admin",
+            "message": "Move the due date of Visit Shoprite Lekki to next Friday at 9am and make it high priority",
+            "expect": { "tools_all": ["tasks.update"], "confirmation": false }
+        },
+        {
+            "id": "kpi-status-agent",
+            "role": "agent",
+            "message": "I have started working on my Retail Visits KPI, mark it in progress",
+            "expect": { "tools_all": ["kpis.set_status"], "confirmation": false }
+        },
+        {
+            "id": "kpi-delete-confirm",
+            "role": "admin",
+            "message": "Delete the Retail Visits KPI",
+            "expect": { "tools_all": ["kpis.delete"], "confirmation": true }
+        },
+        {
+            "id": "project-update-status",
+            "role": "admin",
+            "message": "Create a project called Lekki Rollout starting today, then mark it as active",
+            "expect": { "tools_all": ["projects.create"], "tools_any": ["projects.update", "projects.create"] }
+        },
+        {
+            "id": "meeting-cancel-confirm",
+            "role": "admin",
+            "message": "Cancel my meeting with Ada today",
+            "expect": { "tools_any": ["meetings.today", "meetings.cancel"] }
+        },
+        {
+            "id": "pipeline-create-admin",
+            "role": "admin",
+            "message": "Create a CRM pipeline called Distributors",
+            "expect": { "tools_all": ["crm.pipelines.create"], "confirmation": false }
+        },
+        {
+            "id": "meeting-external-guest-confirm",
+            "role": "admin",
+            "message": "Schedule a meeting tomorrow at 11am for one hour with the buyer at buyer@brightpharmacy.test about samples",
+            "expect": { "tools_all": ["meetings.schedule"], "confirmation": true }
+        }
+    ]
+}

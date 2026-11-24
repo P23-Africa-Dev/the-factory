@@ -7,6 +7,11 @@ import {
 } from '@/features/tracking/native/nativeLocalNotifications';
 import { resolveAgentDeepLink } from '@/lib/notifications/resolveAgentDeepLink';
 import {
+  openNotificationTarget,
+  resolveNotificationTargetFromPayload,
+  type NotificationClickPayload,
+} from '@/lib/notifications/notificationTarget';
+import {
   PWA_NOTIFICATION_BADGE,
   PWA_NOTIFICATION_ICON,
 } from '@/lib/notifications/pwaNotificationIcons';
@@ -16,6 +21,8 @@ export type TrackingAlertPayload = {
   body: string;
   tag: string;
   url: string;
+  /** Raw inbox notification data, re-resolved for the current mode on tap. */
+  payload?: NotificationClickPayload | null;
 };
 
 export type LiveTrackingIndicatorOptions = {
@@ -74,7 +81,7 @@ async function showViaServiceWorker(
       renotify: !opts?.silent,
       requireInteraction: opts?.requireInteraction ?? false,
       silent: opts?.silent ?? false,
-      data: { url: payload.url },
+      data: { url: payload.url, payload: payload.payload ?? null },
     };
     await registration.showNotification(payload.title, options);
     return true;
@@ -89,13 +96,25 @@ function showViaNotificationApi(payload: TrackingAlertPayload): boolean {
   }
   if (Notification.permission !== 'granted') return false;
   try {
-    new Notification(payload.title, {
+    const notification = new Notification(payload.title, {
       body: payload.body,
       icon: PWA_NOTIFICATION_ICON,
       badge: PWA_NOTIFICATION_BADGE,
       tag: payload.tag,
-      data: { url: payload.url },
+      data: { url: payload.url, payload: payload.payload ?? null },
     });
+    // Page-level notifications bypass the service worker, so route the tap here.
+    notification.onclick = () => {
+      try {
+        window.focus();
+      } catch {
+        // ignore
+      }
+      notification.close();
+      openNotificationTarget(
+        payload.payload ? resolveNotificationTargetFromPayload(payload.payload) : payload.url,
+      );
+    };
     return true;
   } catch {
     return false;
@@ -123,7 +142,7 @@ async function clearPwaLiveTrackingNotification(): Promise<void> {
 export async function showTrackingAlert(payload: TrackingAlertPayload): Promise<void> {
   const normalized: TrackingAlertPayload = {
     ...payload,
-    url: resolveAgentDeepLink(payload.url),
+    url: resolveAgentDeepLink(payload.url, { allowAbsolute: false }),
   };
 
   if (isNativeAndroid()) {
@@ -145,7 +164,7 @@ export async function showTrackingAlert(payload: TrackingAlertPayload): Promise<
 export async function showDeviceAlert(payload: TrackingAlertPayload): Promise<void> {
   const normalized: TrackingAlertPayload = {
     ...payload,
-    url: resolveAgentDeepLink(payload.url),
+    url: resolveAgentDeepLink(payload.url, { allowAbsolute: false }),
   };
 
   if (isNativeAndroid()) {

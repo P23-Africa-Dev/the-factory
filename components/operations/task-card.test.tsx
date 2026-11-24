@@ -159,6 +159,19 @@ describe("TaskCard observers", () => {
     expect(screen.getByText("You're observing")).not.toBeNull();
   });
 
+  it("locks an observed card for agents but lets managers drag it", () => {
+    const item = buildChecklistItem({ observers, isObserver: true });
+    const sortable = (container: HTMLElement) =>
+      container.querySelector('[aria-roledescription="sortable"]');
+
+    const agent = render(<TaskCard item={item} />);
+    expect(sortable(agent.container)?.getAttribute("aria-disabled")).toBe("true");
+    agent.unmount();
+
+    const manager = render(<TaskCard item={item} observerDragAllowed />);
+    expect(sortable(manager.container)?.getAttribute("aria-disabled")).toBe("false");
+  });
+
   it("shows no observer row when a task has none", () => {
     render(<TaskCard item={buildChecklistItem()} />);
 

@@ -266,8 +266,10 @@ class InternalUserOnboardingTest extends TestCase
             ->assertJsonStructure(['data' => ['prefilled_data', 'avatar_options']]);
     }
 
-    public function test_agent_creation_requires_supervisor_assignment(): void
+    public function test_agent_can_be_created_without_supervisor(): void
     {
+        // Supervisor is optional at hire time (only name, email and role are required).
+        Notification::fake();
         [$company, $supervisor] = $this->seedCompanyWithManagerAndSupervisor();
         $token = $supervisor->createToken('supervisor-token', ['*'])->plainTextToken;
 
@@ -281,8 +283,8 @@ class InternalUserOnboardingTest extends TestCase
             'base_salary' => 100000,
         ]);
 
-        $response->assertUnprocessable()
-            ->assertJsonStructure(['errors' => ['supervisor_user_id']]);
+        $response->assertCreated();
+        $this->assertNull(User::query()->where('email', 'agent2@factory.local')->value('supervisor_user_id'));
     }
 
     public function test_supervisor_cannot_create_internal_user_with_email_of_active_user(): void

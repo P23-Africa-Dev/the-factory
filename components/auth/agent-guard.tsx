@@ -22,14 +22,13 @@ export function AgentGuard({ children }: { children: React.ReactNode }) {
     }
     if (!user) return;
 
-    if (!supportActive && user.active_company?.role !== "agent") {
+    if (user.active_company?.role !== "agent") {
       router.replace("/dashboard");
     }
   }, [user, hasHydrated, router, supportActive]);
 
   if (!hasHydrated) return null;
   if (!user) return null;
-  if (supportActive) return <>{children}</>;
   if (user.active_company?.role !== "agent") return null;
 
   return <>{children}</>;

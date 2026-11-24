@@ -114,7 +114,14 @@ class AvatarStorageService
             return '/' . $normalizedPath;
         }
 
-        return $baseUrl . '/' . $normalizedPath;
+        $url = $baseUrl . '/' . $normalizedPath;
+
+        // Bust stale browser/CDN caches after catalog re-encodes.
+        if (preg_match('#^avatar/(male|female)/[^/]+\.(svg|png|webp)$#i', $normalizedPath) === 1) {
+            $url .= (str_contains($url, '?') ? '&' : '?') . 'v=png192';
+        }
+
+        return $url;
     }
 
     public function url(string $path): string
@@ -140,6 +147,14 @@ class AvatarStorageService
         }
 
         if (str_starts_with($avatarValue, '/') || preg_match('/^https?:\/\//i', $avatarValue) === 1) {
+            // Stored absolute catalog SVG URLs must resolve to the PNG objects
+            // browsers can actually paint inside <img>.
+            if (preg_match('#^(https?://[^/]+)?(/?avatar/(male|female)/[^/]+)\.svg(\?.*)?$#i', $avatarValue, $matches) === 1) {
+                $path = ltrim($matches[2], '/') . '.png';
+
+                return $this->pathToPublicUrl($path);
+            }
+
             return $avatarValue;
         }
 
@@ -155,7 +170,7 @@ class AvatarStorageService
         $candidateKeys = array_values(array_unique(array_filter([
             $avatarValue,
             $avatarFilename,
-        ], static fn ($value): bool => is_string($value) && trim($value) !== '')));
+        ], static fn($value): bool => is_string($value) && trim($value) !== '')));
 
         $candidateGenders = [];
         if ($gender !== null && trim((string) $gender) !== '') {
@@ -163,7 +178,7 @@ class AvatarStorageService
         }
         $candidateGenders = array_values(array_unique(array_filter(array_merge($candidateGenders, ['male', 'female']))));
 
-        $candidateExtensions = ['png', 'svg'];
+        $candidateExtensions = ['png', 'webp', 'svg', 'jpg', 'jpeg'];
         if ($avatarExtension !== '' && in_array($avatarExtension, $candidateExtensions, true)) {
             array_unshift($candidateExtensions, $avatarExtension);
             $candidateExtensions = array_values(array_unique($candidateExtensions));
@@ -184,6 +199,8 @@ class AvatarStorageService
         $preferredGender = $candidateGenders[0] ?? 'male';
         $preferredKey = $candidateKeys[0] ?? $avatarValue;
 
+        // Prefer PNG: catalog objects are public-read and browser-safe. Do not
+        // depend on exists() here — Spaces credential blips must not 404 avatars.
         return $this->pathToPublicUrl("{$avatarRoot}/{$preferredGender}/{$preferredKey}.png");
     }
 
@@ -214,12 +231,16 @@ class AvatarStorageService
 
         foreach (['male', 'female'] as $gender) {
             $genderPath = "{$basePath}/{$gender}";
+            $files = [];
 
-            if (! $this->safeExists($genderPath)) {
-                continue;
+            try {
+                if ($this->safeExists($genderPath)) {
+                    $files = $disk->files($genderPath);
+                }
+            } catch (\Throwable) {
+                $files = [];
             }
 
-            $files = $disk->files($genderPath);
             sort($files);
 
             foreach ($files as $file) {
@@ -231,21 +252,40 @@ class AvatarStorageService
                 }
 
                 $avatarKey = pathinfo($filename, PATHINFO_FILENAME);
-                $entry = [
-                    'key' => $avatarKey,
-                    'svg' => null,
-                    'url' => $this->pathToPublicUrl($file),
-                ];
-
-                if ($extension === 'svg') {
-                    try {
-                        $entry['svg'] = $disk->get($file);
-                    } catch (\Throwable) {
-                        // Non-fatal: URL fallback will be used.
-                    }
+                // Prefer PNG entries when both png+svg exist for the same key.
+                if (
+                    isset($catalog[$gender][$avatarKey])
+                    && ($catalog[$gender][$avatarKey]['extension'] ?? '') === 'png'
+                    && $extension !== 'png'
+                ) {
+                    continue;
                 }
 
-                $catalog[$gender][$avatarKey] = $entry;
+                // Listings only need public URLs — never inline catalog bodies.
+                $pngPath = "{$basePath}/{$gender}/{$avatarKey}.png";
+                $catalog[$gender][$avatarKey] = [
+                    'key' => $avatarKey,
+                    'svg' => null,
+                    'url' => $this->pathToPublicUrl($pngPath),
+                    'extension' => 'png',
+                    'file' => $pngPath,
+                ];
+            }
+
+            // Spaces list can fail (credential blip) while objects remain public.
+            // Synthesize the known catalog so onboarding/profile pickers never empty out.
+            if ($catalog[$gender] === []) {
+                for ($i = 1; $i <= 16; $i++) {
+                    $avatarKey = "avatar_{$i}";
+                    $file = "{$basePath}/{$gender}/{$avatarKey}.png";
+                    $catalog[$gender][$avatarKey] = [
+                        'key' => $avatarKey,
+                        'svg' => null,
+                        'url' => $this->pathToPublicUrl($file),
+                        'extension' => 'png',
+                        'file' => $file,
+                    ];
+                }
             }
         }
 
@@ -260,17 +300,17 @@ class AvatarStorageService
             }
 
             foreach ($avatars as $avatarKey => $svg) {
-                if (! isset($catalog[$gender][$avatarKey])) {
-                    $catalog[$gender][$avatarKey] = [
-                        'key' => $avatarKey,
-                        'svg' => $svg,
-                        'url' => $this->pathToPublicUrl("{$basePath}/{$gender}/{$avatarKey}.svg"),
-                    ];
-
+                // Never attach fallback SVG bodies onto Spaces-backed entries —
+                // those files can be multi‑MB and must stay URL-only.
+                if (isset($catalog[$gender][$avatarKey])) {
                     continue;
                 }
 
-                $catalog[$gender][$avatarKey]['svg'] = $svg;
+                $catalog[$gender][$avatarKey] = [
+                    'key' => $avatarKey,
+                    'svg' => $svg,
+                    'url' => $this->pathToPublicUrl("{$basePath}/{$gender}/{$avatarKey}.svg"),
+                ];
             }
         }
 
@@ -347,22 +387,24 @@ class AvatarStorageService
         $manifest = [];
 
         foreach ($items as $avatarKey => $entry) {
-            $extension = 'png';
-            if (is_string($entry['svg'] ?? null) && ($entry['url'] ?? null) === null) {
-                $extension = 'svg';
+            $extension = strtolower((string) ($entry['extension'] ?? ''));
+            if ($extension === '') {
+                $extension = is_string($entry['svg'] ?? null) ? 'svg' : 'png';
             }
 
-            $file = null;
-            if (($entry['url'] ?? null) !== null) {
-                $file = "{$this->avatarRoot()}/{$gender}/{$avatarKey}.{$extension}";
-            }
+            $file = is_string($entry['file'] ?? null) && $entry['file'] !== ''
+                ? $entry['file']
+                : (($entry['url'] ?? null) !== null
+                    ? "{$this->avatarRoot()}/{$gender}/{$avatarKey}.{$extension}"
+                    : null);
 
             $manifest[] = [
-                'key' => $avatarKey,
+                'key' => (string) ($entry['key'] ?? $avatarKey),
                 'url' => $entry['url'] ?? null,
                 'file' => $file,
                 'extension' => $extension,
-                'svg' => $entry['svg'] ?? null,
+                // Prefer URL delivery; keep config-fallback SVG only when no URL.
+                'svg' => ($entry['url'] ?? null) ? null : ($entry['svg'] ?? null),
             ];
         }
 

@@ -11,6 +11,8 @@ interface KpiCardProps {
   onClick?: (item: DndItem) => void;
   onEdit?: (item: DndItem) => void;
   onDelete?: (item: DndItem) => void;
+  /** When true, card cannot be dragged (agents / read-only). */
+  dragDisabled?: boolean;
 }
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -61,21 +63,57 @@ function PriorityBadge({ priority }: { priority?: string }) {
   );
 }
 
-export function KpiCard({ item, onClick, onEdit, onDelete }: KpiCardProps) {
+/** Sortable KPI card on the board. */
+export function KpiCard(props: KpiCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+    useSortable({ id: props.item.id, disabled: Boolean(props.dragDisabled) });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+  return (
+    <KpiCardView
+      {...props}
+      dnd={{
+        setNodeRef,
+        style: { transform: CSS.Transform.toString(transform), transition },
+        attributes: attributes as unknown as Record<string, unknown>,
+        listeners: (listeners ?? {}) as Record<string, unknown>,
+        isDragging,
+      }}
+    />
+  );
+}
+
+/**
+ * Presentational KPI card, rendered directly by the DragOverlay (a second
+ * useSortable with the same id made drops resolve onto the dragged card).
+ */
+export function KpiCardView({
+  item,
+  onClick,
+  onEdit,
+  onDelete,
+  dragDisabled = false,
+  dnd,
+}: KpiCardProps & {
+  dnd?: {
+    setNodeRef?: (el: HTMLElement | null) => void;
+    style?: React.CSSProperties;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
   };
+}) {
+  const setNodeRef = dnd?.setNodeRef;
+  const style = dnd?.style;
+  const attributes = dnd?.attributes ?? {};
+  const listeners = dnd?.listeners ?? {};
+  const isDragging = dnd?.isDragging ?? false;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
+      {...(dragDisabled ? {} : listeners)}
       onClick={() => onClick?.(item)}
       className={`
         group relative bg-white rounded-[24px] p-5 border border-gray-100

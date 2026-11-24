@@ -31,7 +31,6 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
   if (!hasHydrated) return null;
   if (!user) return null;
-  if (supportActive) return <>{children}</>;
   const role = user.active_company?.role;
   if (role && !ADMIN_ROLES.includes(role)) return null;
 

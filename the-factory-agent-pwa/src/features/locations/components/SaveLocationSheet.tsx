@@ -125,7 +125,7 @@ export function SaveLocationSheet({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Lekki Distribution Hub"
+              placeholder="e.g. Canary Wharf Distribution Hub"
               className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
             />
             {errors.name && <p className="text-[#FD6046] text-[10px] mt-1">{errors.name}</p>}
@@ -184,7 +184,7 @@ export function SaveLocationSheet({
                 type="text"
                 value={contactNumber}
                 onChange={(e) => setContactNumber(e.target.value)}
-                placeholder="e.g. +234..."
+                placeholder="e.g. +44..."
                 className="w-full h-12 bg-white rounded-xl px-4 text-[#09232D] placeholder-gray-400 focus:outline-none text-sm font-semibold border-none"
               />
               {errors.contactNumber && (

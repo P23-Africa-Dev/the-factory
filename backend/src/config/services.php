@@ -187,7 +187,16 @@ return [
             'routing_model' => env('GLM_ROUTING_MODEL', 'glm-5'),
             'exec_model' => env('GLM_EXEC_MODEL', 'glm-5.2'),
             'analyst_model' => env('GLM_ANALYST_MODEL', 'glm-5.2'),
+            // Speech-to-text (GLM-ASR). Long recordings are split into clips of
+            // this many seconds, because the model only accepts short audio.
+            'asr_model' => env('GLM_ASR_MODEL', 'glm-asr-2512'),
+            'asr_max_seconds' => (int) env('GLM_ASR_MAX_SECONDS', 25),
+            'asr_timeout_ms' => (int) env('GLM_ASR_TIMEOUT_MS', 60000),
         ],
+        // Speech-to-text provider for ELY voice input, independent of the chat
+        // stack: "auto" tries GLM-ASR first and falls back to OpenAI; "glm" or
+        // "openai" use only that provider.
+        'voice_provider' => env('AI_VOICE_PROVIDER', 'auto'),
         // After a timeout/unreachable, skip that vendor briefly so the next turn fails fast.
         'provider_timeout_skip_ttl_seconds' => (int) env('AI_PROVIDER_TIMEOUT_SKIP_TTL', 90),
         'admin' => [

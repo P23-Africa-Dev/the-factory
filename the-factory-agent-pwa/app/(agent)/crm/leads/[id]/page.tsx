@@ -26,17 +26,17 @@ interface LeadDetailPageProps {
 }
 
 const COUNTRY_CODES = [
+  { code: "+44", label: "GB (+44)" },
   { code: "+234", label: "NG (+234)" },
   { code: "+254", label: "KE (+254)" },
   { code: "+233", label: "GH (+233)" },
   { code: "+27", label: "ZA (+27)" },
   { code: "+1", label: "US (+1)" },
-  { code: "+44", label: "GB (+44)" },
 ] as const;
 
 function parsePhoneNumber(fullPhone: string | null | undefined): { countryCode: string; phonePart: string } {
   if (!fullPhone) {
-    return { countryCode: "+234", phonePart: "" };
+    return { countryCode: "+44", phonePart: "" };
   }
   const sortedCodes = [...COUNTRY_CODES].map(c => c.code).sort((a, b) => b.length - a.length);
   for (const code of sortedCodes) {
@@ -47,7 +47,7 @@ function parsePhoneNumber(fullPhone: string | null | undefined): { countryCode: 
       };
     }
   }
-  return { countryCode: "+234", phonePart: fullPhone };
+  return { countryCode: "+44", phonePart: fullPhone };
 }
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
@@ -116,7 +116,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
 
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editCountryCode, setEditCountryCode] = useState('+234');
+  const [editCountryCode, setEditCountryCode] = useState('+44');
   const [editPhonePart, setEditPhonePart] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editLocation, setEditLocation] = useState('');

@@ -7,6 +7,7 @@ import { formatCustomFieldValue, readHiddenLeadColumns, writeHiddenLeadColumns }
 export const LEAD_LIST_COLUMNS = [
     { id: "name", label: "Leads", color: "#3B82F6", size: "minmax(140px,1fr)", hideable: false },
     { id: "company", label: "Company", color: "#D946EF", size: "minmax(150px,1.4fr)", hideable: true },
+    { id: "industry", label: "Industry", color: "#0EA5E9", size: "minmax(120px,1fr)", hideable: true },
     { id: "status", label: "Status", color: "#F59E0B", size: "minmax(120px,1.1fr)", hideable: true },
     { id: "value", label: "Value", color: "#06B6D4", size: "minmax(100px,0.9fr)", hideable: true },
     { id: "assigned", label: "Assigned to", color: "#8B5CF6", size: "minmax(120px,1fr)", hideable: true },

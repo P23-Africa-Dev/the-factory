@@ -52,7 +52,7 @@ export default function Home() {
       {/* Features & Stats grid */}
       <div className={heroOption === "option2" ? "mt-0 sm:mt-[-51px] lg:mt-[-64px] relative z-10" : ""}>
         <FeaturesSection />
-      </div>
+          </div>
 
       {/* Pricing packages matrix */}
       <PricingSection />

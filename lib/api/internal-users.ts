@@ -11,8 +11,9 @@ export type CreateInternalUserPayload = {
   role: InternalUserRole;
   assigned_zone?: string;
   assigned_zone_ids?: number[];
-  work_days: string[];
-  base_salary: number;
+  // Optional at hire time: omitted means "not configured yet".
+  work_days?: string[] | null;
+  base_salary?: number;
   salary_type?: "daily" | "monthly" | "weekly";
   currency_code?: string;
   commission_enabled?: boolean;
@@ -203,6 +204,26 @@ export function resendInternalUserInvite(
     method: "POST",
     path: `/internal-users/${userId}/invite`,
     body: payload,
+    token,
+  });
+}
+
+export type SupervisorCandidate = {
+  id: number;
+  name: string;
+  email: string;
+  role: "owner" | "admin" | "supervisor";
+  avatar_url?: string | null;
+};
+
+/** Owners, admins and supervisors who can be set as an agent's supervisor. */
+export function listSupervisorCandidates(
+  companyId: number | string,
+  token: string
+): Promise<ApiEnvelope<SupervisorCandidate[]>> {
+  return apiRequest<SupervisorCandidate[]>({
+    method: "GET",
+    path: `/internal-users/supervisor-candidates${buildQuery({ company_id: companyId })}`,
     token,
   });
 }

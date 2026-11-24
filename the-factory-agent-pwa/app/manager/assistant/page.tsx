@@ -48,7 +48,7 @@ function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined)
 
 function asPendingActionProposal(
   payload: Record<string, unknown> | null | undefined,
-): { actionName: string; args: Record<string, unknown> } | null {
+): { actionName: string; args: Record<string, unknown>; pendingActionId: string | null } | null {
   if (!payload) return null;
   const requiresConfirmation =
     Boolean(payload.requires_confirmation) ||
@@ -60,7 +60,9 @@ function asPendingActionProposal(
       ? (payload.action_args as Record<string, unknown>)
       : payload;
   const actionName = String(payload.action ?? payload.tool ?? 'Execute Manager Action');
-  return { actionName, args };
+  const pendingActionId =
+    typeof payload.pending_action_id === 'string' ? payload.pending_action_id : null;
+  return { actionName, args, pendingActionId };
 }
 
 function ParsedHtmlText({ text }: { text: string }): React.ReactNode {
@@ -93,6 +95,7 @@ export default function AiAssistantPage() {
     processingLabel,
     send,
     confirmAction,
+    cancelAction,
     runPlanMyDay,
     clearCurrent,
     clearAll,
@@ -319,7 +322,13 @@ export default function AiAssistantPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDismissedActionIds((prev) => new Set(prev).add(msg.id))}
+                      onClick={() => {
+                        setDismissedActionIds((prev) => new Set(prev).add(msg.id));
+                        // Cancel on the server too, so the action can't run later.
+                        if (actionProposal.pendingActionId) {
+                          void cancelAction(actionProposal.pendingActionId);
+                        }
+                      }}
                       className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-white/80 text-xs font-semibold flex items-center gap-1"
                     >
                       <XCircle className="w-3.5 h-3.5" /> Cancel

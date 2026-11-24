@@ -426,7 +426,7 @@ class AiProviderHealthService
 
         $start = microtime(true);
         try {
-            $baseUrl = rtrim((string) config('services.ai.claude.base_url', 'https://api.anthropic.com/v1'), '/');
+            $baseUrl = \App\Services\AI\Providers\ClaudeModelResolver::baseUrl();
             $response = Http::timeout(12)
                 ->withHeaders([
                     'x-api-key' => $apiKey,

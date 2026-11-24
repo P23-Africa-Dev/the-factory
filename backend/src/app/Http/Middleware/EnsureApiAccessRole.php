@@ -30,10 +30,20 @@ class EnsureApiAccessRole
         }
 
         if ($request->attributes->has('support_access_session')) {
-            if ($scope === 'agent') {
-                throw new AuthorizationException(
-                    'Support sessions use company management endpoints.'
-                );
+            $effectiveRole = (string) $request->attributes->get('support_effective_role', '');
+            $isAgent = $effectiveRole === 'agent';
+            $isManagement = in_array($effectiveRole, ['owner', 'admin', 'supervisor'], true);
+
+            if ($scope === 'management' && $isAgent && ! $this->isAllowedReadonlyManagementEndpoint($request)) {
+                throw new AuthorizationException('Agents cannot access management endpoints.');
+            }
+
+            if ($scope === 'agent' && ! $isAgent) {
+                throw new AuthorizationException('Only agents can access agent endpoints.');
+            }
+
+            if ($scope === 'management' && ! $isManagement && ! $isAgent) {
+                throw new AuthorizationException('Unauthenticated request context.');
             }
 
             return $next($request);

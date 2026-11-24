@@ -18,12 +18,15 @@ class LeadContact extends Model
         'email',
         'phone',
         'location',
+        'position',
+        'profile_urls',
         'sort_order',
     ];
 
     protected function casts(): array
     {
         return [
+            'profile_urls' => 'array',
             'sort_order' => 'integer',
         ];
     }
