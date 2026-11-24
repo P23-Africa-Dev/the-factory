@@ -8,7 +8,12 @@ vi.mock('./api', () => ({
 }));
 
 import { assistantApi } from './api';
-import { runWeeklySummary, weeklySummaryMessage, WeeklySummaryError } from './weeklySummary';
+import {
+  runWeeklySummary,
+  weeklySummaryDriveHref,
+  weeklySummaryMessage,
+  WeeklySummaryError,
+} from './weeklySummary';
 import type { WeeklySummaryStatus } from './types';
 
 const generate = vi.mocked(assistantApi.generateWeeklySummary);
@@ -84,7 +89,12 @@ describe('weeklySummaryMessage', () => {
   it('mentions the Drive copy only when one was saved', () => {
     expect(weeklySummaryMessage({ narrative: 'All good.', title: '', driveFileId: null })).toBe('All good.');
     expect(weeklySummaryMessage({ narrative: 'All good.', title: 'Week 47', driveFileId: 3 })).toBe(
-      'Week 47\n\nAll good.\n\nA PDF copy was saved to your Drive.',
+      'Week 47\n\nAll good.\n\nA PDF copy was saved to your Drive. Open it from Profile → Drive.',
     );
+  });
+
+  it('links the Drive copy to its preview in the app', () => {
+    expect(weeklySummaryDriveHref({ driveFileId: 3 })).toBe('/manager/drive?file=3');
+    expect(weeklySummaryDriveHref({ driveFileId: null })).toBeNull();
   });
 });

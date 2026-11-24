@@ -8,7 +8,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ModalShell } from "@/components/crm/crm-toolbar-modals";
 import { downloadCsvFile, parseCsvContent, toCsvContent } from "@/lib/crm/csv";
 import { parseProfileUrls } from "@/lib/crm/lead-fields";
-import { customFieldKeyFromMapping, customFieldMappingKey, inferLeadFieldType } from "@/lib/crm/custom-fields";
+import {
+    customFieldKeyFromMapping,
+    customFieldMappingKey,
+    inferLeadFieldType,
+    isUniversalLeadField,
+} from "@/lib/crm/custom-fields";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import { ImportFailedRowEditor, failedRowFieldErrors } from "@/components/crm/import-failed-row-editor";
 import type {
@@ -140,6 +145,7 @@ export function ImportLeadsWizard({
     const [rawRows, setRawRows] = useState<string[][]>([]);
     const [mapping, setMapping] = useState<Record<number, MappingValue>>({});
     const [createColumn, setCreateColumn] = useState<number | null>(null);
+    const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
     const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
     const { data: leadFields = [] } = useLeadFields(companyId, apiBasePath);
     const resolvedPipelineId = resolveCrmPipelineId(
@@ -168,8 +174,8 @@ export function ImportLeadsWizard({
     const downloadTemplate = () => {
         const defaultLabel = labels.find((label) => label.is_default) ?? labels[0];
         const exampleStatus = defaultLabel?.name ?? "New Lead";
-        // Include the company's own custom fields so the template matches their CRM.
-        const customColumns = leadFields.filter((field) => field.status === "active");
+        // Include universal company fields so the template matches shared CRM columns.
+        const customColumns = leadFields.filter((field) => isUniversalLeadField(field));
         const content = toCsvContent(
             [
                 "name",
@@ -651,7 +657,7 @@ export function ImportLeadsWizard({
                                                         </option>
                                                     ))}
                                                     {leadFields
-                                                        .filter((field) => field.status === "active" || field.status === "pending")
+                                                        .filter((field) => isUniversalLeadField(field) || sessionFieldIds.includes(field.id))
                                                         .map((field) => {
                                                             const value = customFieldMappingKey(field.key);
                                                             return (
@@ -660,7 +666,7 @@ export function ImportLeadsWizard({
                                                                     value={value}
                                                                     disabled={Object.entries(mapping).some(([mappedIdx, mappedField]) => mappedField === value && Number(mappedIdx) !== idx)}
                                                                 >
-                                                                    {field.label}{field.status === "pending" ? " (pending)" : ""}
+                                                                    {field.label}{field.is_universal ? "" : " (this import)"}
                                                                 </option>
                                                             );
                                                         })}
@@ -911,12 +917,14 @@ export function ImportLeadsWizard({
             <LeadFieldDialog
                 companyId={companyId}
                 apiBasePath={apiBasePath}
+                canManage
                 initialLabel={headers[createColumn] ?? ""}
                 initialType={inferLeadFieldType(rawRows.map((row) => row[createColumn] ?? ""))}
                 title="Create field from column"
                 submitLabel="Create field"
                 onClose={() => setCreateColumn(null)}
                 onCreated={(field: LeadFieldDefinition) => {
+                    setSessionFieldIds((current) => current.includes(field.id) ? current : [...current, field.id]);
                     setMapping((prev) => ({
                         ...prev,
                         [createColumn]: customFieldMappingKey(field.key) as MappingValue,

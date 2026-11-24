@@ -234,7 +234,8 @@ export default function AllLeadsPage() {
 
   const allChecked = leads.length > 0 && selected.size === leads.length;
   const visibleCustomFields = leadFields.filter((field) =>
-    (field.status === "active" || field.status === "pending")
+    field.status === "active"
+    && field.is_universal
     && field.show_in_list
     && leadColumns.visible(`custom:${field.key}`),
   );
@@ -756,6 +757,7 @@ export default function AllLeadsPage() {
         <LeadFieldDialog
           companyId={companyId}
           apiBasePath="/agent"
+          isAgentContext
           title="Add a lead column"
           onClose={() => setShowAddColumn(false)}
           onCreated={() => setShowAddColumn(false)}

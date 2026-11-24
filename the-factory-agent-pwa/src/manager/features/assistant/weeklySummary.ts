@@ -88,9 +88,21 @@ export async function runWeeklySummary(options?: {
   );
 }
 
-/** The ELY chat message for a finished summary. */
+/** Where the saved PDF opens in the app (Company Drive preview), or null when none was saved. */
+export function weeklySummaryDriveHref(result: Pick<WeeklySummaryResult, 'driveFileId'>): string | null {
+  return result.driveFileId != null ? `/manager/drive?file=${result.driveFileId}` : null;
+}
+
+/**
+ * The ELY chat message for a finished summary. Chat bubbles render plain
+ * text, so the Drive copy is pointed to by where it lives in the app; use
+ * `weeklySummaryDriveHref` to make it a tappable link.
+ */
 export function weeklySummaryMessage(result: WeeklySummaryResult): string {
   const heading = result.title.trim() ? `${result.title.trim()}\n\n` : '';
-  const drive = result.driveFileId != null ? '\n\nA PDF copy was saved to your Drive.' : '';
+  const drive =
+    result.driveFileId != null
+      ? '\n\nA PDF copy was saved to your Drive. Open it from Profile → Drive.'
+      : '';
   return `${heading}${result.narrative}${drive}`;
 }

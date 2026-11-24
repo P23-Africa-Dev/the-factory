@@ -6,6 +6,7 @@ namespace Tests\Feature\Crm;
 
 use App\Models\Company;
 use App\Models\Lead;
+use App\Models\LeadFieldDefinition;
 use App\Models\LeadPipeline;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,32 +17,77 @@ class LeadFieldTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_manager_field_is_active_and_agent_field_stays_pending_until_review(): void
+    public function test_default_field_is_lead_only_and_title_cased(): void
     {
-        [$company, $admin, $agent] = $this->seedCompanyUsers();
+        [$company, $admin] = $this->seedCompanyUsers();
 
         $this->actingAs($admin, 'sanctum')
             ->postJson('/api/v1/crm/lead-fields', [
                 'company_id' => $company->id,
-                'label' => 'Industry',
+                'label' => 'phone number',
                 'type' => 'text',
             ])
             ->assertCreated()
-            ->assertJsonPath('data.field.key', 'industry')
+            ->assertJsonPath('data.field.key', 'phone_number')
+            ->assertJsonPath('data.field.label', 'Phone Number')
             ->assertJsonPath('data.field.status', 'active')
-            ->assertJsonPath('data.field.show_in_list', true);
+            ->assertJsonPath('data.field.is_universal', false)
+            ->assertJsonPath('data.field.show_on_create', false)
+            ->assertJsonPath('data.field.show_in_list', false)
+            ->assertJsonPath('data.field.universal_request_status', null);
+    }
+
+    public function test_manager_can_create_universal_required_field(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'headcount',
+                'type' => 'number',
+                'make_universal' => true,
+                'is_required' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.field.label', 'Headcount')
+            ->assertJsonPath('data.field.is_universal', true)
+            ->assertJsonPath('data.field.show_on_create', true)
+            ->assertJsonPath('data.field.is_required', true)
+            ->assertJsonPath('data.field.universal_request_status', 'approved');
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Missing Headcount',
+                'status' => 'newly_lead',
+                'priority' => 'low',
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_agent_universal_request_stays_lead_only_until_review(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
 
         $pending = $this->actingAs($agent, 'sanctum')
             ->postJson('/api/v1/crm/lead-fields', [
                 'company_id' => $company->id,
-                'label' => 'Headcount',
-                'type' => 'number',
-                'status' => 'active',
+                'label' => 'region code',
+                'type' => 'text',
+                'make_universal' => true,
+                'is_required' => true,
             ]);
 
         $pending->assertCreated()
-            ->assertJsonPath('data.field.key', 'headcount')
-            ->assertJsonPath('data.field.status', 'pending');
+            ->assertJsonPath('data.field.key', 'region_code')
+            ->assertJsonPath('data.field.label', 'Region Code')
+            ->assertJsonPath('data.field.status', 'active')
+            ->assertJsonPath('data.field.is_universal', false)
+            ->assertJsonPath('data.field.show_on_create', false)
+            ->assertJsonPath('data.field.is_required', false)
+            ->assertJsonPath('data.field.universal_request_status', 'pending');
 
         $fieldId = (int) $pending->json('data.field.id');
 
@@ -53,6 +99,29 @@ class LeadFieldTest extends TestCase
         ]);
 
         $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Agent Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+                'custom_fields' => ['region_code' => 'west'],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.lead.custom_fields.region_code', 'west');
+
+        // Another lead is not blocked; the field is not universal/required yet.
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'Other Lead',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+            ])
+            ->assertCreated();
+
+        $this->actingAs($agent, 'sanctum')
             ->postJson('/api/v1/crm/lead-fields/'.$fieldId.'/approve', [
                 'company_id' => $company->id,
             ])
@@ -60,22 +129,26 @@ class LeadFieldTest extends TestCase
             ->assertJsonPath('errors.authorization.0', 'Only owners, admins, and supervisors can review lead fields.');
 
         $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/crm/lead-fields?company_id='.$company->id)
+            ->postJson('/api/v1/crm/lead-fields/'.$fieldId.'/approve', [
+                'company_id' => $company->id,
+            ])
             ->assertOk()
-            ->assertJsonFragment(['key' => 'industry', 'status' => 'active'])
-            ->assertJsonFragment(['key' => 'headcount', 'status' => 'pending']);
+            ->assertJsonPath('data.field.is_universal', true)
+            ->assertJsonPath('data.field.show_on_create', true)
+            ->assertJsonPath('data.field.universal_request_status', 'approved');
     }
 
-    public function test_custom_field_values_follow_approval_and_reject_unknown_keys(): void
+    public function test_decline_keeps_stored_value_on_existing_lead(): void
     {
         [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
 
         $fieldId = (int) $this->actingAs($agent, 'sanctum')
             ->postJson('/api/v1/crm/lead-fields', [
                 'company_id' => $company->id,
-                'label' => 'Industry',
+                'label' => 'Industry Segment',
                 'type' => 'select',
                 'options' => ['SaaS', 'Retail'],
+                'make_universal' => true,
             ])
             ->assertCreated()
             ->json('data.field.id');
@@ -87,13 +160,11 @@ class LeadFieldTest extends TestCase
                 'name' => 'Northwind',
                 'status' => 'newly_lead',
                 'priority' => 'medium',
-                'custom_fields' => ['industry' => 'SaaS'],
+                'custom_fields' => ['industry_segment' => 'SaaS'],
             ])
             ->assertCreated()
-            ->assertJsonPath('data.lead.custom_fields.industry', 'saas')
+            ->assertJsonPath('data.lead.custom_fields.industry_segment', 'saas')
             ->json('data.lead.id');
-
-        $this->assertNotNull(Lead::query()->find($leadId)?->custom_fields['industry'] ?? null);
 
         $this->actingAs($admin, 'sanctum')
             ->postJson('/api/v1/crm/leads', [
@@ -107,36 +178,21 @@ class LeadFieldTest extends TestCase
             ->assertStatus(422);
 
         $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/crm/leads?company_id='.$company->id.'&search=SaaS')
-            ->assertOk()
-            ->assertJsonPath('data.items.0.id', $leadId);
-
-        $this->actingAs($admin, 'sanctum')
             ->postJson('/api/v1/crm/lead-fields/'.$fieldId.'/decline', [
                 'company_id' => $company->id,
-                'reason' => 'Not needed',
+                'reason' => 'Not needed company-wide',
             ])
             ->assertOk()
-            ->assertJsonPath('data.field.status', 'declined');
+            ->assertJsonPath('data.field.status', 'active')
+            ->assertJsonPath('data.field.is_universal', false)
+            ->assertJsonPath('data.field.universal_request_status', 'declined');
 
         $this->actingAs($admin, 'sanctum')
             ->getJson('/api/v1/crm/leads/'.$leadId.'?company_id='.$company->id)
             ->assertOk()
-            ->assertJsonMissingPath('data.lead.custom_fields.industry');
+            ->assertJsonPath('data.lead.custom_fields.industry_segment', 'saas');
 
-        $this->assertSame('saas', Lead::query()->find($leadId)?->custom_fields['industry'] ?? null);
-
-        $this->actingAs($admin, 'sanctum')
-            ->postJson('/api/v1/crm/lead-fields/'.$fieldId.'/approve', [
-                'company_id' => $company->id,
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.field.status', 'active');
-
-        $this->actingAs($admin, 'sanctum')
-            ->getJson('/api/v1/crm/leads/'.$leadId.'?company_id='.$company->id)
-            ->assertOk()
-            ->assertJsonPath('data.lead.custom_fields.industry', 'saas');
+        $this->assertSame('saas', Lead::query()->find($leadId)?->custom_fields['industry_segment'] ?? null);
     }
 
     public function test_import_accepts_custom_values_and_rejects_invalid_types(): void
@@ -148,6 +204,7 @@ class LeadFieldTest extends TestCase
                 'company_id' => $company->id,
                 'label' => 'Headcount',
                 'type' => 'number',
+                'make_universal' => true,
                 'is_required' => true,
             ])
             ->assertCreated();
@@ -204,6 +261,86 @@ class LeadFieldTest extends TestCase
         $this->assertSame(40, $lead?->custom_fields['headcount'] ?? null);
     }
 
+    public function test_manager_can_reorder_and_delete_fields(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $firstId = (int) $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'Alpha Field',
+                'type' => 'text',
+                'make_universal' => true,
+            ])
+            ->assertCreated()
+            ->json('data.field.id');
+
+        $secondId = (int) $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'Beta Field',
+                'type' => 'text',
+            ])
+            ->assertCreated()
+            ->json('data.field.id');
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields/reorder', [
+                'company_id' => $company->id,
+                'ordered_ids' => [$secondId, $firstId],
+            ])
+            ->assertStatus(422);
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields/reorder', [
+                'company_id' => $company->id,
+                'ordered_ids' => [$secondId, $firstId],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.items.0.id', $secondId)
+            ->assertJsonPath('data.items.1.id', $firstId);
+
+        $this->assertSame(1, (int) LeadFieldDefinition::query()->find($secondId)?->sort_order);
+        $this->assertSame(2, (int) LeadFieldDefinition::query()->find($firstId)?->sort_order);
+
+        $this->actingAs($agent, 'sanctum')
+            ->deleteJson('/api/v1/crm/lead-fields/'.$firstId, [
+                'company_id' => $company->id,
+            ])
+            ->assertStatus(422);
+
+        $this->actingAs($admin, 'sanctum')
+            ->deleteJson('/api/v1/crm/lead-fields/'.$firstId, [
+                'company_id' => $company->id,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseMissing('lead_field_definitions', ['id' => $firstId]);
+    }
+
+    public function test_manager_rename_applies_title_case(): void
+    {
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $fieldId = (int) $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'agro-processing note',
+                'type' => 'text',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.field.label', 'Agro-Processing Note')
+            ->json('data.field.id');
+
+        $this->actingAs($admin, 'sanctum')
+            ->patchJson('/api/v1/crm/lead-fields/'.$fieldId, [
+                'company_id' => $company->id,
+                'label' => 'PHONE NUMBER',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.field.label', 'Phone Number');
+    }
+
     /**
      * @return array{0: Company, 1: User, 2: User, 3: int}
      */
@@ -246,9 +383,8 @@ class LeadFieldTest extends TestCase
             'name' => 'Default Pipeline',
             'currency_code' => 'USD',
             'sort_order' => 0,
-            'is_default' => true,
         ]);
 
-        return [$company, $admin, $agent, $pipeline->id];
+        return [$company, $admin, $agent, (int) $pipeline->id];
     }
 }

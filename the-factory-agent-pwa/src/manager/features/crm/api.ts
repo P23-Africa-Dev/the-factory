@@ -430,12 +430,56 @@ export const crmApi = {
     return leadFieldDefinitionSchema.parse(item);
   },
 
-  declineLeadField: async (fieldId: number | string): Promise<LeadFieldDefinition> => {
+  declineLeadField: async (
+    fieldId: number | string,
+    reason?: string,
+  ): Promise<LeadFieldDefinition> => {
     const companyId = getActiveCompanyId();
     const response = await client.post(`/admin/crm/lead-fields/${fieldId}/decline`, {
       company_id: companyId ?? undefined,
+      reason: reason || undefined,
     });
     const item = unwrapItem(response.data, 'field');
     return leadFieldDefinitionSchema.parse(item);
+  },
+
+  updateLeadField: async (
+    fieldId: number | string,
+    payload: {
+      label?: string;
+      description?: string | null;
+      options?: string[];
+      is_required?: boolean;
+      is_universal?: boolean;
+      show_on_create?: boolean;
+      show_in_list?: boolean;
+    },
+  ): Promise<LeadFieldDefinition> => {
+    const companyId = getActiveCompanyId();
+    const response = await client.patch(`/admin/crm/lead-fields/${fieldId}`, {
+      company_id: companyId ?? undefined,
+      ...payload,
+    });
+    const item = unwrapItem(response.data, 'field');
+    return leadFieldDefinitionSchema.parse(item);
+  },
+
+  deleteLeadField: async (fieldId: number | string): Promise<void> => {
+    const companyId = getActiveCompanyId();
+    await client.delete(`/admin/crm/lead-fields/${fieldId}`, {
+      params: { company_id: companyId ?? undefined },
+    });
+  },
+
+  reorderLeadFields: async (orderedIds: Array<number | string>): Promise<LeadFieldDefinition[]> => {
+    const companyId = getActiveCompanyId();
+    const response = await client.post('/admin/crm/lead-fields/reorder', {
+      company_id: companyId ?? undefined,
+      ordered_ids: orderedIds,
+    });
+    const w = response.data as Record<string, unknown>;
+    const data = (w?.data as Record<string, unknown>) ?? w;
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.map((item: unknown) => leadFieldDefinitionSchema.parse(item));
   },
 };

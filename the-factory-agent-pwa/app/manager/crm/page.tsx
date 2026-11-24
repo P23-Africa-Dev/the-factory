@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check, X as XIcon, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { LeadCard } from '@/manager/features/crm/components/LeadCard';
 import { AddLeadModal } from '@/manager/features/crm/components/AddLeadModal';
+import { PwaPendingUniversalFieldsCard } from '@/manager/features/crm/components/PwaPendingUniversalFieldsCard';
+import { PwaManageLeadFieldsSheet } from '@/manager/features/crm/components/PwaManageLeadFieldsSheet';
 import {
   useLeads,
   useCrmLabels,
@@ -12,13 +14,9 @@ import {
   useCrmNavigation,
   useCrmAssignees,
   useLeadFields,
-  useApproveLeadField,
-  useDeclineLeadField,
 } from '@/manager/features/crm';
 import { useAuth, useAgentIdentity } from '@/features/auth';
 import { NotificationPanel, useUnreadCount } from '@/manager/features/notifications';
-import { toast } from '@/lib/toast';
-import { showApiErrorToast } from '@/lib/api/errors';
 
 const PREVIEW_COUNT = 8;
 
@@ -29,6 +27,7 @@ export default function CrmDashboardPage() {
 
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
+  const [isManageFieldsOpen, setIsManageFieldsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<number | 'all'>('all');
@@ -40,33 +39,12 @@ export default function CrmDashboardPage() {
   const { data: labels = [] } = useCrmLabels();
   const { data: assignees = [] } = useCrmAssignees();
   const { data: leadFields = [] } = useLeadFields();
-  const approveFieldMutation = useApproveLeadField();
-  const declineFieldMutation = useDeclineLeadField();
   const { data: overview, isLoading: isLoadingOverview } = useAgentUploadsOverview();
   const { count: unreadCount = 0 } = useUnreadCount();
 
   const allLeads = leadsData?.leads ?? [];
   const previewLeads = allLeads.slice(0, PREVIEW_COUNT);
   const totalLeadsCount = leadsData?.pagination?.total ?? overview?.total_uploaded_leads ?? allLeads.length;
-  const pendingFields = leadFields.filter((f) => f.status === 'pending');
-
-  const handleApproveField = async (fieldId: number, label: string) => {
-    try {
-      await approveFieldMutation.mutateAsync(fieldId);
-      toast.success(`Approved custom field "${label}"`);
-    } catch (err) {
-      showApiErrorToast(err, 'Could not approve custom field');
-    }
-  };
-
-  const handleDeclineField = async (fieldId: number, label: string) => {
-    try {
-      await declineFieldMutation.mutateAsync(fieldId);
-      toast.info(`Declined custom field "${label}"`);
-    } catch (err) {
-      showApiErrorToast(err, 'Could not decline custom field');
-    }
-  };
 
   return (
     <ScreenErrorBoundary screenName="CrmDashboard">
@@ -167,52 +145,16 @@ export default function CrmDashboardPage() {
               </div>
             </div>
 
-            {/* Pending Custom Field Approvals Banner */}
-            {pendingFields.length > 0 && (
-              <div className="mb-5 bg-[#0B3343] border border-[#FD6046]/40 rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#FD6046]">
-                    Pending Custom Fields ({pendingFields.length})
-                  </span>
-                  <span className="text-[10px] text-white/60">Requested by field team</span>
-                </div>
-                <div className="space-y-2">
-                  {pendingFields.map((field) => (
-                    <div
-                      key={field.id}
-                      className="flex items-center justify-between gap-3 bg-white/5 rounded-xl px-3.5 py-2.5 border border-white/10"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-white truncate">{field.label}</p>
-                        <p className="text-[10px] text-white/50">
-                          Type: <span className="capitalize">{field.type}</span>
-                          {field.is_required ? ' · Required' : ''}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleApproveField(field.id, field.label)}
-                          disabled={approveFieldMutation.isPending}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1"
-                        >
-                          <Check className="w-3.5 h-3.5" /> Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineField(field.id, field.label)}
-                          disabled={declineFieldMutation.isPending}
-                          className="p-1.5 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300"
-                          title="Decline"
-                        >
-                          <XIcon className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <PwaPendingUniversalFieldsCard fields={leadFields} />
+            <div className="mb-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsManageFieldsOpen(true)}
+                className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white/80"
+              >
+                Manage fields
+              </button>
+            </div>
 
             {/* Assignee Filter Pills */}
             {assignees.length > 0 && (
@@ -301,6 +243,10 @@ export default function CrmDashboardPage() {
         onSuccess={() => {
           refetchLeads();
         }}
+      />
+      <PwaManageLeadFieldsSheet
+        visible={isManageFieldsOpen}
+        onClose={() => setIsManageFieldsOpen(false)}
       />
     </ScreenErrorBoundary>
   );

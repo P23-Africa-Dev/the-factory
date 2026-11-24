@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     options: Array<{ value: string; label: string }>;
     is_required: boolean;
     show_on_create: boolean;
+    is_universal?: boolean;
     status: string;
   }>,
 }));
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-crm", () => ({
   useCreateLead: () => ({ mutate: mocks.createLead, isPending: false }),
   useUpdateLead: () => ({ mutate: mocks.updateLead, isPending: false }),
+  useReviewLeadField: () => ({ mutate: vi.fn(), isPending: false }),
   useLeadDuplicateSuggestions: (params: { q?: string; field?: string; enabled?: boolean }) => {
     if (!params.enabled) return { data: [], isFetching: false };
     if (params.field === "name" && params.q === "Ada Lovelace") {
@@ -221,6 +223,7 @@ describe("AddLeadModal", () => {
       options: [],
       is_required: true,
       show_on_create: true,
+      is_universal: true,
       status: "active",
     }];
 

@@ -266,6 +266,8 @@ export type LeadCustomFieldValue = string | number | boolean | string[] | null;
 
 export type LeadCustomFields = Record<string, LeadCustomFieldValue>;
 
+export type LeadFieldUniversalRequestStatus = "pending" | "approved" | "declined" | null;
+
 export type LeadFieldDefinition = {
     id: number;
     company_id: number;
@@ -277,9 +279,12 @@ export type LeadFieldDefinition = {
     is_required: boolean;
     show_on_create: boolean;
     show_in_list: boolean;
+    is_universal: boolean;
+    universal_request_status?: LeadFieldUniversalRequestStatus;
     status: LeadFieldStatus;
     sort_order: number;
     created_by_user_id?: number | null;
+    created_by?: { id: number; name: string } | null;
     reviewed_by_user_id?: number | null;
     reviewed_at?: string | null;
     decline_reason?: string | null;
@@ -294,6 +299,7 @@ export type CreateLeadFieldPayload = {
     description?: string | null;
     options?: Array<string | LeadFieldOption>;
     is_required?: boolean;
+    make_universal?: boolean;
     show_on_create?: boolean;
     show_in_list?: boolean;
 };
@@ -304,6 +310,7 @@ export type UpdateLeadFieldPayload = {
     description?: string | null;
     options?: Array<string | LeadFieldOption>;
     is_required?: boolean;
+    is_universal?: boolean;
     show_on_create?: boolean;
     show_in_list?: boolean;
 };
@@ -950,6 +957,33 @@ export function reviewLeadField(
     return apiRequest<{ field: LeadFieldDefinition }>({
         method: "POST",
         path: withBase(basePath, `/crm/lead-fields/${fieldId}/${action}`),
+        body: payload,
+        token,
+    });
+}
+
+export function deleteLeadField(
+    fieldId: number | string,
+    payload: { company_id?: number | string },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<null>> {
+    const query = buildQuery({ company_id: payload.company_id });
+    return apiRequest<null>({
+        method: "DELETE",
+        path: withBase(basePath, `/crm/lead-fields/${fieldId}${query}`),
+        token,
+    });
+}
+
+export function reorderLeadFields(
+    payload: { company_id: number | string; ordered_ids: Array<number | string> },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ items: LeadFieldDefinition[] }>> {
+    return apiRequest<{ items: LeadFieldDefinition[] }>({
+        method: "POST",
+        path: withBase(basePath, "/crm/lead-fields/reorder"),
         body: payload,
         token,
     });

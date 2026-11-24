@@ -722,6 +722,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
                     ->middleware('throttle:api')
                     ->name('lead-fields.restore');
+                Route::delete('/lead-fields/{leadField}', [LeadFieldController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.destroy');
+                Route::post('/lead-fields/reorder', [LeadFieldController::class, 'reorder'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.reorder');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
@@ -975,6 +981,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
                     ->middleware('throttle:api')
                     ->name('lead-fields.restore');
+                Route::delete('/lead-fields/{leadField}', [LeadFieldController::class, 'destroy'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.destroy');
+                Route::post('/lead-fields/reorder', [LeadFieldController::class, 'reorder'])
+                    ->middleware('throttle:api')
+                    ->name('lead-fields.reorder');
                 Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
@@ -1474,6 +1486,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::post('/lead-fields/{leadField}/restore', [LeadFieldController::class, 'restore'])
             ->middleware('throttle:api')
             ->name('lead-fields.restore');
+        Route::delete('/lead-fields/{leadField}', [LeadFieldController::class, 'destroy'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.destroy');
+        Route::post('/lead-fields/reorder', [LeadFieldController::class, 'reorder'])
+            ->middleware('throttle:api')
+            ->name('lead-fields.reorder');
         Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:api')

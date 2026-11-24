@@ -36,10 +36,11 @@ class LeadFieldController extends Controller
     public function store(StoreLeadFieldRequest $request): JsonResponse
     {
         $field = $this->leadFieldService->create($request->user(), $request->validated());
+        $pendingUniversal = $field->universal_request_status === 'pending';
 
         return $this->success(
-            message: $field->status?->value === 'pending'
-                ? 'Lead field submitted for approval.'
+            message: $pendingUniversal
+                ? 'Lead field saved on this lead. Universal use is awaiting approval.'
                 : 'Lead field created successfully.',
             data: ['field' => new LeadFieldDefinitionResource($field)],
             status: 201,
@@ -56,6 +57,36 @@ class LeadFieldController extends Controller
         );
     }
 
+    public function destroy(Request $request, LeadFieldDefinition $leadField): JsonResponse
+    {
+        $this->leadFieldService->delete(
+            $request->user(),
+            $leadField,
+            $this->resolveCompanyContextId($request->input('company_id')),
+        );
+
+        return $this->success(
+            message: 'Lead field deleted.',
+            data: null,
+        );
+    }
+
+    public function reorder(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'ordered_ids' => ['required', 'array', 'min:1'],
+            'ordered_ids.*' => ['integer'],
+        ]);
+
+        $fields = $this->leadFieldService->reorder($request->user(), $data);
+
+        return $this->success(
+            message: 'Lead fields reordered.',
+            data: ['items' => LeadFieldDefinitionResource::collection($fields)],
+        );
+    }
+
     public function approve(Request $request, LeadFieldDefinition $leadField): JsonResponse
     {
         $field = $this->leadFieldService->approve(
@@ -65,7 +96,7 @@ class LeadFieldController extends Controller
         );
 
         return $this->success(
-            message: 'Lead field approved.',
+            message: 'Lead field approved as universal.',
             data: ['field' => new LeadFieldDefinitionResource($field)],
         );
     }
@@ -85,7 +116,7 @@ class LeadFieldController extends Controller
         );
 
         return $this->success(
-            message: 'Lead field declined.',
+            message: 'Universal request declined. The field stays on existing leads only.',
             data: ['field' => new LeadFieldDefinitionResource($field)],
         );
     }

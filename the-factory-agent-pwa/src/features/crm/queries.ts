@@ -153,10 +153,12 @@ export function useCreateLeadField(options?: { onSuccess?: (field: LeadFieldDefi
     mutationFn: (payload: CreateLeadFieldPayload) => crmApi.createLeadField(payload),
     onSuccess: (field) => {
       queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
-      if (field.status === 'pending') {
-        toast.info('Pending approval', 'This field is visible now and waits for a manager to approve it.');
+      if (field.universal_request_status === 'pending') {
+        toast.info('Saved on this lead', 'Universal use is awaiting manager approval.');
+      } else if (field.is_universal) {
+        toast.success('Universal lead field added');
       } else {
-        toast.success('Lead field added');
+        toast.success('Lead field added for this lead');
       }
       options?.onSuccess?.(field);
     },

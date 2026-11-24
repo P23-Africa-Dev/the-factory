@@ -14,6 +14,7 @@ use App\Services\Company\CompanyContextService;
 use App\Services\Notification\NotificationService;
 use App\Support\LeadCustomFieldValues;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class LeadFieldService
@@ -33,12 +34,13 @@ class LeadFieldService
         $resolvedCompanyId = (int) $context['company']->id;
 
         $query = LeadFieldDefinition::query()
+            ->with('creator:id,name')
             ->where('company_id', $resolvedCompanyId)
             ->orderBy('sort_order')
             ->orderBy('id');
 
         if (! $this->isManager($role)) {
-            $query->whereIn('status', [LeadFieldStatus::ACTIVE->value, LeadFieldStatus::PENDING->value]);
+            $query->where('status', LeadFieldStatus::ACTIVE->value);
         }
 
         return $query->get();
@@ -54,10 +56,12 @@ class LeadFieldService
         $this->ensureCanPropose($role);
         $companyId = (int) $context['company']->id;
 
-        $label = trim((string) ($payload['label'] ?? ''));
+        $label = LeadCustomFieldValues::titleCaseLabel((string) ($payload['label'] ?? ''));
         $type = (string) ($payload['type'] ?? '');
         $key = LeadCustomFieldValues::keyFromLabel($label);
         $options = LeadCustomFieldValues::normalizeOptions($type, $payload['options'] ?? null);
+        $makeUniversal = (bool) ($payload['make_universal'] ?? false);
+        $isManager = $this->isManager($role);
 
         $existing = LeadFieldDefinition::query()
             ->where('company_id', $companyId)
@@ -80,33 +84,42 @@ class LeadFieldService
 
         $counted = LeadFieldDefinition::query()
             ->where('company_id', $companyId)
-            ->whereIn('status', [LeadFieldStatus::ACTIVE->value, LeadFieldStatus::PENDING->value])
+            ->where('status', LeadFieldStatus::ACTIVE->value)
             ->count();
 
-        if ($counted >= LeadCustomFieldValues::MAX_FIELDS) {
+        if ($counted >= LeadCustomFieldValues::MAX_FIELDS && ! $reviving) {
             throw ValidationException::withMessages([
                 'label' => ['This company already has the maximum of '.LeadCustomFieldValues::MAX_FIELDS.' lead fields.'],
             ]);
         }
 
-        $status = $this->isManager($role) ? LeadFieldStatus::ACTIVE : LeadFieldStatus::PENDING;
+        $isUniversal = $makeUniversal && $isManager;
+        $universalRequestStatus = null;
+        if ($makeUniversal && $isManager) {
+            $universalRequestStatus = 'approved';
+        } elseif ($makeUniversal && ! $isManager) {
+            $universalRequestStatus = 'pending';
+        }
+
         $attributes = [
             'label' => mb_substr($label, 0, 80),
             'description' => $this->nullableString($payload['description'] ?? null, 255),
             'options' => $options,
-            'is_required' => (bool) ($payload['is_required'] ?? false),
-            'show_on_create' => array_key_exists('show_on_create', $payload) ? (bool) $payload['show_on_create'] : true,
-            'show_in_list' => array_key_exists('show_in_list', $payload) ? (bool) $payload['show_in_list'] : true,
-            'status' => $status,
+            'is_required' => $isUniversal && (bool) ($payload['is_required'] ?? false),
+            'show_on_create' => $isUniversal,
+            'show_in_list' => $isUniversal,
+            'is_universal' => $isUniversal,
+            'universal_request_status' => $universalRequestStatus,
+            'status' => LeadFieldStatus::ACTIVE,
             'decline_reason' => null,
-            'reviewed_by_user_id' => $status === LeadFieldStatus::ACTIVE ? $user->id : null,
-            'reviewed_at' => $status === LeadFieldStatus::ACTIVE ? now() : null,
+            'reviewed_by_user_id' => $isUniversal ? $user->id : null,
+            'reviewed_at' => $isUniversal ? now() : null,
         ];
 
         if ($existing !== null) {
             $existing->fill($attributes);
             $existing->save();
-            $field = $existing->fresh();
+            $field = $existing->fresh(['creator']);
         } else {
             $sortOrder = (int) LeadFieldDefinition::query()->where('company_id', $companyId)->max('sort_order');
             $field = LeadFieldDefinition::query()->create([
@@ -116,10 +129,10 @@ class LeadFieldService
                 'type' => $type,
                 'sort_order' => $sortOrder + 1,
                 'created_by_user_id' => $user->id,
-            ]);
+            ])->load('creator');
         }
 
-        if ($field->status === LeadFieldStatus::PENDING) {
+        if ($field->universal_request_status === 'pending') {
             $this->notifyManagers($field, $user);
         }
 
@@ -151,21 +164,54 @@ class LeadFieldService
             ]);
         }
 
-        $field->fill([
-            'label' => array_key_exists('label', $payload)
-                ? mb_substr(trim((string) $payload['label']), 0, 80)
-                : $field->label,
+        $wasUniversal = (bool) $field->is_universal;
+        $isUniversal = array_key_exists('is_universal', $payload)
+            ? (bool) $payload['is_universal']
+            : $wasUniversal;
+
+        $label = array_key_exists('label', $payload)
+            ? LeadCustomFieldValues::titleCaseLabel((string) $payload['label'])
+            : $field->label;
+
+        $showOnCreate = $isUniversal
+            ? (array_key_exists('show_on_create', $payload)
+                ? (bool) $payload['show_on_create']
+                : ($wasUniversal ? (bool) $field->show_on_create : true))
+            : false;
+        $showInList = $isUniversal
+            ? (array_key_exists('show_in_list', $payload)
+                ? (bool) $payload['show_in_list']
+                : ($wasUniversal ? (bool) $field->show_in_list : true))
+            : false;
+
+        $attributes = [
+            'label' => mb_substr($label, 0, 80),
             'description' => array_key_exists('description', $payload)
                 ? $this->nullableString($payload['description'], 255)
                 : $field->description,
             'options' => $field->type->usesOptions() ? $options : null,
-            'is_required' => array_key_exists('is_required', $payload) ? (bool) $payload['is_required'] : $field->is_required,
-            'show_on_create' => array_key_exists('show_on_create', $payload) ? (bool) $payload['show_on_create'] : $field->show_on_create,
-            'show_in_list' => array_key_exists('show_in_list', $payload) ? (bool) $payload['show_in_list'] : $field->show_in_list,
-        ]);
+            'is_required' => $isUniversal && (array_key_exists('is_required', $payload)
+                ? (bool) $payload['is_required']
+                : (bool) $field->is_required),
+            'is_universal' => $isUniversal,
+            'show_on_create' => $showOnCreate,
+            'show_in_list' => $showInList,
+        ];
+
+        if ($isUniversal && ! $wasUniversal) {
+            $attributes['universal_request_status'] = 'approved';
+            $attributes['reviewed_by_user_id'] = $user->id;
+            $attributes['reviewed_at'] = now();
+            $attributes['decline_reason'] = null;
+        } elseif (! $isUniversal && $wasUniversal) {
+            $attributes['universal_request_status'] = null;
+            $attributes['is_required'] = false;
+        }
+
+        $field->fill($attributes);
         $field->save();
 
-        return $field->fresh();
+        return $field->fresh(['creator']);
     }
 
     public function approve(User $user, LeadFieldDefinition $field, ?int $companyId): LeadFieldDefinition
@@ -173,15 +219,20 @@ class LeadFieldService
         $role = $this->assertFieldCompany($user, $field, $companyId);
         $this->ensureCanManage($role);
 
-        if (! in_array($field->status, [LeadFieldStatus::PENDING, LeadFieldStatus::DECLINED], true)) {
+        $pendingUniversal = $field->universal_request_status === 'pending'
+            || $field->universal_request_status === 'declined';
+        $legacyPending = $field->status === LeadFieldStatus::PENDING
+            || $field->status === LeadFieldStatus::DECLINED;
+
+        if (! $pendingUniversal && ! $legacyPending) {
             throw ValidationException::withMessages([
-                'status' => ['Only pending or declined lead fields can be approved.'],
+                'status' => ['Only pending universal field requests can be approved.'],
             ]);
         }
 
         $counted = LeadFieldDefinition::query()
             ->where('company_id', $field->company_id)
-            ->whereIn('status', [LeadFieldStatus::ACTIVE->value, LeadFieldStatus::PENDING->value])
+            ->where('status', LeadFieldStatus::ACTIVE->value)
             ->whereKeyNot($field->id)
             ->count();
 
@@ -193,13 +244,20 @@ class LeadFieldService
 
         $field->fill([
             'status' => LeadFieldStatus::ACTIVE,
+            'is_universal' => true,
+            'show_on_create' => true,
+            'show_in_list' => true,
+            'universal_request_status' => 'approved',
             'decline_reason' => null,
             'reviewed_by_user_id' => $user->id,
             'reviewed_at' => now(),
         ]);
         $field->save();
+        $field = $field->fresh(['creator']);
 
-        return $field->fresh();
+        $this->notifyCreator($field, $user, approved: true);
+
+        return $field;
     }
 
     public function decline(User $user, LeadFieldDefinition $field, ?int $companyId, ?string $reason): LeadFieldDefinition
@@ -207,21 +265,31 @@ class LeadFieldService
         $role = $this->assertFieldCompany($user, $field, $companyId);
         $this->ensureCanManage($role);
 
-        if ($field->status !== LeadFieldStatus::PENDING) {
+        $pendingUniversal = $field->universal_request_status === 'pending';
+        $legacyPending = $field->status === LeadFieldStatus::PENDING;
+
+        if (! $pendingUniversal && ! $legacyPending) {
             throw ValidationException::withMessages([
-                'status' => ['Only pending lead fields can be declined.'],
+                'status' => ['Only pending universal field requests can be declined.'],
             ]);
         }
 
         $field->fill([
-            'status' => LeadFieldStatus::DECLINED,
+            'status' => LeadFieldStatus::ACTIVE,
+            'is_universal' => false,
+            'show_on_create' => false,
+            'show_in_list' => false,
+            'universal_request_status' => 'declined',
             'decline_reason' => $this->nullableString($reason, 255),
             'reviewed_by_user_id' => $user->id,
             'reviewed_at' => now(),
         ]);
         $field->save();
+        $field = $field->fresh(['creator']);
 
-        return $field->fresh();
+        $this->notifyCreator($field, $user, approved: false);
+
+        return $field;
     }
 
     public function archive(User $user, LeadFieldDefinition $field, ?int $companyId): LeadFieldDefinition
@@ -242,7 +310,7 @@ class LeadFieldService
         ]);
         $field->save();
 
-        return $field->fresh();
+        return $field->fresh(['creator']);
     }
 
     public function restore(User $user, LeadFieldDefinition $field, ?int $companyId): LeadFieldDefinition
@@ -258,7 +326,7 @@ class LeadFieldService
 
         $counted = LeadFieldDefinition::query()
             ->where('company_id', $field->company_id)
-            ->whereIn('status', [LeadFieldStatus::ACTIVE->value, LeadFieldStatus::PENDING->value])
+            ->where('status', LeadFieldStatus::ACTIVE->value)
             ->count();
 
         if ($counted >= LeadCustomFieldValues::MAX_FIELDS) {
@@ -275,7 +343,65 @@ class LeadFieldService
         ]);
         $field->save();
 
-        return $field->fresh();
+        return $field->fresh(['creator']);
+    }
+
+    public function delete(User $user, LeadFieldDefinition $field, ?int $companyId): void
+    {
+        $role = $this->assertFieldCompany($user, $field, $companyId);
+        $this->ensureCanManage($role);
+
+        $field->delete();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return Collection<int, LeadFieldDefinition>
+     */
+    public function reorder(User $user, array $payload): Collection
+    {
+        $context = $this->companyContextService->resolve(
+            $user,
+            isset($payload['company_id']) ? (int) $payload['company_id'] : null,
+        );
+        $this->ensureCanManage((string) $context['role']);
+        $companyId = (int) $context['company']->id;
+
+        $ids = collect($payload['ordered_ids'] ?? [])
+            ->map(static fn ($id): int => (int) $id)
+            ->values();
+
+        if ($ids->isEmpty()) {
+            throw ValidationException::withMessages([
+                'ordered_ids' => ['Provide at least one lead field id.'],
+            ]);
+        }
+
+        $existingIds = LeadFieldDefinition::query()
+            ->where('company_id', $companyId)
+            ->whereIn('id', $ids->all())
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->sort()
+            ->values();
+
+        $requested = $ids->unique()->sort()->values();
+        if ($existingIds->all() !== $requested->all()) {
+            throw ValidationException::withMessages([
+                'ordered_ids' => ['One or more lead fields are outside your company context.'],
+            ]);
+        }
+
+        DB::transaction(function () use ($companyId, $ids): void {
+            foreach ($ids as $index => $id) {
+                LeadFieldDefinition::query()
+                    ->where('company_id', $companyId)
+                    ->where('id', $id)
+                    ->update(['sort_order' => $index + 1]);
+            }
+        });
+
+        return $this->list($user, $companyId);
     }
 
     private function notifyManagers(LeadFieldDefinition $field, User $actor): void
@@ -286,8 +412,8 @@ class LeadFieldService
             [
                 'type' => 'crm.lead_field_pending',
                 'category' => NotificationCategory::CRM->value,
-                'title' => 'Lead field awaiting approval',
-                'message' => "{$actor->name} added the lead field \"{$field->label}\". Review it in CRM settings.",
+                'title' => 'Universal lead field awaiting approval',
+                'message' => "{$actor->name} requested \"{$field->label}\" as a universal lead field. It stays on their lead until you approve it for the whole company.",
                 'action_url' => '/settings/crm',
                 'action_route' => 'settings.crm',
                 'reference_type' => 'lead_field_definition',
@@ -297,9 +423,40 @@ class LeadFieldService
                 'metadata' => [
                     'field_key' => $field->key,
                     'field_label' => $field->label,
+                    'requester_name' => $actor->name,
                 ],
             ],
             [(int) $actor->id],
+        );
+    }
+
+    private function notifyCreator(LeadFieldDefinition $field, User $reviewer, bool $approved): void
+    {
+        if ($field->created_by_user_id === null || (int) $field->created_by_user_id === (int) $reviewer->id) {
+            return;
+        }
+
+        $this->notificationService->notifyUser(
+            (int) $field->created_by_user_id,
+            [
+                'type' => $approved ? 'crm.lead_field_approved' : 'crm.lead_field_declined',
+                'category' => NotificationCategory::CRM->value,
+                'company_id' => (int) $field->company_id,
+                'title' => $approved ? 'Universal lead field approved' : 'Universal lead field declined',
+                'message' => $approved
+                    ? "{$reviewer->name} approved \"{$field->label}\" as a universal lead field."
+                    : "{$reviewer->name} declined making \"{$field->label}\" a universal lead field. It remains on the leads that already use it.",
+                'action_url' => '/crm/leads',
+                'action_route' => 'crm.leads',
+                'reference_type' => 'lead_field_definition',
+                'reference_id' => $field->id,
+                'created_by_user_id' => $reviewer->id,
+                'priority' => NotificationPriority::NORMAL->value,
+                'metadata' => [
+                    'field_key' => $field->key,
+                    'field_label' => $field->label,
+                ],
+            ],
         );
     }
 

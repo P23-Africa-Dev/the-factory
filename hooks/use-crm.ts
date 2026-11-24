@@ -26,6 +26,8 @@ import {
     createLeadField,
     updateLeadField,
     reviewLeadField,
+    deleteLeadField,
+    reorderLeadFields,
     listCrmAssignees,
     listCrmPipelines,
     listLeads,
@@ -500,6 +502,45 @@ export function useReviewLeadField(
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
             options?.onSuccess?.(res.data.field);
+        },
+    });
+}
+
+export function useDeleteLeadField(
+    options?: { onSuccess?: () => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: ({
+            fieldId,
+            payload,
+        }: {
+            fieldId: number | string;
+            payload: { company_id?: number | string };
+        }) => deleteLeadField(fieldId, payload, token, basePath),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.();
+        },
+    });
+}
+
+export function useReorderLeadFields(
+    options?: { onSuccess?: (fields: LeadFieldDefinition[]) => void },
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: (payload: { company_id: number | string; ordered_ids: Array<number | string> }) =>
+            reorderLeadFields(payload, token, basePath),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+            options?.onSuccess?.(res.data.items);
         },
     });
 }

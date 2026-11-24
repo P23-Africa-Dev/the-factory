@@ -1,9 +1,14 @@
 "use client";
 
-import { Download, Eye, FileText, Loader2, X } from "lucide-react";
+import { Download, FileText, Loader2, X } from "lucide-react";
 import type { DriveFile } from "@/lib/api/drive";
 import { formatDriveBytes } from "@/lib/api/drive";
-import { canPreviewDriveFile, getDrivePreviewKind } from "@/lib/drive-preview";
+import {
+  canPreviewDriveFile,
+  formatDriveExpiryNote,
+  getDrivePreviewError,
+  getDrivePreviewKind,
+} from "@/lib/drive-preview";
 import { useDriveFileBlobUrl } from "@/hooks/use-drive-preview";
 import { DrivePreviewContent } from "./drive-preview-content";
 import { ModalPortal } from "@/components/ui/modal-portal";
@@ -17,11 +22,13 @@ type DrivePreviewModalProps = {
 
 export function DrivePreviewModal({ file, companyId, onClose, onDownload }: DrivePreviewModalProps) {
   const previewable = canPreviewDriveFile(file);
-  const { blobUrl, isLoading, isError } = useDriveFileBlobUrl(
+  const { blobUrl, isLoading, isError, error } = useDriveFileBlobUrl(
     file.id,
     companyId,
     previewable,
   );
+  const previewError = getDrivePreviewError(isError ? error : null);
+  const expiryNote = formatDriveExpiryNote(file.expires_at);
 
   return (
     <ModalPortal>
@@ -42,6 +49,7 @@ export function DrivePreviewModal({ file, companyId, onClose, onDownload }: Driv
             <p className="text-[12px] text-gray-400 mt-0.5">
               {formatDriveBytes(file.size_bytes)}
               {file.folder?.name ? ` · ${file.folder.name}` : ""}
+              {expiryNote ? ` · ${expiryNote}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -88,11 +96,13 @@ export function DrivePreviewModal({ file, companyId, onClose, onDownload }: Driv
               <Loader2 size={32} className="animate-spin text-gray-300" />
             </div>
           ) : isError || !blobUrl ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-              <p className="text-[14px] text-red-500 font-medium">Could not load preview</p>
-              <button type="button" onClick={onDownload} className="text-[13px] text-dash-dark underline">
-                Download instead
-              </button>
+            <div className="flex flex-col items-center justify-center py-16 gap-2 text-center" role="alert">
+              <p className="text-[14px] text-red-500 font-medium">{previewError.message}</p>
+              {previewError.canDownload && (
+                <button type="button" onClick={onDownload} className="text-[13px] text-dash-dark underline">
+                  Download instead
+                </button>
+              )}
             </div>
           ) : (
             <DrivePreviewContent

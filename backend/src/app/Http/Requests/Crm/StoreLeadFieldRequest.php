@@ -35,6 +35,7 @@ class StoreLeadFieldRequest extends FormRequest
             'options' => ['nullable', 'array', 'max:100'],
             'options.*' => ['nullable'],
             'is_required' => ['sometimes', 'boolean'],
+            'make_universal' => ['sometimes', 'boolean'],
             'show_on_create' => ['sometimes', 'boolean'],
             'show_in_list' => ['sometimes', 'boolean'],
         ];

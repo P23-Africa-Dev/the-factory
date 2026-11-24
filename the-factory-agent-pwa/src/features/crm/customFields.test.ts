@@ -14,6 +14,7 @@ const industry: LeadFieldDefinition = {
   is_required: true,
   show_on_create: true,
   show_in_list: true,
+  is_universal: true,
   status: 'active',
   sort_order: 0,
 };
@@ -47,7 +48,7 @@ describe('lead custom fields', () => {
     });
   });
 
-  it('does not require a pending field', () => {
-    expect(validateCustomFieldValues([{ ...industry, status: 'pending' }], {})).toEqual({});
+  it('does not require a lead-only or non-universal field', () => {
+    expect(validateCustomFieldValues([{ ...industry, is_universal: false }], {})).toEqual({});
   });
 });

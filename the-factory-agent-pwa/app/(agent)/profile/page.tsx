@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
+import { HardDrive } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useProfile, useAuth, useAuthNavigation, useAgentIdentity } from '@/features/auth';
 import { JourneyHistoryPanel } from '@/features/field-activity';
@@ -159,6 +161,23 @@ export default function ProfilePage() {
                   {companyName && <RoleBadge label={companyName} variant="company" />}
                 </div>
               </div>
+
+              {/* Company Drive */}
+              <Link
+                href="/drive"
+                className="flex items-center gap-3 p-4 rounded-2xl bg-[#0B3343]/75 border border-white/10 hover:bg-[#0B3343] transition-colors"
+              >
+                <div className="p-2 rounded-xl bg-[#75ADAF]/20 text-[#75ADAF]">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-semibold text-white">Company Drive</p>
+                  <p className="text-xs text-white/50">Files shared with you</p>
+                </div>
+                <span className="text-xl text-white/40" aria-hidden>
+                  ›
+                </span>
+              </Link>
 
               {/* Identity Details Card */}
               <SectionCard title="Identity" icon="👤">

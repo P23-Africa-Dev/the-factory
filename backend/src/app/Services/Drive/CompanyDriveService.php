@@ -263,7 +263,7 @@ class CompanyDriveService
         $stream = $this->storageService->readStream($file->disk, $file->file_path);
 
         if ($stream === null) {
-            throw new HttpException(404, 'File content was not found.');
+            throw new HttpException(404, 'This file is no longer available.');
         }
 
         return [
@@ -416,6 +416,8 @@ class CompanyDriveService
             'ely_report_id' => $reportId,
             'uploaded_by_user_id' => $context->userId,
             'metadata' => ['report_type' => 'weekly_executive_summary'],
+            // Generated reports are kept for a limited time (see config drive.generated_retention_days).
+            'expires_at' => now()->addDays((int) config('drive.generated_retention_days', 60)),
         ]);
 
         DriveFileGrant::query()->create([
@@ -660,6 +662,7 @@ class CompanyDriveService
                 ])->values()->all()
                 : [],
             'created_at' => $file->created_at?->toIso8601String(),
+            'expires_at' => $file->expires_at?->toIso8601String(),
         ];
     }
 }

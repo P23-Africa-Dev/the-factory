@@ -75,8 +75,15 @@ export const leadFieldDefinitionSchema = z.object({
   is_required: z.boolean(),
   show_on_create: z.boolean(),
   show_in_list: z.boolean(),
+  is_universal: z.boolean().optional().default(false),
+  universal_request_status: z.enum(['pending', 'approved', 'declined']).nullable().optional(),
   status: z.enum(['active', 'pending', 'declined', 'archived']),
   sort_order: z.number().optional().default(0),
+  created_by_user_id: z.union([z.string(), z.number()]).transform(v => Number(v)).nullable().optional(),
+  created_by: z.object({
+    id: z.union([z.string(), z.number()]).transform(v => Number(v)),
+    name: z.string(),
+  }).nullable().optional(),
 });
 
 const rawLeadSchema = z.object({
@@ -258,6 +265,7 @@ export const createLeadFieldPayloadSchema = z.object({
   type: leadFieldTypeSchema,
   options: z.array(z.string()).max(100).optional(),
   is_required: z.boolean().optional(),
+  make_universal: z.boolean().optional(),
   show_on_create: z.boolean().optional(),
   show_in_list: z.boolean().optional(),
 });
