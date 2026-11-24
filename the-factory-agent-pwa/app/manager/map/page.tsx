@@ -624,7 +624,7 @@ function MapContent() {
 
       {/* Search Modal */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-50 bg-[#051014]/80 backdrop-blur-sm p-4 flex flex-col">
+        <div className="fixed inset-0 z-[10000] bg-[#051014]/80 backdrop-blur-sm p-4 flex flex-col">
           <div className="bg-[#0B1E26] border border-white/10 rounded-2xl p-3.5 shadow-2xl">
             <div className="flex items-center gap-2.5">
               <Search className="w-4 h-4 text-[#75ADAF]" />

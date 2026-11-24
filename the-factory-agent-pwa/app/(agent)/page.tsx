@@ -857,7 +857,7 @@ export default function AgentDashboardPage() {
 
       {/* Logout modal */}
       {isLogoutModalOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
           <div onClick={() => !isLoggingOut && setIsLogoutModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer" />
           <div className="relative bg-[#0B1E26] border border-white/10 rounded-2xl w-full max-w-xs p-6 shadow-2xl z-10 flex flex-col gap-4 font-sans text-center">
             <h3 className="font-bold text-lg text-white">Log Out</h3>

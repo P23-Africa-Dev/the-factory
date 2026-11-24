@@ -869,7 +869,7 @@ export default function ManagerHomeScreen() {
       {/* ─── Manager Executive Brief & Team Planner Modal ─── */}
       <AnimatePresence>
         {execBriefOpen && (
-          <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1074,7 +1074,7 @@ export default function ManagerHomeScreen() {
       {/* ─── Day Schedule Modal (Team Tasks + Meetings for selected date) ─── */}
       <AnimatePresence>
         {dayScheduleVisible && (
-          <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55">
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/55">
             <div className="absolute inset-0" onClick={() => setDayScheduleVisible(false)} />
             <motion.div
               initial={{ y: '100%' }}

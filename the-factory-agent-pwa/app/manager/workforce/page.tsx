@@ -492,7 +492,7 @@ function WorkforceContent() {
 
       {/* Agent Attendance History Modal */}
       {inspectedUserId != null && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end justify-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/75 backdrop-blur-sm flex items-end justify-center p-4">
           <div className="w-full max-w-md bg-[#0B3343] border border-white/15 rounded-3xl p-5 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <h3 className="text-sm font-bold text-white">Agent Attendance Log</h3>
@@ -536,7 +536,7 @@ function WorkforceContent() {
 
       {/* Invite Internal User Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end justify-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/75 backdrop-blur-sm flex items-end justify-center p-4">
           <form
             onSubmit={handleInviteSubmit}
             className="w-full max-w-md bg-[#0B3343] border border-white/15 rounded-3xl p-5 space-y-3.5"
