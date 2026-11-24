@@ -2375,6 +2375,7 @@ class LeadManagementTest extends TestCase
             ->assertJsonPath('data.total_leads', 2);
 
         // "Uploaded by agents" counts every lead an agent created, whatever its source text.
+        $this->app['auth']->forgetGuards();
         $adminToken = $admin->createToken('admin-upload-scope', ['*'])->plainTextToken;
         $this->withToken($adminToken)
             ->getJson('/api/v1/crm/leads/agent-uploads-overview?company_id=' . $company->id)

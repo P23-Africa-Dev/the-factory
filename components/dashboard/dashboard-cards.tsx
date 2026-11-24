@@ -9,7 +9,7 @@ import { useDashboardOverview } from "@/hooks/use-dashboard";
 import { useCancelMeeting, useMeetingDetail, useMeetings } from "@/hooks/use-meetings";
 import { useCalendarIntegrationStatus } from "@/hooks/use-calendar-integration";
 import { getActiveCompanyContext } from "@/lib/company-context";
-import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
+import { DEFAULT_AVATAR } from "@/lib/avatar";
 import { canAccessMeetingCreation, canConnectGoogleCalendar, getMeetingAccessNotice, getMeetingCreationTooltip } from "@/lib/calendar-permissions";
 import { cn } from "@/lib/utils/sample";
 import { CalendarTooltip } from "@/components/ui/calendar-tooltip";
@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ScheduleMeetingModal } from "@/components/operations/schedule-meeting-modal";
 import { MeetingDetailsModal } from "@/components/dashboard/meeting-details-modal";
+import { OngoingTasksSlider } from "@/components/dashboard/ongoing-tasks-slider";
 import type { MeetingItem } from "@/lib/api/meetings";
 
 export function TopCustomers() {
@@ -362,16 +363,6 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December"
 ];
 
-const TRACKING_STATE_META: Record<
-  "in_progress" | "near_destination" | "arrived" | "completed",
-  { label: string; className: string }
-> = {
-  in_progress: { label: "En route", className: "bg-[#FD6046]/10 text-[#FD6046]" },
-  near_destination: { label: "Near destination", className: "bg-[#F5A623]/10 text-[#C77700]" },
-  arrived: { label: "Arrived", className: "bg-[#7BB6B8]/15 text-[#3F7E80]" },
-  completed: { label: "Completed", className: "bg-[#2FA84F]/10 text-[#2FA84F]" },
-};
-
 export function WeeklyTasksAgents() {
   const router = useRouter();
   const [filter, setFilter] = useState<TaskFilter>("Daily");
@@ -503,18 +494,6 @@ export function WeeklyTasksAgents() {
         color: TASK_COLORS[index % TASK_COLORS.length],
       }));
   }, [meetingsData?.meetings, selectedDate]);
-  const ongoingTask = overview?.ongoing_tasks?.[0] ?? null;
-  const progressPercent = Math.max(
-    0,
-    Math.min(100, Number(ongoingTask?.progress_percent ?? 0))
-  );
-  const agentName = ongoingTask?.agent?.name ?? "No active task";
-  const badgeText = ongoingTask
-    ? `${agentName.split(" ")[0]} ... ${Math.round(progressPercent)}%`
-    : "No Active Task";
-  const trackingStateMeta = ongoingTask
-    ? TRACKING_STATE_META[ongoingTask.tracking_state] ?? null
-    : null;
   const tasksRoute = role === "agent" ? "/agent/tasks" : "/projects?tab=tasks";
 
   const handlePrevDay = () => {
@@ -662,46 +641,11 @@ export function WeeklyTasksAgents() {
 
         <div className="w-full h-px bg-[#D9D6D6] mb-2.75" />
 
-        <div className="mb-4 relative px-5">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[14px] font-medium text-[#34373C]">Ongoing tasks</p>
-            {trackingStateMeta && (
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                  trackingStateMeta.className,
-                )}
-              >
-                {trackingStateMeta.label}
-              </span>
-            )}
-          </div>
-
-          <div className="w-full h-5 bg-[#F5F5F5] rounded-full p-1.5 shadow-inner ring-1 ring-dash-dark/5 mt-6.5">
-            <div className="h-full bg-[#FD6046] rounded-full shadow-lg relative" style={{ width: `${progressPercent}%` }}>
-              <div className="absolute -top-6 -right-1.5 flex items-center gap-1.5  text-white rounded-full text-[9px] font-medium whitespace-nowrap -translate-y-1">
-                {ongoingTask?.agent?.avatar_url ? (
-                  <Image
-                    src={resolveAvatarSrc(ongoingTask.agent.avatar_url)}
-                    alt={ongoingTask.agent.name}
-                    width={16}
-                    height={16}
-                    className="w-4 h-4 object-cover rounded-full overflow-hidden z-20"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="w-4 h-4 rounded-full bg-white text-[#FD6046] text-[7px] font-bold flex items-center justify-center z-20">
-                    {ongoingTask?.agent?.initials ?? "A"}
-                  </div>
-                )}
-                <div className="bg-[#FD6046] leading-1.5 py-px px-0.75 text-[3px] rounded-r-[3px] absolute left-3.5">
-                  {badgeText}
-                </div>
-                <div className="absolute rotate-180 w-1.5 h-1.75 -bottom-1 right-1 bg-[#FD6046] [clip-path:polygon(50%_0%,100%_100%,0%_100%)]" />
-              </div>
-            </div>
-          </div>
-        </div>
+        <OngoingTasksSlider
+          agents={overview?.ongoing_agents}
+          legacyTasks={overview?.ongoing_tasks}
+          isAgentView={role === "agent"}
+        />
 
         <button onClick={() => router.push(tasksRoute)} className="w-full bg-[#8B2FA1] text-white py-5 rounded-4xl mb-2 flex items-center justify-between px-8 hover:opacity-95 transition-all text-sm group mt-auto">
           View All tasks

@@ -108,7 +108,7 @@ class DashboardAggregateService
                     userId: (int) $user->id,
                 );
 
-                $ongoingTasks = $this->buildOngoingTasks(
+                $ongoing = $this->buildOngoing(
                     companyId: $resolvedCompanyId,
                     role: $role,
                     userId: (int) $user->id,
@@ -155,28 +155,13 @@ class DashboardAggregateService
                         'completed' => (int) (clone $selfTaskBase)->where('status', 'completed')->count(),
                         'cancelled' => (int) (clone $selfTaskBase)->where('status', 'cancelled')->count(),
                     ],
-                    'top_prospects' => Lead::query()
-                        ->where('company_id', $resolvedCompanyId)
-                        ->when($role === 'agent', function (Builder $query) use ($user): void {
-                            $this->applyAgentLeadScope($query, (int) $user->id);
-                        })
-                        ->whereBetween('updated_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
-                        ->orderByDesc('updated_at')
-                        ->limit(5)
-                        ->get(['id', 'name', 'status', 'priority', 'assigned_to_user_id'])
-                        ->map(function (Lead $lead): array {
-                            $priority = $lead->priority;
-
-                            return [
-                                'id' => $lead->id,
-                                'name' => $lead->name,
-                                'status' => (string) $lead->status,
-                                'priority' => $priority instanceof \BackedEnum ? $priority->value : ($priority !== null ? (string) $priority : null),
-                                'assigned_to_user_id' => $lead->assigned_to_user_id,
-                            ];
-                        })
-                        ->values()
-                        ->all(),
+                    'top_prospects' => $this->buildTopProspects(
+                        companyId: $resolvedCompanyId,
+                        role: $role,
+                        userId: (int) $user->id,
+                        from: $from->copy()->startOfDay(),
+                        to: $to->copy()->endOfDay(),
+                    ),
                     'crm_pipeline_snapshot' => $this->leadService->pipelineSummary($user, $resolvedCompanyId),
                     'stage_progress' => $this->buildStageProgress($resolvedCompanyId),
                     'calendar_task_feed' => $upcomingTasks->map(static fn(Task $task): array => [
@@ -191,268 +176,53 @@ class DashboardAggregateService
                         'agents_with_recent_location_ping' => (int) $recentLocationUsers,
                     ],
                     'activity_metric' => $activityMetric,
-                    'ongoing_tasks' => $ongoingTasks,
+                    'ongoing_tasks' => $ongoing['tasks'],
+                    'ongoing_agents' => $ongoing['agents'],
                     'leads_trend' => $this->buildLeadsTrend($resolvedCompanyId, $role, (int) $user->id),
                 ];
             },
         );
     }
 
+    /**
+     * Activity score: actions this week so far vs. the same elapsed span of last week
+     * (Monday 00:00 up to the same weekday and time). Passive events (GPS pings,
+     * notification reads) are not counted. Agents: own actions. Managers: whole team.
+     */
     private function buildActivityMetric(int $companyId, string $role, int $userId): array
     {
-        $currentWeekStart = now()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
+        $now = now();
+        $currentWeekStart = $now->copy()->startOfWeek(CarbonInterface::MONDAY)->startOfDay();
         $currentWeekEnd = $currentWeekStart->copy()->addDays(6)->endOfDay();
-        $previousWeekStart = $currentWeekStart->copy()->subWeek()->startOfDay();
+        $previousWeekStart = $currentWeekStart->copy()->subWeek();
         $previousWeekEnd = $previousWeekStart->copy()->addDays(6)->endOfDay();
+        $previousSameMoment = $now->copy()->subWeek();
 
-        $dailyTotals = [];
-        $cursor = $previousWeekStart->copy();
-        while ($cursor->lte($currentWeekEnd)) {
-            $dailyTotals[$cursor->toDateString()] = 0;
-            $cursor->addDay();
-        }
+        // Per-day totals for both full weeks (for the chart).
+        $dailyTotals = $this->emptyDays($previousWeekStart, $currentWeekEnd);
+        $this->accumulateActivitySources($dailyTotals, $companyId, $role, $userId, $previousWeekStart, $currentWeekEnd);
 
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: Task::query()->where('company_id', $companyId),
-            dateColumn: 'created_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'created_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
+        // Like-for-like totals for the score.
+        $currentSpan = $this->emptyDays($currentWeekStart, $now);
+        $this->accumulateActivitySources($currentSpan, $companyId, $role, $userId, $currentWeekStart, $now);
+        $previousSpan = $this->emptyDays($previousWeekStart, $previousSameMoment);
+        $this->accumulateActivitySources($previousSpan, $companyId, $role, $userId, $previousWeekStart, $previousSameMoment);
 
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: Task::query()->where('company_id', $companyId)->whereNotNull('started_at'),
-            dateColumn: 'started_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'assigned_agent_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
+        $currentWeek = (int) array_sum($currentSpan);
+        $previousWeek = (int) array_sum($previousSpan);
 
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: Task::query()->where('company_id', $companyId)->whereNotNull('completed_at'),
-            dateColumn: 'completed_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'assigned_agent_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: TaskReassignment::query()->where('company_id', $companyId),
-            dateColumn: 'requested_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: null,
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-            customScope: function (Builder $query, int $actorId): void {
-                $query->where(function (Builder $nested) use ($actorId): void {
-                    $nested->where('requested_by_user_id', $actorId)
-                        ->orWhere('from_user_id', $actorId)
-                        ->orWhere('to_user_id', $actorId)
-                        ->orWhere('responded_by_user_id', $actorId);
-                });
-            },
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: TaskReassignment::query()->where('company_id', $companyId)->whereNotNull('responded_at'),
-            dateColumn: 'responded_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: null,
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-            customScope: function (Builder $query, int $actorId): void {
-                $query->where(function (Builder $nested) use ($actorId): void {
-                    $nested->where('requested_by_user_id', $actorId)
-                        ->orWhere('from_user_id', $actorId)
-                        ->orWhere('to_user_id', $actorId)
-                        ->orWhere('responded_by_user_id', $actorId);
-                });
-            },
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: AttendanceRecord::query()->where('company_id', $companyId)->whereNotNull('clock_in_at'),
-            dateColumn: 'clock_in_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: AttendanceRecord::query()->where('company_id', $companyId)->whereNotNull('clock_out_at'),
-            dateColumn: 'clock_out_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: Lead::query()->where('company_id', $companyId),
-            dateColumn: 'created_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'created_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: LeadActivity::query()->where('company_id', $companyId),
-            dateColumn: 'created_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'created_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: LeadNote::query()->where('company_id', $companyId),
-            dateColumn: 'created_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'created_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        if ($role !== 'agent') {
-            $this->accumulateDailyActivity(
-                dailyTotals: $dailyTotals,
-                query: PayrollSetting::query()->where('company_id', $companyId),
-                dateColumn: 'created_at',
-                role: $role,
-                userId: $userId,
-                scopeColumn: null,
-                from: $previousWeekStart,
-                to: $currentWeekEnd,
-            );
-
-            $this->accumulateDailyActivity(
-                dailyTotals: $dailyTotals,
-                query: PayrollSetting::query()
-                    ->where('company_id', $companyId)
-                    ->whereColumn('updated_at', '!=', 'created_at'),
-                dateColumn: 'updated_at',
-                role: $role,
-                userId: $userId,
-                scopeColumn: null,
-                from: $previousWeekStart,
-                to: $currentWeekEnd,
-            );
-        }
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: TaskTrackingSession::query()->where('company_id', $companyId),
-            dateColumn: 'start_recorded_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'started_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: TaskLocationPoint::query()->where('company_id', $companyId),
-            dateColumn: 'recorded_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: TaskProof::query()
-                ->whereHas('task', static function (Builder $query) use ($companyId): void {
-                    $query->where('company_id', $companyId);
-                }),
-            dateColumn: 'created_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'uploaded_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: AppNotification::query()
-                ->where('company_id', $companyId)
-                ->whereNotNull('read_at'),
-            dateColumn: 'read_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        $this->accumulateDailyActivity(
-            dailyTotals: $dailyTotals,
-            query: Project::query()->where('company_id', $companyId),
-            dateColumn: 'created_at',
-            role: $role,
-            userId: $userId,
-            scopeColumn: 'created_by_user_id',
-            from: $previousWeekStart,
-            to: $currentWeekEnd,
-        );
-
-        if ($role !== 'agent') {
-            $this->accumulateDailyActivity(
-                dailyTotals: $dailyTotals,
-                query: DB::table('company_users')->where('company_id', $companyId),
-                dateColumn: 'created_at',
-                role: $role,
-                userId: $userId,
-                scopeColumn: null,
-                from: $previousWeekStart,
-                to: $currentWeekEnd,
-            );
-        }
-
-        $currentWeek = 0;
-        $previousWeek = 0;
         $currentWeekDaily = [];
-
+        $previousWeekDaily = [];
         $cursor = $currentWeekStart->copy();
         while ($cursor->lte($currentWeekEnd)) {
-            $dayKey = $cursor->toDateString();
-            $dayTotal = (int) ($dailyTotals[$dayKey] ?? 0);
-            $currentWeek += $dayTotal;
             $currentWeekDaily[] = [
                 'name' => $cursor->format('D'),
-                'value' => $dayTotal,
+                'value' => (int) ($dailyTotals[$cursor->toDateString()] ?? 0),
             ];
-
-            $previousKey = $cursor->copy()->subWeek()->toDateString();
-            $previousWeek += (int) ($dailyTotals[$previousKey] ?? 0);
+            $previousWeekDaily[] = [
+                'name' => $cursor->format('D'),
+                'value' => (int) ($dailyTotals[$cursor->copy()->subWeek()->toDateString()] ?? 0),
+            ];
             $cursor->addDay();
         }
 
@@ -475,10 +245,93 @@ class DashboardAggregateService
         return [
             'activity_score' => $score,
             'direction' => $direction,
+            'scope' => $role === 'agent' ? 'self' : 'team',
+            // Like-for-like totals behind the score.
             'current_week' => $currentWeek,
             'previous_week' => $previousWeek,
             'current_week_daily' => $currentWeekDaily,
+            'previous_week_daily' => $previousWeekDaily,
         ];
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function emptyDays(Carbon $from, Carbon $to): array
+    {
+        $days = [];
+        $cursor = $from->copy()->startOfDay();
+        while ($cursor->lte($to)) {
+            $days[$cursor->toDateString()] = 0;
+            $cursor->addDay();
+        }
+
+        return $days;
+    }
+
+    /**
+     * Every counted action type. One row = one action, dated by its column.
+     *
+     * @param  array<string, int>  $dailyTotals
+     */
+    private function accumulateActivitySources(array &$dailyTotals, int $companyId, string $role, int $userId, Carbon $from, Carbon $to): void
+    {
+        $reassignmentScope = function (Builder $query, int $actorId): void {
+            $query->where(function (Builder $nested) use ($actorId): void {
+                $nested->where('requested_by_user_id', $actorId)
+                    ->orWhere('from_user_id', $actorId)
+                    ->orWhere('to_user_id', $actorId)
+                    ->orWhere('responded_by_user_id', $actorId);
+            });
+        };
+
+        $sources = [
+            [Task::query()->where('company_id', $companyId), 'created_at', 'created_by_user_id', null],
+            [Task::query()->where('company_id', $companyId)->whereNotNull('started_at'), 'started_at', 'assigned_agent_id', null],
+            [Task::query()->where('company_id', $companyId)->whereNotNull('completed_at'), 'completed_at', 'assigned_agent_id', null],
+            [TaskReassignment::query()->where('company_id', $companyId), 'requested_at', null, $reassignmentScope],
+            [TaskReassignment::query()->where('company_id', $companyId)->whereNotNull('responded_at'), 'responded_at', null, $reassignmentScope],
+            [AttendanceRecord::query()->where('company_id', $companyId)->whereNotNull('clock_in_at'), 'clock_in_at', 'user_id', null],
+            [AttendanceRecord::query()->where('company_id', $companyId)->whereNotNull('clock_out_at'), 'clock_out_at', 'user_id', null],
+            [Lead::query()->where('company_id', $companyId), 'created_at', 'created_by_user_id', null],
+            [LeadActivity::query()->where('company_id', $companyId), 'created_at', 'created_by_user_id', null],
+            [LeadNote::query()->where('company_id', $companyId), 'created_at', 'created_by_user_id', null],
+            [TaskTrackingSession::query()->where('company_id', $companyId), 'start_recorded_at', 'started_by_user_id', null],
+            [
+                TaskProof::query()->whereHas('task', static function (Builder $query) use ($companyId): void {
+                    $query->where('company_id', $companyId);
+                }),
+                'created_at',
+                'uploaded_by_user_id',
+                null,
+            ],
+            [Project::query()->where('company_id', $companyId), 'created_at', 'created_by_user_id', null],
+        ];
+
+        if ($role !== 'agent') {
+            $sources[] = [PayrollSetting::query()->where('company_id', $companyId), 'created_at', null, null];
+            $sources[] = [
+                PayrollSetting::query()->where('company_id', $companyId)->whereColumn('updated_at', '!=', 'created_at'),
+                'updated_at',
+                null,
+                null,
+            ];
+            $sources[] = [DB::table('company_users')->where('company_id', $companyId), 'created_at', null, null];
+        }
+
+        foreach ($sources as [$query, $dateColumn, $scopeColumn, $customScope]) {
+            $this->accumulateDailyActivity(
+                dailyTotals: $dailyTotals,
+                query: $query,
+                dateColumn: $dateColumn,
+                role: $role,
+                userId: $userId,
+                scopeColumn: $scopeColumn,
+                from: $from,
+                to: $to,
+                customScope: $customScope,
+            );
+        }
     }
 
     /**
@@ -522,11 +375,31 @@ class DashboardAggregateService
         }
     }
 
-    private function buildOngoingTasks(int $companyId, string $role, int $userId): array
+    /**
+     * Ongoing work: tasks in progress, paused or resumed, with an assigned agent.
+     *
+     * Progress per task (first rule that applies):
+     *  1. checklist - completed subtasks / all subtasks
+     *  2. travel    - open tracking session with a destination: distance covered (arrived = 100)
+     *  3. schedule  - time elapsed between started_at and due_at, capped at 95
+     *  4. started   - 5, so the agent still shows on the bar
+     *
+     * Agents are grouped; an agent's progress is the average of their ongoing tasks.
+     *
+     * @return array{tasks: array<int, array<string, mixed>>, agents: array<int, array<string, mixed>>}
+     */
+    private function buildOngoing(int $companyId, string $role, int $userId): array
     {
         $tasksQuery = Task::query()
             ->where('company_id', $companyId)
-            ->where('status', 'in_progress')
+            ->whereIn('status', ['in_progress', 'paused', 'resumed'])
+            ->whereNotNull('assigned_agent_id')
+            ->withCount([
+                'subtasks as subtasks_total',
+                'subtasks as subtasks_done' => static function (Builder $query): void {
+                    $query->where('is_completed', true);
+                },
+            ])
             ->with([
                 'assignedAgent:id,name,avatar,gender',
                 'trackingSession' => static function ($query): void {
@@ -554,104 +427,233 @@ class DashboardAggregateService
 
         $tasks = $tasksQuery
             ->orderByDesc('updated_at')
-            ->limit(12)
+            ->orderByDesc('id')
+            ->limit(60)
             ->get();
 
         $items = [];
         foreach ($tasks as $task) {
-            $session = $task->trackingSession;
-            if (! $session || $session->end_recorded_at !== null) {
-                continue;
+            $items[] = $this->ongoingTaskItem($task);
+        }
+
+        // Group by agent; tasks are already newest-first, so the first one is the current task.
+        $groups = [];
+        foreach ($items as $item) {
+            $agentId = (int) $item['agent']['id'];
+            if (! isset($groups[$agentId])) {
+                $groups[$agentId] = ['agent' => $item['agent'], 'tasks' => []];
             }
+            $groups[$agentId]['tasks'][] = $item;
+        }
 
-            $startLat = $session->start_latitude;
-            $startLng = $session->start_longitude;
-            $destinationLat = $session->destination_latitude ?? $task->latitude;
-            $destinationLng = $session->destination_longitude ?? $task->longitude;
-            $currentLat = $session->last_latitude ?? $startLat;
-            $currentLng = $session->last_longitude ?? $startLng;
+        $agents = [];
+        foreach (array_slice(array_values($groups), 0, 8) as $group) {
+            $taskList = $group['tasks'];
+            $average = array_sum(array_column($taskList, 'progress_percent')) / max(1, count($taskList));
+            $current = $taskList[0];
 
-            $totalDistanceMeters = null;
-            $coveredDistanceMeters = null;
-            $remainingDistanceMeters = null;
-            $progress = 0.0;
+            $agents[] = [
+                'agent' => $group['agent'],
+                'progress_percent' => (int) round($average),
+                'task_count' => count($taskList),
+                'current_task' => [
+                    'id' => $current['task_id'],
+                    'title' => $current['task_title'],
+                    'state' => $current['state'],
+                    'progress_source' => $current['progress_source'],
+                ],
+                'tasks' => array_map(static fn (array $item): array => [
+                    'id' => $item['task_id'],
+                    'title' => $item['task_title'],
+                    'progress_percent' => (int) round($item['progress_percent']),
+                    'progress_source' => $item['progress_source'],
+                    'state' => $item['state'],
+                ], $taskList),
+            ];
+        }
+
+        // Legacy list: most advanced first, capped like before.
+        $legacy = $items;
+        usort($legacy, static fn (array $a, array $b): int => $b['progress_percent'] <=> $a['progress_percent']);
+
+        return [
+            'tasks' => array_values(array_slice($legacy, 0, 12)),
+            'agents' => $agents,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ongoingTaskItem(Task $task): array
+    {
+        $status = $task->status instanceof \BackedEnum ? $task->status->value : (string) $task->status;
+        $session = $task->trackingSession;
+        $openSession = $session !== null && $session->end_recorded_at === null ? $session : null;
+
+        $progress = 5.0;
+        $source = 'started';
+        $trackingState = 'in_progress';
+        $totalDistanceMeters = null;
+        $coveredDistanceMeters = null;
+        $remainingDistanceMeters = null;
+
+        $subtasksTotal = (int) ($task->subtasks_total ?? 0);
+
+        if ($subtasksTotal > 0) {
+            $source = 'checklist';
+            $progress = ((int) ($task->subtasks_done ?? 0) / $subtasksTotal) * 100;
+        }
+
+        if ($openSession !== null) {
+            $startLat = $openSession->start_latitude;
+            $startLng = $openSession->start_longitude;
+            $destinationLat = $openSession->destination_latitude ?? $task->latitude;
+            $destinationLng = $openSession->destination_longitude ?? $task->longitude;
+            $currentLat = $openSession->last_latitude ?? $startLat;
+            $currentLng = $openSession->last_longitude ?? $startLng;
 
             if (
                 $startLat !== null && $startLng !== null
                 && $destinationLat !== null && $destinationLng !== null
                 && $currentLat !== null && $currentLng !== null
             ) {
-                $totalDistanceMeters = $this->distanceMeters(
-                    (float) $startLat,
-                    (float) $startLng,
-                    (float) $destinationLat,
-                    (float) $destinationLng,
-                );
-
-                $coveredDistanceMeters = $this->distanceMeters(
-                    (float) $startLat,
-                    (float) $startLng,
-                    (float) $currentLat,
-                    (float) $currentLng,
-                );
+                $totalDistanceMeters = $this->distanceMeters((float) $startLat, (float) $startLng, (float) $destinationLat, (float) $destinationLng);
+                $coveredDistanceMeters = $this->distanceMeters((float) $startLat, (float) $startLng, (float) $currentLat, (float) $currentLng);
 
                 if ($totalDistanceMeters > 0) {
                     $coveredDistanceMeters = min($totalDistanceMeters, $coveredDistanceMeters);
                     $remainingDistanceMeters = max(0.0, $totalDistanceMeters - $coveredDistanceMeters);
-                    $progress = round(($coveredDistanceMeters / $totalDistanceMeters) * 100, 2);
+
+                    if ($source !== 'checklist') {
+                        $source = 'travel';
+                        $progress = ($coveredDistanceMeters / $totalDistanceMeters) * 100;
+                    }
                 }
             }
 
-            $trackingState = 'in_progress';
-            $statusLabel = 'ACTIVE';
-            if ($session->arrival_detected_at !== null) {
+            if ($openSession->arrival_detected_at !== null) {
                 $trackingState = 'arrived';
-                $statusLabel = 'ARRIVED';
-                $progress = 100.0;
                 $remainingDistanceMeters = 0.0;
-            } elseif ($session->near_detected_at !== null) {
-                $trackingState = 'near_destination';
-                $statusLabel = 'NEAR DESTINATION';
-            }
-
-            $assignedAgent = $task->assignedAgent;
-            $agentName = trim((string) ($assignedAgent?->name ?: 'Unknown Agent'));
-            $nameParts = preg_split('/\s+/', $agentName) ?: [];
-            $initials = '';
-            foreach (array_slice($nameParts, 0, 2) as $part) {
-                if ($part !== '') {
-                    $initials .= strtoupper(substr($part, 0, 1));
+                if ($source !== 'checklist') {
+                    $source = 'travel';
+                    $progress = 100.0;
                 }
+            } elseif ($openSession->near_detected_at !== null) {
+                $trackingState = 'near_destination';
             }
-
-            if ($initials === '') {
-                $initials = 'A';
-            }
-
-            $items[] = [
-                'task_id' => (int) $task->id,
-                'task_title' => (string) $task->title,
-                'status' => $statusLabel,
-                'tracking_state' => $trackingState,
-                'progress_percent' => max(0.0, min(100.0, $progress)),
-                'total_distance_meters' => $totalDistanceMeters !== null ? round($totalDistanceMeters, 2) : null,
-                'covered_distance_meters' => $coveredDistanceMeters !== null ? round($coveredDistanceMeters, 2) : null,
-                'remaining_distance_meters' => $remainingDistanceMeters !== null ? round($remainingDistanceMeters, 2) : null,
-                'eta_minutes' => null,
-                'agent' => [
-                    'id' => $assignedAgent?->id,
-                    'name' => $agentName,
-                    'avatar_url' => AvatarUrlResolver::resolveOrDefault($assignedAgent?->avatar, $assignedAgent?->gender),
-                    'initials' => $initials,
-                ],
-            ];
         }
 
-        usort($items, static function (array $a, array $b): int {
-            return (int) $b['progress_percent'] <=> (int) $a['progress_percent'];
+        if ($source === 'started' && $task->started_at !== null && $task->due_at !== null && $task->due_at->gt($task->started_at)) {
+            $planned = $task->due_at->getTimestamp() - $task->started_at->getTimestamp();
+            $elapsed = now()->getTimestamp() - $task->started_at->getTimestamp();
+            $source = 'schedule';
+            $progress = min(95.0, max(0.0, ($elapsed / $planned) * 100));
+        }
+
+        $state = match (true) {
+            $status === 'paused' => 'paused',
+            $trackingState === 'arrived' => 'arrived',
+            $trackingState === 'near_destination' => 'near_destination',
+            default => 'active',
+        };
+
+        $statusLabel = match ($state) {
+            'paused' => 'PAUSED',
+            'arrived' => 'ARRIVED',
+            'near_destination' => 'NEAR DESTINATION',
+            default => 'ACTIVE',
+        };
+
+        $assignedAgent = $task->assignedAgent;
+        $agentName = trim((string) ($assignedAgent?->name ?: 'Unknown Agent'));
+        $initials = '';
+        foreach (array_slice(preg_split('/\s+/', $agentName) ?: [], 0, 2) as $part) {
+            if ($part !== '') {
+                $initials .= strtoupper(substr($part, 0, 1));
+            }
+        }
+
+        return [
+            'task_id' => (int) $task->id,
+            'task_title' => (string) $task->title,
+            'status' => $statusLabel,
+            'state' => $state,
+            'tracking_state' => $trackingState,
+            'progress_source' => $source,
+            'progress_percent' => round(max(0.0, min(100.0, $progress)), 2),
+            'total_distance_meters' => $totalDistanceMeters !== null ? round($totalDistanceMeters, 2) : null,
+            'covered_distance_meters' => $coveredDistanceMeters !== null ? round($coveredDistanceMeters, 2) : null,
+            'remaining_distance_meters' => $remainingDistanceMeters !== null ? round($remainingDistanceMeters, 2) : null,
+            'eta_minutes' => null,
+            'agent' => [
+                'id' => $assignedAgent?->id ?? (int) $task->assigned_agent_id,
+                'name' => $agentName,
+                'avatar_url' => AvatarUrlResolver::resolveOrDefault($assignedAgent?->avatar, $assignedAgent?->gender),
+                'initials' => $initials !== '' ? $initials : 'A',
+            ],
+        ];
+    }
+
+    /**
+     * Top leads: leads active in the window, ranked by stage progress (won = 100),
+     * then priority (urgent > high > medium > low), then budget, then latest activity.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildTopProspects(int $companyId, string $role, int $userId, Carbon $from, Carbon $to): array
+    {
+        $query = Lead::query()
+            ->where('company_id', $companyId)
+            ->whereBetween('updated_at', [$from, $to]);
+
+        if ($role === 'agent') {
+            $this->applyAgentLeadScope($query, $userId);
+        }
+
+        $candidates = $query
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get(['id', 'name', 'status', 'priority', 'assigned_to_user_id', 'budget_amount', 'updated_at']);
+
+        $progressBySlug = $this->buildStageProgress($companyId);
+        $namesBySlug = LeadLabel::query()
+            ->where('company_id', $companyId)
+            ->pluck('name', 'slug')
+            ->all();
+        $priorityRank = ['urgent' => 4, 'high' => 3, 'medium' => 2, 'low' => 1];
+
+        $rows = $candidates->map(static function (Lead $lead) use ($progressBySlug, $namesBySlug, $priorityRank): array {
+            $priority = $lead->priority instanceof \BackedEnum
+                ? $lead->priority->value
+                : ($lead->priority !== null ? (string) $lead->priority : null);
+            $status = (string) $lead->status;
+
+            return [
+                'id' => $lead->id,
+                'name' => $lead->name,
+                'status' => $status,
+                'stage_name' => $namesBySlug[$status] ?? null,
+                'progress' => (int) ($progressBySlug[$status] ?? 0),
+                'priority' => $priority,
+                'assigned_to_user_id' => $lead->assigned_to_user_id,
+                '_priority_rank' => $priorityRank[strtolower((string) $priority)] ?? 0,
+                '_budget' => (float) ($lead->budget_amount ?? 0),
+                '_updated' => $lead->updated_at?->getTimestamp() ?? 0,
+            ];
+        })->all();
+
+        usort($rows, static function (array $a, array $b): int {
+            return [$b['progress'], $b['_priority_rank'], $b['_budget'], $b['_updated'], $b['id']]
+                <=> [$a['progress'], $a['_priority_rank'], $a['_budget'], $a['_updated'], $a['id']];
         });
 
-        return array_values($items);
+        return array_map(static function (array $row): array {
+            unset($row['_priority_rank'], $row['_budget'], $row['_updated']);
+
+            return $row;
+        }, array_slice($rows, 0, 5));
     }
 
     private function distanceMeters(float $fromLat, float $fromLng, float $toLat, float $toLng): float
@@ -734,7 +736,8 @@ class DashboardAggregateService
                 ->count();
 
             $points[] = [
-                'name' => (string) (6 - $offset),
+                'name' => $dayStart->format('D'),
+                'date' => $dayStart->toDateString(),
                 'v1' => $created,
                 'v2' => $converted,
             ];

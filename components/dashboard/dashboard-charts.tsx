@@ -19,20 +19,13 @@ import {
   BarChart,
   ReferenceLine,
   ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { TinyButton } from "../ui/tiny-button";
 
-const activitiesData = [
-  { name: "Mon", value: 30 },
-  { name: "Tue", value: 25 },
-  { name: "Wed", value: 40 },
-  { name: "Thu", value: 35 },
-  { name: "Fri", value: 55 },
-  { name: "Sat", value: 45 },
-  { name: "Sun", value: 60 },
-];
+const LEADS_CHART_MIN_DOMAIN = 4;
 
 export function MyActivitiesChart() {
   const [mounted, setMounted] = useState(false);
@@ -48,15 +41,27 @@ export function MyActivitiesChart() {
   const metric = overview?.activity_metric;
   const activityScore = metric?.activity_score ?? 0;
   const direction = metric?.direction ?? "flat";
+  // Agents see their own actions; managers see the whole team's.
+  const isTeam = (metric?.scope ?? (role === "agent" ? "self" : "team")) === "team";
+  const cardTitle = isTeam ? "Team Activity" : "My Activities";
+  const scoreHint = metric
+    ? `${metric.current_week.toLocaleString()} actions this week · ${metric.previous_week.toLocaleString()} by this time last week`
+    : undefined;
 
   const activityValue = `${activityScore > 0 ? "+" : ""}${Math.round(activityScore)}%`;
 
-  const chartData =
-    metric?.current_week_daily?.length === 7
-      ? metric.current_week_daily
-      : activitiesData;
+  // This week's daily actions, with last week's faintly behind for comparison.
+  const chartData = useMemo(() => {
+    const current = metric?.current_week_daily ?? [];
+    const previous = metric?.previous_week_daily ?? [];
+    return current.map((point, index) => ({
+      name: point.name,
+      value: point.value,
+      previous: previous[index]?.value ?? 0,
+    }));
+  }, [metric?.current_week_daily, metric?.previous_week_daily]);
 
-  const hasData = chartData.some((item) => item.value > 0);
+  const hasData = chartData.some((item) => item.value > 0 || item.previous > 0);
 
   const referenceLine =
     hasData
@@ -77,9 +82,9 @@ export function MyActivitiesChart() {
       <div className="flex justify-between items-start relative z-10 px-8.5">
         <div>
           <h3 className="text-white/80 text-[13px] font-bold tracking-tight">
-            My Activities
+            {cardTitle}
           </h3>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5" title={scoreHint}>
             <span className="text-4xl font-bold tracking-tighter leading-9">
               {activityValue}
             </span>
@@ -91,6 +96,9 @@ export function MyActivitiesChart() {
               className={`self-end pb-1.5 ${direction === "down" ? "rotate-90 [filter:brightness(0)_saturate(100%)_invert(24%)_sepia(87%)_saturate(2642%)_hue-rotate(338deg)_brightness(97%)_contrast(104%)]" : ""}`}
             />
           </div>
+          <p className="text-white/70 text-[10px] font-medium mt-0.5" title={scoreHint}>
+            vs same time last week
+          </p>
         </div>
       </div>
 
@@ -117,6 +125,25 @@ export function MyActivitiesChart() {
                 stroke="white"
                 strokeDasharray="3 3"
                 strokeOpacity={0.4}
+              />
+              <Tooltip
+                cursor={false}
+                contentStyle={{ fontSize: 11, borderRadius: 8, border: "none", color: "#0B1215" }}
+                formatter={(value, name) => [
+                  `${value} actions`,
+                  name === "previous" ? "Last week" : "This week",
+                ]}
+              />
+              <Area
+                type="monotone"
+                dataKey="previous"
+                stroke="white"
+                strokeOpacity={0.35}
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                fill="none"
+                dot={false}
+                activeDot={false}
               />
               <Area
                 type="monotone"
@@ -188,7 +215,7 @@ export function TotalLeadsChart() {
 
   return (
     <div className="bg-white rounded-3xl px-7 py-3.75 text-dash-dark h-full flex flex-col shadow-2xl relative">
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex justify-between items-start mb-2">
         <div>
           <h3 className="text-dash-dark text-[16px] font-semibold">
             Total Leads
@@ -202,10 +229,23 @@ export function TotalLeadsChart() {
             </span>
           </div>
         </div>
-        <TinyButton>View</TinyButton>
+        <div className="flex flex-col items-end gap-1.5">
+          <TinyButton>View</TinyButton>
+          {/* Bars = last 6 days (today on the right), not the total above. */}
+          <div className="flex flex-col items-end gap-0.5 text-[9px] font-medium text-dash-dark/50 whitespace-nowrap">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full" style={{ background: LEADS_TREND_BAR_COLORS.rise }} />
+              New / day
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full" style={{ background: LEADS_TREND_BAR_COLORS.fall }} />
+              Won / day
+            </span>
+          </div>
+        </div>
       </div>
 
-      <div className="w-full h-10.25 mt-auto">
+      <div className="w-full h-12 mt-auto">
         {showLeadsChart ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -213,16 +253,34 @@ export function TotalLeadsChart() {
               barGap={4}
               margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
             >
-              <YAxis domain={[0, "dataMax"]} hide />
-              <XAxis hide padding={{ left: 0, right: 0 }} />
+              <YAxis
+                domain={[0, (dataMax: number) => Math.max(LEADS_CHART_MIN_DOMAIN, dataMax)]}
+                hide
+              />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                interval={0}
+                tick={{ fontSize: 9, fill: "#9CA3AF" }}
+                height={12}
+                padding={{ left: 0, right: 0 }}
+              />
+              <Tooltip
+                cursor={{ fill: "rgba(11,18,21,0.04)" }}
+                contentStyle={{ fontSize: 11, borderRadius: 8, border: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}
+                formatter={(value, name) => [value, name === "v2" ? "Won" : "New leads"]}
+              />
               <Bar
                 dataKey="v1"
+                name="v1"
                 fill={LEADS_TREND_BAR_COLORS.rise}
                 radius={10}
                 barSize={15}
               />
               <Bar
                 dataKey="v2"
+                name="v2"
                 fill={LEADS_TREND_BAR_COLORS.fall}
                 radius={10}
                 barSize={15}

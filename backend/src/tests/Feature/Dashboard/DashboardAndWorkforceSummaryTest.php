@@ -12,6 +12,7 @@ use App\Models\TaskLocationPoint;
 use App\Models\TaskTrackingSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -231,6 +232,254 @@ class DashboardAndWorkforceSummaryTest extends TestCase
         $afterMutation->assertOk()
             ->assertJsonPath('data.kpis.total_tasks', 1)
             ->assertJsonPath('data.kpis.total_leads', 1);
+    }
+
+    public function test_activity_metric_compares_same_elapsed_span_and_ignores_passive_events(): void
+    {
+        // Tuesday 2026-11-24 10:00.
+        Carbon::setTestNow(Carbon::parse('2026-11-24 10:00:00'));
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $lead = fn (string $name, string $at) => DB::table('leads')->insert([
+            'company_id' => $company->id,
+            'created_by_user_id' => $agent->id,
+            'name' => $name,
+            'status' => 'newly_lead',
+            'priority' => 'medium',
+            'created_at' => $at,
+            'updated_at' => $at,
+        ]);
+
+        // Last week: 2 actions by Tuesday 10:00, 3 more later in the week.
+        $lead('Prev Mon', '2026-11-16 09:00:00');
+        $lead('Prev Tue', '2026-11-17 08:00:00');
+        $lead('Prev Wed', '2026-11-18 09:00:00');
+        $lead('Prev Fri', '2026-11-20 09:00:00');
+        $lead('Prev Sun', '2026-11-22 09:00:00');
+        // This week so far: 2 actions.
+        $lead('This Mon', '2026-11-23 09:00:00');
+        $lead('This Tue', '2026-11-24 08:00:00');
+
+        // Passive events must not count.
+        $task = Task::create([
+            'company_id' => $company->id,
+            'created_by_user_id' => $admin->id,
+            'assigned_agent_id' => $agent->id,
+            'title' => 'Ping task',
+            'type' => 'inspection',
+            'description' => 'x',
+            'status' => 'pending',
+        ]);
+        DB::table('tasks')->where('id', $task->id)->update(['created_at' => '2026-11-01 09:00:00', 'updated_at' => '2026-11-01 09:00:00']);
+        $pingSession = TaskTrackingSession::create([
+            'task_id' => $task->id,
+            'company_id' => $company->id,
+            'started_by_user_id' => $agent->id,
+            'start_latitude' => 6.4,
+            'start_longitude' => 3.4,
+            'start_recorded_at' => '2026-11-01 09:00:00',
+            'last_recorded_at' => '2026-11-24 07:30:00',
+        ]);
+        for ($i = 0; $i < 25; $i++) {
+            TaskLocationPoint::create([
+                'tracking_session_id' => $pingSession->id,
+                'task_id' => $task->id,
+                'company_id' => $company->id,
+                'user_id' => $agent->id,
+                'latitude' => 6.4,
+                'longitude' => 3.4,
+                'event_type' => 'ping',
+                'is_checkpoint' => false,
+                'recorded_at' => '2026-11-24 07:' . str_pad((string) $i, 2, '0', STR_PAD_LEFT) . ':00',
+            ]);
+        }
+
+        $agentResponse = $this->withToken($agent->createToken('agent-activity', ['*'])->plainTextToken)
+            ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.activity_metric.scope', 'self')
+            ->assertJsonPath('data.activity_metric.current_week', 2)
+            ->assertJsonPath('data.activity_metric.previous_week', 2)
+            ->assertJsonPath('data.activity_metric.activity_score', 0)
+            ->assertJsonPath('data.activity_metric.direction', 'flat')
+            ->assertJsonPath('data.activity_metric.current_week_daily.1.name', 'Tue')
+            ->assertJsonPath('data.activity_metric.current_week_daily.1.value', 1)
+            ->assertJsonPath('data.activity_metric.previous_week_daily.2.value', 1);
+        $this->assertCount(7, $agentResponse->json('data.activity_metric.previous_week_daily'));
+
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($admin->createToken('admin-activity', ['*'])->plainTextToken)
+            ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.activity_metric.scope', 'team');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_leads_trend_points_carry_weekday_names(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-24 10:00:00'));
+        [$company, $admin] = $this->seedCompanyUsers();
+
+        $this->withToken($admin->createToken('admin-trend-names', ['*'])->plainTextToken)
+            ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.leads_trend.0.name', 'Thu')
+            ->assertJsonPath('data.leads_trend.5.name', 'Tue')
+            ->assertJsonPath('data.leads_trend.5.date', '2026-11-24');
+
+        Carbon::setTestNow();
+    }
+
+    public function test_top_prospects_rank_by_stage_then_priority_then_budget(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+        $token = $admin->createToken('admin-top-leads', ['*'])->plainTextToken;
+        // Creates the default stages (New Lead, Proposal Sent, Contacted, Qualified).
+        $this->withToken($token)->getJson('/api/v1/crm/labels?company_id=' . $company->id)->assertOk();
+
+        $base = ['company_id' => $company->id, 'created_by_user_id' => $admin->id];
+        Lead::create($base + ['name' => 'Fresh New', 'status' => 'newly_lead', 'priority' => 'urgent', 'budget_amount' => 9000]);
+        $qualifiedLow = Lead::create($base + ['name' => 'Qualified Low', 'status' => 'qualified', 'priority' => 'low', 'budget_amount' => 10]);
+        $qualifiedHigh = Lead::create($base + ['name' => 'Qualified High', 'status' => 'qualified', 'priority' => 'high', 'budget_amount' => 10]);
+        $qualifiedHighBig = Lead::create($base + ['name' => 'Qualified High Big', 'status' => 'qualified', 'priority' => 'high', 'budget_amount' => 500]);
+
+        $response = $this->withToken($token)
+            ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id)
+            ->assertOk()
+            ->assertJsonPath('data.top_prospects.0.id', $qualifiedHighBig->id)
+            ->assertJsonPath('data.top_prospects.1.id', $qualifiedHigh->id)
+            ->assertJsonPath('data.top_prospects.2.id', $qualifiedLow->id)
+            ->assertJsonPath('data.top_prospects.3.name', 'Fresh New')
+            ->assertJsonPath('data.top_prospects.0.stage_name', 'Qualified');
+
+        $this->assertGreaterThan(
+            (int) $response->json('data.top_prospects.3.progress'),
+            (int) $response->json('data.top_prospects.0.progress'),
+        );
+    }
+
+    public function test_ongoing_tasks_cover_untracked_paused_checklist_and_travel_and_group_by_agent(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-11-24 12:00:00'));
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+
+        $otherAgent = User::factory()->create(['email_verified_at' => now(), 'name' => 'Other Agent']);
+        DB::table('company_users')->insert([
+            'company_id' => $company->id,
+            'user_id' => $otherAgent->id,
+            'role' => 'agent',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $task = function (array $attrs) use ($company, $admin, $agent): Task {
+            return Task::create(array_merge([
+                'company_id' => $company->id,
+                'created_by_user_id' => $admin->id,
+                'assigned_agent_id' => $agent->id,
+                'type' => 'inspection',
+                'description' => 'x',
+            ], $attrs));
+        };
+
+        // 1. Checklist: 2 of 4 subtasks done -> 50.
+        $checklist = $task(['title' => 'Checklist task', 'status' => 'in_progress', 'started_at' => now()->subHour()]);
+        foreach ([true, true, false, false] as $position => $done) {
+            DB::table('task_subtasks')->insert([
+                'company_id' => $company->id,
+                'task_id' => $checklist->id,
+                'created_by_user_id' => $admin->id,
+                'title' => 'Step ' . $position,
+                'position' => $position,
+                'is_completed' => $done,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // 2. Schedule: 2h of a 4h plan elapsed -> 50, no GPS.
+        $schedule = $task([
+            'title' => 'Schedule task',
+            'status' => 'in_progress',
+            'started_at' => now()->subHours(2),
+            'due_at' => now()->addHours(2),
+        ]);
+
+        // 3. Paused with nothing else -> started (5), state paused.
+        $paused = $task(['title' => 'Paused task', 'status' => 'paused']);
+
+        // 4. Travel: half way to destination, for the other agent.
+        $travel = $task([
+            'title' => 'Travel task',
+            'status' => 'in_progress',
+            'assigned_agent_id' => $otherAgent->id,
+            'latitude' => 6.6,
+            'longitude' => 3.4,
+        ]);
+        TaskTrackingSession::create([
+            'task_id' => $travel->id,
+            'company_id' => $company->id,
+            'started_by_user_id' => $otherAgent->id,
+            'start_latitude' => 6.4,
+            'start_longitude' => 3.4,
+            'last_latitude' => 6.5,
+            'last_longitude' => 3.4,
+            'destination_latitude' => 6.6,
+            'destination_longitude' => 3.4,
+            'destination_radius_meters' => 75,
+            'start_recorded_at' => now()->subMinutes(20),
+            'last_recorded_at' => now()->subMinute(),
+        ]);
+
+        // Not ongoing.
+        $task(['title' => 'Done task', 'status' => 'completed', 'completed_at' => now()]);
+
+        $byId = function (array $items): array {
+            $out = [];
+            foreach ($items as $item) {
+                $out[$item['task_id']] = $item;
+            }
+
+            return $out;
+        };
+
+        $admin_response = $this->withToken($admin->createToken('admin-ongoing', ['*'])->plainTextToken)
+            ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id)
+            ->assertOk();
+
+        $tasks = $byId($admin_response->json('data.ongoing_tasks'));
+        $this->assertCount(4, $tasks);
+        $this->assertSame('checklist', $tasks[$checklist->id]['progress_source']);
+        $this->assertEqualsWithDelta(50, $tasks[$checklist->id]['progress_percent'], 0.01);
+        $this->assertSame('schedule', $tasks[$schedule->id]['progress_source']);
+        $this->assertEqualsWithDelta(50, $tasks[$schedule->id]['progress_percent'], 0.5);
+        $this->assertSame('started', $tasks[$paused->id]['progress_source']);
+        $this->assertSame('paused', $tasks[$paused->id]['state']);
+        $this->assertSame('PAUSED', $tasks[$paused->id]['status']);
+        $this->assertSame('travel', $tasks[$travel->id]['progress_source']);
+        $this->assertEqualsWithDelta(50, $tasks[$travel->id]['progress_percent'], 1);
+
+        $agents = collect($admin_response->json('data.ongoing_agents'))->keyBy('agent.id');
+        $this->assertCount(2, $agents);
+        $this->assertSame(3, $agents[$agent->id]['task_count']);
+        // (50 + 50 + 5) / 3 = 35
+        $this->assertSame(35, $agents[$agent->id]['progress_percent']);
+        $this->assertSame(1, $agents[$otherAgent->id]['task_count']);
+        $this->assertCount(3, $agents[$agent->id]['tasks']);
+
+        // An agent only sees their own ongoing work.
+        $this->app['auth']->forgetGuards();
+        $agentResponse = $this->withToken($agent->createToken('agent-ongoing', ['*'])->plainTextToken)
+            ->getJson('/api/v1/dashboard/overview?company_id=' . $company->id)
+            ->assertOk();
+        $this->assertCount(1, $agentResponse->json('data.ongoing_agents'));
+        $this->assertSame($agent->id, $agentResponse->json('data.ongoing_agents.0.agent.id'));
+        $this->assertCount(3, $agentResponse->json('data.ongoing_tasks'));
+
+        Carbon::setTestNow();
     }
 
     private function seedCompanyUsers(): array

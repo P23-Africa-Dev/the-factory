@@ -96,8 +96,8 @@ export function TopCustomers() {
         />
       </div>
 
-      {/* Radial Bar Chart */}
-      <div className="relative h-48 md:h-56 lg:h-66 w-full mx-auto">
+      {/* Radial Bar Chart: fixed size, never squeezed by the list below */}
+      <div className="relative h-48 md:h-56 lg:h-60 w-full mx-auto shrink-0">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-[24px] font-bold text-white mt-1">
             {centerRate}%
@@ -130,7 +130,7 @@ export function TopCustomers() {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-3 mb-3 md:mb-4 lg:mb-6.25">
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-1.5 shrink-0">
         {legendItems.map((item) => (
           <div key={item.id} className="flex items-center gap-2.5">
             <div
@@ -144,8 +144,13 @@ export function TopCustomers() {
         ))}
       </div>
 
-      {/* Customer List */}
-      <div className="flex flex-col gap-3">
+      <p className="text-center text-[9px] text-white/50 mb-2 shrink-0">
+        Ranked by stage, priority, budget
+      </p>
+
+      {/* Customer List: shows two rows, scroll for the rest (rings stay put) */}
+      <div className="relative flex-1 min-h-0">
+      <div className="flex flex-col gap-3 h-full max-h-34 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin] [scrollbar-color:#ffffff33_transparent]">
         {topProspects.length === 0 ? (
           <div className="p-3 rounded-[15px] text-[11px] text-white/70 text-center bg-white/5 mt-6">
             No top prospects yet.
@@ -168,7 +173,7 @@ export function TopCustomers() {
                     {prospect.name}
                   </p>
                   <p className="text-[10px] font-medium text-white group-hover/item:text-[#7E7E7E]">
-                    {formatLabel(prospect.status)}
+                    {prospect.stage_name ?? formatLabel(prospect.status)}
                   </p>
                 </div>
               </div>
@@ -178,6 +183,10 @@ export function TopCustomers() {
             </div>
           ))
         )}
+      </div>
+      {topProspects.length > 2 ? (
+        <div className="pointer-events-none absolute bottom-0 left-0 right-1 h-6 rounded-b-[15px] bg-linear-to-t from-[#09232D] to-transparent" />
+      ) : null}
       </div>
     </div>
   );

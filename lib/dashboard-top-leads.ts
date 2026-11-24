@@ -114,7 +114,10 @@ export function buildTopLeadsChartData(
   return prospects.slice(0, 3).map((prospect, index) => ({
     id: String(prospect.id),
     name: prospect.name,
-    value: getLeadStatusProgress(prospect.status, stageProgress),
+    value:
+      typeof prospect.progress === "number"
+        ? prospect.progress
+        : getLeadStatusProgress(prospect.status, stageProgress),
     fill: TOP_LEADS_RING_COLORS[index] ?? TOP_LEADS_RING_COLORS[0],
   }));
 }

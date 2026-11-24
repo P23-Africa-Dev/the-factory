@@ -44,6 +44,10 @@ export type TopProspect = {
     status: ApiLeadStatus | null;
     priority: ApiLeadPriority | null;
     assigned_to_user_id: number | null;
+    /** Name of the lead's CRM stage. */
+    stage_name?: string | null;
+    /** How far the stage is along the company's pipeline (0-100, won = 100). */
+    progress?: number;
 };
 
 export type CalendarTaskItem = {
@@ -67,9 +71,14 @@ export type ActivityMetricDailyPoint = {
 export type ActivityMetric = {
     activity_score: number;
     direction: "up" | "down" | "flat";
+    /** "self" = the agent's own actions, "team" = everyone in the company (managers). */
+    scope?: "self" | "team";
+    /** Actions this week so far. */
     current_week: number;
+    /** Actions last week up to the same weekday and time. */
     previous_week: number;
     current_week_daily: ActivityMetricDailyPoint[];
+    previous_week_daily?: ActivityMetricDailyPoint[];
 };
 
 export type OngoingTaskAgent = {
@@ -79,10 +88,17 @@ export type OngoingTaskAgent = {
     initials: string;
 };
 
+export type OngoingTaskState = "active" | "paused" | "near_destination" | "arrived";
+
+/** How a task's progress was measured. */
+export type OngoingProgressSource = "checklist" | "travel" | "schedule" | "started";
+
 export type OngoingTask = {
     task_id: number;
     task_title: string;
     status: string;
+    state?: OngoingTaskState;
+    progress_source?: OngoingProgressSource;
     tracking_state: "in_progress" | "near_destination" | "arrived" | "completed";
     progress_percent: number;
     total_distance_meters: number | null;
@@ -100,8 +116,32 @@ export type ProjectKpis = {
     completion_rate: number;
 };
 
+export type OngoingAgentTask = {
+    id: number;
+    title: string;
+    progress_percent: number;
+    progress_source: OngoingProgressSource;
+    state: OngoingTaskState;
+};
+
+/** One agent's ongoing work: progress is the average of their ongoing tasks. */
+export type OngoingAgent = {
+    agent: OngoingTaskAgent;
+    progress_percent: number;
+    task_count: number;
+    current_task: {
+        id: number;
+        title: string;
+        state: OngoingTaskState;
+        progress_source: OngoingProgressSource;
+    };
+    tasks: OngoingAgentTask[];
+};
+
 export type LeadsTrendPoint = {
+    /** Weekday short name, e.g. "Thu". */
     name: string;
+    date?: string;
     v1: number;
     v2: number;
 };
@@ -119,6 +159,7 @@ export type DashboardOverviewData = {
     agent_live_activity: AgentLiveActivity;
     activity_metric: ActivityMetric;
     ongoing_tasks: OngoingTask[];
+    ongoing_agents?: OngoingAgent[];
     leads_trend: LeadsTrendPoint[];
 };
 
