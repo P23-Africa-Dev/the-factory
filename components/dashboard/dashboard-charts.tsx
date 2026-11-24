@@ -217,11 +217,11 @@ export function TotalLeadsChart() {
     <div className="bg-white rounded-3xl px-7 py-3.75 text-dash-dark h-full flex flex-col shadow-2xl relative">
       <div className="flex justify-between items-start mb-2">
         <div>
-          <h3 className="text-dash-dark text-[16px] font-semibold">
+          <h3 className="text-dash-dark text-[16px] font-semibold leading-tight">
             Total Leads
           </h3>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-4xl font-bold tracking-tighter">
+            <span className="text-4xl font-bold tracking-tighter leading-none">
               {isLoading ? "—" : totalLeads.toLocaleString()}
             </span>
             <span className="text-dash-dark/40 text-sm font-bold mt-2">
@@ -245,7 +245,8 @@ export function TotalLeadsChart() {
         </div>
       </div>
 
-      <div className="w-full h-12 mt-auto">
+      {/* Fills the rest of the card so the bars and the weekday labels always fit. */}
+      <div className="w-full flex-1 min-h-11">
         {showLeadsChart ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -263,7 +264,8 @@ export function TotalLeadsChart() {
                 tickLine={false}
                 interval={0}
                 tick={{ fontSize: 9, fill: "#9CA3AF" }}
-                height={12}
+                tickMargin={2}
+                height={16}
                 padding={{ left: 0, right: 0 }}
               />
               <Tooltip

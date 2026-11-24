@@ -516,8 +516,8 @@ export function WeeklyTasksAgents() {
   };
 
   return (
-    <div className="drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)] lg:shrink-0">
-      <div className="ticket-cutout w-full lg:w-89 rounded-[20px] pt-4 px-4 sm:px-7 text-dash-dark h-fit flex flex-col relative border border-dash-dark/5 bg-white mt-4 lg:mt-20">
+    <div className="drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)] lg:shrink-0 lg:flex lg:flex-col">
+      <div className="ticket-cutout w-full lg:w-89 rounded-[20px] pt-4 px-4 sm:px-7 text-dash-dark h-fit lg:h-auto lg:flex-1 flex flex-col relative border border-dash-dark/5 bg-white mt-4 lg:mt-20">
         <div className="flex justify-between items-start mb-3 px-[11.5px]">
           <h3 className="text-dash-dark font-medium text-sm tracking-tight">
             Meeting
@@ -756,8 +756,8 @@ export function CRMPipeline() {
 
 export function AIWorkspace() {
   return (
-    <div className="py-4 px-2.75 bg-[#7BB6B8] h-fit rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
-      <div className="z-20 relative text-[#09232D]">
+    <div className="py-4 px-2.75 bg-[#7BB6B8] h-fit lg:h-auto lg:flex-1 flex flex-col rounded-[20px] text-white relative overflow-hidden shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
+      <div className="z-20 relative text-[#09232D] flex flex-col flex-1">
         <div className="w-12.75 h-12.75 rounded-[50px] bg-[#09232D] backdrop-blur-xl flex items-center justify-center mb-2.25 drop-shadow-[0px_4px_6px_rgba(0,0,0,0.3)]">
           <Image
             src={AIIcon}
@@ -775,6 +775,8 @@ export function AIWorkspace() {
           Generate leads, draft outreach, or get recommendations using single
           line prompt
         </p>
+        {/* Pushes the button to the card's bottom when the column is stretched. */}
+        <div className="lg:flex-1" />
         <Link
           href="/sales-engine"
           className="mt-4 text-[10px] w-full font-semibold bg-[#09232D] py-[10.5px] rounded-[10px] flex items-center justify-center gap-1 hover:bg-[#09232D]/90 transition-all text-white"
