@@ -344,6 +344,65 @@ class LeadFieldTest extends TestCase
     /**
      * @return array{0: Company, 1: User, 2: User, 3: int}
      */
+    public function test_import_does_not_register_blank_values_but_still_flags_required_ones(): void
+    {
+        [$company, $admin, , $pipelineId] = $this->seedCompanyUsers();
+
+        // Lead-only (this import) field.
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'Referral Code',
+                'type' => 'text',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.field.is_universal', false);
+
+        // Required company-wide field.
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'Headcount',
+                'type' => 'number',
+                'make_universal' => true,
+                'is_required' => true,
+            ])
+            ->assertCreated();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/v1/crm/leads/import', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'duplicate_policy' => 'create',
+                'rows' => [
+                    [
+                        'name' => 'With Code',
+                        'email' => 'with@example.com',
+                        'custom_fields' => ['referral_code' => 'ABC', 'headcount' => '5'],
+                    ],
+                    [
+                        'name' => 'Blank Code',
+                        'email' => 'blank@example.com',
+                        'custom_fields' => ['referral_code' => '', 'headcount' => '7'],
+                    ],
+                    [
+                        'name' => 'Blank Required',
+                        'email' => 'required@example.com',
+                        'custom_fields' => ['headcount' => ''],
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.imported_count', 2)
+            ->assertJsonPath('data.failed_rows.0.data.name', 'Blank Required');
+
+        $withCode = Lead::query()->where('email', 'with@example.com')->firstOrFail();
+        $this->assertSame('ABC', $withCode->custom_fields['referral_code'] ?? null);
+
+        $blank = Lead::query()->where('email', 'blank@example.com')->firstOrFail();
+        $this->assertArrayNotHasKey('referral_code', $blank->custom_fields ?? []);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([

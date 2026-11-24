@@ -21,6 +21,8 @@ import {
     getLead,
     getLeadPipeline,
     importCrmLeads,
+    getLeadCompanyGroups,
+    mergeLeadsByCompany,
     listCrmLabels,
     listLeadFields,
     createLeadField,
@@ -891,6 +893,46 @@ export function useImportCrmLeads(basePath: ApiRoleBasePath = "/admin") {
         // Invalidate even on partial success so the kanban/list reflects imported rows.
         onSettled: () => {
             queryClient.invalidateQueries({ queryKey: CRM_KEYS.all });
+        },
+    });
+}
+
+/** Same-company groups among the given (just imported) leads, including older leads. */
+export function useLeadCompanyGroups(
+    companyId: number | string | undefined,
+    leadIds: number[],
+    basePath: ApiRoleBasePath = "/admin",
+) {
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+    const sortedIds = useMemo(() => [...leadIds].sort((a, b) => a - b), [leadIds]);
+
+    return useQuery({
+        queryKey: [...CRM_KEYS.all, "company-groups", basePath, companyId, sortedIds],
+        queryFn: async () => {
+            const res = await getLeadCompanyGroups({ company_id: companyId as number | string, lead_ids: sortedIds }, token, basePath);
+            return res.data.groups;
+        },
+        enabled: hasActiveApiSession(token) && companyId != null && sortedIds.length > 0,
+        staleTime: Infinity,
+    });
+}
+
+export function useMergeLeadsByCompany(basePath: ApiRoleBasePath = "/admin") {
+    const queryClient = useQueryClient();
+    const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
+
+    return useMutation({
+        mutationFn: (payload: { company_id: number | string; lead_ids: number[] }) =>
+            mergeLeadsByCompany(payload, token, basePath),
+        onSuccess: () => {
+            // Leave the open suggestions list alone; refresh boards, lists and dashboards.
+            queryClient.invalidateQueries({
+                predicate: (query) => {
+                    const key = query.queryKey;
+                    const isGroups = Array.isArray(key) && key.includes("company-groups");
+                    return !isGroups;
+                },
+            });
         },
     });
 }

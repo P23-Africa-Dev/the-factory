@@ -380,6 +380,37 @@ export type ImportLeadsResult = {
     skipped_count: number;
     failed_rows: FailedImportRow[];
     skipped_rows: SkippedImportRow[];
+    /** Leads created or updated by the import (for the same-company merge prompt). */
+    imported_lead_ids?: number[];
+};
+
+export type LeadCompanyGroupLead = {
+    id: number;
+    name: string;
+    contact_name: string;
+    email: string | null;
+    company_name: string;
+    status: string;
+    status_name: string | null;
+    created_at: string | null;
+    /** Part of the upload that triggered the check. */
+    is_new: boolean;
+};
+
+/** Leads that share a company (case, punctuation and legal endings ignored). */
+export type LeadCompanyGroup = {
+    key: string;
+    company_name: string;
+    /** Oldest lead; it is kept and receives the others' contacts and history. */
+    survivor_id: number;
+    can_merge: boolean;
+    leads: LeadCompanyGroupLead[];
+};
+
+export type MergeByCompanyResult = {
+    lead: LeadApiItem;
+    merged_count: number;
+    merged_lead_ids: number[];
 };
 
 export type ImportPreviewDuplicateRow = {
@@ -1010,6 +1041,32 @@ export function importCrmLeads(
     return apiRequest<ImportLeadsResult>({
         method: "POST",
         path: withBase(basePath, "/crm/leads/import"),
+        body: payload,
+        token,
+    });
+}
+
+export function getLeadCompanyGroups(
+    payload: { company_id: number | string; lead_ids: number[] },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<{ groups: LeadCompanyGroup[] }>> {
+    return apiRequest<{ groups: LeadCompanyGroup[] }>({
+        method: "POST",
+        path: withBase(basePath, "/crm/leads/company-groups"),
+        body: payload,
+        token,
+    });
+}
+
+export function mergeLeadsByCompany(
+    payload: { company_id: number | string; lead_ids: number[] },
+    token: string,
+    basePath: ApiRoleBasePath = "/admin"
+): Promise<ApiEnvelope<MergeByCompanyResult>> {
+    return apiRequest<MergeByCompanyResult>({
+        method: "POST",
+        path: withBase(basePath, "/crm/leads/merge-by-company"),
         body: payload,
         token,
     });

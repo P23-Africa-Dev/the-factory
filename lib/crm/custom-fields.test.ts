@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { LeadFieldDefinition } from "@/lib/api/crm";
 import {
     buildMappedImportRows,
+    findExistingLeadField,
+    importableLeadFields,
     inferLeadFieldType,
     visibleLeadFieldsForCreate,
     visibleLeadFieldsForDetail,
@@ -77,5 +79,44 @@ describe("buildMappedImportRows", () => {
 
         expect(rows[0]).toEqual({ name: "Ada" });
         expect(rows[0]).not.toHaveProperty("custom_fields");
+    });
+});
+
+describe("findExistingLeadField", () => {
+    const fields = [
+        field({ id: 1, key: "founded", label: "Founded", is_universal: false }),
+        field({ id: 2, key: "headcount", label: "Headcount", is_universal: true }),
+        field({ id: 3, key: "old_notes", label: "Old Notes", status: "archived" }),
+        field({ id: 4, key: "email_custom", label: "Email" }),
+    ];
+
+    it("finds a lead-only field from an earlier upload by name, ignoring case and spacing", () => {
+        expect(findExistingLeadField(fields, "Founded")?.id).toBe(1);
+        expect(findExistingLeadField(fields, "  founded ")?.id).toBe(1);
+        expect(findExistingLeadField(fields, "HEADCOUNT")?.id).toBe(2);
+    });
+
+    it("matches reserved names stored with a suffix", () => {
+        expect(findExistingLeadField(fields, "email")?.id).toBe(4);
+    });
+
+    it("ignores archived fields (the server revives them) and unknown names", () => {
+        expect(findExistingLeadField(fields, "Old Notes")).toBeUndefined();
+        expect(findExistingLeadField(fields, "Shut Down")).toBeUndefined();
+        expect(findExistingLeadField(fields, "   ")).toBeUndefined();
+    });
+});
+
+describe("importableLeadFields", () => {
+    it("includes lead-only fields from earlier uploads, grouped apart from company fields", () => {
+        const groups = importableLeadFields([
+            field({ id: 1, key: "founded", label: "Founded", is_universal: false }),
+            field({ id: 2, key: "headcount", label: "Headcount", is_universal: true }),
+            field({ id: 3, key: "old", label: "Old", status: "archived" }),
+            field({ id: 4, key: "declined", label: "Declined", status: "declined" }),
+        ]);
+
+        expect(groups.company.map((item) => item.key)).toEqual(["headcount"]);
+        expect(groups.leadOnly.map((item) => item.key)).toEqual(["founded"]);
     });
 });

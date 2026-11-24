@@ -732,6 +732,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
                     ->name('leads.update');
+                Route::post('/leads/company-groups', [LeadController::class, 'companyGroups'])
+                    ->middleware('throttle:api')
+                    ->name('leads.company-groups');
+                Route::post('/leads/merge-by-company', [LeadController::class, 'mergeByCompany'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-by-company');
                 Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
                     ->middleware('throttle:api')
                     ->name('leads.merge');
@@ -991,6 +997,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
                 Route::patch('/leads/{lead}', [LeadController::class, 'update'])
                     ->middleware('throttle:api')
                     ->name('leads.update');
+                Route::post('/leads/company-groups', [LeadController::class, 'companyGroups'])
+                    ->middleware('throttle:api')
+                    ->name('leads.company-groups');
+                Route::post('/leads/merge-by-company', [LeadController::class, 'mergeByCompany'])
+                    ->middleware('throttle:api')
+                    ->name('leads.merge-by-company');
                 Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
                     ->middleware('throttle:api')
                     ->name('leads.merge');
@@ -1496,6 +1508,12 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
         Route::patch('/leads/{lead}', [LeadController::class, 'update'])
             ->middleware('throttle:api')
             ->name('leads.update');
+        Route::post('/leads/company-groups', [LeadController::class, 'companyGroups'])
+            ->middleware('throttle:api')
+            ->name('leads.company-groups');
+        Route::post('/leads/merge-by-company', [LeadController::class, 'mergeByCompany'])
+            ->middleware('throttle:api')
+            ->name('leads.merge-by-company');
         Route::patch('/leads/{lead}/merge', [LeadController::class, 'merge'])
             ->middleware('throttle:api')
             ->name('leads.merge');
