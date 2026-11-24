@@ -16,6 +16,7 @@ import {
 import {
   formValuesFromLead,
   serializeCustomFields,
+  validateCustomFieldValues,
   visibleLeadFieldsForDetail,
 } from '@/features/crm/customFields';
 import { PwaAddLeadFieldSheet, PwaCustomFields } from '@/features/crm/components/PwaCustomFields';
