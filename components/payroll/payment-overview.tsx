@@ -131,7 +131,7 @@ export function PaymentOverview({ overview, currency }: PaymentOverviewProps) {
     <div className="flex flex-col lg:flex-row gap-4">
       <div className="p-3 sm:p-5 flex-1 min-w-0 flex flex-col">
         <div className="flex items-start justify-between gap-4">
-          <h2 className="text-[20px] font-bold text-[#0B1215] font-[poppins] pt-1.5">
+          <h2 className="text-[20px] font-bold text-white font-[poppins] pt-1.5">
             Payment Overview
           </h2>
 

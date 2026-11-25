@@ -603,7 +603,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0">
+        <h1 className="text-[20px] font-extrabold text-white shrink-0">
           <span className="lg:hidden">Attendance Overview</span>
         </h1>
 
@@ -934,24 +934,24 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                 <div className="flex items-start gap-5">
                   <div className="flex-1 space-y-3 min-w-0">
                     <div>
-                      <h3 className="text-[13px] font-extrabold text-dash-dark leading-tight">
+                      <h3 className="text-[13px] font-extrabold text-white leading-tight">
                         {selected.name}
                       </h3>
-                      <p className="text-[11px] text-gray-400 mt-1 leading-relaxed max-w-45">
+                      <p className="text-[11px] text-white/65 mt-1 leading-relaxed max-w-45">
                         {selected.address}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                      <p className="text-[12px] text-gray-400">{selected.role}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Role</p>
+                      <p className="text-[12px] text-white/65">{selected.role}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
-                      <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Check In</p>
+                      <p className="text-[12px] text-white/65">{selected.checkIn}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check Out</p>
-                      <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Check Out</p>
+                      <p className="text-[12px] text-white/65">{selected.checkOut}</p>
                     </div>
                   </div>
 

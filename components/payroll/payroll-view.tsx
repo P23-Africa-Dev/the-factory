@@ -184,7 +184,7 @@ export function PayrollView() {
           {!isAgent && (
             <button
               onClick={() => setIsPayrollModalOpen(true)}
-              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all cursor-pointer"
+              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark border border-white/20 text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all cursor-pointer shadow-[0px_1px_3px_0px_#0000004D]"
             >
               {existingPayroll ? "Edit Payroll" : "Set Payroll"}
               <Image
