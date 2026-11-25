@@ -5,7 +5,7 @@ import { AttendanceViewAgent } from "@/components/operations/attendance-view-age
 
 function OperationsContent() {
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="app-workspace-bg min-h-screen p-4 md:p-6 lg:p-8">
       <div className="max-w-400 mx-auto flex flex-col gap-5">
         <AttendanceViewAgent />
       </div>
@@ -17,7 +17,7 @@ export default function OperationsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F4F7F9] p-8 flex items-center justify-center font-bold text-gray-400">
+        <div className="app-workspace-bg min-h-screen p-8 flex items-center justify-center font-bold text-white/60">
           Loading Operations...
         </div>
       }

@@ -102,10 +102,10 @@ export function TaskColumn({
           <button
             type="button"
             onClick={onOpenCreateTask}
-            className="w-full flex items-center justify-between px-2 py-3 text-gray-400 hover:text-[#0B1215] transition-colors group mt-6"
+            className="w-full flex items-center justify-between px-2 py-3 text-white/75 hover:text-white transition-colors group mt-6 cursor-pointer"
           >
             <span className="text-xs font-medium">Add Card Manually</span>
-            <div className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center group-hover:border-[#0B1215] transition-colors">
+            <div className="w-6 h-6 rounded-full border border-white/30 flex items-center justify-center group-hover:border-white transition-colors">
               <Plus size={13} />
             </div>
           </button>

@@ -251,7 +251,7 @@ export default function AgentAttendanceListPage() {
   const handleStatus = (s: 'all' | 'present' | 'absent') => { setStatusFilter(s); setPage(1); };
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="app-workspace-bg min-h-screen p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto">
 
         {/* Header */}

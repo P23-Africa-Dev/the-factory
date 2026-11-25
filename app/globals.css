@@ -384,3 +384,19 @@ html {
   animation: salesGaugeSpin 900ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
 }
 
+.app-workspace-bg {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(0deg, #041014 56%, #17586a 123%);
+}
+
+.app-workspace-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url("/sales-engine-design/workspace-texture.png") left top / 1024px 1024px;
+  opacity: 0.025;
+}
+
