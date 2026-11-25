@@ -25,7 +25,6 @@ import {
 } from '@/lib/map/place-search';
 import { placeAttributionLabel, type PlaceSourceRef } from '@/lib/map/place-attribution';
 import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
-import { useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
 import { toast } from '@/lib/toast';
 
@@ -47,10 +46,6 @@ const DayReviewSheet = dynamic(
 );
 const PileInboxSheet = dynamic(
   () => import('@/features/field-activity/components/PileInbox').then((m) => m.PileInboxSheet),
-  { ssr: false },
-);
-const LocationPermissionGate = dynamic(
-  () => import('@/features/tracking/components/LocationPermissionGate').then((m) => m.LocationPermissionGate),
   { ssr: false },
 );
 const NotificationPanel = dynamic(
@@ -126,8 +121,8 @@ export default function AgentDashboardPage() {
   const currentTranslateY = useRef(0);
   const calendarScrollRef = useRef<HTMLDivElement>(null);
 
-  const { gateVisible, gateMode, isGateBusy, dismissGate, retryGate } =
-    useLocationPermissionBootstrap();
+  // No location prompt on the dashboard: location is requested when it is
+  // actually needed (Start Field Trip pre-flight, task tracking, the map).
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -888,18 +883,6 @@ export default function AgentDashboardPage() {
                 )}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-      {gateVisible && (
-        <div className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/50 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-t-3xl bg-[#0A1D25] border-t border-white/10 pb-[env(safe-area-inset-bottom,0px)]">
-            <LocationPermissionGate
-              mode={gateMode}
-              isBusy={isGateBusy}
-              onRequest={() => void retryGate()}
-              onDismiss={dismissGate}
-            />
           </div>
         </div>
       )}
