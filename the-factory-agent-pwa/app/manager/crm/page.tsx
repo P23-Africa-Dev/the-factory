@@ -5,7 +5,7 @@ import { Users } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { LeadCard } from '@/manager/features/crm/components/LeadCard';
 import { AddLeadModal } from '@/manager/features/crm/components/AddLeadModal';
-import { PwaPendingUniversalFieldsCard } from '@/manager/features/crm/components/PwaPendingUniversalFieldsCard';
+import { PwaFieldRequestsBanner } from '@/manager/features/crm/components/PwaFieldRequests';
 import { PwaManageLeadFieldsSheet } from '@/manager/features/crm/components/PwaManageLeadFieldsSheet';
 import {
   useLeads,
@@ -145,7 +145,7 @@ export default function CrmDashboardPage() {
               </div>
             </div>
 
-            <PwaPendingUniversalFieldsCard fields={leadFields} />
+            <PwaFieldRequestsBanner fields={leadFields} />
             <div className="mb-4 flex justify-end">
               <button
                 type="button"

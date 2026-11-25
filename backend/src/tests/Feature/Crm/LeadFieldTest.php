@@ -403,6 +403,55 @@ class LeadFieldTest extends TestCase
         $this->assertArrayNotHasKey('referral_code', $blank->custom_fields ?? []);
     }
 
+    public function test_manager_field_list_shows_how_many_leads_use_a_pending_request(): void
+    {
+        [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/lead-fields', [
+                'company_id' => $company->id,
+                'label' => 'Founded',
+                'type' => 'text',
+                'make_universal' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.field.universal_request_status', 'pending');
+
+        foreach (['2019', '2021'] as $index => $year) {
+            $this->actingAs($agent, 'sanctum')
+                ->postJson('/api/v1/crm/leads', [
+                    'company_id' => $company->id,
+                    'pipeline_id' => $pipelineId,
+                    'name' => 'Startup ' . $index,
+                    'status' => 'newly_lead',
+                    'priority' => 'medium',
+                    'custom_fields' => ['founded' => $year],
+                ])
+                ->assertCreated();
+        }
+
+        // A lead without the field does not count.
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/crm/leads', [
+                'company_id' => $company->id,
+                'pipeline_id' => $pipelineId,
+                'name' => 'No Founded',
+                'status' => 'newly_lead',
+                'priority' => 'medium',
+            ])
+            ->assertCreated();
+
+        $this->app['auth']->forgetGuards();
+        $items = collect($this->actingAs($admin, 'sanctum')
+            ->getJson('/api/v1/crm/lead-fields?company_id=' . $company->id)
+            ->assertOk()
+            ->json('data.items'));
+
+        $founded = $items->firstWhere('key', 'founded');
+        $this->assertSame(2, $founded['usage_count']);
+        $this->assertNotNull($founded['created_at']);
+    }
+
     private function seedCompanyUsers(): array
     {
         $company = Company::create([

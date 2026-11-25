@@ -12,7 +12,8 @@ import {
     useUpdateLeadField,
 } from "@/hooks/use-crm";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
-import { isPendingUniversalRequest, isUniversalLeadField } from "@/lib/crm/custom-fields";
+import { FieldRequestsBanner } from "@/components/crm/field-requests-review";
+import { isUniversalLeadField } from "@/lib/crm/custom-fields";
 
 export function LeadFieldsManager({
     companyId,
@@ -26,13 +27,8 @@ export function LeadFieldsManager({
     const update = useUpdateLeadField(undefined, apiBasePath);
     const remove = useDeleteLeadField(undefined, apiBasePath);
     const reorder = useReorderLeadFields(undefined, apiBasePath);
-    const [reason, setReason] = useState("");
     const [editingField, setEditingField] = useState<LeadFieldDefinition | null>(null);
 
-    const pendingRequests = useMemo(
-        () => fields.filter((field) => isPendingUniversalRequest(field)),
-        [fields],
-    );
     const declinedRequests = useMemo(
         () => fields.filter((field) => field.status === "active" && field.universal_request_status === "declined"),
         [fields],
@@ -59,7 +55,7 @@ export function LeadFieldsManager({
         review.mutate({
             fieldId: field.id,
             action,
-            payload: { company_id: companyId, reason: action === "decline" ? reason : undefined },
+            payload: { company_id: companyId },
         }, {
             onSuccess: () => toast.success(
                 action === "approve"
@@ -179,7 +175,7 @@ export function LeadFieldsManager({
         title: string,
         items: LeadFieldDefinition[],
         empty: string,
-        mode: "request" | "active" | "declined" | "archived",
+        mode: "active" | "declined" | "archived",
     ) => (
         <div className="rounded-xl border border-gray-100 p-4">
             <p className="text-[13px] font-bold text-dash-dark">{title}</p>
@@ -200,16 +196,6 @@ export function LeadFieldsManager({
                                     <p className="text-[12px] text-gray-500">{field.decline_reason}</p>
                                 ) : null}
                             </div>
-                            {mode === "request" ? (
-                                <div className="flex flex-wrap gap-2">
-                                    <button type="button" className="text-[12px] font-semibold text-emerald-700" onClick={() => run(field, "approve")}>
-                                        Approve
-                                    </button>
-                                    <button type="button" className="text-[12px] font-semibold text-red-600" onClick={() => run(field, "decline")}>
-                                        Decline
-                                    </button>
-                                </div>
-                            ) : null}
                             {mode === "declined" ? (
                                 <button type="button" className="text-[12px] font-semibold text-emerald-700" onClick={() => run(field, "approve")}>
                                     Approve
@@ -230,20 +216,12 @@ export function LeadFieldsManager({
 
     return (
         <div className="space-y-4">
-            {renderGroup("Universal requests", pendingRequests, "No fields are waiting for review.", "request")}
+            {/* Requests stay one line here; the review panel holds the list. */}
+            <FieldRequestsBanner fields={fields} companyId={companyId} apiBasePath={apiBasePath} />
             {renderGroup("Universal fields", universalFields, "No universal lead fields yet.", "active")}
             {renderGroup("Lead-specific fields", leadSpecificFields, "No lead-specific fields yet.", "active")}
             {renderGroup("Declined requests", declinedRequests, "No declined universal requests.", "declined")}
             {renderGroup("Archived", archivedFields, "No archived fields.", "archived")}
-            <label className="block text-[12px] font-semibold text-gray-600">
-                Decline reason
-                <input
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px]"
-                    placeholder="Optional note for the next decline"
-                />
-            </label>
             {editingField ? (
                 <LeadFieldDialog
                     companyId={companyId}
