@@ -542,7 +542,7 @@ function WorkforceContent() {
         <div className="fixed inset-0 z-[10000] bg-black/75 backdrop-blur-sm flex items-end justify-center p-4">
           <form
             onSubmit={handleInviteSubmit}
-            className="w-full max-w-md bg-[#0B3343] border border-white/15 rounded-3xl p-5 space-y-3.5"
+            className="w-full max-w-md max-h-[85dvh] overflow-y-auto bg-[#0B3343] border border-white/15 rounded-3xl p-5 space-y-3.5"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white">Invite Team Member</h3>
