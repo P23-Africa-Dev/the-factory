@@ -30,7 +30,7 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
   const agents = analytics?.agents ?? [];
 
   return (
-    <section className="mx-4 mt-4 space-y-3">
+    <section className="mx-4 sm:mx-5 mt-4 space-y-3">
       <div
         onClick={() => router.push('/manager/field-activity')}
         role="button"
@@ -38,16 +38,16 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') router.push('/manager/field-activity');
         }}
-        className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#12323A] to-[#0B1E26] p-5 cursor-pointer active:scale-[0.99] transition-transform"
+        className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#12323A] to-[#0B1E26] p-4 sm:p-5 cursor-pointer active:scale-[0.99] transition-transform"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity size={14} className="text-[#75ADAF]" />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Activity size={14} className="text-[#75ADAF] shrink-0" />
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#75ADAF]">
               Team Field Activity Pulse
             </p>
           </div>
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#75ADAF]/15 px-2.5 py-0.5 text-[10px] font-bold text-[#75ADAF]">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#75ADAF]/15 px-2.5 py-0.5 text-[10px] font-bold text-[#75ADAF] whitespace-nowrap shrink-0">
             {activeSessions} Active Now
             <ChevronRight size={12} />
           </span>
@@ -59,7 +59,7 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
             : 'Real-time team field journeys, route efficiency, and customer visit stops.'}
         </p>
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div className="rounded-2xl bg-black/20 p-2.5">
             <p className="text-[10px] text-[#8F9098]">Distance</p>
             <p className="mt-0.5 text-sm font-bold text-white">{formatKm(distance)}</p>
@@ -81,7 +81,7 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
         </div>
 
         {agents.length > 0 && (
-          <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
             <div className="flex items-center gap-2 text-xs text-white/80">
               <Navigation size={12} className="text-[#75ADAF]" />
               <span>
