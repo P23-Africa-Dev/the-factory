@@ -357,7 +357,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                         <select
                           value={editCountryCode}
                           onChange={(e) => setEditCountryCode(e.target.value)}
-                          className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-3 py-2.5 focus:outline-none transition-all"
+                          className="shrink-0 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-3 py-2.5 focus:outline-none transition-all"
                           style={{ backgroundColor: '#0A1D25' }}
                         >
                           {COUNTRY_CODES.map((c) => (
@@ -371,7 +371,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                           value={editPhonePart}
                           onChange={(e) => setEditPhonePart(e.target.value)}
                           placeholder="Phone number"
-                          className="flex-1 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
+                          className="min-w-0 flex-1 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
                         />
                       </div>
                     </div>
