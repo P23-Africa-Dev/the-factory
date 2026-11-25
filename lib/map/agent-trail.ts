@@ -10,12 +10,12 @@ const AGENT_TRAIL_PALETTE = [
   "#E11D48", // rose
   "#7C3AED", // violet
   "#0284C7", // sky blue
-  "#16A34A", // green
+  "#EA580C", // orange (no green: the traffic layer is green)
   "#D97706", // amber
   "#DB2777", // pink
   "#0D9488", // teal
   "#4F46E5", // indigo
-  "#65A30D", // lime
+  "#9333EA", // purple
   "#C026D3", // fuchsia
   "#B91C1C", // dark red
   "#1D4ED8", // blue

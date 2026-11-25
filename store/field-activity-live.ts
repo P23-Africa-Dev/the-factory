@@ -40,6 +40,7 @@ type FieldActivityLiveStore = {
       movementState?: string | null;
       recordedAt?: string | null;
       name?: string;
+      avatarUrl?: string | null;
     },
   ) => void;
   upsertStop: (userId: number, stop: FieldActivityLiveStop) => void;
@@ -84,7 +85,7 @@ export const useFieldActivityLiveStore = create<FieldActivityLiveStore>((set) =>
             [userId]: {
               userId,
               name: meta.name ?? "Agent",
-              avatarUrl: null,
+              avatarUrl: meta.avatarUrl ?? null,
               sessionId: meta.sessionId,
               lastPosition: point,
               lastMovementState: meta.movementState ?? null,
@@ -101,11 +102,18 @@ export const useFieldActivityLiveStore = create<FieldActivityLiveStore>((set) =>
           ...state.agents,
           [userId]: {
             ...existing,
+            // A different session is a new trip: start a fresh line.
+            ...(meta?.sessionId && meta.sessionId !== existing.sessionId ? { polyline: [], stops: [] } : {}),
+            name: existing.name && existing.name !== "Agent" ? existing.name : meta?.name ?? existing.name,
+            avatarUrl: existing.avatarUrl ?? meta?.avatarUrl ?? null,
             lastPosition: point,
             lastMovementState: meta?.movementState ?? existing.lastMovementState,
             lastRecordedAt: meta?.recordedAt ?? existing.lastRecordedAt,
             sessionId: meta?.sessionId ?? existing.sessionId,
-            polyline: appendPolyline(existing.polyline, point),
+            polyline: appendPolyline(
+              meta?.sessionId && meta.sessionId !== existing.sessionId ? [] : existing.polyline,
+              point,
+            ),
           },
         },
       };

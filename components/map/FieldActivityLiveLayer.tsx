@@ -112,12 +112,22 @@ export function FieldActivityLiveLayer({
           },
         }));
 
-      const stopFeatures = visible.flatMap((a) =>
+      // Trip start point (first point of the trail): green pin.
+      const startFeatures = visible
+        .filter((a) => a.polyline.length > 0)
+        .map((a) => ({
+          type: "Feature" as const,
+          properties: { userId: a.userId, stopId: 0, kind: "start", classification: "start", label: "Trip start" },
+          geometry: { type: "Point" as const, coordinates: a.polyline[0] },
+        }));
+
+      const stopFeatures = [...startFeatures, ...visible.flatMap((a) =>
         a.stops.map((stop) => ({
           type: "Feature" as const,
           properties: {
             userId: a.userId,
             stopId: stop.id,
+            kind: "stop",
             classification: stop.classification ?? "pending",
             label: stop.address ?? "Stop",
           },
@@ -126,12 +136,23 @@ export function FieldActivityLiveLayer({
             coordinates: [stop.longitude, stop.latitude] as [number, number],
           },
         })),
-      );
+      )];
 
       if (!map.getSource(SOURCE_ID)) {
         map.addSource(SOURCE_ID, {
           type: "geojson",
           data: { type: "FeatureCollection", features: routeFeatures },
+        });
+        map.addLayer({
+          id: `${LINE_LAYER_ID}-casing`,
+          type: "line",
+          source: SOURCE_ID,
+          paint: {
+            "line-color": "#ffffff",
+            "line-width": ["case", ["==", ["get", "selected"], true], 9, 7],
+            "line-opacity": 0.9,
+          },
+          layout: { "line-cap": "round", "line-join": "round" },
         });
         map.addLayer({
           id: LINE_LAYER_ID,
@@ -173,8 +194,8 @@ export function FieldActivityLiveLayer({
           type: "circle",
           source: STOPS_SOURCE_ID,
           paint: {
-            "circle-radius": 7,
-            "circle-color": "#F59E0B",
+            "circle-radius": ["case", ["==", ["get", "kind"], "start"], 8, 7],
+            "circle-color": ["case", ["==", ["get", "kind"], "start"], "#10B981", "#F59E0B"],
             "circle-stroke-width": 2,
             "circle-stroke-color": "#ffffff",
           },
@@ -348,6 +369,32 @@ export function FieldActivityLiveLayer({
 
     const keepStops = new Set<string>();
     for (const agent of visible) {
+      const start = agent.polyline[0];
+      if (start) {
+        const key = `${agent.userId}:start`;
+        keepStops.add(key);
+        const position = { lat: start[1], lng: start[0] };
+        let marker = googleStopMarkersRef.current.get(key);
+        if (!marker) {
+          marker = new googleMaps.Marker({
+            position,
+            map: gmap as unknown as google.maps.Map,
+            title: "Trip start",
+            icon: {
+              path: googleMaps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: "#10B981",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2,
+            },
+          }) as unknown as GoogleMarker;
+          googleStopMarkersRef.current.set(key, marker);
+        } else {
+          marker.setPosition(position);
+          marker.setMap(gmap);
+        }
+      }
       for (const stop of agent.stops) {
         const key = `${agent.userId}:${stop.id}`;
         keepStops.add(key);

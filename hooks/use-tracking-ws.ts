@@ -350,6 +350,7 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
           longitude?: number | null;
           started_at?: string | null;
           name?: string | null;
+          avatar_url?: string | null;
         } | undefined;
         if (payload?.user_id == null) return;
         const userId = Number(payload.user_id);
@@ -366,6 +367,7 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
               sessionId: payload.field_activity_session_id ? Number(payload.field_activity_session_id) : undefined,
               recordedAt: payload.started_at ?? null,
               name: payload.name ?? undefined,
+              avatarUrl: payload.avatar_url ?? null,
             },
           );
         }

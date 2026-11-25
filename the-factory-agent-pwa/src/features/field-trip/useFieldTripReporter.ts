@@ -14,12 +14,6 @@ import {
   probeSharedGeolocationFix,
 } from '@/features/tracking/hooks/useGeolocation';
 import {
-  forceRestartNativeBackgroundWatch,
-  startNativeBackgroundWatch,
-  stopNativeBackgroundWatch,
-} from '@/features/tracking/native/nativeBackgroundGeolocation';
-import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
-import {
   createBackgroundTrackingWatchdog,
   recordBackgroundLocationFix,
   type BackgroundTrackingWatchdog,
@@ -35,8 +29,11 @@ import { newClientId, useFieldTripStore } from './store';
 
 const MAX_BATCH = 50;
 const FLUSH_EVERY_MS = 30_000;
-/** Readings worse than this are too noisy for a trail. */
-const MAX_ACCURACY_M = 150;
+/** Readings worse than this are too noisy for a trail (same limit as task tracking). */
+const MAX_ACCURACY_M = 250;
+/** No fix for this long while the app is open → read the position directly. */
+const FALLBACK_AFTER_MS = 45_000;
+const FALLBACK_EVERY_MS = 30_000;
 export const NATIVE_OWNER = 'field-trip';
 
 export const TRIP_NOTIFICATION = {
@@ -189,32 +186,28 @@ export function useFieldTripReporter(options: {
     });
   }, []);
 
+  /**
+   * Same proven path as task tracking: the shared geolocation watch, which on
+   * the APK runs the native background watcher (foreground service) and in a
+   * browser uses watchPosition. A direct native subscription delivered no
+   * points on some phones.
+   */
   const startWatch = useCallback(async () => {
-    const onFix = (loc: LocationObject) => void enqueue(loc);
-
-    if (isNativeAndroid()) {
-      await startNativeBackgroundWatch(
-        onFix,
-        (message) => {
-          if (Date.now() - lastToastAt.current > 60_000) {
-            lastToastAt.current = Date.now();
-            toast.warning('Field trip: location problem', message || 'Recovering location…');
-          }
-        },
-        TRIP_NOTIFICATION,
-        NATIVE_OWNER,
-      );
-      return;
+    try {
+      await startWatching((loc: LocationObject) => void enqueue(loc));
+    } catch (error) {
+      if (Date.now() - lastToastAt.current > 60_000) {
+        lastToastAt.current = Date.now();
+        toast.warning(
+          'Field trip: location problem',
+          error instanceof Error ? error.message : 'Could not start location tracking. Retrying…',
+        );
+      }
     }
-    await startWatching(onFix);
   }, [enqueue, startWatching]);
 
   const restartWatch = useCallback(async () => {
     if (!refs.current.active) return;
-    if (isNativeAndroid()) {
-      await forceRestartNativeBackgroundWatch();
-      return;
-    }
     await restartSharedGeolocationWatch();
     await probeSharedGeolocationFix();
   }, []);
@@ -243,6 +236,32 @@ export function useFieldTripReporter(options: {
       }
     }, 15_000);
 
+    // Safety net: while the app is open, if the watcher has delivered nothing
+    // for a while, read the position directly so the trip always moves.
+    const fallbackTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const { lastFixAt } = useFieldTripStore.getState();
+      if (lastFixAt != null && Date.now() - lastFixAt < FALLBACK_AFTER_MS) return;
+      if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          void enqueue({
+            coords: {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              altitude: pos.coords.altitude,
+              altitudeAccuracy: pos.coords.altitudeAccuracy,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+            },
+            timestamp: pos.timestamp || Date.now(),
+          }),
+        () => {},
+        { enableHighAccuracy: true, timeout: 15_000, maximumAge: 10_000 },
+      );
+    }, FALLBACK_EVERY_MS);
+
     watchdogRef.current = createBackgroundTrackingWatchdog({
       isActive: () => refs.current.active,
       onRestart: restartWatch,
@@ -252,17 +271,14 @@ export function useFieldTripReporter(options: {
     return () => {
       clearInterval(flushTimer);
       clearInterval(gpsTimer);
+      clearInterval(fallbackTimer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('online', onVisible);
       watchdogRef.current?.stop();
       watchdogRef.current = null;
       cleanupWakeLock?.();
       void releaseTrackingWakeLock();
-      if (isNativeAndroid()) {
-        void stopNativeBackgroundWatch({ owner: NATIVE_OWNER });
-      } else {
-        stopWatching();
-      }
+      stopWatching();
     };
   }, [active, clientTripId, flush, restartWatch, startWatch, stopWatching]);
 
