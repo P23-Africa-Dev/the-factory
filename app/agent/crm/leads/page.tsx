@@ -32,7 +32,7 @@ import { PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import type { ApiLeadStatus, LeadCustomFields } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { readCustomFields } from "@/lib/crm/custom-fields";
-import { LeadColumnMenu, LeadCustomColumnCells, LeadCustomColumnHeaders, leadListGridTemplate, useHiddenLeadColumns } from "@/components/crm/lead-list-columns";
+import { LeadColumnMenu, LeadCustomColumnCells, LeadCustomColumnHeaders, leadListGridTemplate, leadListMinWidth, useHiddenLeadColumns } from "@/components/crm/lead-list-columns";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import { toast } from "sonner";
 
@@ -270,6 +270,7 @@ export default function AllLeadsPage() {
     && leadColumns.visible(`custom:${field.key}`),
   );
   const listGridStyle = { gridTemplateColumns: leadListGridTemplate(leadColumns.visible, visibleCustomFields.length) };
+  const tableMinWidth = leadListMinWidth(leadColumns.visible, visibleCustomFields.length);
 
 
   const toggleAll = () => {
@@ -527,9 +528,9 @@ export default function AllLeadsPage() {
           </div>
 
           <div className="flex-1 min-h-0 overflow-x-auto flex flex-col">
-          <div className="min-w-full w-max flex-1 min-h-0 flex flex-col">
+          <div className="w-full flex-1 min-h-0 flex flex-col" style={{ minWidth: `${tableMinWidth}px` }}>
           {/* Column headers */}
-          <div className="grid min-w-max gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
+          <div className="grid w-full gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
             <div />
             {leadColumns.visible("name") && (
             <div className="bg-[#3B82F6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
@@ -615,7 +616,7 @@ export default function AllLeadsPage() {
                 <div
                   key={lead.id}
                   onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                  className={`relative ${isStatusOpen ? "z-30" : ""} grid min-w-max gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
+                  className={`relative ${isStatusOpen ? "z-30" : ""} grid w-full gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
                     ? "bg-[#0B1215]"
                     : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
                     }`}

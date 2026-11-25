@@ -52,6 +52,29 @@ export function leadListGridTemplate(visible: (id: string) => boolean, customCou
     return sizes.join(" ");
 }
 
+export function leadListMinWidth(visible: (id: string) => boolean, customCount: number): number {
+    const colWidths: Record<string, number> = {
+        name: 140,
+        company: 150,
+        industry: 120,
+        status: 120,
+        value: 100,
+        assigned: 120,
+        source: 100,
+    };
+    let total = 40 + 72 + 100 + 48; // checkbox + Add + Actions + horizontal padding
+    let count = 3;
+    LEAD_LIST_COLUMNS.forEach((column) => {
+        if (visible(column.id)) {
+            total += colWidths[column.id] ?? 120;
+            count += 1;
+        }
+    });
+    total += customCount * 140;
+    count += customCount;
+    return total + Math.max(0, count - 1) * 12; // gap-3 (12px)
+}
+
 export function LeadCustomColumnHeaders({
     fields,
     onHide,
