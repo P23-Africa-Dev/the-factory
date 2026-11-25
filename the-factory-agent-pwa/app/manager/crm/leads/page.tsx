@@ -10,7 +10,7 @@ import {
   useCrmAssignees,
   useLeadFields,
 } from '@/manager/features/crm';
-import { PwaPendingUniversalFieldsCard } from '@/manager/features/crm/components/PwaPendingUniversalFieldsCard';
+import { PwaFieldRequestsBanner } from '@/manager/features/crm/components/PwaFieldRequests';
 import { NotificationPanel, useUnreadCount } from '@/manager/features/notifications';
 
 export default function AllLeadsPage() {
@@ -99,7 +99,7 @@ export default function AllLeadsPage() {
             </button>
           </div>
 
-          <PwaPendingUniversalFieldsCard fields={leadFields} />
+          <PwaFieldRequestsBanner fields={leadFields} />
 
           {/* Filter Row: Assignee & Status */}
           <div className="flex items-center gap-2 mb-4">

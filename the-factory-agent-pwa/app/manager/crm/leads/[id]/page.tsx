@@ -294,18 +294,18 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
 
   return (
     <ScreenErrorBoundary screenName="LeadDetail">
-      <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-hidden pb-16">
+      <div className="relative min-h-screen bg-[#0A1D25] text-white flex flex-col font-sans select-none overflow-x-hidden pb-16">
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] mb-6">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="relative z-10 flex items-center justify-between gap-2 px-5 pt-[calc(env(safe-area-inset-top,0px)+24px)] mb-6">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <button
               onClick={goBack}
-              className="w-10 h-10 flex items-center justify-center text-3xl font-light text-white/90 hover:text-white transition-colors focus:outline-none"
+              className="w-10 h-10 shrink-0 flex items-center justify-center text-3xl font-light text-white/90 hover:text-white transition-colors focus:outline-none"
               aria-label="Go back"
             >
               ‹
             </button>
-            <h2 className="font-bold text-lg text-white truncate max-w-[180px]">
+            <h2 className="font-bold text-lg text-white truncate min-w-0">
               {isLoading ? 'Loading…' : lead?.name ?? 'Lead Detail'}
             </h2>
           </div>
@@ -459,7 +459,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                         <select
                           value={editCountryCode}
                           onChange={(e) => setEditCountryCode(e.target.value)}
-                          className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-3 py-2.5 focus:outline-none transition-all"
+                          className="shrink-0 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-3 py-2.5 focus:outline-none transition-all"
                           style={{ backgroundColor: '#0A1D25' }}
                         >
                           {COUNTRY_CODES.map((c) => (
@@ -473,7 +473,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                           value={editPhonePart}
                           onChange={(e) => setEditPhonePart(e.target.value)}
                           placeholder="Phone number"
-                          className="flex-1 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
+                          className="min-w-0 flex-1 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
                         />
                       </div>
                     </div>
@@ -546,30 +546,30 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                   </h4>
 
                   {/* Add Note Input */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-col min-[360px]:flex-row gap-2">
                     <input
                       type="text"
                       value={noteInput}
                       onChange={(e) => setNoteInput(e.target.value)}
                       placeholder="Write a note on this lead…"
-                      className="flex-1 h-10 bg-white/[0.08] border border-white/15 rounded-xl px-3 text-xs text-white placeholder-white/40 focus:outline-none"
+                      className="min-w-0 flex-1 h-10 bg-white/[0.08] border border-white/15 rounded-xl px-3 text-xs text-white placeholder-white/40 focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={handleAddNote}
                       disabled={addNoteMutation.isPending || !noteInput.trim()}
-                      className="px-3.5 h-10 rounded-xl bg-[#75ADAF] text-[#0A1D25] font-bold text-xs disabled:opacity-50"
+                      className="shrink-0 px-3.5 h-10 rounded-xl bg-[#75ADAF] text-[#0A1D25] font-bold text-xs disabled:opacity-50"
                     >
                       Add Note
                     </button>
                   </div>
 
                   {/* Log Activity Input */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <select
                       value={activityType}
                       onChange={(e) => setActivityType(e.target.value)}
-                      className="h-10 bg-white/[0.08] border border-white/15 rounded-xl px-2.5 text-xs text-white focus:outline-none"
+                      className="shrink-0 h-10 bg-white/[0.08] border border-white/15 rounded-xl px-2.5 text-xs text-white focus:outline-none"
                       style={{ backgroundColor: '#0B3343' }}
                     >
                       <option value="call">Call</option>
@@ -582,13 +582,13 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                       value={activityTitle}
                       onChange={(e) => setActivityTitle(e.target.value)}
                       placeholder="Log interaction summary…"
-                      className="flex-1 h-10 bg-white/[0.08] border border-white/15 rounded-xl px-3 text-xs text-white placeholder-white/40 focus:outline-none"
+                      className="min-w-[140px] flex-1 h-10 bg-white/[0.08] border border-white/15 rounded-xl px-3 text-xs text-white placeholder-white/40 focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={handleLogActivity}
                       disabled={addActivityMutation.isPending || !activityTitle.trim()}
-                      className="px-3 h-10 rounded-xl bg-[#FD6046] text-white font-bold text-xs disabled:opacity-50 flex items-center gap-1"
+                      className="shrink-0 px-3 h-10 rounded-xl bg-[#FD6046] text-white font-bold text-xs disabled:opacity-50 flex items-center justify-center gap-1"
                     >
                       <Activity className="w-3.5 h-3.5" /> Log
                     </button>

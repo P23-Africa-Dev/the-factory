@@ -785,7 +785,7 @@ export default function TasksPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md rounded-3xl border border-white/10 bg-[#0B1E26] p-5 text-white"
+              className="w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain rounded-3xl border border-white/10 bg-[#0B1E26] p-5 text-white"
             >
               <h3 className="mb-4 text-lg font-bold font-sans">Edit Task</h3>
               <div className="space-y-3">

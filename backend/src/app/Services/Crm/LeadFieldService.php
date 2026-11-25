@@ -8,6 +8,7 @@ use App\Enums\LeadFieldStatus;
 use App\Enums\LeadFieldType;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Models\Lead;
 use App\Models\LeadFieldDefinition;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
@@ -43,7 +44,39 @@ class LeadFieldService
             $query->where('status', LeadFieldStatus::ACTIVE->value);
         }
 
-        return $query->get();
+        $fields = $query->get();
+
+        if ($this->isManager($role)) {
+            $this->attachRequestUsageCounts($fields, $resolvedCompanyId);
+        }
+
+        return $fields;
+    }
+
+    /**
+     * For pending universal requests, how many leads already carry the field
+     * (shown in the managers' review panel as "on N leads").
+     *
+     * @param  Collection<int, LeadFieldDefinition>  $fields
+     */
+    private function attachRequestUsageCounts(Collection $fields, int $companyId): void
+    {
+        $pending = $fields
+            ->filter(static fn (LeadFieldDefinition $field): bool => $field->status === LeadFieldStatus::ACTIVE
+                && $field->universal_request_status === 'pending')
+            ->take(200);
+
+        foreach ($pending as $field) {
+            $key = (string) $field->key;
+            if (preg_match('/^[a-z0-9_]+$/', $key) !== 1) {
+                continue;
+            }
+
+            $field->setAttribute('usage_count', Lead::query()
+                ->where('company_id', $companyId)
+                ->whereNotNull("custom_fields->{$key}")
+                ->count());
+        }
     }
 
     /**

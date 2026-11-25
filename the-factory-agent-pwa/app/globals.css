@@ -165,3 +165,14 @@ input:-webkit-autofill:active {
   scrollbar-width: none;
 }
 
+/* Keep modal/sheet scrolling contained to the modal itself */
+[role="dialog"],
+[role="alertdialog"],
+[aria-modal="true"],
+.fixed.inset-0 .overflow-y-auto,
+.fixed.inset-0.overflow-y-auto {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+

@@ -11,6 +11,7 @@ import { SessionExpiredModal } from '@/components/shared/SessionExpiredModal';
 import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
 import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
 import { BrokenImageGuard } from '@/components/shared/BrokenImageGuard';
+import { ModalScrollLock } from '@/components/shared/ModalScrollLock';
 import '@/lib/pwa/installPromptStore';
 import './globals.css';
 
@@ -71,6 +72,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <BrokenImageGuard />
+        <ModalScrollLock />
         <AuthProvider>
           <SessionRevalidator />
           <QueryClientProvider client={queryClient}>

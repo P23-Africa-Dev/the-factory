@@ -25,7 +25,7 @@ import {
 } from "@/lib/crm/custom-fields";
 import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
-import { PendingUniversalFieldsCard } from "@/components/crm/pending-universal-fields-card";
+import { FieldRequestsBanner } from "@/components/crm/field-requests-review";
 import { IndustryCombobox } from "@/components/crm/industry-combobox";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
@@ -940,7 +940,7 @@ export function AddLeadModal({
           <div className="space-y-4 mb-5">
             <SectionDivider label="Custom fields" subtitle="Add a column when a lead has details this form does not list yet." />
             {canManageLeads && companyId ? (
-              <PendingUniversalFieldsCard
+              <FieldRequestsBanner
                 fields={leadFields}
                 companyId={companyId}
                 apiBasePath={apiBasePath}

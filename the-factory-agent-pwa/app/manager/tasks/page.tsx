@@ -1652,7 +1652,7 @@ function ManagerTasksContent() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 pb-9"
+              className="relative z-10 w-full max-w-md max-h-[85dvh] overflow-y-auto overscroll-contain bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 pb-9"
             >
               <div className="w-9 h-1 rounded-full bg-white/25 mx-auto mb-4" />
               <h3 className="text-lg font-bold text-white mb-4">Edit Task</h3>
