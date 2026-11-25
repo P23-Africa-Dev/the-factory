@@ -20,6 +20,19 @@ final class CopilotFileTextExtractorTest extends TestCase
         $this->assertSame('Quarterly revenue increased by 12 percent.', $text);
     }
 
+    public function test_extracts_text_from_old_doc_files(): void
+    {
+        // Old .doc files hold their text as printable runs between binary data.
+        $bytes = "\xD0\xCF\x11\xE0\x00\x01Weekly field report\x00\x02\x03Visits completed in Lekki\x00\xFF";
+        $file = UploadedFile::fake()->createWithContent('report.doc', $bytes);
+
+        $text = app(CopilotFileTextExtractor::class)->extract($file, 'doc');
+
+        $this->assertNotNull($text);
+        $this->assertStringContainsString('Weekly field report', $text);
+        $this->assertStringContainsString('Visits completed in Lekki', $text);
+    }
+
     public function test_extracts_docx_text(): void
     {
         if (! class_exists(ZipArchive::class)) {

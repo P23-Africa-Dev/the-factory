@@ -10,6 +10,7 @@
  * with `action_confirmed` while Cancel calls `/copilot/actions/{id}/cancel`.
  */
 import { client } from '@/lib/api/client';
+import { flattenApiError } from '@/lib/api/errors';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import type { AssistantMessage, SendMessageResult, ThreadDetail, ThreadSummary } from './types';
 
@@ -43,6 +44,8 @@ export const assistantApi = {
       longitude?: number;
       focus?: 'all' | 'visits' | 'followups' | 'tasks';
       limit?: number;
+      /** A CSV attached with attachFile (e.g. leads to import). */
+      attachment?: { id: string; name: string };
     };
     actionConfirmed?: boolean;
     actionArgs?: Record<string, unknown>;
@@ -76,6 +79,58 @@ export const assistantApi = {
     };
   },
 
+  /** Turns a voice note into text. Throws with a readable message on failure. */
+  transcribeVoice: async (file: File): Promise<string> => {
+    const companyId = getActiveCompanyId();
+    const formData = new FormData();
+    formData.append('audio', file);
+    if (companyId != null) formData.append('company_id', String(companyId));
+    let data: Record<string, unknown>;
+    try {
+      const res = await client.post('/copilot/voice/transcriptions', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        suppressErrorToast: true,
+      });
+      data = unwrap(res.data);
+    } catch (err) {
+      throw new Error(flattenApiError(err) || 'Could not transcribe that recording. Please try again.');
+    }
+    const transcript = String(data.transcript ?? '').trim();
+    if (!transcript) {
+      throw new Error(String(data.error ?? 'No speech was detected. Try again, closer to the microphone.'));
+    }
+    return transcript;
+  },
+
+  /** Attaches a CSV to the chat; ELY can then import it when asked. */
+  attachFile: async (file: File): Promise<{ id: string; name: string }> => {
+    const companyId = getActiveCompanyId();
+    const formData = new FormData();
+    formData.append('file', file);
+    if (companyId != null) formData.append('company_id', String(companyId));
+    const res = await client.post('/copilot/attachments', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    const attachment = (unwrap(res.data).attachment ?? {}) as Record<string, unknown>;
+    return { id: String(attachment.id ?? ''), name: String(attachment.name ?? file.name) };
+  },
+
+  /** Undoes an action ELY ran. Returns ELY's reply and whether it was undone. */
+  undoAction: async (auditId: number): Promise<{ content: string; undone: boolean }> => {
+    const companyId = getActiveCompanyId();
+    const res = await client.post(`/copilot/actions/undo/${encodeURIComponent(String(auditId))}`, {
+      company_id: companyId ?? undefined,
+    });
+    const response = (unwrap(res.data).response ?? {}) as {
+      content?: unknown;
+      payload?: { undone?: unknown } | null;
+    };
+    return {
+      content: String(response.content ?? ''),
+      undone: response.payload?.undone === true,
+    };
+  },
+
   /** Cancels an action ELY is waiting to have confirmed. */
   cancelAction: async (pendingActionId: string): Promise<string> => {
     const companyId = getActiveCompanyId();
@@ -87,15 +142,31 @@ export const assistantApi = {
     return String(response?.content ?? 'Okay, I cancelled that. Nothing was changed.');
   },
 
+  /** The user's chats, newest first (at most 30). Every chat gets a title. */
   listThreads: async (): Promise<ThreadSummary[]> => {
-    const res = await client.get(`/copilot/threads${companyQuery()}`);
+    const query = companyQuery();
+    const res = await client.get(`/copilot/threads${query ? `${query}&` : '?'}limit=30`);
     const data = unwrap(res.data);
-    return Array.isArray(data.items) ? (data.items as ThreadSummary[]) : [];
+    const items = Array.isArray(data.items) ? (data.items as Record<string, unknown>[]) : [];
+    return items.map((item) => {
+      const preview = String(item.last_message_preview ?? '');
+      const title = typeof item.title === 'string' ? item.title.trim() : '';
+      return {
+        thread_id: String(item.thread_id ?? ''),
+        created_at: String(item.created_at ?? ''),
+        updated_at: String(item.updated_at ?? ''),
+        message_count: Number(item.message_count ?? 0),
+        last_message_preview: preview,
+        title: title || preview.trim() || 'ELY chat',
+      };
+    });
   },
 
   getThread: async (threadId: string): Promise<ThreadDetail> => {
     const res = await client.get(
       `/copilot/threads/${encodeURIComponent(threadId)}${companyQuery()}`,
+      // A missing chat is handled by the caller (restore falls back to the newest).
+      { suppressErrorToast: true },
     );
     const data = unwrap(res.data);
     const thread = (data.thread && typeof data.thread === 'object'

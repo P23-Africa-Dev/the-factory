@@ -6,10 +6,17 @@ import { AlertTriangle, CheckCircle2, Download, FileText, Upload } from "lucide-
 import { toast } from "sonner";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ModalShell } from "@/components/crm/crm-toolbar-modals";
-import { downloadCsvFile, parseCsvContent, toCsvContent } from "@/lib/crm/csv";
+import { downloadCsvFile, dropEmptyColumns, parseCsvContent, toCsvContent } from "@/lib/crm/csv";
 import { parseProfileUrls } from "@/lib/crm/lead-fields";
-import { customFieldKeyFromMapping, customFieldMappingKey, inferLeadFieldType } from "@/lib/crm/custom-fields";
+import {
+    customFieldKeyFromMapping,
+    customFieldMappingKey,
+    importableLeadFields,
+    inferLeadFieldType,
+    isUniversalLeadField,
+} from "@/lib/crm/custom-fields";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
+import { CompanyMergeSuggestions } from "@/components/crm/company-merge-suggestions";
 import { ImportFailedRowEditor, failedRowFieldErrors } from "@/components/crm/import-failed-row-editor";
 import type {
     ApiLeadPriority,
@@ -138,8 +145,13 @@ export function ImportLeadsWizard({
     const [fileName, setFileName] = useState<string>("");
     const [headers, setHeaders] = useState<string[]>([]);
     const [rawRows, setRawRows] = useState<string[][]>([]);
+    /** Columns with no value in any row; left out of mapping and import. */
+    const [skippedColumns, setSkippedColumns] = useState<string[]>([]);
+    /** Every lead created or updated by this upload, across batches and retries. */
+    const [importedLeadIds, setImportedLeadIds] = useState<number[]>([]);
     const [mapping, setMapping] = useState<Record<number, MappingValue>>({});
     const [createColumn, setCreateColumn] = useState<number | null>(null);
+    const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
     const { data: preferences } = useCrmPreferences(companyId, apiBasePath);
     const { data: leadFields = [] } = useLeadFields(companyId, apiBasePath);
     const resolvedPipelineId = resolveCrmPipelineId(
@@ -168,8 +180,8 @@ export function ImportLeadsWizard({
     const downloadTemplate = () => {
         const defaultLabel = labels.find((label) => label.is_default) ?? labels[0];
         const exampleStatus = defaultLabel?.name ?? "New Lead";
-        // Include the company's own custom fields so the template matches their CRM.
-        const customColumns = leadFields.filter((field) => field.status === "active");
+        // Include universal company fields so the template matches shared CRM columns.
+        const customColumns = leadFields.filter((field) => isUniversalLeadField(field));
         const content = toCsvContent(
             [
                 "name",
@@ -222,11 +234,13 @@ export function ImportLeadsWizard({
         }
 
         const text = await file.text();
-        const parsed = parseCsvContent(text);
+        // Empty columns (no value in any row) are never mapped, turned into fields, or imported.
+        const parsed = dropEmptyColumns(parseCsvContent(text));
 
         if (parsed.headers.length === 0 || parsed.rows.length === 0) {
             setHeaders([]);
             setRawRows([]);
+            setSkippedColumns([]);
             toast.error("Your file has no data rows. Download our template and try again.");
             return;
         }
@@ -234,6 +248,8 @@ export function ImportLeadsWizard({
         setFileName(file.name);
         setHeaders(parsed.headers);
         setRawRows(parsed.rows);
+        setSkippedColumns(parsed.skippedColumns);
+        setImportedLeadIds([]);
 
         const autoMapping: Record<number, MappingValue> = {};
         const used = new Set<string>();
@@ -298,6 +314,12 @@ export function ImportLeadsWizard({
         await processFile(file);
     }, [processFile]);
 
+    // Required company-wide fields: a blank cell is still sent so the row reports it as missing.
+    const requiredCustomKeys = useMemo(
+        () => new Set(leadFields.filter((field) => isUniversalLeadField(field) && field.is_required).map((field) => field.key)),
+        [leadFields],
+    );
+
     const mappedRows = useMemo<ImportLeadRow[]>(() => {
         return rawRows.map((values) => {
             const row: ImportLeadRow = {};
@@ -306,11 +328,12 @@ export function ImportLeadsWizard({
                 if (!field) return;
                 const val = (values[idx] ?? "").trim();
                 const customKey = customFieldKeyFromMapping(field);
+                // Blank cells send nothing, so a lead only gets a custom field when it has a value.
+                if (!val && !(customKey && requiredCustomKeys.has(customKey))) return;
                 if (customKey) {
                     row.custom_fields = { ...(row.custom_fields ?? {}), [customKey]: val };
                     return;
                 }
-                if (!val) return;
                 if (field === "priority") {
                     row.priority = val.toLowerCase() as ApiLeadPriority;
                 } else if (field === "budget_currency") {
@@ -326,9 +349,14 @@ export function ImportLeadsWizard({
             });
             return row;
         });
-    }, [rawRows, headers, mapping]);
+    }, [rawRows, headers, mapping, requiredCustomKeys]);
 
-    const nameMapped = Object.values(mapping).includes("name");
+    // Either is enough: rows without a contact name are named after the company.
+    // Every usable field, including lead-only ones from earlier uploads, so a column that maps
+    // to one (by hand or automatically) always shows what it really imports into.
+    const importableFields = useMemo(() => importableLeadFields(leadFields), [leadFields]);
+
+    const nameMapped = Object.values(mapping).some((field) => field === "name" || field === "company_name");
     const tooManyRows = rawRows.length > MAX_IMPORT_ROWS;
 
     const runPreview = async () => {
@@ -390,6 +418,11 @@ export function ImportLeadsWizard({
             failed_rows: [],
             skipped_rows: [],
         };
+        const batchLeadIds: number[] = [];
+        const rememberLeadIds = () => {
+            if (batchLeadIds.length === 0) return;
+            setImportedLeadIds((current) => Array.from(new Set([...current, ...batchLeadIds])));
+        };
         const originalRow = (batchOffset: number, rowIndex: number) =>
             rowNumbers ? rowNumbers[batchOffset + rowIndex - 1] ?? rowIndex : rowIndex;
 
@@ -408,6 +441,7 @@ export function ImportLeadsWizard({
                 merged.imported_count += res.data.imported_count;
                 merged.updated_count += res.data.updated_count;
                 merged.skipped_count += res.data.skipped_count;
+                batchLeadIds.push(...(res.data.imported_lead_ids ?? []));
                 merged.failed_rows.push(...res.data.failed_rows.map((row) => ({
                     ...row,
                     row_index: rowNumbers ? originalRow(offset, row.row_index) : row.row_index,
@@ -421,6 +455,7 @@ export function ImportLeadsWizard({
 
             setResult(merged);
             setFailedRows(merged.failed_rows);
+            rememberLeadIds();
             setStep("results");
         } catch (err) {
             const message = err instanceof Error ? err.message : "Import failed.";
@@ -428,6 +463,7 @@ export function ImportLeadsWizard({
                 // Earlier batches were saved; show what happened instead of losing it.
                 setResult(merged);
                 setFailedRows(merged.failed_rows);
+                rememberLeadIds();
                 setStep("results");
                 toast.error(`Import stopped after ${Math.min(processed, targetRows.length)} rows: ${message}`);
             } else {
@@ -581,6 +617,12 @@ export function ImportLeadsWizard({
                                     {fileName} — {rawRows.length} row{rawRows.length === 1 ? "" : "s"}
                                 </div>
                             )}
+                            {skippedColumns.length > 0 && (
+                                <p className="mt-2 text-[12px] text-gray-500">
+                                    {skippedColumns.length} empty column{skippedColumns.length === 1 ? " was" : "s were"} skipped:{" "}
+                                    <span className="font-semibold text-gray-600">{skippedColumns.join(", ")}</span>
+                                </p>
+                            )}
                             {tooManyRows && (
                                 <p className="mt-2 text-[12px] text-red-500">
                                     Imports are limited to {MAX_IMPORT_ROWS.toLocaleString()} rows per file. Split the file and try again.
@@ -613,6 +655,11 @@ export function ImportLeadsWizard({
                         <p className="text-[12px] text-gray-500">
                             Match each column from your file to a lead field. Unmapped columns are left out until you map them or create a field.
                         </p>
+                        {skippedColumns.length > 0 && (
+                            <p className="text-[12px] text-gray-500">
+                                Empty columns not shown (no value in any row): {skippedColumns.join(", ")}
+                            </p>
+                        )}
 
                         <div className="rounded-xl border border-gray-200 overflow-hidden">
                             <table className="w-full text-[12px]">
@@ -650,20 +697,27 @@ export function ImportLeadsWizard({
                                                             {option.label}
                                                         </option>
                                                     ))}
-                                                    {leadFields
-                                                        .filter((field) => field.status === "active" || field.status === "pending")
-                                                        .map((field) => {
-                                                            const value = customFieldMappingKey(field.key);
-                                                            return (
-                                                                <option
-                                                                    key={field.key}
-                                                                    value={value}
-                                                                    disabled={Object.entries(mapping).some(([mappedIdx, mappedField]) => mappedField === value && Number(mappedIdx) !== idx)}
-                                                                >
-                                                                    {field.label}{field.status === "pending" ? " (pending)" : ""}
-                                                                </option>
-                                                            );
-                                                        })}
+                                                    {[
+                                                        { label: "Company fields", fields: importableFields.company },
+                                                        { label: "Lead-only fields", fields: importableFields.leadOnly },
+                                                    ]
+                                                        .filter((group) => group.fields.length > 0)
+                                                        .map((group) => (
+                                                            <optgroup key={group.label} label={group.label}>
+                                                                {group.fields.map((field) => {
+                                                                    const value = customFieldMappingKey(field.key);
+                                                                    return (
+                                                                        <option
+                                                                            key={field.key}
+                                                                            value={value}
+                                                                            disabled={Object.entries(mapping).some(([mappedIdx, mappedField]) => mappedField === value && Number(mappedIdx) !== idx)}
+                                                                        >
+                                                                            {field.label}{sessionFieldIds.includes(field.id) ? " (new)" : ""}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </optgroup>
+                                                        ))}
                                                     <option value="__create__">Create new field…</option>
                                                 </select>
                                             </td>
@@ -676,7 +730,8 @@ export function ImportLeadsWizard({
                         {!nameMapped && (
                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={13} />
-                                Map a column to <span className="font-semibold">Name</span> before continuing.
+                                Map a column to <span className="font-semibold">Name</span> or{" "}
+                                <span className="font-semibold">Company name</span> before continuing.
                             </div>
                         )}
 
@@ -845,6 +900,14 @@ export function ImportLeadsWizard({
                             Imported leads are available immediately. Pipeline columns load progressively for large datasets.
                         </p>
 
+                        {companyId != null && (
+                            <CompanyMergeSuggestions
+                                companyId={companyId}
+                                apiBasePath={apiBasePath}
+                                leadIds={importedLeadIds}
+                            />
+                        )}
+
                         {(result.failed_rows.length > 0 || result.skipped_rows.length > 0) && (
                             <div className="flex justify-end">
                                 <button onClick={downloadErrorReport} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 bg-white text-[12px] font-semibold text-gray-700 hover:border-gray-400">
@@ -911,12 +974,22 @@ export function ImportLeadsWizard({
             <LeadFieldDialog
                 companyId={companyId}
                 apiBasePath={apiBasePath}
+                canManage
                 initialLabel={headers[createColumn] ?? ""}
                 initialType={inferLeadFieldType(rawRows.map((row) => row[createColumn] ?? ""))}
                 title="Create field from column"
                 submitLabel="Create field"
+                existingFields={leadFields}
+                onUseExisting={(field: LeadFieldDefinition) => {
+                    setMapping((prev) => ({
+                        ...prev,
+                        [createColumn]: customFieldMappingKey(field.key) as MappingValue,
+                    }));
+                    setCreateColumn(null);
+                }}
                 onClose={() => setCreateColumn(null)}
                 onCreated={(field: LeadFieldDefinition) => {
+                    setSessionFieldIds((current) => current.includes(field.id) ? current : [...current, field.id]);
                     setMapping((prev) => ({
                         ...prev,
                         [createColumn]: customFieldMappingKey(field.key) as MappingValue,

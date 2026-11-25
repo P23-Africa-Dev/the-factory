@@ -232,7 +232,14 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
 
   return (
     <>
-      <div className="payroll-cutout w-full text-dash-dark h-auto lg:h-140 overflow-y-auto border-dash-dark/5 bg-white p-8 sm:p-[55px_42px_46.52px] relative rounded-2xl shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+      <div
+        className="w-full"
+        style={{
+          filter:
+            "drop-shadow(0 -3px 9px rgb(255 255 255 / 25%)) drop-shadow(0 6px 12px rgb(0 0 0 / 45%))",
+        }}
+      >
+      <div className="payroll-cutout w-full text-dash-dark h-auto lg:h-140 overflow-y-auto border-dash-dark/5 bg-white p-8 sm:p-[55px_42px_46.52px] relative rounded-2xl">
         <div className="absolute right-4 sm:right-11 top-3.25">
           <TinyButton>View Payroll</TinyButton>
         </div>
@@ -347,7 +354,7 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
                 onClick={() => {
                   window.location.href = mailTo(agent.email);
                 }}
-                className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer"
+                className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer shadow-[0_2px_6px_rgba(0,0,0,0.14)] hover:shadow-[0_4px_8px_rgba(0,0,0,0.2)] transition-shadow"
               >
                 <Image src={MessageIcon} alt="Message" width={14} height={14} />
               </button>
@@ -355,7 +362,7 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
                 <button
                   type="button"
                   onClick={onEditPayroll}
-                  className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer"
+                  className="w-[32.48px] h-[32.48px] rounded-full bg-[#EAEAEA] flex items-center justify-center cursor-pointer shadow-[0_2px_6px_rgba(0,0,0,0.14)] hover:shadow-[0_4px_8px_rgba(0,0,0,0.2)] transition-shadow"
                 >
                   <Image
                     src={CustomizeIcon}
@@ -375,9 +382,9 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
             <button
               type="button"
               onClick={() => setApprovalOpen(true)}
-              className={`w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-[13px] font-semibold transition-all ${isApproved
-                ? "bg-dash-dark text-white hover:opacity-90"
-                : "bg-emerald-500 text-white hover:bg-emerald-600"
+              className={`w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${isApproved
+                ? "bg-dash-dark text-white hover:opacity-90 shadow-[0_4px_10px_rgba(9,35,45,0.28)]"
+                : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-[0_4px_12px_rgba(16,185,129,0.35)]"
                 }`}
             >
               <ShieldCheck size={16} />
@@ -385,6 +392,7 @@ export function PayrollSidebar({ agent, onEditPayroll, companyId, onApprovalSucc
             </button>
           </div>
         )}
+      </div>
       </div>
 
       {approvalOpen && (

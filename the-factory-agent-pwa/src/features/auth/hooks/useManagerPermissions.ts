@@ -52,7 +52,7 @@ export function useManagerPermissions(): ManagerPermissions {
       canApprovePayroll: canAccessPayroll,
       canEditCompanySettings: isOwner || isAdmin,
       canManageAttendanceSettings: isOwner || isAdmin,
-      canApproveCrmCustomFields: isOwner || isAdmin,
+      canApproveCrmCustomFields: isOwner || isAdmin || isSupervisor,
     };
   }, [identity, companySettings]);
 }

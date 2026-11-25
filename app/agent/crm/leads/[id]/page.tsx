@@ -43,7 +43,12 @@ import {
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
-import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from "@/lib/crm/custom-fields";
+import {
+  formValuesFromLead,
+  serializeCustomFields,
+  validateCustomFieldValues,
+  visibleLeadFieldsForDetail,
+} from "@/lib/crm/custom-fields";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
 import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
@@ -503,6 +508,11 @@ export default function LeadDetailsPage() {
   const { data: leadData, isLoading } = useLead(leadId, companyId, "/agent");
   const { data: leadFields = [] } = useLeadFields(companyId, "/agent");
   const [showFieldDialog, setShowFieldDialog] = useState(false);
+  const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
+  const visibleCustomFields = useMemo(
+    () => visibleLeadFieldsForDetail(leadFields, leadData?.custom_fields, sessionFieldIds),
+    [leadFields, leadData?.custom_fields, sessionFieldIds],
+  );
   const { data: labels = [] } = useCrmLabels(companyId, "/agent");
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
@@ -604,7 +614,7 @@ export default function LeadDetailsPage() {
       toast.error(`Check Contact ${firstContactError + 1}.`);
       return;
     }
-    const customErrors = validateCustomFieldValues(leadFields, editForm.customFields);
+    const customErrors = validateCustomFieldValues(visibleCustomFields, editForm.customFields);
     if (Object.keys(customErrors).length > 0) {
       toast.error(Object.values(customErrors)[0]);
       return;
@@ -621,7 +631,7 @@ export default function LeadDetailsPage() {
       status: editForm.status,
       company_id: companyId,
       contacts,
-      custom_fields: serializeCustomFields(leadFields, editForm.customFields),
+      custom_fields: serializeCustomFields(visibleCustomFields, editForm.customFields),
     };
     updateLead({ leadId, payload });
   };
@@ -684,6 +694,7 @@ export default function LeadDetailsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Add New Lead button commented out per request
             <button
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 bg-white rounded-[14px] text-[13px] font-semibold text-[#64748B] hover:border-gray-300 transition-all shadow-sm whitespace-nowrap"
               id="add-new-lead-btn"
@@ -692,6 +703,7 @@ export default function LeadDetailsPage() {
               <span className="hidden min-[480px]:inline">Add New Lead</span>
               <span className="min-[480px]:hidden">Add</span>
             </button>
+            */}
             {isEditing ? (
               <button
                 onClick={handleSave}
@@ -793,17 +805,16 @@ export default function LeadDetailsPage() {
               {/* Right Part: Fields & Map */}
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
                 {isEditing ? (
-                  <div className="rounded-[20px] bg-white p-4 sm:p-5">
-                    <LeadContactsSlider
-                      contacts={editForm.contacts}
-                      activeIndex={activeContactIndex}
-                      errors={contactErrors}
-                      onActiveIndexChange={setActiveContactIndex}
-                      onChange={updateContact}
-                      onAdd={addContact}
-                      onRemove={removeContact}
-                    />
-                  </div>
+                  <LeadContactsSlider
+                    contacts={editForm.contacts}
+                    activeIndex={activeContactIndex}
+                    errors={contactErrors}
+                    variant="dark"
+                    onActiveIndexChange={setActiveContactIndex}
+                    onChange={updateContact}
+                    onAdd={addContact}
+                    onRemove={removeContact}
+                  />
                 ) : (
                   <LeadContactHeroSlider contacts={leadContacts} />
                 )}
@@ -1031,12 +1042,11 @@ export default function LeadDetailsPage() {
               <div className="mt-8 border-t border-gray-100 pt-6">
                 <h3 className="mb-4 text-[14px] font-semibold text-[#0B1215]">Custom fields</h3>
                 <LeadCustomFieldsEditor
-                  fields={leadFields}
-                  values={isEditing ? editForm.customFields : formValuesFromLead(leadFields, leadData.custom_fields)}
+                  fields={visibleCustomFields}
+                  values={isEditing ? editForm.customFields : formValuesFromLead(visibleCustomFields, leadData.custom_fields)}
                   disabled={!isEditing}
                   showAdd={isEditing}
                   agentNotice={isEditing}
-                  visibility="all"
                   onAddField={() => setShowFieldDialog(true)}
                   onChange={(key, value) => updateField("customFields", { ...editForm.customFields, [key]: value })}
                 />
@@ -1060,8 +1070,16 @@ export default function LeadDetailsPage() {
         <LeadFieldDialog
           companyId={companyId}
           apiBasePath="/agent"
+          isAgentContext
           onClose={() => setShowFieldDialog(false)}
-          onCreated={() => setShowFieldDialog(false)}
+          onCreated={(field) => {
+            setSessionFieldIds((current) => current.includes(field.id) ? current : [...current, field.id]);
+            updateField("customFields", {
+              ...editForm.customFields,
+              [field.key]: field.type === "checkbox" ? false : field.type === "multi_select" ? [] : "",
+            });
+            setShowFieldDialog(false);
+          }}
         />
       )}
     </div>

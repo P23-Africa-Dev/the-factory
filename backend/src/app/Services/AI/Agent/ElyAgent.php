@@ -34,6 +34,13 @@ use Throwable;
  */
 class ElyAgent
 {
+    /**
+     * Data from the last card read this turn (see config ely.agent.card_reads).
+     *
+     * @var array{tool: string, payload: array<string, mixed>}|null
+     */
+    private ?array $cardRead = null;
+
     public function __construct(
         private readonly ChatRouter $chatRouter,
         private readonly ToolRegistry $tools,
@@ -176,7 +183,10 @@ class ElyAgent
         $systemPrompt = $this->systemPrompt($context, $companyName);
 
         $toolCallCount = 0;
-        $sawUntrusted = false;
+        $this->cardRead = null;
+        /** @var 'none'|'lookup'|'content' $sawUntrusted strongest kind of user-written text read this turn */
+        $sawUntrusted = 'none';
+        $nudgedEmptyReply = false;
         /** @var ElyPendingAction|null $createdPending */
         $createdPending = null;
         $lastTool = null;
@@ -184,6 +194,27 @@ class ElyAgent
         $executed = [];
         $finalText = '';
         $lastResponse = null;
+
+        // The app's "Plan my day" buttons send a planning focus. Run the plan
+        // tool first so the reply always carries the plan card; the model then
+        // writes its answer around the result.
+        $planTool = $this->tools->get('planning.daily');
+        if (is_array($context->page['planning'] ?? null)
+            && isset($context->page['planning']['focus'])
+            && $planTool !== null
+            && $planTool->allowedFor($context->role)) {
+            $call = new ToolCall('plan-'.\Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(12)), 'planning.daily', []);
+            $messages[] = ChatMessage::assistant('', [$call]);
+            $this->threads->appendToolRequest($thread, '', [$call], 'app', 'planning', null, null);
+            [$content, $isError] = $this->runToolCall($context, $thread, $call, $planTool, $sawUntrusted, null, false, $onEvent);
+            $messages[] = ChatMessage::toolResult($call->id, $call->name, $content, $isError);
+            $this->threads->appendToolResult($thread, $call->id, $call->name, $content, $isError);
+            $toolCallCount++;
+            $lastTool = 'planning.daily';
+            if (! $isError) {
+                $sources[] = 'planning.daily';
+            }
+        }
 
         for ($step = 0; $step < $maxSteps; $step++) {
             if (microtime(true) > $deadline) {
@@ -221,6 +252,16 @@ class ElyAgent
             }
 
             if (! $response->wantsTools()) {
+                // An empty reply with no tool call (e.g. the model spent its
+                // whole token budget reasoning) gets one nudge to continue
+                // instead of ending the turn with "could not finish".
+                if (trim($response->text) === '' && ! $nudgedEmptyReply && $step + 1 < $maxSteps && $createdPending === null) {
+                    $nudgedEmptyReply = true;
+                    $messages[] = ChatMessage::user('(note from the app, not the user) Your last reply was empty. Continue the request now: call the tool you need, or answer the user briefly.');
+
+                    continue;
+                }
+
                 $finalText = $response->text;
                 break;
             }
@@ -252,7 +293,9 @@ class ElyAgent
                     $onEvent,
                 );
 
-                $sawUntrusted = $sawUntrusted || $untrusted;
+                if ($untrusted) {
+                    $sawUntrusted = $sawUntrusted === 'content' || ! $this->isLookupRead($call->name) ? 'content' : 'lookup';
+                }
                 if ($pending !== null) {
                     $createdPending = $pending;
                 }
@@ -298,7 +341,12 @@ class ElyAgent
             ];
             $lastTool = $last['tool'];
             $intentType = 'action';
+        } elseif ($this->cardRead !== null) {
+            // No action this turn: return the card data (e.g. the daily plan).
+            $payload = [...$this->cardRead['payload'], 'engine' => 'agent'];
+            $lastTool = $this->cardRead['tool'];
         }
+        $this->cardRead = null;
 
         $sources = array_values(array_unique($sources));
         $this->threads->appendAssistant(
@@ -317,6 +365,7 @@ class ElyAgent
     }
 
     /**
+     * @param  'none'|'lookup'|'content'  $sawUntrusted
      * @param  callable(string, array<string, mixed>): void|null  $onEvent
      * @return array{0: string, 1: bool, 2: bool, 3: ?ElyPendingAction, 4: ?array<string, mixed>}
      */
@@ -325,7 +374,7 @@ class ElyAgent
         ElyThread $thread,
         ToolCall $call,
         ?ElyTool $tool,
-        bool $sawUntrusted,
+        string $sawUntrusted,
         ?ElyPendingAction $createdPending,
         bool $overBudget,
         ?callable $onEvent,
@@ -380,6 +429,12 @@ class ElyAgent
                 ];
             }
 
+            // Reads that drive a card in the app (e.g. the daily plan) keep
+            // their data so the reply carries it as the payload.
+            if (in_array($tool->name(), (array) config('ely.agent.card_reads', []), true) && $result->payload !== []) {
+                $this->cardRead = ['tool' => $tool->name(), 'payload' => $result->payload];
+            }
+
             return [$this->encode($body), false, $result->untrusted, null, null];
         }
 
@@ -393,9 +448,14 @@ class ElyAgent
             return [$this->errorJson('ELY cannot do this. Explain the steps so the user can do it in the app.'), true, false, null, null];
         }
 
-        // After reading user-generated content in this turn, every write needs
-        // an explicit confirmation so injected text cannot act on its own.
-        if ($risk === ToolRisk::Safe && $sawUntrusted) {
+        // After reading user-generated text in this turn, writes need an
+        // explicit confirmation so injected text cannot act on its own:
+        // - after content (emails, files, drafts): every write;
+        // - after a record lookup (leads, tasks found by name): only writes
+        //   that create something new. Editing the record the user named
+        //   (stage, status, due date, subtask, visit log) is the normal
+        //   "find it, then change it" flow and runs directly.
+        if ($risk === ToolRisk::Safe && $this->untrustedNeedsConfirmation($sawUntrusted, $tool)) {
             $risk = ToolRisk::Confirm;
         }
 
@@ -598,6 +658,38 @@ class ElyAgent
         } catch (Throwable) {
             return now()->toIso8601String();
         }
+    }
+
+    private function isLookupRead(string $toolName): bool
+    {
+        return in_array($toolName, (array) config('ely.agent.lookup_reads', []), true);
+    }
+
+    /**
+     * @param  'none'|'lookup'|'content'  $sawUntrusted
+     */
+    private function untrustedNeedsConfirmation(string $sawUntrusted, ElyTool $tool): bool
+    {
+        return match ($sawUntrusted) {
+            'content' => true,
+            'lookup' => ! $this->editsExistingRecord($tool),
+            default => false,
+        };
+    }
+
+    /**
+     * A tool that edits one existing record needs that record's id
+     * (task_id, lead_id, kpi_id...). Creating tools have no required id.
+     */
+    private function editsExistingRecord(ElyTool $tool): bool
+    {
+        foreach ((array) ($tool->inputSchema()['required'] ?? []) as $field) {
+            if (is_string($field) && str_ends_with($field, '_id')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

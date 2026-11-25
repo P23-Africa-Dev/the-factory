@@ -95,3 +95,21 @@ describe('resolveAgentDeepLink (manager)', () => {
     expect(manager('/enterprise/onboarding')).toBe('/manager');
   });
 });
+
+describe('resolveAgentDeepLink (Company Drive)', () => {
+  it('opens the agent Drive screen and keeps ?file=', () => {
+    const agent = (url: string) => resolveAgentDeepLink(url, { mode: 'agent' });
+    expect(agent('/agent/drive?file=12')).toBe('/drive?file=12');
+    expect(agent('/drive?file=12')).toBe('/drive?file=12');
+    expect(agent('/agent/drive')).toBe('/drive');
+  });
+
+  it('opens the manager Drive screen and keeps ?file=', () => {
+    const manager = (url: string) => resolveAgentDeepLink(url, { mode: 'manager' });
+    expect(manager('/drive?file=12')).toBe('/manager/drive?file=12');
+    expect(manager('/manager/drive?file=3')).toBe('/manager/drive?file=3');
+    expect(
+      resolveAgentDeepLink('https://app.factory23.com/drive?file=9', { mode: 'manager', allowAbsolute: false }),
+    ).toBe('/manager/drive?file=9');
+  });
+});

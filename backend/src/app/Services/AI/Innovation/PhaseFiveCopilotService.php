@@ -154,11 +154,13 @@ PROMPT;
             'kind' => $isSpreadsheet ? 'spreadsheet' : 'document',
             'summary' => is_string($aiSummary) && trim($aiSummary) !== ''
                 ? AiPlainTextFormatter::normalize(trim($aiSummary))
-                : ($isPdf
-                    ? 'PDF received but analysis could not be completed. The file may be encrypted, corrupted, or unreadable. Try exporting as TXT or re-uploading an unlocked copy.'
-                    : ($isSpreadsheet
-                        ? 'Spreadsheet received but no readable rows were found. Ensure the file contains data rows (not only charts/images) or export as CSV and upload again.'
-                        : 'Document received but no readable text could be extracted. Upload TXT, CSV, DOCX, or a text-based PDF.')),
+                : match (true) {
+                    // Old binary Excel files have no reader on the server.
+                    $extension === 'xls' => "ELY can't read old .xls files. Save it as .xlsx or .csv and try again.",
+                    $isPdf => 'PDF received but analysis could not be completed. The file may be encrypted, corrupted, or unreadable. Try exporting as TXT or re-uploading an unlocked copy.',
+                    $isSpreadsheet => 'Spreadsheet received but no readable rows were found. Ensure the file contains data rows (not only charts/images) or export as CSV and upload again.',
+                    default => 'Document received but no readable text could be extracted. Upload TXT, CSV, DOCX, or a text-based PDF.',
+                },
             'extracted_chars' => is_string($extractedText) ? mb_strlen($extractedText) : 0,
             'ai_generated' => is_string($aiSummary) && trim($aiSummary) !== '',
             'analysis_method' => $analysisMethod,

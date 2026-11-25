@@ -129,13 +129,13 @@ export function PaymentOverview({ overview, currency }: PaymentOverviewProps) {
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
-      <div className="p-3 sm:p-5 flex-1 min-w-0 flex flex-col">
+      <div className="se-chart p-3 sm:p-5 flex-1 min-w-0 flex flex-col">
         <div className="flex items-start justify-between gap-4">
-          <h2 className="text-[20px] font-bold text-[#0B1215] font-[poppins] pt-1.5">
+          <h2 className="text-[20px] font-bold text-white font-[poppins] pt-1.5">
             Payment Overview
           </h2>
 
-          <div className="flex items-center gap-2.5 bg-white rounded-2xl pl-1.5 pr-4 py-1.5 shadow-[0px_2px_10px_rgba(0,0,0,0.08)]">
+          <div className="flex items-center gap-2.5 bg-white rounded-2xl pl-1.5 pr-4 py-1.5 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
             <div className="w-11 h-11 rounded-full bg-[#E8612D] flex items-center justify-center shrink-0">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                 <circle cx="8.5" cy="9.5" r="1.6" fill="white" />
@@ -205,11 +205,11 @@ export function PaymentOverview({ overview, currency }: PaymentOverviewProps) {
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col lg:max-w-71.5 gap-2.5">
-        <div className="bg-white rounded-[20px] px-4 py-4 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] w-71.5 h-42.25 flex flex-col">
-          <p className="text-[22px] sm:text-[28px] lg:text-[32px] font-bold text-[#34373C] leading-tight tracking-tight font-[poppins]">
+        <div className="se-stat-card px-4 py-4 w-71.5 h-42.25 flex flex-col">
+          <p className="text-[22px] sm:text-[28px] lg:text-[32px] font-bold text-white leading-tight tracking-tight font-[poppins]">
             {formatPayrollMoney(overview?.total_commission ?? 0, currency)}
           </p>
-          <p className="text-[14px] font-light text-[#34373C] mb-2.5">
+          <p className="text-[14px] font-light text-white/75 mb-2.5">
             Total Commissions
           </p>
           <div className="flex items-end gap-2 shrink-0">
@@ -220,19 +220,19 @@ export function PaymentOverview({ overview, currency }: PaymentOverviewProps) {
                 <div className="h-full w-full" />
               )}
             </div>
-            <div className="inline-flex items-center gap-1 text-[15px] font-medium">
-              {todayPresentAgents} <Image src={ArrowDown} alt="" width={7} />
+            <div className="inline-flex items-center gap-1 text-[15px] font-medium text-white/85">
+              {todayPresentAgents} <Image src={ArrowDown} alt="" width={7} className="brightness-0 invert" />
             </div>
           </div>
         </div>
 
         {!isAgent && (
-          <div className="bg-white flex rounded-[20px] px-4 py-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] w-71.5 h-17 items-center">
+          <div className="se-stat-card flex px-4 py-0 w-71.5 h-17 items-center">
             <div className="shrink-0 mr-2">
-              <p className="text-[16px] sm:text-[20px] font-bold text-[#34373C] tracking-tight font-[poppins]">
+              <p className="text-[16px] sm:text-[20px] font-bold text-white tracking-tight font-[poppins]">
                 {formatPayrollMoney(overview?.pending_approval ?? 0, currency)}
               </p>
-              <p className="text-[12px] font-light text-[#34373C] leading-none">
+              <p className="text-[12px] font-light text-white/75 leading-none">
                 Pending Approvals
               </p>
             </div>
@@ -243,14 +243,14 @@ export function PaymentOverview({ overview, currency }: PaymentOverviewProps) {
                 <div className="h-full w-full" />
               )}
             </div>
-            <div className="inline-flex items-center gap-1 text-[15px] font-medium ml-3.5">
-              20% <Image src={ArrowDown} alt="" width={7} />
+            <div className="inline-flex items-center gap-1 text-[15px] font-medium text-white/85 ml-3.5">
+              20% <Image src={ArrowDown} alt="" width={7} className="brightness-0 invert" />
             </div>
           </div>
         )}
       </div>
 
-      <div className="bg-[#09232D] min-h-55 lg:max-h-67.25 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-3xl lg:max-w-115.25 py-5 px-3.75 flex-1 min-w-0 relative overflow-hidden flex flex-col">
+      <div className="se-stat-card min-h-55 lg:max-h-67.25 lg:max-w-115.25 py-5 px-3.75 flex-1 min-w-0 relative overflow-hidden flex flex-col">
         <div className="relative z-10 flex flex-col flex-1">
           <div className="px-4.5 py-3.25 bg-[#041820] rounded-[20px] w-fit shadow-[0px_2px_3px_0px_#0000004D,0px_6px_10px_4px_#00000026]">
             <p className="text-[28px] sm:text-[38px] lg:text-[48px] text-white leading-tight tracking-tight">

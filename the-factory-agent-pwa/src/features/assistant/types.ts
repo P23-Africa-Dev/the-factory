@@ -18,6 +18,8 @@ export interface ThreadSummary {
   created_at: string;
   message_count: number;
   last_message_preview: string;
+  /** Short chat title from the server; older servers leave it out. */
+  title?: string;
 }
 
 export interface ThreadDetail {

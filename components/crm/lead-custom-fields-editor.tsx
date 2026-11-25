@@ -1,6 +1,7 @@
 "use client";
 
 import type { LeadCustomFields, LeadFieldDefinition } from "@/lib/api/crm";
+import { isUniversalLeadField } from "@/lib/crm/custom-fields";
 
 export function LeadCustomFieldsEditor({
     fields,
@@ -11,7 +12,6 @@ export function LeadCustomFieldsEditor({
     onAddField,
     showAdd = true,
     agentNotice = false,
-    visibility = "create",
 }: {
     fields: LeadFieldDefinition[];
     values: LeadCustomFields;
@@ -21,23 +21,22 @@ export function LeadCustomFieldsEditor({
     onAddField?: () => void;
     showAdd?: boolean;
     agentNotice?: boolean;
-    visibility?: "create" | "all";
 }) {
-    const visible = fields.filter((field) => {
-        if (field.status !== "active" && field.status !== "pending") return false;
-        return visibility === "all" || field.show_on_create;
-    });
-
     return (
         <div className="space-y-3">
-            {visible.map((field) => (
+            {fields.map((field) => (
                 <label key={field.id} className="block">
                     <span className="mb-1 flex items-center gap-2 text-[12px] font-semibold text-gray-600">
                         {field.label}
-                        {field.is_required && field.status === "active" ? <span className="text-red-500">*</span> : null}
-                        {field.status === "pending" ? (
+                        {isUniversalLeadField(field) && field.is_required ? <span className="text-red-500">*</span> : null}
+                        {!field.is_universal ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                                This lead
+                            </span>
+                        ) : null}
+                        {field.universal_request_status === "pending" ? (
                             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
-                                Pending
+                                Awaiting approval
                             </span>
                         ) : null}
                     </span>
@@ -57,7 +56,7 @@ export function LeadCustomFieldsEditor({
             ) : null}
             {agentNotice ? (
                 <p className="text-[11px] text-gray-500">
-                    Fields you add are visible to the company and stay pending until a manager approves them.
+                    New fields stay on this lead unless you request universal use. Universal requests need manager approval before they appear on every form.
                 </p>
             ) : null}
         </div>
@@ -75,7 +74,7 @@ function FieldControl({
     disabled: boolean;
     onChange: (value: LeadCustomFields[string]) => void;
 }) {
-    const className = "w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] bg-white disabled:bg-gray-50";
+    const base = "w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] disabled:bg-gray-50";
 
     if (field.type === "textarea") {
         return (
@@ -83,8 +82,20 @@ function FieldControl({
                 value={typeof value === "string" ? value : ""}
                 disabled={disabled}
                 onChange={(event) => onChange(event.target.value)}
-                className={className}
+                className={base}
                 rows={3}
+            />
+        );
+    }
+
+    if (field.type === "checkbox") {
+        return (
+            <input
+                type="checkbox"
+                checked={value === true || value === "true" || value === "Yes" || value === 1}
+                disabled={disabled}
+                onChange={(event) => onChange(event.target.checked)}
+                className="mt-1"
             />
         );
     }
@@ -92,12 +103,12 @@ function FieldControl({
     if (field.type === "select") {
         return (
             <select
-                value={typeof value === "string" ? value : ""}
+                value={value == null ? "" : String(value)}
                 disabled={disabled}
                 onChange={(event) => onChange(event.target.value)}
-                className={className}
+                className={`${base} bg-white`}
             >
-                <option value="">Select {field.label}</option>
+                <option value="">Select…</option>
                 {field.options.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
@@ -106,14 +117,17 @@ function FieldControl({
     }
 
     if (field.type === "multi_select") {
-        const selected = Array.isArray(value) ? value : [];
+        const selected = Array.isArray(value) ? value.map(String) : [];
         return (
             <select
                 multiple
                 value={selected}
                 disabled={disabled}
-                onChange={(event) => onChange(Array.from(event.target.selectedOptions).map((option) => option.value))}
-                className={className}
+                onChange={(event) => {
+                    const next = Array.from(event.target.selectedOptions).map((option) => option.value);
+                    onChange(next);
+                }}
+                className={`${base} bg-white min-h-24`}
             >
                 {field.options.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -122,27 +136,23 @@ function FieldControl({
         );
     }
 
-    if (field.type === "checkbox") {
-        return (
-            <input
-                type="checkbox"
-                checked={value === true}
-                disabled={disabled}
-                onChange={(event) => onChange(event.target.checked)}
-                className="h-4 w-4"
-            />
-        );
-    }
-
-    const inputType = field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "url" ? "url" : field.type === "phone" ? "tel" : "text";
+    const inputType = field.type === "number"
+        ? "number"
+        : field.type === "date"
+            ? "date"
+            : field.type === "url"
+                ? "url"
+                : field.type === "phone"
+                    ? "tel"
+                    : "text";
 
     return (
         <input
             type={inputType}
-            value={typeof value === "string" || typeof value === "number" ? value : ""}
+            value={value == null ? "" : String(value)}
             disabled={disabled}
             onChange={(event) => onChange(event.target.value)}
-            className={className}
+            className={base}
         />
     );
 }

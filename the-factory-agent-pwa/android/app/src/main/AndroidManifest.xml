@@ -51,4 +51,10 @@
 
     <!-- Android 13+ persistent tracking notification -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Microphone for ELY voice notes. Capacitor's WebView asks the user for
+         it the first time the mic button is tapped. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>

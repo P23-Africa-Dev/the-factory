@@ -34,11 +34,11 @@ function OperationsContent() {
 
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="app-workspace-bg min-h-screen p-4 md:p-6 lg:p-8">
       <div className="max-w-400 mx-auto flex flex-col gap-5">
         {/* ── Tabs ── */}
         <div className="flex items-center gap-4 relative z-20 w-fit">
-          <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm">
+          <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
             {TABS.map((tab) => (
               <button
                 key={tab.value}
@@ -73,7 +73,7 @@ export default function OperationsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F4F7F9] p-8 flex items-center justify-center font-bold text-gray-400">
+        <div className="app-workspace-bg min-h-screen p-8 flex items-center justify-center font-bold text-white/60">
           Loading Operations...
         </div>
       }

@@ -14,8 +14,14 @@ import {
   useLeadFields,
   type LeadContact,
 } from '@/manager/features/crm';
-import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from '@/manager/features/crm/customFields';
+import {
+  formValuesFromLead,
+  serializeCustomFields,
+  validateCustomFieldValues,
+  visibleLeadFieldsForCreate,
+} from '@/manager/features/crm/customFields';
 import { PwaAddLeadFieldSheet, PwaCustomFields } from './PwaCustomFields';
+import { PwaPendingUniversalFieldsCard } from './PwaPendingUniversalFieldsCard';
 import type { LeadCustomFields } from '@/manager/features/crm';
 import { PwaProfileUrlInputs, isValidUrl, normalizeWebsite, parseProfileUrls } from './PwaProfileUrlInputs';
 import PhoneNumberInput from '@/components/ui/PhoneNumberInput';
@@ -58,17 +64,19 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
   const [customFields, setCustomFields] = useState<LeadCustomFields>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
   const [showFieldDialog, setShowFieldDialog] = useState(false);
+  const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
 
   const { data: pipelines = [] } = useCrmPipelines();
   const { data: labels = [] } = useCrmLabels();
   const { data: assignees = [] } = useCrmAssignees();
   const { data: leadFieldData } = useLeadFields();
   const leadFields = leadFieldData ?? [];
+  const visibleFields = visibleLeadFieldsForCreate(leadFields, sessionFieldIds);
 
   const [previousLeadFields, setPreviousLeadFields] = useState(leadFieldData);
   if (previousLeadFields !== leadFieldData) {
     setPreviousLeadFields(leadFieldData);
-    setCustomFields((current) => ({ ...formValuesFromLead(leadFields, {}), ...current }));
+    setCustomFields((current) => ({ ...formValuesFromLead(visibleFields, {}), ...current }));
   }
 
   const { mutate: createLead, isPending } = useCreateLead({
@@ -88,6 +96,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     setContactErrors([{}]);
     setCustomFields({});
     setCustomFieldErrors({});
+    setSessionFieldIds([]);
     setShowFieldDialog(false);
   };
 
@@ -112,7 +121,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
     if (form.website.trim() && !isValidUrl(form.website)) {
       newErrors.website = 'Enter a valid website URL';
     }
-    const nextCustomErrors = validateCustomFieldValues(leadFields, customFields);
+    const nextCustomErrors = validateCustomFieldValues(visibleFields, customFields);
 
     setContactErrors(newContactErrors);
     setErrors(newErrors);
@@ -176,7 +185,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
       source: form.source.trim() || 'manager upload',
       status: form.status || defaultStatus,
       assigned_to_user_id: form.assignedToUserId ? Number(form.assignedToUserId) : null,
-      custom_fields: serializeCustomFields(leadFields, customFields),
+      custom_fields: serializeCustomFields(visibleFields, customFields),
     });
   };
 
@@ -463,9 +472,10 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
               )}
 
               <div className="h-px bg-white/10 my-2" />
-              <p className="text-[10px] text-white/45 -mt-1">Custom fields apply to every lead in this company.</p>
+              <p className="text-[10px] text-white/45 -mt-1">New fields stay on this lead unless you make them universal.</p>
+              <PwaPendingUniversalFieldsCard fields={leadFields} />
               <PwaCustomFields
-                fields={leadFields}
+                fields={visibleFields}
                 values={customFields}
                 errors={customFieldErrors}
                 onChange={(key, value) => {
@@ -498,7 +508,18 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
               </div>
             </form>
           </motion.div>
-          <PwaAddLeadFieldSheet visible={showFieldDialog} onClose={() => setShowFieldDialog(false)} />
+          <PwaAddLeadFieldSheet
+            visible={showFieldDialog}
+            isAgentContext={false}
+            onClose={() => setShowFieldDialog(false)}
+            onCreated={(field) => {
+              setSessionFieldIds((current) => (current.includes(field.id) ? current : [...current, field.id]));
+              setCustomFields((current) => ({
+                ...current,
+                [field.key]: field.type === 'checkbox' ? false : field.type === 'multi_select' ? [] : '',
+              }));
+            }}
+          />
         </div>
       )}
     </AnimatePresence>

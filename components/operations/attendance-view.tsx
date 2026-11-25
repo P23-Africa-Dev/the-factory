@@ -49,25 +49,25 @@ function MgmtStatCard({
   isLoading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 flex flex-col min-h-44 overflow-hidden relative">
+    <div className="se-stat-card p-5 flex flex-col min-h-44 overflow-hidden relative">
       <div className="flex items-start justify-between gap-2 mb-1">
         {isLoading ? (
-          <div className="w-20 h-14 bg-gray-100 animate-pulse rounded-xl" />
+          <div className="w-20 h-14 bg-white/10 animate-pulse rounded-xl" />
         ) : (
-          <h2 className="text-[52px] font-bold text-[#1A1A1A] leading-none tracking-tight">
+          <h2 className="text-[52px] font-bold text-white leading-none tracking-tight">
             {value}
           </h2>
         )}
         <Link
           href={href}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold text-white shrink-0 mt-1 hover:opacity-90 transition-opacity"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold text-white shrink-0 mt-1 hover:opacity-90 transition-opacity shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
           style={{ background: accentBg }}
         >
           View All
           <ArrowUpRight size={11} />
         </Link>
       </div>
-      <p className="text-[13px] font-medium text-gray-500 mb-auto">{label}</p>
+      <p className="text-[13px] font-medium text-white/75 mb-auto">{label}</p>
       <div className="h-14 w-full mt-3 -mx-1">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
@@ -207,7 +207,7 @@ function AttendanceHistoryPanel({
   const attendanceRate = summary?.attendance_rate_percent ?? 0;
 
   return (
-    <div className="flex flex-col rounded-3xl overflow-hidden shadow-[0px_4px_14px_rgba(9,35,45,0.18)]">
+    <div className="flex flex-col rounded-3xl overflow-hidden border border-[rgb(71_120_147_/_20%)] shadow-[0_0_12px_2px_rgb(241_241_241_/_24%),0_0_22px_4px_rgb(71_120_147_/_22%),0_5px_10px_1px_rgb(0_0_0_/_25%),0_2px_4px_rgb(0_0_0_/_18%)]">
       {/* Dark header */}
       <div className="bg-dash-dark px-5 py-5 shrink-0">
         <div className="flex items-center justify-between mb-4">
@@ -603,7 +603,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <h1 className="text-[20px] font-extrabold text-dash-dark shrink-0">
+        <h1 className="text-[20px] font-extrabold text-white shrink-0">
           <span className="lg:hidden">Attendance Overview</span>
         </h1>
 
@@ -614,7 +614,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
             value={date}
             onChange={(e) => handleDateChange(e.target.value)}
             className="bg-white border border-[#D7D7D7] rounded-2xl px-4 py-2.5 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shrink-0"
-            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+            style={{ boxShadow: "0px 1px 3px 0px #0000004D, 0px 4px 8px 3px #00000026" }}
           />
 
           {/* Search */}
@@ -641,31 +641,17 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"
-              }`}
-            style={{
-              background: showFilters ? "#34373C" : "#F8F8F8",
-              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
-              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0, 0, 0, 0.06)",
-            }}
+            className={`se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0 cursor-pointer ${
+              showFilters ? "se-control-active" : ""
+            }`}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span
-              style={{
-                fontFamily: "Poppins, sans-serif",
-                fontWeight: 400,
-                fontSize: "10px",
-                lineHeight: "100%",
-              }}
-            >
-              Filter
-            </span>
+            <span>Filter</span>
           </button>
 
           <Link
             href="/map?tab=clocked-in"
-            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0"
-            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+            className="se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0"
           >
             <MapPin size={14} strokeWidth={2} />
             <span className="hidden sm:inline">Clocked-In Map</span>
@@ -673,8 +659,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
           <button
             onClick={() => setShowSettings(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+            className="se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0 cursor-pointer"
           >
             <Settings size={14} strokeWidth={2} />
             <span className="hidden sm:inline">Config</span>
@@ -949,29 +934,29 @@ export function AttendanceView({ basePath }: { basePath: string }) {
                 <div className="flex items-start gap-5">
                   <div className="flex-1 space-y-3 min-w-0">
                     <div>
-                      <h3 className="text-[13px] font-extrabold text-dash-dark leading-tight">
+                      <h3 className="text-[13px] font-extrabold text-white leading-tight">
                         {selected.name}
                       </h3>
-                      <p className="text-[11px] text-gray-400 mt-1 leading-relaxed max-w-45">
+                      <p className="text-[11px] text-white/65 mt-1 leading-relaxed max-w-45">
                         {selected.address}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                      <p className="text-[12px] text-gray-400">{selected.role}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Role</p>
+                      <p className="text-[12px] text-white/65">{selected.role}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
-                      <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Check In</p>
+                      <p className="text-[12px] text-white/65">{selected.checkIn}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check Out</p>
-                      <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Check Out</p>
+                      <p className="text-[12px] text-white/65">{selected.checkOut}</p>
                     </div>
                   </div>
 
                   <div className="shrink-0 flex flex-col items-center">
-                    <div className="bg-white p-2 rounded-[30px]">
+                    <div className="bg-white p-2 rounded-[30px] shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
                       <div className="w-32 h-32 rounded-[22px] overflow-hidden shadow-md">
                         <img
                           src={selected.avatar}

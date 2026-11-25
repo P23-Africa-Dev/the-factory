@@ -491,6 +491,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
+              {/* Assigned Zones & Create zone section commented out per request
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <p className="text-[11px] text-gray-500">Assigned Zones</p>
@@ -534,6 +535,7 @@ export function AddAgentModal({ onClose }: { onClose: () => void }) {
                 )}
                 <FieldError message={errors.assignedZoneIds} />
               </div>
+              */}
 
 
               <div>

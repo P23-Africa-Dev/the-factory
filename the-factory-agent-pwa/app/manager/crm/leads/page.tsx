@@ -8,7 +8,9 @@ import {
   useCrmLabels,
   useCrmNavigation,
   useCrmAssignees,
+  useLeadFields,
 } from '@/manager/features/crm';
+import { PwaPendingUniversalFieldsCard } from '@/manager/features/crm/components/PwaPendingUniversalFieldsCard';
 import { NotificationPanel, useUnreadCount } from '@/manager/features/notifications';
 
 export default function AllLeadsPage() {
@@ -29,6 +31,7 @@ export default function AllLeadsPage() {
   const { data: leadsData, isLoading } = useLeads(leadFilters);
   const { data: labels = [] } = useCrmLabels();
   const { data: assignees = [] } = useCrmAssignees();
+  const { data: leadFields = [] } = useLeadFields();
   const { count: unreadCount = 0 } = useUnreadCount();
 
   const leads = leadsData?.leads ?? [];
@@ -95,6 +98,8 @@ export default function AllLeadsPage() {
               )}
             </button>
           </div>
+
+          <PwaPendingUniversalFieldsCard fields={leadFields} />
 
           {/* Filter Row: Assignee & Status */}
           <div className="flex items-center gap-2 mb-4">

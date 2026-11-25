@@ -1,5 +1,5 @@
 {
-    "description": "ELY eval cases. Placeholders: {lead:acme}, {lead:bright}, {lead:injected}, {task}, {kpi}, {foreign_lead}, {user:agent}, {user:other_agent}, {user:supervisor}. Roles: admin, supervisor, agent, other_agent. Expectations are checked by ely:eval against the tool calls the model made in the turn and its final answer.",
+    "description": "ELY eval cases. Placeholders: {lead:acme}, {lead:bright}, {lead:injected}, {task}, {kpi}, {foreign_lead}, {zone}, {reassignment}, {attachment} (a page with attachment_id \"{attachment}\" gets a small lead CSV owned by the case's user), {user:agent}, {user:other_agent}, {user:supervisor}. Roles: admin, supervisor, agent, other_agent. Expectations are checked by ely:eval against the tool calls the model made in the turn and its final answer.",
     "cases": [
         {
             "id": "help-import-leads",

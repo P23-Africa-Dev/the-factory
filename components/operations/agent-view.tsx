@@ -162,34 +162,18 @@ export function AgentView({ basePath }: { basePath: string }) {
           {/* Filter toggle — icon before text */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"}`}
-            style={{
-              background: showFilters ? "#34373C" : "#F8F8F8",
-              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
-              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0, 0, 0, 0.06)",
-            }}
+            className={`se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0 cursor-pointer ${
+              showFilters ? "se-control-active" : ""
+            }`}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span
-              style={{
-                fontFamily: "Poppins, sans-serif",
-                fontWeight: 400,
-                fontStyle: "normal",
-                fontSize: "10px",
-                lineHeight: "100%",
-                letterSpacing: "0%",
-                verticalAlign: "middle",
-              }}
-            >
-              Filter
-            </span>
+            <span>Filter</span>
           </button>
 
           {/* Create — shorter than search */}
           <button
             onClick={() => setShowAddAgent(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-[#09232D] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+            className="se-primary flex items-center gap-2 px-5 py-2.5 text-[12px] font-semibold transition-all shrink-0 cursor-pointer"
           >
             <BookmarkPlus size={15} strokeWidth={2} />
             <span className="hidden sm:inline whitespace-nowrap">Add New Agent</span>

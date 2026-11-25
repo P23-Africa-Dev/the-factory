@@ -46,7 +46,7 @@ export default function DashboardPage() {
             <div className="h-[144px] w-[270px] lg:h-43.25 lg:w-84.25">
               <MyActivitiesChart />
             </div>
-            <div className="h-[120px] w-[250px] lg:h-36 lg:w-79.5">
+            <div className="h-36 w-[250px] lg:h-40 lg:w-79.5">
               <TotalLeadsChart />
             </div>
           </div>
@@ -57,7 +57,7 @@ export default function DashboardPage() {
           <div className="h-44">
             <MyActivitiesChart />
           </div>
-          <div className="h-36">
+          <div className="h-40">
             <TotalLeadsChart />
           </div>
         </div>
@@ -71,7 +71,7 @@ export default function DashboardPage() {
             <WeeklyTasksAgents />
           </Suspense>
           <DashboardMap basePath="/agent" />
-          <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75">
+          <div className="w-full lg:max-w-34 mt-0 lg:mt-23.75 lg:flex lg:flex-col">
             <CRMPipeline />
             <AIWorkspace />
           </div>

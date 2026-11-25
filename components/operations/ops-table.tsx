@@ -100,7 +100,7 @@ export function OpsTableStatus({ label, subText, isSelected, badgeClass }: OpsTa
 // ── Table container ─────────────────────────────────────────────────────────
 export function OpsTableContainer({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`bg-white rounded-[30px] pt-5 px-6 sm:px-10 pb-6 flex-1 min-w-0 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] ${className}`}>
+    <div className={`bg-white rounded-[30px] pt-5 px-6 sm:px-10 pb-6 flex-1 min-w-0 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] ${className}`}>
       {children}
     </div>
   );

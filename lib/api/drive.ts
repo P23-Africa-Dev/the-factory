@@ -32,6 +32,8 @@ export type DriveFile = {
   can_manage: boolean;
   grants: DriveFileGrant[];
   created_at: string | null;
+  /** ISO timestamp when the file is auto-deleted (ELY reports), or null. */
+  expires_at?: string | null;
 };
 
 export type DriveUsage = {
@@ -166,6 +168,17 @@ export async function deleteDriveFile(token: string, fileId: number, companyId?:
   });
 }
 
+/** Reads the JSON `message` from a failed download response, falling back when the body isn't JSON. */
+async function readDriveErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: unknown };
+    if (typeof body?.message === "string" && body.message.trim()) return body.message.trim();
+  } catch {
+    // Non-JSON body (e.g. a proxy error page).
+  }
+  return fallback;
+}
+
 export async function fetchDriveFileBlob(
   token: string,
   fileId: number,
@@ -184,7 +197,11 @@ export async function fetchDriveFileBlob(
   });
 
   if (!response.ok) {
-    throw new ApiRequestError("Unable to load file preview", response.status, null);
+    throw new ApiRequestError(
+      await readDriveErrorMessage(response, "Unable to load file preview"),
+      response.status,
+      null,
+    );
   }
 
   return response.blob();

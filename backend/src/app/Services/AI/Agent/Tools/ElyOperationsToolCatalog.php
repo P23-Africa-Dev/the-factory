@@ -107,7 +107,33 @@ final class ElyOperationsToolCatalog
 
                     return new ToolResult("Subtask '{$subtask->title}' marked ".($done ? 'done' : 'not done').'.', ['subtask_id' => (int) $subtask->id], ['tasks.subtasks.complete']);
                 }),
-            $this->tool('tasks.reassignment.respond', 'Accept or reject a task reassignment request sent to the user.',
+            new DefinedTool('tasks.reassignments.inbox', 'List task reassignment requests sent to the user (pending ones by default), with their reassignment_id. Use it before tasks.reassignment.respond.',
+                S::object(['status' => S::enum(['pending', 'accepted', 'rejected', 'cancelled', 'all'], 'Default: pending')]),
+                ToolKind::Read, ToolRisk::Safe, self::ALL, 'Checking reassignment requests', [],
+                ['status' => ['nullable', 'string', Rule::in(['pending', 'accepted', 'rejected', 'cancelled', 'all'])]],
+                function (ToolContext $c, array $a): ToolResult {
+                    $status = (string) ($a['status'] ?? 'pending');
+                    $items = $this->reassignments->inbox($c->user, $c->companyId, $status === 'all' ? null : $status)
+                        ->take(20)
+                        ->map(static fn (TaskReassignment $r): array => [
+                            'reassignment_id' => (int) $r->id,
+                            'task_id' => (int) $r->task_id,
+                            'task_title' => (string) $r->task?->title,
+                            'from' => $r->fromUser?->name,
+                            'requested_by' => $r->requestedBy?->name,
+                            'status' => $r->status?->value,
+                            'reason' => $r->reason,
+                            'expires_at' => $r->expires_at?->toIso8601String(),
+                        ])->values()->all();
+
+                    return new ToolResult(
+                        $items === [] ? "No {$status} reassignment requests for you." : count($items).' reassignment request(s).',
+                        ['items' => $items],
+                        ['tasks.reassignments.inbox'],
+                        untrusted: true,
+                    );
+                }, $this->scoped),
+            $this->tool('tasks.reassignment.respond', 'Accept or reject a task reassignment request sent to the user. Find the reassignment_id with tasks.reassignments.inbox. Needs confirmation.',
                 S::object(['reassignment_id' => S::int(), 'decision' => S::enum(['accept', 'reject']), 'note' => S::str()], ['reassignment_id', 'decision']),
                 ToolRisk::Confirm, self::ALL, 'Preparing your reply', ['reassignment_id' => 'reassignment'],
                 ['reassignment_id' => ['required', 'integer'], 'decision' => ['required', Rule::in(['accept', 'reject'])], 'note' => ['nullable', 'string', 'max:1000']],
@@ -378,7 +404,36 @@ final class ElyOperationsToolCatalog
 
                     return new ToolResult("Zone '{$zone->name}' was created.", ['zone_id' => (int) $zone->id], ['zones.create']);
                 }),
-            $this->tool('zones.delete', 'Delete a territory zone. Needs confirmation.',
+            new DefinedTool('zones.list', 'List the territory zones with their zone ids (search by zone, state or local area name). Use it to find a zone id.',
+                S::object(['search' => S::str('Zone, state or local area name')]),
+                ToolKind::Read, ToolRisk::Safe, self::MANAGERS, 'Looking up zones', [],
+                ['search' => ['nullable', 'string', 'max:120']],
+                function (ToolContext $c, array $a): ToolResult {
+                    $search = trim((string) ($a['search'] ?? ''));
+                    $zones = $this->zones->listForCompanyMember($c->user, ['company_id' => $c->companyId, 'q' => $search !== '' ? $search : null]);
+                    // "Eti Osa" should find "Eti-Osa": retry on the words alone.
+                    if ($zones->isEmpty() && $search !== '' && preg_match('/[\s\-_]/', $search) === 1) {
+                        $loose = '%'.implode('%', preg_split('/[\s\-_]+/', $search, -1, PREG_SPLIT_NO_EMPTY) ?: []).'%';
+                        $zones = CompanyZone::query()->where('company_id', $c->companyId)
+                            ->where(static fn ($q) => $q->where('name', 'like', $loose)->orWhere('lga_name', 'like', $loose)->orWhere('state_name', 'like', $loose))
+                            ->get();
+                    }
+                    $items = $zones->take(50)->map(static fn (CompanyZone $z): array => [
+                        'zone_id' => (int) $z->id,
+                        'name' => (string) $z->name,
+                        'country_code' => (string) $z->country_code,
+                        'state' => (string) $z->state_name,
+                        'local_area' => (string) $z->lga_name,
+                        'active' => (bool) $z->is_active,
+                    ])->values()->all();
+
+                    return new ToolResult(
+                        $items === [] ? 'No zones matched.' : count($items).' zone(s).',
+                        ['items' => $items, 'total' => $zones->count()],
+                        ['zones.list'],
+                    );
+                }, $this->scoped),
+            $this->tool('zones.delete', 'Delete a territory zone. Find the zone id with zones.list. Needs confirmation.',
                 S::object(['zone_id' => S::int()], ['zone_id']),
                 ToolRisk::Confirm, self::MANAGERS, 'Preparing the deletion', ['zone_id' => 'zone'], ['zone_id' => ['required', 'integer']],
                 function (ToolContext $c, array $a): ToolResult {

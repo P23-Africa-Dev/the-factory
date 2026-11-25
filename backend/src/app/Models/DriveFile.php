@@ -22,6 +22,7 @@ class DriveFile extends Model
         'ely_report_id',
         'metadata',
         'uploaded_by_user_id',
+        'expires_at',
     ];
 
     protected function casts(): array
@@ -29,6 +30,7 @@ class DriveFile extends Model
         return [
             'size_bytes' => 'integer',
             'metadata' => 'array',
+            'expires_at' => 'datetime',
         ];
     }
 

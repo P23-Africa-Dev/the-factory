@@ -45,7 +45,7 @@ export default defineConfig({
                     clearMocks: true,
                     restoreMocks: true,
                     mockReset: true,
-                    include: ["the-factory-agent-pwa/src/**/*.test.ts"],
+                    include: ["the-factory-agent-pwa/src/**/*.test.ts", "the-factory-agent-pwa/src/**/*.test.tsx"],
                     exclude: ["backend/**", "node_modules/**"],
                 },
                 resolve: {

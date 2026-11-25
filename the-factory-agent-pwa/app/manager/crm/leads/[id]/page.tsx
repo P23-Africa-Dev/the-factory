@@ -18,7 +18,12 @@ import {
   type LeadContact,
   type LeadCustomFields,
 } from '@/manager/features/crm';
-import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from '@/manager/features/crm/customFields';
+import {
+  formValuesFromLead,
+  serializeCustomFields,
+  validateCustomFieldValues,
+  visibleLeadFieldsForDetail,
+} from '@/manager/features/crm/customFields';
 import { PwaAddLeadFieldSheet, PwaCustomFields } from '@/manager/features/crm/components/PwaCustomFields';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
@@ -128,6 +133,8 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   const [editLocation, setEditLocation] = useState('');
   const [editCustomFields, setEditCustomFields] = useState<LeadCustomFields>({});
   const [showFieldDialog, setShowFieldDialog] = useState(false);
+  const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
+  const visibleFields = visibleLeadFieldsForDetail(leadFields, lead?.customFields, sessionFieldIds);
 
   // Manager note & activity inputs
   const [noteInput, setNoteInput] = useState('');
@@ -260,7 +267,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
           email: editEmail.trim() || null,
           location: editLocation.trim() || null,
           contacts,
-          custom_fields: serializeCustomFields(leadFields, editCustomFields),
+          custom_fields: serializeCustomFields(visibleFields, editCustomFields),
         },
       },
       {
@@ -521,10 +528,10 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
               <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-5 shadow-lg">
                 <h4 className="font-bold text-sm text-white mb-4">Custom fields</h4>
                 <PwaCustomFields
-                  fields={leadFields}
-                  values={editMode ? editCustomFields : formValuesFromLead(leadFields, lead.customFields)}
+                  fields={visibleFields}
+                  values={editMode ? editCustomFields : formValuesFromLead(visibleFields, lead.customFields)}
                   disabled={!editMode}
-                  visibility="all"
+                  agentNotice={editMode}
                   onChange={(key, value) => setEditCustomFields((current) => ({ ...current, [key]: value }))}
                   onAddField={editMode ? () => setShowFieldDialog(true) : undefined}
                 />
@@ -634,7 +641,18 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
           )}
         </div>
       </div>
-      <PwaAddLeadFieldSheet visible={showFieldDialog} onClose={() => setShowFieldDialog(false)} />
+      <PwaAddLeadFieldSheet
+        visible={showFieldDialog}
+        isAgentContext={false}
+        onClose={() => setShowFieldDialog(false)}
+        onCreated={(field) => {
+          setSessionFieldIds((current) => (current.includes(field.id) ? current : [...current, field.id]));
+          setEditCustomFields((current) => ({
+            ...current,
+            [field.key]: field.type === 'checkbox' ? false : field.type === 'multi_select' ? [] : '',
+          }));
+        }}
+      />
     </ScreenErrorBoundary>
   );
 }

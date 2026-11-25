@@ -5,7 +5,7 @@ import { AlertCircle, ServerCrash } from "lucide-react";
 
 import type { CrmLabel, FailedImportRow } from "@/lib/api/crm";
 import { FALLBACK_SUPPORTED_CURRENCIES } from "@/lib/constants/currencies";
-import { LEAD_INDUSTRIES } from "@/lib/crm/industries";
+import { IndustryCombobox } from "@/components/crm/industry-combobox";
 import {
     IMPORT_PRIORITIES,
     IMPORT_ROW_FIELDS,
@@ -119,9 +119,17 @@ export function ImportFailedRowEditor({
                                 {FALLBACK_SUPPORTED_CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
                             </select>
                         );
-                    } else if (field.kind === "industry" || field.kind === "source") {
+                    } else if (field.kind === "industry") {
+                        control = (
+                            <IndustryCombobox
+                                value={value}
+                                onChange={(next) => onChange(field.key, next)}
+                                placeholder="Pick or type…"
+                                inputClassName={common.className}
+                            />
+                        );
+                    } else if (field.kind === "source") {
                         const listId = `${id}-options`;
-                        const options = field.kind === "industry" ? LEAD_INDUSTRIES : IMPORT_SOURCE_SUGGESTIONS;
                         control = (
                             <>
                                 <input
@@ -132,7 +140,7 @@ export function ImportFailedRowEditor({
                                     onChange={(e) => onChange(field.key, e.target.value)}
                                 />
                                 <datalist id={listId}>
-                                    {options.map((o) => <option key={o} value={o} />)}
+                                    {IMPORT_SOURCE_SUGGESTIONS.map((o) => <option key={o} value={o} />)}
                                 </datalist>
                             </>
                         );

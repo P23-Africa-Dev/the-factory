@@ -69,6 +69,8 @@ export function useDashboardOverview(params: UseDashboardParams = {}) {
         },
         enabled: hasActiveApiSession(token) && hasHydrated,
         staleTime: 1000 * 60 * 2,
+        // Keep live widgets (ongoing tasks, activity) moving while the dashboard is open.
+        refetchInterval: 60_000,
     });
 }
 

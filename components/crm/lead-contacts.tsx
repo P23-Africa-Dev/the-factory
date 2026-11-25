@@ -22,6 +22,7 @@ export function LeadContactsSlider({
   activeIndex,
   errors = [],
   suggestions,
+  variant = "light",
   onActiveIndexChange,
   onChange,
   onAdd,
@@ -33,6 +34,7 @@ export function LeadContactsSlider({
   activeIndex: number;
   errors?: LeadContactErrors[];
   suggestions?: { field: LeadDuplicateField | null; matches: LeadDuplicateMatch[] };
+  variant?: "light" | "dark";
   onActiveIndexChange: (index: number) => void;
   onChange: (index: number, contact: LeadContact) => void;
   onAdd: () => void;
@@ -44,6 +46,7 @@ export function LeadContactsSlider({
   const contactErrors = errors[activeIndex] ?? {};
   const canGoBack = activeIndex > 0;
   const canGoForward = activeIndex < contacts.length - 1;
+  const isDark = variant === "dark";
 
   if (!contact) return null;
 
@@ -58,38 +61,55 @@ export function LeadContactsSlider({
     <LeadDuplicateSuggestions matches={suggestions.matches} onSelect={onSelectSuggestion} />
   ) : null;
 
+  const darkInputClass =
+    "bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-[#6FA8A6] placeholder:text-white/30";
+  const darkLabelClass = "block text-gray-400 text-[11px] font-medium mb-1";
+  const profileUrls = contact.profile_urls?.length ? contact.profile_urls : [""];
+
   return (
-    <section className="mb-5 space-y-4" aria-label="Lead contact details">
+    <section className={isDark ? "space-y-4" : "mb-5 space-y-4"} aria-label="Lead contact details">
       <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-gray-200" />
-        <span className="text-center text-[12px] font-medium text-gray-500">
+        <div className={`h-px flex-1 ${isDark ? "bg-[#2D454B]" : "bg-gray-200"}`} />
+        <span className={`text-center text-[12px] font-medium ${isDark ? "text-white/70" : "text-gray-500"}`}>
           Lead Contact Details
         </span>
         <button
           type="button"
           onClick={onAdd}
           aria-label="Add another contact"
-          className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-[#0B1215] shadow-sm transition hover:border-[#6FA8A6] hover:bg-[#F1F8F7]"
+          className={`flex h-7 w-7 items-center justify-center rounded-full border shadow-sm transition cursor-pointer ${
+            isDark
+              ? "border-[#2D454B] bg-[#1A2E33] text-white hover:border-[#6FA8A6] hover:bg-[#1E383F]"
+              : "border-gray-200 bg-white text-[#0B1215] hover:border-[#6FA8A6] hover:bg-[#F1F8F7]"
+          }`}
         >
           <Plus size={14} />
         </button>
       </div>
 
-      <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+      <div
+        className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+          isDark ? "border-[#2D454B] bg-[#14292E]" : "border-gray-100 bg-gray-50"
+        }`}
+      >
         <button
           type="button"
           aria-label="Previous contact"
           disabled={!canGoBack}
           onClick={() => onActiveIndexChange(activeIndex - 1)}
-          className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white hover:text-[#0B1215] disabled:cursor-not-allowed disabled:opacity-25"
+          className={`rounded-lg p-1.5 transition disabled:cursor-not-allowed disabled:opacity-25 ${
+            isDark
+              ? "text-white/60 hover:bg-[#1A2E33] hover:text-white"
+              : "text-gray-500 hover:bg-white hover:text-[#0B1215]"
+          }`}
         >
           <ChevronLeft size={16} />
         </button>
         <div className="text-center">
-          <p className="text-[12px] font-semibold text-[#0B1215]">
+          <p className={`text-[12px] font-semibold ${isDark ? "text-white" : "text-[#0B1215]"}`}>
             Contact {activeIndex + 1} of {contacts.length}
           </p>
-          <p className="text-[10px] text-gray-400">
+          <p className={`text-[10px] ${isDark ? "text-white/50" : "text-gray-400"}`}>
             {activeIndex === 0 ? "Primary contact" : "Additional contact"}
           </p>
         </div>
@@ -99,7 +119,11 @@ export function LeadContactsSlider({
               type="button"
               aria-label={`Remove contact ${activeIndex + 1}`}
               onClick={() => onRemove(activeIndex)}
-              className="rounded-lg p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
+              className={`rounded-lg p-1.5 transition ${
+                isDark
+                  ? "text-white/50 hover:bg-red-500/15 hover:text-red-300"
+                  : "text-gray-400 hover:bg-red-50 hover:text-red-500"
+              }`}
             >
               <Trash2 size={14} />
             </button>
@@ -109,13 +133,124 @@ export function LeadContactsSlider({
             aria-label="Next contact"
             disabled={!canGoForward}
             onClick={() => onActiveIndexChange(activeIndex + 1)}
-            className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white hover:text-[#0B1215] disabled:cursor-not-allowed disabled:opacity-25"
+            className={`rounded-lg p-1.5 transition disabled:cursor-not-allowed disabled:opacity-25 ${
+              isDark
+                ? "text-white/60 hover:bg-[#1A2E33] hover:text-white"
+                : "text-gray-500 hover:bg-white hover:text-[#0B1215]"
+            }`}
           >
             <ChevronRight size={16} />
           </button>
         </div>
       </div>
 
+      {isDark ? (
+        <div key={activeIndex} className="animate-in fade-in slide-in-from-right-2 grid grid-cols-1 min-[480px]:grid-cols-2 gap-x-6 sm:gap-x-8 gap-y-4 duration-200">
+          <div>
+            <label className={darkLabelClass}>Name *</label>
+            <input
+              type="text"
+              value={contact.name}
+              onChange={(event) => setField("name", event.target.value)}
+              placeholder="E.g John Doe"
+              className={darkInputClass}
+            />
+            <FieldError message={contactErrors.name} />
+            {suggestions?.field === "name" ? suggestionList : null}
+          </div>
+
+          <div>
+            <label className={darkLabelClass}>Email</label>
+            <input
+              type="email"
+              value={contact.email ?? ""}
+              onChange={(event) => setField("email", event.target.value)}
+              placeholder="E.g john.doe@example.com"
+              className={darkInputClass}
+            />
+            <FieldError message={contactErrors.email} />
+            {suggestions?.field === "email" ? suggestionList : null}
+          </div>
+
+          <div>
+            <label className={darkLabelClass}>Phone</label>
+            <PhoneNumberInput
+              value={contact.phone ?? ""}
+              onChange={(value) => setField("phone", value)}
+              placeholder="E.g 555-0199"
+              defaultCountry="GB"
+              variant="dark"
+            />
+            <FieldError message={contactErrors.phone} />
+            {suggestions?.field === "phone" ? suggestionList : null}
+          </div>
+
+          <div>
+            <label className={darkLabelClass}>Location</label>
+            <input
+              type="text"
+              value={contact.location ?? ""}
+              onChange={(event) => setField("location", event.target.value)}
+              placeholder="E.g New York, USA"
+              className={darkInputClass}
+            />
+            <FieldError message={contactErrors.location} />
+          </div>
+
+          <div>
+            <label className={darkLabelClass}>Position</label>
+            <input
+              type="text"
+              value={contact.position ?? ""}
+              onChange={(event) => setField("position", event.target.value)}
+              placeholder="E.g Head of Sales"
+              className={darkInputClass}
+            />
+            <FieldError message={contactErrors.position} />
+          </div>
+
+          <div className="min-[480px]:col-span-2 space-y-2">
+            <label className={darkLabelClass}>Profile URL</label>
+            {profileUrls.map((url, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => {
+                    const next = [...profileUrls];
+                    next[idx] = e.target.value;
+                    onChange(activeIndex, { ...contact, profile_urls: next });
+                  }}
+                  placeholder="https://linkedin.com/in/username"
+                  className={darkInputClass}
+                />
+                {profileUrls.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = profileUrls.filter((_, i) => i !== idx);
+                      onChange(activeIndex, { ...contact, profile_urls: next.length ? next : [""] });
+                    }}
+                    className="shrink-0 rounded-lg border border-[#2D454B] bg-[#1A2E33] px-2.5 py-2 text-[12px] text-white/70 hover:text-white cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+            {profileUrls.some((u) => u.trim() !== "") && (
+              <button
+                type="button"
+                onClick={() => onChange(activeIndex, { ...contact, profile_urls: [...profileUrls, ""] })}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6FA8A6] hover:underline cursor-pointer"
+              >
+                <Plus size={12} /> Add another URL
+              </button>
+            )}
+            <FieldError message={contactErrors.profileUrls} />
+          </div>
+        </div>
+      ) : (
       <div key={activeIndex} className="animate-in fade-in slide-in-from-right-2 space-y-4 duration-200">
         <div>
           <FormRow label="Name *" labelClassName="w-28">
@@ -190,6 +325,7 @@ export function LeadContactsSlider({
           errors={contactErrors.profileUrls ? [contactErrors.profileUrls] : []}
         />
       </div>
+      )}
     </section>
   );
 }

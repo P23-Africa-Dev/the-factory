@@ -73,6 +73,37 @@ export function parseCsvContent(content: string): ParsedCsv {
     return { headers, rows };
 }
 
+export type CsvWithoutEmptyColumns = ParsedCsv & {
+    /** Display names of the columns that were dropped ("Column N" when the header is blank). */
+    skippedColumns: string[];
+};
+
+/**
+ * Drop columns that have no value in any data row (with or without a header).
+ * Such columns (often stray, formatted-but-empty spreadsheet columns) must never
+ * be mapped, turned into a field, or sent with the import.
+ */
+export function dropEmptyColumns(parsed: ParsedCsv): CsvWithoutEmptyColumns {
+    const keep: number[] = [];
+    const skippedColumns: string[] = [];
+
+    parsed.headers.forEach((header, idx) => {
+        const hasValue = parsed.rows.some((row) => (row[idx] ?? "").trim() !== "");
+        if (hasValue) {
+            keep.push(idx);
+        } else {
+            skippedColumns.push(header.trim() || `Column ${idx + 1}`);
+        }
+    });
+
+    // Cells beyond the header row (ragged rows) are kept only if they belong to a kept column.
+    return {
+        headers: keep.map((idx) => parsed.headers[idx]),
+        rows: parsed.rows.map((row) => keep.map((idx) => row[idx] ?? "")),
+        skippedColumns,
+    };
+}
+
 function escapeCsvValue(value: string): string {
     if (/[",\r\n]/.test(value)) {
         return `"${value.replace(/"/g, '""')}"`;

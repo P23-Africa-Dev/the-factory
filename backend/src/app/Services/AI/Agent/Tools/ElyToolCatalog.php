@@ -68,6 +68,7 @@ final class ElyToolCatalog
                 policy: $this->policy,
                 scopedResolver: $this->scopedResolver,
                 normalizer: $this->normalizer,
+                roles: $def['roles'] ?? null,
             );
         }
 
@@ -98,7 +99,7 @@ final class ElyToolCatalog
     }
 
     /**
-     * @return array<string, array{description: string, schema: array<string, mixed>, risk: mixed, label: string, scoped?: array<string, string>}>
+     * @return array<string, array{description: string, schema: array<string, mixed>, risk: mixed, label: string, scoped?: array<string, string>, roles?: array<int, string>}>
      */
     private function actionDefinitions(): array
     {
@@ -107,6 +108,12 @@ final class ElyToolCatalog
                 'description' => 'Create a field task. Managers can assign it to team members (use people/roster tools to find user ids); agents create tasks for themselves only. due_date must be in the future (ISO 8601).',
                 'label' => 'Creating the task',
                 'risk' => ToolRisk::Safe,
+                // Agents create tasks for themselves, as on the app's agent
+                // task screen: ActionToolRegistry sends them to
+                // TaskService::createSelf and the normalizer drops assignees.
+                // (The legacy engine's ToolPolicyService still keeps it
+                // manager-only, as do automations.)
+                'roles' => ['owner', 'admin', 'supervisor', 'agent'],
                 'scoped' => ['project_id' => 'project', 'assigned_agent_id' => 'user', 'assigned_agent_ids' => 'user'],
                 'schema' => self::object([
                     'title' => self::str('Short task title'),

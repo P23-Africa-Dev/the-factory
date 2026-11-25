@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, ChevronDown, Search, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -16,12 +16,20 @@ import type { ApiRequestError } from "@/lib/api/onboarding";
 import { LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadDuplicateNotice, LeadDuplicateSuggestions, LeadMergeDialog } from "@/components/crm/lead-duplicate-suggestions";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
-import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from "@/lib/crm/custom-fields";
+import {
+  formValuesFromLead,
+  serializeCustomFields,
+  validateCustomFieldValues,
+  visibleLeadFieldsForCreate,
+  visibleLeadFieldsForDetail,
+} from "@/lib/crm/custom-fields";
 import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
+import { PendingUniversalFieldsCard } from "@/components/crm/pending-universal-fields-card";
+import { IndustryCombobox } from "@/components/crm/industry-combobox";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
-import { LEAD_INDUSTRIES, LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
+import { LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
 import { FieldError } from "@/components/ui/field-error";
 import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
 
@@ -294,7 +302,15 @@ export function AddLeadModal({
   const [customFields, setCustomFields] = useState<LeadCustomFields>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
   const [showFieldDialog, setShowFieldDialog] = useState(false);
+  const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
   const customFieldsSeeded = useRef(false);
+
+  const visibleCustomFields = useMemo(
+    () => lead
+      ? visibleLeadFieldsForDetail(leadFields, lead.custom_fields, sessionFieldIds)
+      : visibleLeadFieldsForCreate(leadFields, sessionFieldIds),
+    [lead, leadFields, sessionFieldIds],
+  );
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [suggestField, setSuggestField] = useState<LeadDuplicateField | null>(null);
@@ -457,7 +473,7 @@ export function AddLeadModal({
     if (budgetAmount.trim() && (isNaN(Number(budgetAmount.replace(/,/g, ""))) || Number(budgetAmount.replace(/,/g, "")) < 0)) {
       e.budget = "Enter a valid budget amount.";
     }
-    const nextCustomErrors = validateCustomFieldValues(leadFields, customFields);
+    const nextCustomErrors = validateCustomFieldValues(visibleCustomFields, customFields);
     setCustomFieldErrors(nextCustomErrors);
     if (Object.keys(nextCustomErrors).length > 0) {
       e.customFields = "Check the custom fields.";
@@ -574,7 +590,7 @@ export function AddLeadModal({
       next_action: nextAction.trim() || null,
       last_interaction: lastInteraction.trim() || null,
       last_interaction_at: lastInteractionAt || null,
-      custom_fields: serializeCustomFields(leadFields, customFields),
+      custom_fields: serializeCustomFields(visibleCustomFields, customFields),
     };
   };
 
@@ -802,20 +818,14 @@ export function AddLeadModal({
 
             <div>
               <FormRow label="Industry" labelClassName="w-28">
-                <InlineInput
+                <IndustryCombobox
                   value={industry}
-                  list="lead-industry-options"
                   maxLength={LEAD_INDUSTRY_MAX_LENGTH}
-                  onChange={(e) => { setIndustry(e.target.value); clearError("industry"); }}
+                  onChange={(value) => { setIndustry(value); clearError("industry"); }}
                   placeholder="Pick or type, e.g Technology & Software"
                   className="col-span-2"
                   aria-invalid={errors.industry ? true : undefined}
                 />
-                <datalist id="lead-industry-options">
-                  {LEAD_INDUSTRIES.map((option) => (
-                    <option key={option} value={option} />
-                  ))}
-                </datalist>
               </FormRow>
               <FieldError message={errors.industry} />
             </div>
@@ -929,8 +939,15 @@ export function AddLeadModal({
 
           <div className="space-y-4 mb-5">
             <SectionDivider label="Custom fields" subtitle="Add a column when a lead has details this form does not list yet." />
+            {canManageLeads && companyId ? (
+              <PendingUniversalFieldsCard
+                fields={leadFields}
+                companyId={companyId}
+                apiBasePath={apiBasePath}
+              />
+            ) : null}
             <LeadCustomFieldsEditor
-              fields={leadFields}
+              fields={visibleCustomFields}
               values={customFields}
               errors={customFieldErrors}
               agentNotice={isAgentContext}
@@ -957,8 +974,17 @@ export function AddLeadModal({
         <LeadFieldDialog
           companyId={companyId}
           apiBasePath={apiBasePath}
+          canManage={canManageLeads}
+          isAgentContext={isAgentContext}
           onClose={() => setShowFieldDialog(false)}
-          onCreated={() => setShowFieldDialog(false)}
+          onCreated={(field) => {
+            setSessionFieldIds((current) => current.includes(field.id) ? current : [...current, field.id]);
+            setCustomFields((current) => ({
+              ...current,
+              [field.key]: field.type === "checkbox" ? false : field.type === "multi_select" ? [] : "",
+            }));
+            setShowFieldDialog(false);
+          }}
         />
       )}
       {mergeOpen && duplicateMatch && (

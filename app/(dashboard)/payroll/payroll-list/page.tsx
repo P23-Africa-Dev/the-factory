@@ -105,13 +105,13 @@ export default function PayrollListPage() {
   };
 
   return (
-    <div className="h-full">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mx-5 sm:mx-8 lg:mx-[53.5px] mt-5.75">
+    <div className="app-workspace-bg min-h-screen pt-5.75">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mx-5 sm:mx-8 lg:mx-[53.5px]">
         <div className="flex items-center gap-4 w-full max-w-114">
           <button
             onClick={() => router.back()}
             aria-label="Back"
-            className="flex items-center justify-center w-10 h-10 rounded-full bg-white border border-gray-200 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] hover:bg-gray-50 transition-all shrink-0"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-white border border-gray-200 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] hover:bg-gray-50 transition-all shrink-0 cursor-pointer"
           >
             <ArrowLeft size={18} className="text-gray-600" />
           </button>
@@ -125,7 +125,7 @@ export default function PayrollListPage() {
               placeholder="Search for Agents"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]"
+              className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]"
             />
           </div>
         </div>
@@ -134,15 +134,15 @@ export default function PayrollListPage() {
           <button
             type="button"
             onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
-            className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all"
+            className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all bg-white shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] cursor-pointer"
           >
             <Image src={CalendarIcon} alt="Calendar Icon" width={13} height={13} />
             {formatPayrollDateLabel(selectedDate)}
             <input ref={dateInputRef} type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="sr-only" />
           </button>
           {!isAgent && (
-            <div className="flex items-center rounded-[10px] border border-gray-200 overflow-hidden text-[10px] text-gray-500 transition-all">
-              <button type="button" onClick={() => handleExport("csv")} disabled={exportMutation.isPending} className="flex items-center gap-2 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50">
+            <div className="flex items-center rounded-[10px] border border-gray-200 overflow-hidden text-[10px] text-gray-500 transition-all bg-white shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+              <button type="button" onClick={() => handleExport("csv")} disabled={exportMutation.isPending} className="flex items-center gap-2 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50 cursor-pointer">
                 <Image
                   src={FileExportIcon}
                   alt="Export Icon"
@@ -152,19 +152,19 @@ export default function PayrollListPage() {
                 />
                 CSV
               </button>
-              <button type="button" onClick={() => handleExport("xlsx")} disabled={exportMutation.isPending} className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50">
+              <button type="button" onClick={() => handleExport("xlsx")} disabled={exportMutation.isPending} className="border-l border-gray-200 px-2.5 py-[8.5px] hover:bg-gray-50 disabled:opacity-50 cursor-pointer">
                 Excel
               </button>
             </div>
           )}
-          <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all">
+          <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all bg-white shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026] cursor-pointer">
             <SlidersHorizontal size={13} />
             Filter: {statusFilter}
           </button>
           {!isAgent && (
             <button
               onClick={() => setIsPayrollModalOpen(true)}
-              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all"
+              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark border border-white/20 text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all shadow-[0_-2px_8px_rgb(255_255_255_/_20%),0_4px_8px_rgb(0_0_0_/_35%)] cursor-pointer"
             >
               {existingPayroll ? "Edit Payroll" : "Set Payroll"}
               <Image
@@ -179,13 +179,13 @@ export default function PayrollListPage() {
       </div>
 
       <div className="px-5 sm:px-8 lg:px-10 py-6 space-y-6">
-        <div className="bg-white rounded-[30px] px-6 py-4 text-[13px] text-gray-500 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+        <div className="se-stat-card px-6 py-4 text-[13px] font-medium text-white">
           {overview ? `Total payroll: ${formatPayrollMoney(overview.total_payroll, overview.currency ?? existingPayroll?.currency ?? "GBP")}` : "Loading payroll overview..."}
         </div>
         <div className="flex flex-col xl:flex-row gap-6">
           <div className="flex-1 min-w-0">
             {isUsersLoading ? (
-              <div className="bg-white rounded-[30px] px-6 py-8 text-[13px] text-gray-400 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+              <div className="bg-white rounded-[30px] px-6 py-8 text-[13px] text-gray-400 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
                 Loading payroll agents...
               </div>
             ) : (
@@ -199,16 +199,14 @@ export default function PayrollListPage() {
           </div>
 
           <div className="w-full xl:w-85 xl:shrink-0 xl:min-w-131.25">
-            <div className="drop-shadow-[0px_1px_3px_#0000004D,0px_4px_8px_3px_#00000026]">
-              <PayrollSidebar
-                agent={selectedAgent}
-                onEditPayroll={() => setIsAgentEditOpen(true)}
-                companyId={companyId ?? undefined}
-                onApprovalSuccess={() => {
-                  selectedAgentProfileQuery.refetch();
-                }}
-              />
-            </div>
+            <PayrollSidebar
+              agent={selectedAgent}
+              onEditPayroll={() => setIsAgentEditOpen(true)}
+              companyId={companyId ?? undefined}
+              onApprovalSuccess={() => {
+                selectedAgentProfileQuery.refetch();
+              }}
+            />
 
             {selectedAgentProfileQuery.data?.history?.length ? (
               <PayrollHistory entries={selectedAgentProfileQuery.data.history} currency={selectedAgentProfileQuery.data.currency} />
