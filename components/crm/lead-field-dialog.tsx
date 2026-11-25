@@ -288,7 +288,7 @@ export function LeadFieldDialog({
                                     checked={isRequired}
                                     onChange={(event) => setIsRequired(event.target.checked)}
                                 />
-                                Required on manual create
+                                Make field required
                             </label>
                         ) : null}
                     </div>

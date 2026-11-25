@@ -206,22 +206,22 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
               {editing ? (
                 <>
                   <div>
-                    <p className="text-[11px] font-bold text-dash-dark mb-1">Name</p>
+                    <p className="text-[11px] font-bold text-white mb-1">Name</p>
                     <input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
+                      className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white placeholder:text-white/40 outline-none focus:border-[#6FA8A6] transition-colors"
                       placeholder="Full name"
                     />
                   </div>
                   <div>
-                    <p className="text-[11px] font-bold text-dash-dark mb-1">Email</p>
-                    <p className="text-[12px] text-gray-400 px-3 py-1.5 bg-gray-50 rounded-lg border border-dashed border-gray-200 select-all truncate">
+                    <p className="text-[11px] font-bold text-white mb-1">Email</p>
+                    <p className="text-[12px] text-white/60 px-3 py-1.5 bg-white/5 rounded-lg border border-dashed border-white/20 select-all truncate">
                       {agent.email}
                     </p>
                   </div>
                   <div>
-                    <p className="text-[11px] font-bold text-dash-dark mb-1">Zone</p>
+                    <p className="text-[11px] font-bold text-white mb-1">Zone</p>
                     <div className="flex flex-wrap gap-1.5">
                       {zones.map((zoneOption) => {
                         const selected = zoneIds.includes(zoneOption.id);
@@ -237,9 +237,9 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
                                 setZone((prev) => prev || zoneOption.name);
                               }
                             }}
-                            className={`px-2.5 py-1 rounded-full border text-[11px] ${selected
-                              ? 'bg-dash-dark text-white border-dash-dark'
-                              : 'bg-white text-gray-500 border-gray-200'
+                            className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors cursor-pointer ${selected
+                              ? 'bg-[#6FA8A6] text-dash-dark font-semibold border-[#6FA8A6]'
+                              : 'bg-white/10 text-white/75 border-white/20 hover:bg-white/15'
                               }`}
                           >
                             {zoneOption.name}
@@ -249,23 +249,24 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
                     </div>
                   </div>
                   <div>
-                    <p className="text-[11px] font-bold text-dash-dark mb-1">Phone Number</p>
+                    <p className="text-[11px] font-bold text-white mb-1">Phone Number</p>
                     <input
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
+                      className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white placeholder:text-white/40 outline-none focus:border-[#6FA8A6] transition-colors"
                       placeholder="Phone number with country code"
                     />
                   </div>
                   {(permissions.role === 'owner' || permissions.role === 'admin') && (
                     <div>
-                      <p className="text-[11px] font-bold text-dash-dark mb-1">Role</p>
+                      <p className="text-[11px] font-bold text-white mb-1">Role</p>
                       <SearchableSelect
                         value={role}
                         onChange={setRole}
                         options={roleOptions}
                         placeholder="Select role"
-                        className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
+                        variant="enterprise"
+                        className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white"
                       />
                     </div>
                   )}
@@ -273,14 +274,14 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
                     <button
                       onClick={handleSave}
                       disabled={updateMutation.isPending}
-                      className="flex-1 py-2 bg-dash-dark text-white rounded-lg text-[12px] font-semibold hover:opacity-90 transition-all disabled:opacity-60 cursor-pointer"
+                      className="flex-1 py-2 bg-white text-dash-dark rounded-lg text-[12px] font-semibold hover:bg-white/90 transition-all disabled:opacity-60 cursor-pointer"
                     >
                       {updateMutation.isPending ? 'Saving…' : 'Save'}
                     </button>
                     <button
                       onClick={handleCancel}
                       disabled={updateMutation.isPending}
-                      className="flex-1 py-2 border border-gray-200 text-gray-500 rounded-lg text-[12px] font-semibold hover:bg-gray-50 transition-all disabled:opacity-60 cursor-pointer"
+                      className="flex-1 py-2 bg-white/10 border border-white/20 text-white rounded-lg text-[12px] font-semibold hover:bg-white/20 transition-all disabled:opacity-60 cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -289,25 +290,25 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
               ) : (
                 <>
                   <div>
-                    <h3 className="text-[17px] font-bold text-dash-dark">{agent.name}</h3>
-                    <p className="text-[12px] text-gray-400 mt-1 leading-relaxed">{agent.description}</p>
+                    <h3 className="text-[17px] font-bold text-white">{agent.name}</h3>
+                    <p className="text-[12px] text-white/65 mt-1 leading-relaxed">{agent.description}</p>
                   </div>
                   <div>
-                    <p className="text-[13px] font-bold text-dash-dark mb-0.5">Zone</p>
-                    <p className="text-[13px] text-gray-400">{agent.zone}</p>
+                    <p className="text-[13px] font-bold text-white mb-0.5">Zone</p>
+                    <p className="text-[13px] text-white/65">{agent.zone}</p>
                   </div>
                   <div>
-                    <p className="text-[13px] font-bold text-dash-dark mb-0.5">Phone Number</p>
-                    <p className="text-[13px] text-gray-400">{agent.phone}</p>
+                    <p className="text-[13px] font-bold text-white mb-0.5">Phone Number</p>
+                    <p className="text-[13px] text-white/65">{agent.phone}</p>
                   </div>
                   <div>
-                    <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                    <p className="text-[13px] text-gray-400">{agent.role}</p>
+                    <p className="text-[13px] font-bold text-white mb-0.5">Role</p>
+                    <p className="text-[13px] text-white/65">{agent.role}</p>
                   </div>
                   {agent.isSuspended && (
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Status</p>
-                      <p className="text-[13px] text-amber-700">
+                      <p className="text-[13px] font-bold text-white mb-0.5">Status</p>
+                      <p className="text-[13px] text-amber-300">
                         Suspended{agent.suspendedUntil ? ` until ${new Date(agent.suspendedUntil).toLocaleDateString()}` : ''}
                       </p>
                     </div>
@@ -316,13 +317,13 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
               )}
             </div>
             <div className="shrink-0 w-36">
-              <div className="w-36 h-36 rounded-3xl overflow-hidden shadow-lg bg-[#C9A84C]">
+              <div className="w-36 h-36 rounded-3xl overflow-hidden shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] bg-[#C9A84C]">
                 <img src={agent.avatar} className="w-full h-full object-cover" alt={agent.name} />
               </div>
               <div className="mt-2 text-center">
-                <p className="text-[12px] font-bold text-dash-dark">{agent.name}</p>
+                <p className="text-[12px] font-bold text-white">{agent.name}</p>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5">
-                  <span className="text-[11px] text-gray-400">{agent.zone}</span>
+                  <span className="text-[11px] text-white/65">{agent.zone}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${getAgentSessionBadgeClass(agent.isSessionOnline)}`}>
                     {agent.isSessionOnline ? 'Online' : 'Offline'}
                   </span>
@@ -394,7 +395,7 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
       </div>
 
       {/* Live Details */}
-      <div className="bg-dash-dark rounded-4xl p-6 shadow-2xl">
+      <div className="bg-dash-dark rounded-4xl p-6 border border-[rgb(71_120_147_/_20%)] shadow-[0_0_12px_2px_rgb(241_241_241_/_24%),0_0_22px_4px_rgb(71_120_147_/_22%),0_5px_10px_1px_rgb(0_0_0_/_25%),0_2px_4px_rgb(0_0_0_/_18%)]">
         <h3 className="text-[16px] font-bold text-white mb-4">Live Details</h3>
         <div className="relative w-full rounded-[18px] bg-[#122632] border border-white/10 px-4 py-5">
           <div className="flex items-start gap-3">
@@ -431,7 +432,7 @@ function AgentDetailSidebar({ agent, companyId }: { agent: Agent; companyId?: nu
             {agent.isMapActive ? 'Active (View on Map)' : 'Open live map'}
             {agent.isMapActive && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
           </Link>
-          <p className="text-[11px] text-gray-500 mt-2">{agent.time}</p>
+          <p className="text-[11px] text-white/55 mt-2">{agent.time}</p>
         </div>
       </div>
     </div>
@@ -525,17 +526,17 @@ export default function AllAgentsPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
-            <Link href="/operations?tab=agent" className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-sm hover:shadow-md transition-all">
+            <Link href="/operations?tab=agent" className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] hover:opacity-90 transition-all">
               <ArrowLeft size={18} className="text-dash-dark" />
             </Link>
             <div>
-              <h1 className="text-[22px] font-bold text-dash-dark">All Agents</h1>
-              <p className="text-[13px] text-gray-400 mt-0.5">{pagination?.total ?? filtered.length} agents found</p>
+              <h1 className="text-[22px] font-bold text-white">All Agents</h1>
+              <p className="text-[13px] text-white/65 mt-0.5">{pagination?.total ?? filtered.length} agents found</p>
             </div>
           </div>
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-lg shrink-0 cursor-pointer"
+            className="se-primary flex items-center gap-2 px-4 sm:px-6 py-3 text-[13px] font-bold transition-all shrink-0 cursor-pointer"
           >
             <BookmarkPlus size={16} />
             <span>Add New Agent</span>
@@ -551,12 +552,12 @@ export default function AllAgentsPage() {
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search by name......"
-              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-sm"
+              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-teal/20 transition-all shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]"
             />
           </div>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border ${showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+            className={`se-control flex items-center gap-2 px-5 py-3.5 text-[13px] font-bold transition-all cursor-pointer ${showFilters ? 'se-control-active' : ''
               }`}
           >
             <SlidersHorizontal size={14} />
@@ -565,25 +566,25 @@ export default function AllAgentsPage() {
         </div>
 
         {/* Internal onboarding status summary */}
-        <div className="mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+        <div className="se-stat-card mb-4 p-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-            <h2 className="text-[14px] font-bold text-dash-dark">Internal Onboarding</h2>
+            <h2 className="text-[14px] font-bold text-white">Internal Onboarding</h2>
             {onboardingStatusQuery.isPending && (
-              <p className="text-[11px] text-gray-400">Loading onboarding status...</p>
+              <p className="text-[11px] text-white/60">Loading onboarding status...</p>
             )}
           </div>
           {onboardingStatusQuery.data?.summary ? (
             <div className="flex flex-wrap gap-2 mb-3 text-[11px]">
-              <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+              <span className="px-2 py-1 rounded-full bg-white/10 text-white">
                 Total: {onboardingStatusQuery.data.summary.total}
               </span>
-              <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+              <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-300">
                 Active: {onboardingStatusQuery.data.summary.active}
               </span>
-              <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+              <span className="px-2 py-1 rounded-full bg-amber-500/20 text-amber-300">
                 Pending: {onboardingStatusQuery.data.summary.pending_onboarding}
               </span>
-              <span className="px-2 py-1 rounded-full bg-rose-100 text-rose-700">
+              <span className="px-2 py-1 rounded-full bg-rose-500/20 text-rose-300">
                 Inactive: {onboardingStatusQuery.data.summary.inactive}
               </span>
             </div>
@@ -606,44 +607,46 @@ export default function AllAgentsPage() {
                         }
                       )
                     }
-                    className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
+                    className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-white/10 border border-white/20 text-white hover:bg-white/20 transition-colors cursor-pointer"
                   >
                     Resend invite: {item.name}
                   </button>
                 ))}
             </div>
           ) : (
-            <p className="text-[11px] text-gray-400">No pending internal invitations.</p>
+            <p className="text-[11px] text-white/60">No pending internal invitations.</p>
           )}
         </div>
 
         {/* Filter Panel */}
         {showFilters && (
-          <div className="flex flex-wrap gap-3 mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="se-stat-card flex flex-wrap gap-3 mb-4 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-gray-400 px-1">Zone</label>
+              <label className="text-[11px] font-bold text-white/75 px-1">Zone</label>
               <SearchableSelect
                 value={zoneFilter}
                 onChange={(v) => handleFilter('zone', v)}
                 options={zones.map((z) => ({ value: z, label: z }))}
-                className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+                variant="enterprise"
+                className="bg-white/10 border border-white/20 rounded-full px-4 py-2 text-[13px] font-medium text-white cursor-pointer"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-gray-400 px-1">Role</label>
+              <label className="text-[11px] font-bold text-white/75 px-1">Role</label>
               <SearchableSelect
                 value={roleFilter}
                 onChange={(v) => handleFilter('role', v)}
                 options={ROLES.map((r) => ({ value: r, label: r }))}
-                className="bg-gray-50 border border-gray-200 rounded-full px-4 py-2 text-[13px] font-medium text-dash-dark cursor-pointer"
+                variant="enterprise"
+                className="bg-white/10 border border-white/20 rounded-full px-4 py-2 text-[13px] font-medium text-white cursor-pointer"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
+              <label className="text-[11px] font-bold text-white/75 px-1">Status</label>
               <div className="flex gap-1">
                 {(['all', 'active', 'offline'] as const).map((s) => (
                   <button key={s} onClick={() => handleFilter('status', s)}
-                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all cursor-pointer ${statusFilter === s ? 'bg-[#6FA8A6] text-dash-dark' : 'bg-white/10 border border-white/20 text-white/75 hover:bg-white/15'
                       }`}>
                     {s === 'all' ? 'All' : s === 'active' ? 'Online' : 'Offline'}
                   </button>
@@ -653,7 +656,7 @@ export default function AllAgentsPage() {
             {(zoneFilter !== 'All Zones' || roleFilter !== 'All Roles' || statusFilter !== 'all') && (
               <div className="flex flex-col justify-end">
                 <button onClick={() => { setZoneFilter('All Zones'); setRoleFilter('All Roles'); setStatusFilter('all'); setPage(1); }}
-                  className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200">
+                  className="px-4 py-2 rounded-full text-[12px] font-bold text-rose-300 hover:bg-rose-500/15 transition-all border border-rose-400/30 cursor-pointer">
                   Clear filters
                 </button>
               </div>
