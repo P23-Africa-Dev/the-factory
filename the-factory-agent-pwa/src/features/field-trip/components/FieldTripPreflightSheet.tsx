@@ -10,6 +10,7 @@ import {
 } from '@/features/tracking/native/locationSettings';
 import { runFieldTripPreflight, type PreflightIssue, type PreflightResult, type PreflightStep } from '../preflight';
 import type { TripPosition } from '../types';
+import { OverlayPortal } from '@/components/shared/OverlayPortal';
 
 const STEPS: Array<{ key: PreflightStep; label: string; nativeOnly?: boolean }> = [
   { key: 'permission', label: 'Location permission' },
@@ -135,7 +136,8 @@ export function FieldTripPreflightSheet({
         : null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Start field trip">
+    <OverlayPortal>
+    <div className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Start field trip">
       <div className="w-full max-w-md rounded-t-[28px] bg-[#0E2A36] px-5 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-5 text-white shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-[16px] font-semibold">{issue ? ISSUE_COPY[issue].title : 'Getting ready…'}</h2>
@@ -209,5 +211,6 @@ export function FieldTripPreflightSheet({
         )}
       </div>
     </div>
+    </OverlayPortal>
   );
 }

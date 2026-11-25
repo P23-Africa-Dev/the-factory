@@ -10,6 +10,7 @@ import { useFieldTrip } from '../FieldTripProvider';
 import { formatDistance, formatElapsed, plural, secondsSince } from '../format';
 import { FieldTripPreflightSheet } from './FieldTripPreflightSheet';
 import type { TripPosition } from '../types';
+import { OverlayPortal } from '@/components/shared/OverlayPortal';
 
 const GPS_LABEL = {
   waiting: 'Waiting for GPS…',
@@ -143,7 +144,8 @@ export function FieldTripCard({
         </div>
 
         {confirmEnd && (
-          <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="End field trip">
+          <OverlayPortal>
+          <div className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="End field trip">
             <div className="w-full max-w-md rounded-t-[28px] bg-[#0E2A36] px-5 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-5 text-white">
               <h2 className="text-[16px] font-semibold">End this field trip?</h2>
               <p className="mt-1 text-[13px] text-white/75">
@@ -170,6 +172,7 @@ export function FieldTripCard({
               </div>
             </div>
           </div>
+          </OverlayPortal>
         )}
       </>
     );

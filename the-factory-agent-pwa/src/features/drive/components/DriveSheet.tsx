@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X } from 'lucide-react';
+import { OverlayPortal } from '@/components/shared/OverlayPortal';
 
 /** Bottom sheet shell shared by the Drive preview, share and confirm views. */
 export function DriveSheet({
@@ -19,7 +20,8 @@ export function DriveSheet({
 }) {
   const headingId = labelledBy ?? 'drive-sheet-title';
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true" aria-labelledby={headingId}>
+    <OverlayPortal>
+    <div className="fixed inset-0 z-[10050] flex items-end justify-center" role="dialog" aria-modal="true" aria-labelledby={headingId}>
       <button
         type="button"
         aria-label="Close"
@@ -44,6 +46,7 @@ export function DriveSheet({
         {footer && <div className="px-5 py-3 border-t border-white/10">{footer}</div>}
       </div>
     </div>
+    </OverlayPortal>
   );
 }
 
@@ -63,7 +66,8 @@ export function DriveConfirmDialog({
   onCancel: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center px-6" role="alertdialog" aria-modal="true" aria-labelledby="drive-confirm-title">
+    <OverlayPortal>
+    <div className="fixed inset-0 z-[10060] flex items-center justify-center px-6" role="alertdialog" aria-modal="true" aria-labelledby="drive-confirm-title">
       <button type="button" aria-label="Cancel" onClick={onCancel} className="absolute inset-0 bg-black/70" />
       <div className="relative w-full max-w-sm rounded-2xl bg-[#0B2733] border border-white/10 p-5 shadow-2xl">
         <h3 id="drive-confirm-title" className="text-base font-semibold text-white">
@@ -90,5 +94,6 @@ export function DriveConfirmDialog({
         </div>
       </div>
     </div>
+    </OverlayPortal>
   );
 }
