@@ -168,9 +168,10 @@ function WorkforceContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A1D25] text-white pb-24 pt-[calc(env(safe-area-inset-top,0px)+20px)] px-5 font-sans">
+    <div className="min-h-screen bg-[#0A1D25] text-white pb-24 pt-[calc(env(safe-area-inset-top,0px)+20px)] px-4 sm:px-5 font-sans overflow-x-hidden">
+      <div className="max-w-3xl mx-auto w-full">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between gap-2 mb-4">
         <div className="flex items-center gap-2 text-[#75ADAF]">
           <ArrowLeft size={16} />
           <Link href="/manager" className="text-xs font-bold uppercase tracking-wider">
@@ -179,20 +180,20 @@ function WorkforceContent() {
         </div>
         <Link
           href="/manager/payroll"
-          className="px-3 py-1.5 rounded-full bg-[#FD6046]/20 border border-[#FD6046]/40 text-[#FD6046] text-xs font-bold"
+          className="px-3 py-1.5 rounded-full bg-[#FD6046]/20 border border-[#FD6046]/40 text-[#FD6046] text-xs font-bold shrink-0"
         >
           Payroll Hub →
         </Link>
       </div>
 
-      <div className="flex items-start justify-between gap-3 mb-5">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-extrabold text-white">Workforce &amp; Attendance</h1>
           <p className="text-xs text-white/60 mt-1">
             Daily clock-in verification, attendance rules, and internal team directory.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {canManageAttendanceSettings && (
             <button
               type="button"
@@ -239,7 +240,7 @@ function WorkforceContent() {
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-2.5">
             <div>
               <label className="block text-[10px] text-white/60 mb-1">Start Time</label>
               <input
@@ -283,46 +284,46 @@ function WorkforceContent() {
         <button
           type="button"
           onClick={() => setActiveTab('attendance')}
-          className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 min-w-0 py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all truncate ${
             activeTab === 'attendance'
               ? 'bg-[#75ADAF] text-[#0A1D25] shadow-md'
               : 'text-white/60 hover:text-white'
           }`}
         >
-          <Clock className="w-3.5 h-3.5" />
-          Daily Attendance ({attendanceRecords.length})
+          <Clock className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Daily Attendance ({attendanceRecords.length})</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('directory')}
-          className={`flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 min-w-0 py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all truncate ${
             activeTab === 'directory'
               ? 'bg-[#75ADAF] text-[#0A1D25] shadow-md'
               : 'text-white/60 hover:text-white'
           }`}
         >
-          <Users className="w-3.5 h-3.5" />
-          Team Directory ({internalUsers.length})
+          <Users className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Team Directory ({internalUsers.length})</span>
         </button>
       </div>
 
       {/* Search & Date Filter Row */}
-      <div className="flex items-center gap-2 mb-5">
+      <div className="flex flex-col min-[440px]:flex-row min-[440px]:items-center gap-2 mb-5">
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Filter by member name or email…"
-          className="flex-1 h-11 rounded-xl bg-white/[0.06] border border-white/10 px-3.5 text-xs text-white placeholder-white/40 focus:outline-none"
+          className="w-full min-w-0 flex-1 h-11 rounded-xl bg-white/[0.06] border border-white/10 px-3.5 text-xs text-white placeholder-white/40 focus:outline-none"
         />
         {activeTab === 'attendance' && (
-          <div className="relative flex items-center">
+          <div className="relative flex items-center w-full min-[440px]:w-auto shrink-0">
             <Calendar className="w-3.5 h-3.5 text-[#75ADAF] absolute left-3 pointer-events-none" />
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="h-11 pl-8 pr-3 rounded-xl bg-[#0B3343] border border-white/15 text-xs font-semibold text-white focus:outline-none"
+              className="w-full min-[440px]:w-auto h-11 pl-8 pr-3 rounded-xl bg-[#0B3343] border border-white/15 text-xs font-semibold text-white focus:outline-none"
             />
           </div>
         )}
@@ -346,8 +347,10 @@ function WorkforceContent() {
                 className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 flex flex-col gap-2.5"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">{rec.user_name}</h3>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-bold text-white truncate">
+                      {rec.user_name || rec.agent_name || 'Unknown Member'}
+                    </h3>
                     <p className="text-[11px] text-white/50">
                       Clock In:{' '}
                       {rec.clock_in_at
@@ -366,7 +369,7 @@ function WorkforceContent() {
                     </p>
                   </div>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                       rec.status === 'late'
                         ? 'bg-amber-500/20 text-amber-300'
                         : rec.status === 'absent'
@@ -466,14 +469,14 @@ function WorkforceContent() {
                 </div>
 
                 {canManageUsers && member.role.toLowerCase() === 'agent' && (
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/10">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center gap-1">
                       <ShieldCheck className="w-3.5 h-3.5 text-[#75ADAF]" /> Supervisor:
                     </span>
                     <select
                       value={member.supervisor_id ?? ''}
                       onChange={(e) => handleSupervisorChange(member.id, e.target.value)}
-                      className="h-8 rounded-lg bg-[#0B3343] border border-white/15 px-2.5 text-[11px] text-white focus:outline-none"
+                      className="h-8 max-w-full min-w-0 rounded-lg bg-[#0B3343] border border-white/15 px-2.5 text-[11px] text-white focus:outline-none"
                     >
                       <option value="">Unassigned</option>
                       {supervisorsList.map((sup) => (
@@ -631,6 +634,7 @@ function WorkforceContent() {
           </form>
         </div>
       )}
+      </div>
     </div>
   );
 }
