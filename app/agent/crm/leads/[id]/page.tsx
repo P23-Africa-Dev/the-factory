@@ -694,6 +694,7 @@ export default function LeadDetailsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Add New Lead button commented out per request
             <button
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 bg-white rounded-[14px] text-[13px] font-semibold text-[#64748B] hover:border-gray-300 transition-all shadow-sm whitespace-nowrap"
               id="add-new-lead-btn"
@@ -702,6 +703,7 @@ export default function LeadDetailsPage() {
               <span className="hidden min-[480px]:inline">Add New Lead</span>
               <span className="min-[480px]:hidden">Add</span>
             </button>
+            */}
             {isEditing ? (
               <button
                 onClick={handleSave}
