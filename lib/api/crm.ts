@@ -288,6 +288,8 @@ export type LeadFieldDefinition = {
     reviewed_by_user_id?: number | null;
     reviewed_at?: string | null;
     decline_reason?: string | null;
+    /** Pending universal requests only: leads that already carry this field. */
+    usage_count?: number | null;
     created_at?: string;
     updated_at?: string;
 };

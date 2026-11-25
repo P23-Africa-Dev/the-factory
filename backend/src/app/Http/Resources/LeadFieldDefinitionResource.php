@@ -34,6 +34,8 @@ class LeadFieldDefinitionResource extends JsonResource
             'reviewed_by_user_id' => $this->reviewed_by_user_id,
             'reviewed_at' => $this->reviewed_at?->toIso8601String(),
             'decline_reason' => $this->decline_reason,
+            // Only set on pending universal requests in the managers' list.
+            'usage_count' => $this->resource->getAttributes()['usage_count'] ?? null,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

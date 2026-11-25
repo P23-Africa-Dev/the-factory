@@ -21,7 +21,7 @@ import {
   visibleLeadFieldsForCreate,
 } from '@/manager/features/crm/customFields';
 import { PwaAddLeadFieldSheet, PwaCustomFields } from './PwaCustomFields';
-import { PwaPendingUniversalFieldsCard } from './PwaPendingUniversalFieldsCard';
+import { PwaFieldRequestsBanner } from './PwaFieldRequests';
 import type { LeadCustomFields } from '@/manager/features/crm';
 import { PwaProfileUrlInputs, isValidUrl, normalizeWebsite, parseProfileUrls } from './PwaProfileUrlInputs';
 import PhoneNumberInput from '@/components/ui/PhoneNumberInput';
@@ -473,7 +473,7 @@ export function AddLeadModal({ visible, onClose, onSuccess }: AddLeadModalProps)
 
               <div className="h-px bg-white/10 my-2" />
               <p className="text-[10px] text-white/45 -mt-1">New fields stay on this lead unless you make them universal.</p>
-              <PwaPendingUniversalFieldsCard fields={leadFields} />
+              <PwaFieldRequestsBanner fields={leadFields} />
               <PwaCustomFields
                 fields={visibleFields}
                 values={customFields}

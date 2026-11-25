@@ -84,6 +84,9 @@ export const leadFieldDefinitionSchema = z.object({
     id: z.union([z.string(), z.number()]).transform(v => Number(v)),
     name: z.string(),
   }).nullable().optional(),
+  created_at: z.string().nullable().optional(),
+  /** Pending universal requests only: leads that already carry this field. */
+  usage_count: z.number().nullable().optional(),
 });
 
 const rawLeadSchema = z.object({
