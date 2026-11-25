@@ -259,27 +259,27 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
           ) : (
             <>
               <div>
-                <h3 className="text-[13px] font-extrabold text-dash-dark leading-tight">{agent.name}</h3>
-                <p className="text-[11px] text-gray-400 mt-1 leading-relaxed max-w-45">
+                <h3 className="text-[13px] font-extrabold text-white leading-tight">{agent.name}</h3>
+                <p className="text-[11px] text-white/65 mt-1 leading-relaxed max-w-45">
                   {agent.email}
                 </p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Zone</p>
-                <p className="text-[12px] text-gray-400">{agent.zone}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Zone</p>
+                <p className="text-[12px] text-white/65">{agent.zone}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Phone Number</p>
-                <p className="text-[12px] text-gray-400">{agent.phone || '—'}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Phone Number</p>
+                <p className="text-[12px] text-white/65">{agent.phone || '—'}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                <p className="text-[12px] text-gray-400">{agent.role}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Role</p>
+                <p className="text-[12px] text-white/65">{agent.role}</p>
               </div>
               {canManageSupervisor && (agent.role || '').toLowerCase() === 'agent' && (
                 <div>
-                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Supervisor</p>
-                  <p className="text-[12px] text-gray-400">
+                  <p className="text-[13px] font-bold text-white mb-0.5">Supervisor</p>
+                  <p className="text-[12px] text-white/65">
                     {currentSupervisor
                       ? `${currentSupervisor.name} (${currentSupervisor.role})`
                       : agent.supervisorUserId ? '—' : 'Not assigned'}
@@ -288,8 +288,8 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               )}
               {agent.isSuspended && (
                 <div>
-                  <p className="text-[13px] font-bold text-dash-dark mb-0.5">Status</p>
-                  <p className="text-[12px] text-amber-700">
+                  <p className="text-[13px] font-bold text-white mb-0.5">Status</p>
+                  <p className="text-[12px] text-amber-300">
                     Suspended{agent.suspendedUntil ? ` until ${new Date(agent.suspendedUntil).toLocaleDateString()}` : ''}
                   </p>
                 </div>

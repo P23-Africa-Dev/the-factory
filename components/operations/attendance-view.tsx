@@ -641,31 +641,17 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${showFilters ? "text-white" : "text-gray-500"
-              }`}
-            style={{
-              background: showFilters ? "#34373C" : "#F8F8F8",
-              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
-              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0, 0, 0, 0.06)",
-            }}
+            className={`se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0 cursor-pointer ${
+              showFilters ? "se-control-active" : ""
+            }`}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span
-              style={{
-                fontFamily: "Poppins, sans-serif",
-                fontWeight: 400,
-                fontSize: "10px",
-                lineHeight: "100%",
-              }}
-            >
-              Filter
-            </span>
+            <span>Filter</span>
           </button>
 
           <Link
             href="/map?tab=clocked-in"
-            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0"
-            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+            className="se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0"
           >
             <MapPin size={14} strokeWidth={2} />
             <span className="hidden sm:inline">Clocked-In Map</span>
@@ -673,8 +659,7 @@ export function AttendanceView({ basePath }: { basePath: string }) {
 
           <button
             onClick={() => setShowSettings(true)}
-            className="flex items-center gap-2 px-5 py-3 bg-white border border-[#D7D7D7] text-dash-dark rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: "0px 1px 3px 0px #0000004D" }}
+            className="se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0 cursor-pointer"
           >
             <Settings size={14} strokeWidth={2} />
             <span className="hidden sm:inline">Config</span>

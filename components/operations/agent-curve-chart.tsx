@@ -29,7 +29,7 @@ function SortDropdown() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-4 py-2 text-[13px] font-semibold text-dash-dark shadow-sm hover:bg-gray-50 transition-colors"
+        className="se-control flex items-center gap-2 px-4 py-2 text-[13px] font-semibold transition-colors cursor-pointer"
       >
         {selected}
         <svg
@@ -39,7 +39,7 @@ function SortDropdown() {
           fill="none"
           className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
         >
-          <path d="M2 4l4 4 4-4" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
@@ -77,25 +77,25 @@ const data = [
 
 export function AgentCurveChart() {
   return (
-    <div className="w-full bg-white rounded-4xl px-6 pt-6 pb-2 shadow-sm">
+    <div className="se-chart w-full rounded-[20px] px-6 pt-6 pb-4">
 
       {/* Header — all one row */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-6 min-w-0 flex-wrap">
-          <h3 className="text-[17px] font-bold text-dash-dark shrink-0">Agent Curve</h3>
+          <h3 className="text-[17px] font-bold text-white shrink-0">Agent Curve</h3>
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-dash-teal shrink-0" />
-              <span className="text-[12px] text-gray-400 font-medium">Online</span>
+              <div className="w-2.5 h-2.5 rounded-full bg-[#2ae9c9] shrink-0" />
+              <span className="text-[12px] text-white/70 font-medium">Online</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-[#FF9F6A] shrink-0" />
-              <span className="text-[12px] text-gray-400 font-medium">Offline</span>
+              <span className="text-[12px] text-white/70 font-medium">Offline</span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 mt-2 md:mt-0">
-          <span className="text-[12px] text-gray-400">Sort by:</span>
+          <span className="text-[12px] text-white/70">Sort by:</span>
           <SortDropdown />
         </div>
       </div>
@@ -104,7 +104,7 @@ export function AgentCurveChart() {
       <div className="relative h-52">
         {/* Performance callout */}
         <div className="absolute left-[32%] top-0 z-10 bg-white shadow-lg rounded-2xl px-4 py-3 border border-gray-100 flex flex-col items-center pointer-events-none">
-          <span className="text-[10px] text-gray-400 font-semibold">Agents Performance</span>
+          <span className="text-[10px] text-gray-500 font-semibold">Agents Performance</span>
           <span className="text-[17px] font-black text-dash-teal leading-tight">-10%</span>
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white border-b border-r border-gray-100 rotate-45" />
         </div>
@@ -113,27 +113,27 @@ export function AgentCurveChart() {
           <AreaChart data={data} margin={{ top: 10, right: 0, left: -30, bottom: 0 }}>
             <defs>
               <linearGradient id="colorOnline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#4FD1C5" stopOpacity={0.18} />
-                <stop offset="95%" stopColor="#4FD1C5" stopOpacity={0} />
+                <stop offset="5%"  stopColor="#2ae9c9" stopOpacity={0.28} />
+                <stop offset="95%" stopColor="#2ae9c9" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="colorOffline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="#FF9F6A" stopOpacity={0.18} />
+                <stop offset="5%"  stopColor="#FF9F6A" stopOpacity={0.22} />
                 <stop offset="95%" stopColor="#FF9F6A" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="0" vertical={true} stroke="#F1F5F9" />
+            <CartesianGrid strokeDasharray="0" vertical={true} stroke="rgba(255,255,255,0.08)" />
             <XAxis
               dataKey="name"
               axisLine={false}
               tickLine={false}
-              tick={{ fill: '#94A3B8', fontSize: 12, fontWeight: 500 }}
+              tick={{ fill: '#CBD5E1', fontSize: 12, fontWeight: 500 }}
               dy={12}
             />
             <YAxis hide />
             <Tooltip
-              contentStyle={{ borderRadius: '14px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+              contentStyle={{ borderRadius: '14px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.2)', color: '#0B1215' }}
             />
-            <Area type="monotone" dataKey="online"  stroke="#4FD1C5" strokeWidth={3} fillOpacity={1} fill="url(#colorOnline)" />
+            <Area type="monotone" dataKey="online"  stroke="#2ae9c9" strokeWidth={3} fillOpacity={1} fill="url(#colorOnline)" />
             <Area type="monotone" dataKey="offline" stroke="#FF9F6A" strokeWidth={3} fillOpacity={1} fill="url(#colorOffline)" />
           </AreaChart>
         </ResponsiveContainer>

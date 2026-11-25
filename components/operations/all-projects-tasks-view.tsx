@@ -82,7 +82,7 @@ function TaskSummaryCards({ tasks }: { tasks: TaskApiItem[] }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto] gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
       {/* Performance */}
-      <div className="bg-[#0B1C25] rounded-[20px] p-5 sm:p-6 relative flex flex-col sm:flex-row items-center text-center sm:text-left gap-4 sm:gap-6 overflow-hidden shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+      <div className="se-stat-card rounded-[20px] p-5 sm:p-6 relative flex flex-col sm:flex-row items-center text-center sm:text-left gap-4 sm:gap-6 overflow-hidden">
         <div className="relative w-28 h-28 sm:w-41.5 sm:h-41.5 shrink-0">
           <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: "rotate(135deg)" }}>
             <circle cx="50" cy="50" r="40" fill="none" stroke="#6B9A9A" strokeOpacity="0.3" strokeWidth="6" strokeLinecap="round" strokeDasharray={`${ARC_LENGTH} ${CIRCUMFERENCE}`} />
@@ -116,11 +116,11 @@ function TaskSummaryCards({ tasks }: { tasks: TaskApiItem[] }) {
       </div>
 
       {/* Total Tasks */}
-      <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
+      <div className="se-stat-card px-5 sm:px-6 pb-3 rounded-[20px] overflow-hidden relative flex flex-col min-h-45 w-full min-w-0">
         <div className="flex items-start justify-between pt-5 sm:pt-6">
           <div>
-            <p className="text-[14px] font-medium text-[#2D2D2D]">Total Tasks</p>
-            <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+            <p className="text-[14px] font-medium text-[#f8f8f8]">Total Tasks</p>
+            <h2 className="text-[64px] font-bold text-white leading-none tracking-[-0.04em]">
               {formatStatCount(total)}
             </h2>
           </div>
@@ -132,11 +132,11 @@ function TaskSummaryCards({ tasks }: { tasks: TaskApiItem[] }) {
       </div>
 
       {/* Pending Tasks */}
-      <div className="px-5 sm:px-6 pb-3 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-45 w-full min-w-0">
+      <div className="se-stat-card px-5 sm:px-6 pb-3 rounded-[20px] overflow-hidden relative flex flex-col min-h-45 w-full min-w-0">
         <div className="flex items-start justify-between pt-5 sm:pt-6">
           <div>
-            <p className="text-[14px] font-medium text-[#2D2D2D]">Pending Tasks</p>
-            <h2 className="text-[64px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+            <p className="text-[14px] font-medium text-[#f8f8f8]">Pending Tasks</p>
+            <h2 className="text-[64px] font-bold text-white leading-none tracking-[-0.04em]">
               {formatStatCount(pending)}
             </h2>
           </div>
@@ -148,18 +148,18 @@ function TaskSummaryCards({ tasks }: { tasks: TaskApiItem[] }) {
       </div>
 
       {/* In Progress / Arc card */}
-      <div className="bg-[#7BA9A4] rounded-[20px] p-5 shadow-sm flex flex-col items-center w-full min-w-0 text-center gap-3">
-        <p className="mt-5 text-white font-light text-[10px] leading-[1.4] max-w-20 mx-auto">
+      <div className="se-stat-card rounded-[20px] p-5 flex flex-col items-center w-full min-w-0 text-center gap-3">
+        <p className="mt-5 text-[#f8f8f8] font-light text-[10px] leading-[1.4] max-w-20 mx-auto">
           Tasks currently in progress
         </p>
         <div className="relative w-24 h-24 flex items-center justify-center mt-1">
           <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ transform: "rotate(135deg)" }}>
-            <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="7" strokeLinecap="round" strokeDasharray="188.5 251.3" />
-            <circle cx="50" cy="50" r="40" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${(inProgress / Math.max(total, 1)) * ARC_LENGTH} ${CIRCUMFERENCE}`} />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="7" strokeLinecap="round" strokeDasharray="188.5 251.3" />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#2ae9c9" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${(inProgress / Math.max(total, 1)) * ARC_LENGTH} ${CIRCUMFERENCE}`} />
           </svg>
           <div className="relative flex flex-col items-center gap-0.5">
-            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-sm">
-              <User size={14} className="text-[#09232D] fill-current" />
+            <div className="w-8 h-8 bg-[#14343e] rounded-full flex items-center justify-center shadow-sm">
+              <User size={14} className="text-[#2ae9c9] fill-current" />
             </div>
             <span className="text-white text-[10px] font-bold">
               {total === 0 ? 0 : Math.round((inProgress / total) * 100)}%
@@ -689,23 +689,17 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
 
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl transition-all shrink-0 cursor-pointer ${
-              showFilters ? "text-white" : "text-gray-500"
+            className={`se-control flex items-center gap-2 px-4 py-2.5 text-[12px] font-medium transition-all shrink-0 cursor-pointer ${
+              showFilters ? "se-control-active" : ""
             }`}
-            style={{
-              background: showFilters ? "#34373C" : "#F8F8F8",
-              border: showFilters ? "0.5px solid #34373C" : "0.5px solid #D1D1D1",
-              boxShadow: showFilters ? "none" : "0 2px 8px rgba(0,0,0,0.06)",
-            }}
           >
             <SlidersHorizontal size={14} strokeWidth={2} />
-            <span style={{ fontSize: "10px", fontWeight: 400 }}>Filter</span>
+            <span>Filter</span>
           </button>
 
           <button
             onClick={() => openCreateTask()}
-            className="flex items-center gap-2 px-5 py-3 bg-dash-dark text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shrink-0 cursor-pointer"
-            style={{ boxShadow: "0 4px 14px rgba(9, 35, 45, 0.3)" }}
+            className="se-primary flex items-center gap-2 px-5 py-2.5 text-[12px] font-semibold transition-all shrink-0 cursor-pointer"
           >
             <BookmarkPlus size={15} strokeWidth={2} />
             <span className="hidden sm:inline whitespace-nowrap">Create New Task</span>

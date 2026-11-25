@@ -385,6 +385,12 @@ html {
 }
 
 .app-workspace-bg {
+  --se-ink: #022228;
+  --se-mint: #2ae9c9;
+  --se-raised-shadow: 0 0 12px 2px rgb(241 241 241 / 24%),
+    0 0 22px 4px rgb(71 120 147 / 22%),
+    0 5px 10px 1px rgb(0 0 0 / 25%),
+    0 2px 4px rgb(0 0 0 / 18%);
   position: relative;
   isolation: isolate;
   background: linear-gradient(0deg, #041014 56%, #17586a 123%);
@@ -398,5 +404,46 @@ html {
   pointer-events: none;
   background: url("/sales-engine-design/workspace-texture.png") left top / 1024px 1024px;
   opacity: 0.025;
+}
+
+.app-workspace-bg .se-stat-card,
+.app-workspace-bg .se-chart {
+  border: 1px solid rgb(71 120 147 / 20%);
+  border-radius: 20px;
+  background: linear-gradient(53.462deg, #022228 73.052%, #477893 248.69%);
+  color: white;
+  box-shadow: var(--se-raised-shadow);
+}
+
+.app-workspace-bg .se-control {
+  border: 1px solid #294f5d;
+  border-radius: 999px;
+  background: var(--se-ink);
+  color: white;
+  box-shadow: 0 -2px 8px rgb(255 255 255 / 20%), 0 4px 8px rgb(0 0 0 / 35%);
+}
+
+.app-workspace-bg .se-control:not(:disabled):hover {
+  background: #123942;
+  color: white;
+}
+
+.app-workspace-bg .se-control.se-control-active {
+  border-color: var(--se-mint);
+  background: #0e3a3f;
+  color: var(--se-mint);
+  box-shadow: 0 0 0 2px rgb(42 233 201 / 55%), 0 4px 8px rgb(0 0 0 / 35%);
+}
+
+.app-workspace-bg .se-primary {
+  border: 1px solid var(--se-mint);
+  border-radius: 999px;
+  background: var(--se-mint);
+  color: var(--se-ink);
+  box-shadow: 0 0 10px rgb(42 233 201 / 25%), 0 4px 8px rgb(0 0 0 / 30%);
+}
+
+.app-workspace-bg .se-primary:not(:disabled):hover {
+  background: #55f0d6;
 }
 
