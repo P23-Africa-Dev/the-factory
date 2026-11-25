@@ -152,26 +152,26 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
             <>
               {/* Name */}
               <div>
-                <p className="text-[11px] font-bold text-dash-dark mb-1">Name</p>
+                <p className="text-[11px] font-bold text-white mb-1">Name</p>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white placeholder:text-white/40 outline-none focus:border-[#6FA8A6] transition-colors"
                   placeholder="Full name"
                 />
               </div>
 
               {/* Email — read only */}
               <div>
-                <p className="text-[11px] font-bold text-dash-dark mb-1">Email</p>
-                <p className="text-[12px] text-gray-400 px-3 py-1.5 bg-gray-50 rounded-lg border border-dashed border-gray-200 select-all truncate">
+                <p className="text-[11px] font-bold text-white mb-1">Email</p>
+                <p className="text-[12px] text-white/60 px-3 py-1.5 bg-white/5 rounded-lg border border-dashed border-white/20 select-all truncate">
                   {agent.email}
                 </p>
               </div>
 
               {/* Zone */}
               <div>
-                <p className="text-[11px] font-bold text-dash-dark mb-1">Zone</p>
+                <p className="text-[11px] font-bold text-white mb-1">Zone</p>
                 <div className="flex flex-wrap gap-1.5">
                   {zones.map((zoneOption) => {
                     const selected = zoneIds.includes(zoneOption.id);
@@ -187,9 +187,9 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                             setZone((prev) => prev || zoneOption.name);
                           }
                         }}
-                        className={`px-2.5 py-1 rounded-full border text-[11px] ${selected
-                          ? 'bg-dash-dark text-white border-dash-dark'
-                          : 'bg-white text-gray-500 border-gray-200'
+                        className={`px-2.5 py-1 rounded-full border text-[11px] transition-colors cursor-pointer ${selected
+                          ? 'bg-[#6FA8A6] text-dash-dark font-semibold border-[#6FA8A6]'
+                          : 'bg-white/10 text-white/75 border-white/20 hover:bg-white/15'
                           }`}
                       >
                         {zoneOption.name}
@@ -201,11 +201,11 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
 
               {/* Phone */}
               <div>
-                <p className="text-[11px] font-bold text-dash-dark mb-1">Phone Number</p>
+                <p className="text-[11px] font-bold text-white mb-1">Phone Number</p>
                 <input
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark outline-none focus:border-dash-dark transition-colors"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white placeholder:text-white/40 outline-none focus:border-[#6FA8A6] transition-colors"
                   placeholder="Phone number with country code"
                 />
               </div>
@@ -213,13 +213,14 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               {/* Role */}
               {(permissions.role === 'owner' || permissions.role === 'admin') && (
                 <div>
-                  <p className="text-[11px] font-bold text-dash-dark mb-1">Role</p>
+                  <p className="text-[11px] font-bold text-white mb-1">Role</p>
                   <SearchableSelect
                     value={role}
                     onChange={setRole}
                     options={roleOptions}
                     placeholder="Select role"
-                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
+                    variant="enterprise"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white"
                   />
                 </div>
               )}
@@ -227,13 +228,14 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
               {/* Supervisor (agents only) */}
               {canManageSupervisor && isAgentRole && (
                 <div>
-                  <p className="text-[11px] font-bold text-dash-dark mb-1">Supervisor</p>
+                  <p className="text-[11px] font-bold text-white mb-1">Supervisor</p>
                   <SearchableSelect
                     value={supervisorId}
                     onChange={setSupervisorId}
                     options={supervisorOptions}
                     placeholder="Select supervisor"
-                    className="w-full px-3 py-1.5 rounded-lg border border-gray-200 text-[12px] text-dash-dark"
+                    variant="enterprise"
+                    className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-[12px] text-white"
                   />
                 </div>
               )}
@@ -243,14 +245,14 @@ export function AgentInfoCard({ agent }: { agent: AgentItem }) {
                 <button
                   onClick={handleSave}
                   disabled={updateMutation.isPending || assignSupervisorMutation.isPending}
-                  className="flex-1 py-2 bg-dash-dark text-white rounded-lg text-[12px] font-semibold hover:opacity-90 transition-all disabled:opacity-60 cursor-pointer"
+                  className="flex-1 py-2 bg-white text-dash-dark rounded-lg text-[12px] font-semibold hover:bg-white/90 transition-all disabled:opacity-60 cursor-pointer"
                 >
                   {updateMutation.isPending || assignSupervisorMutation.isPending ? 'Saving…' : 'Save'}
                 </button>
                 <button
                   onClick={handleCancel}
                   disabled={updateMutation.isPending}
-                  className="flex-1 py-2 border border-gray-200 text-gray-500 rounded-lg text-[12px] font-semibold hover:bg-gray-50 transition-all disabled:opacity-60 cursor-pointer"
+                  className="flex-1 py-2 bg-white/10 border border-white/20 text-white rounded-lg text-[12px] font-semibold hover:bg-white/20 transition-all disabled:opacity-60 cursor-pointer"
                 >
                   Cancel
                 </button>
