@@ -314,7 +314,7 @@ function WorkforceContent() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Filter by member name or email…"
-          className="w-full min-w-0 flex-1 h-11 rounded-xl bg-white/[0.06] border border-white/10 px-3.5 text-xs text-white placeholder-white/40 focus:outline-none"
+          className="w-full min-w-0 min-[440px]:flex-1 shrink-0 h-11 rounded-xl bg-white/[0.06] border border-white/10 px-3.5 text-xs text-white placeholder-white/40 focus:outline-none"
         />
         {activeTab === 'attendance' && (
           <div className="relative flex items-center w-full min-[440px]:w-auto shrink-0">
