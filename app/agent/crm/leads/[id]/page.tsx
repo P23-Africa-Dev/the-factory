@@ -805,17 +805,16 @@ export default function LeadDetailsPage() {
               {/* Right Part: Fields & Map */}
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
                 {isEditing ? (
-                  <div className="rounded-[20px] bg-white p-4 sm:p-5">
-                    <LeadContactsSlider
-                      contacts={editForm.contacts}
-                      activeIndex={activeContactIndex}
-                      errors={contactErrors}
-                      onActiveIndexChange={setActiveContactIndex}
-                      onChange={updateContact}
-                      onAdd={addContact}
-                      onRemove={removeContact}
-                    />
-                  </div>
+                  <LeadContactsSlider
+                    contacts={editForm.contacts}
+                    activeIndex={activeContactIndex}
+                    errors={contactErrors}
+                    variant="dark"
+                    onActiveIndexChange={setActiveContactIndex}
+                    onChange={updateContact}
+                    onAdd={addContact}
+                    onRemove={removeContact}
+                  />
                 ) : (
                   <LeadContactHeroSlider contacts={leadContacts} />
                 )}
