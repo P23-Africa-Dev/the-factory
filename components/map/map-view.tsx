@@ -456,6 +456,15 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     map.flyTo({ center, zoom: Math.max(map.getZoom(), 14), speed: 1.2 });
   }, [setSelectedClockedInUserId]);
 
+  /** Live Feeds: focus and follow a person on a field trip. */
+  const handleFieldAgentSelect = useCallback((userId: number) => {
+    setFieldFollowUserId(userId);
+    const live = useFieldActivityLiveStore.getState().agents[userId];
+    const map = mapRef.current;
+    if (!map || !live?.lastPosition) return;
+    map.flyTo({ center: live.lastPosition, zoom: Math.max(map.getZoom(), 15), speed: 1.2 });
+  }, [setFieldFollowUserId]);
+
   const highlightedClockedInUserId =
     selectedClockedInUserId ??
     (Number.isFinite(initialAgentId) ? initialAgentId : null);
@@ -2028,6 +2037,9 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
             onViewHistoryTask={handleViewHistoryTask}
+            fieldAgents={fieldLiveAgents}
+            selectedFieldUserId={fieldFollowUserId}
+            onSelectFieldAgent={handleFieldAgentSelect}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
@@ -2432,6 +2444,16 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
       map.setZoom(14);
     }
   }, [setSelectedClockedInUserId]);
+
+  /** Live Feeds: focus and follow a person on a field trip. */
+  const handleFieldAgentSelect = useCallback((userId: number) => {
+    setFieldFollowUserId(userId);
+    const live = useFieldActivityLiveStore.getState().agents[userId];
+    const map = mapRef.current;
+    if (!map || !live?.lastPosition) return;
+    map.panTo({ lat: live.lastPosition[1], lng: live.lastPosition[0] });
+    if ((map.getZoom() ?? 0) < 15) map.setZoom(15);
+  }, [setFieldFollowUserId]);
 
   const highlightedClockedInUserId =
     selectedClockedInUserId ??
@@ -3360,6 +3382,9 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
             onViewHistoryTask={handleViewHistoryTask}
+            fieldAgents={fieldLiveAgents}
+            selectedFieldUserId={fieldFollowUserId}
+            onSelectFieldAgent={handleFieldAgentSelect}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel

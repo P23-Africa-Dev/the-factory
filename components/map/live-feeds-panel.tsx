@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, MoreHorizontal, Radio, Users } from "lucide-react";
+import { ChevronDown, MapPin, MoreHorizontal, Radio, Users } from "lucide-react";
 import { useMemo } from "react";
 
 import { AgentAvatar } from "@/components/map/agent-avatar";
@@ -16,6 +16,7 @@ import {
   TRACKING_STALE_MS,
 } from "@/lib/tracking/live-feed-groups";
 import type { LiveTaskState } from "@/types/tracking";
+import type { FieldActivityLiveAgent } from "@/store/field-activity-live";
 
 function formatMetricDistance(meters: number | null | undefined): string {
   if (meters == null || Number.isNaN(meters)) return "--";
@@ -51,6 +52,70 @@ interface LiveFeedsPanelProps {
   onSelectTask: (taskId: number) => void;
   /** Opens route history for a completed / stale feed task. */
   onViewHistoryTask?: (task: LiveTaskState) => void;
+  /** People on an active Field Trip (Start Field Trip in the mobile app). */
+  fieldAgents?: FieldActivityLiveAgent[];
+  selectedFieldUserId?: number | null;
+  onSelectFieldAgent?: (userId: number) => void;
+}
+
+/** A person on an active field trip (not tied to a task). */
+function FieldTripFeedCard({
+  agent,
+  isSelected,
+  nowMs,
+  onSelect,
+}: {
+  agent: FieldActivityLiveAgent;
+  isSelected: boolean;
+  nowMs: number;
+  onSelect: () => void;
+}) {
+  const lastSeen = formatRelativeLastSeen(agent.lastRecordedAt ?? undefined, nowMs);
+  const silentMs = agent.lastRecordedAt ? nowMs - Date.parse(agent.lastRecordedAt) : Number.POSITIVE_INFINITY;
+  const stale = !Number.isFinite(silentMs) || silentMs > 10 * 60_000;
+  const moving = agent.lastMovementState != null && agent.lastMovementState !== "stopped";
+  const state = stale ? "Signal lost" : moving ? "Moving" : "Stationary";
+  const badge = stale
+    ? "bg-amber-50 text-amber-700 border border-amber-200"
+    : "bg-[#FFF1EE] text-[#C2412B] border border-[#FFD9D1]";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full flex items-center gap-4 px-4 py-3.5 text-left transition-all rounded-[20px] ${
+        isSelected ? "bg-[#0A192F]" : "bg-[#F8FAFC] hover:bg-gray-100"
+      }`}
+    >
+      <div className="relative shrink-0">
+        <AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl ?? undefined} sizeClassName="w-12 h-12" />
+        {!stale && (
+          <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#FD6046] animate-pulse" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className={`text-[14px] font-bold truncate ${isSelected ? "text-white" : "text-dash-dark"}`}>
+            {agent.name || "Team member"}
+          </p>
+          <span
+            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+              isSelected ? "bg-white/15 text-white border border-white/20" : badge
+            }`}
+          >
+            {state}
+          </span>
+        </div>
+        <p className={`text-[12px] truncate mt-0.5 flex items-center gap-1 ${isSelected ? "text-gray-300" : "text-gray-500"}`}>
+          <MapPin size={11} className="shrink-0" /> On field trip
+        </p>
+        <p className={`text-[10px] mt-1 ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+          Last seen {lastSeen} · {agent.stops.length} {agent.stops.length === 1 ? "stop" : "stops"}
+        </p>
+      </div>
+      <MoreHorizontal size={20} className={isSelected ? "text-white/50" : "text-gray-400"} />
+    </button>
+  );
 }
 
 function LoadingFeedCard() {
@@ -174,8 +239,26 @@ export function LiveFeedsPanel({
   onToggleFollowAll,
   onSelectTask,
   onViewHistoryTask,
+  fieldAgents = [],
+  selectedFieldUserId = null,
+  onSelectFieldAgent,
 }: LiveFeedsPanelProps) {
   const needle = searchQuery.trim();
+  const fieldMatches = useMemo(() => {
+    const q = needle.toLowerCase();
+    const list = [...fieldAgents].sort((a, b) => (b.lastRecordedAt ?? "").localeCompare(a.lastRecordedAt ?? ""));
+    return q ? list.filter((a) => (a.name ?? "").toLowerCase().includes(q)) : list;
+  }, [fieldAgents, needle]);
+  const renderFieldAgents = () =>
+    fieldMatches.map((agent) => (
+      <FieldTripFeedCard
+        key={`field-${agent.userId}`}
+        agent={agent}
+        isSelected={selectedFieldUserId === agent.userId}
+        nowMs={nowMs}
+        onSelect={() => onSelectFieldAgent?.(agent.userId)}
+      />
+    ));
   const { active, history } = splitLiveFeedTasks(tasks, nowMs, TRACKING_STALE_MS);
   const agentTaskCounts = useMemo(() => countLiveTasksByAgent(tasks), [tasks]);
 
@@ -200,13 +283,13 @@ export function LiveFeedsPanel({
             <LoadingFeedCard />
             <LoadingFeedCard />
           </>
-        ) : searchResults.length === 0 ? (
+        ) : searchResults.length === 0 && fieldMatches.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 gap-2">
             <Radio size={24} className="text-gray-200" />
             <p className="text-[12px] text-gray-400">No matching agents</p>
           </div>
         ) : (
-          searchResults.map((task) => (
+          [...renderFieldAgents(), ...searchResults.map((task) => (
             <FeedCard
               key={task.taskId}
               task={task}
@@ -215,7 +298,7 @@ export function LiveFeedsPanel({
               liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
               onSelect={() => onSelectTask(task.taskId)}
             />
-          ))
+          ))]
         )}
       </div>
     );
@@ -225,7 +308,7 @@ export function LiveFeedsPanel({
     <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 flex flex-col gap-2 min-h-0">
       <div className="flex items-center justify-between gap-2 shrink-0 pb-1">
         <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold">
-          {isInitialHydrating ? "Active (Loading...)" : `Active (${active.length})`}
+          {isInitialHydrating ? "Active (Loading...)" : `Active (${active.length + fieldMatches.length})`}
         </span>
         <button
           type="button"
@@ -246,7 +329,7 @@ export function LiveFeedsPanel({
           <LoadingFeedCard />
           <LoadingFeedCard />
         </>
-      ) : active.length === 0 ? (
+      ) : active.length === 0 && fieldMatches.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <Radio size={24} className="text-gray-200" />
           <p className="text-[12px] text-gray-400 text-center">
@@ -254,7 +337,7 @@ export function LiveFeedsPanel({
           </p>
         </div>
       ) : (
-        active.map((task) => (
+        [...renderFieldAgents(), ...active.map((task) => (
           <FeedCard
             key={task.taskId}
             task={task}
@@ -263,7 +346,7 @@ export function LiveFeedsPanel({
             liveTaskCount={agentTaskCounts.get(task.userId) ?? 1}
             onSelect={() => onSelectTask(task.taskId)}
           />
-        ))
+        ))]
       )}
 
       {history.length > 0 && (

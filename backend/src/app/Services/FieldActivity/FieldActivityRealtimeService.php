@@ -64,6 +64,9 @@ class FieldActivityRealtimeService
             'user_id' => (int) $session->user_id,
             'field_activity_session_id' => (int) $session->id,
             'source' => $session->source,
+            // Lets the management map show the person in Live Feeds right away.
+            'name' => $session->user?->name,
+            'avatar_url' => \App\Support\AvatarUrlResolver::resolveOrDefault($session->user?->avatar, $session->user?->gender),
             'status' => $session->status?->value,
             'started_at' => $session->started_at?->toIso8601String(),
             'ended_at' => $session->ended_at?->toIso8601String(),
