@@ -138,7 +138,7 @@ export function PayrollView() {
           <button
             type="button"
             onClick={() => dateInputRef.current?.showPicker?.() ?? dateInputRef.current?.click()}
-            className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all cursor-pointer bg-white"
+            className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all cursor-pointer bg-white shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]"
           >
             <Image src={CalendarIcon} alt="Calendar Icon" width={13} height={13} />
             {formatPayrollDateLabel(selectedDate)}
@@ -151,7 +151,7 @@ export function PayrollView() {
             />
           </button>
           {!isAgent && (
-            <div className="flex items-center rounded-[10px] border border-gray-200 overflow-hidden text-[10px] text-gray-500 transition-all bg-white">
+            <div className="flex items-center rounded-[10px] border border-gray-200 overflow-hidden text-[10px] text-gray-500 transition-all bg-white shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
               <button
                 type="button"
                 onClick={() => handleExport("csv")}
@@ -177,14 +177,14 @@ export function PayrollView() {
               </button>
             </div>
           )}
-          <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all cursor-pointer bg-white">
+          <button onClick={handleToggleFilter} className="flex items-center gap-2 px-2.5 py-[8.5px] border border-gray-200 rounded-[10px] text-[10px] text-gray-500 transition-all cursor-pointer bg-white shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
             <SlidersHorizontal size={13} />
             Filter: {statusFilter}
           </button>
           {!isAgent && (
             <button
               onClick={() => setIsPayrollModalOpen(true)}
-              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark border border-white/20 text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all cursor-pointer shadow-[0px_1px_3px_0px_#0000004D]"
+              className="flex items-center gap-2.5 px-2.5 py-[8.5px] font-medium bg-dash-dark border border-white/20 text-white rounded-[10px] text-[10px] hover:opacity-90 transition-all cursor-pointer shadow-[0_-2px_8px_rgb(255_255_255_/_20%),0_4px_8px_rgb(0_0_0_/_35%)]"
             >
               {existingPayroll ? "Edit Payroll" : "Set Payroll"}
               <Image
