@@ -15,6 +15,9 @@ export const fieldTripKeys = {
 
 const RETRY_MS = 20_000;
 
+/** Server answer plus when it was requested (to spot stale answers). */
+type CurrentWithStamp = FieldTripCurrent & { requestedAt?: number };
+
 type FieldTripContextValue = {
   /** Server answer loaded at least once. */
   ready: boolean;
@@ -59,9 +62,20 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
   const setLocal = useFieldTripStore((s) => s.setLocal);
   const patchLocal = useFieldTripStore((s) => s.patchLocal);
   const [lastEnded, setLastEnded] = useState<FieldTripDto | null>(null);
-  const inFlight = useRef<'start' | 'end' | null>(null);
-  /** When this device last learned its trip's server id; older server answers are ignored. */
-  const syncedAtRef = useRef(0);
+  /**
+   * The start/end request currently in flight. Every caller (the button and the
+   * background retry) awaits the SAME request, so a second caller never bails
+   * out early and misreads the state ("started offline", trip shown again…).
+   */
+  const inFlightRef = useRef<{ kind: 'start' | 'end'; promise: Promise<FieldTripDto | null> } | null>(null);
+  /**
+   * When this device last started/ended a trip. Server answers whose request was
+   * SENT before that are stale (they may finish after the start/end and still say
+   * "no trip" / "trip running") and must never undo what the user just did.
+   */
+  const lastMutationAtRef = useRef(0);
+  /** Trips this device ended: never re-adopt them from a stale server answer. */
+  const endedIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     useFieldTripStore.getState().hydrate();
@@ -69,7 +83,11 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
 
   const currentQuery = useQuery({
     queryKey: fieldTripKeys.current,
-    queryFn: fieldTripApi.current,
+    queryFn: async (): Promise<CurrentWithStamp> => {
+      const requestedAt = Date.now();
+      const data = await fieldTripApi.current();
+      return { ...data, requestedAt };
+    },
     staleTime: 30_000,
     refetchInterval: () =>
       typeof document !== 'undefined' && document.visibilityState === 'visible' ? 60_000 : false,
@@ -77,6 +95,16 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
     retry: 1,
   });
   const current = currentQuery.data ?? null;
+
+  /** Apply a start/end result to the cached server state right away. */
+  const writeCurrent = useCallback(
+    (trip: FieldTripDto | null) => {
+      queryClient.setQueryData<CurrentWithStamp>(fieldTripKeys.current, (prev) =>
+        prev ? { ...prev, trip: trip && trip.status === 'active' ? trip : null, requestedAt: Date.now() } : prev,
+      );
+    },
+    [queryClient],
+  );
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: fieldTripKeys.current });
@@ -96,56 +124,79 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
   });
 
   // ── Send a queued start (offline start, or a failed request) ──────────────
-  const syncStart = useCallback(async (): Promise<void> => {
+  const syncStart = useCallback((): Promise<FieldTripDto | null> => {
+    if (inFlightRef.current) return inFlightRef.current.promise;
     const trip = useFieldTripStore.getState().local;
-    if (!trip || trip.serverId != null || inFlight.current) return;
-    inFlight.current = 'start';
-    try {
-      const res = await fieldTripApi.start({
-        clientTripId: trip.clientTripId,
-        startedAt: trip.startedAt,
-        position: trip.startPosition,
-      });
-      syncedAtRef.current = Date.now();
-      useFieldTripStore.getState().patchLocal({ serverId: res.trip.id });
-      refresh();
-    } catch (error) {
-      if (!isNetworkError(error)) {
-        // Refused (e.g. field trips turned off): drop the local trip.
-        useFieldTripStore.getState().setLocal(null);
-        toast.error('Could not start field trip', (error as ApiError).message);
+    if (!trip || trip.serverId != null) return Promise.resolve(null);
+
+    const promise = (async (): Promise<FieldTripDto | null> => {
+      try {
+        // Stop any status check already on its way: it predates this start.
+        await queryClient.cancelQueries({ queryKey: fieldTripKeys.current });
+        const res = await fieldTripApi.start({
+          clientTripId: trip.clientTripId,
+          startedAt: trip.startedAt,
+          position: trip.startPosition,
+        });
+        lastMutationAtRef.current = Date.now();
+        useFieldTripStore.getState().patchLocal({ serverId: res.trip.id });
+        writeCurrent(res.trip);
+        return res.trip;
+      } catch (error) {
+        if (!isNetworkError(error)) {
+          // Refused (e.g. field trips turned off): drop the local trip.
+          useFieldTripStore.getState().setLocal(null);
+          toast.error('Could not start field trip', (error as ApiError).message);
+        }
+        return null;
+      } finally {
+        inFlightRef.current = null;
       }
-    } finally {
-      inFlight.current = null;
-    }
-  }, [refresh]);
+    })();
+    inFlightRef.current = { kind: 'start', promise };
+    return promise;
+  }, [queryClient, writeCurrent]);
 
   // ── Send a queued end ─────────────────────────────────────────────────────
-  const syncEnd = useCallback(async (): Promise<FieldTripDto | null> => {
+  const syncEnd = useCallback((): Promise<FieldTripDto | null> => {
+    if (inFlightRef.current?.kind === 'end') return inFlightRef.current.promise;
+    if (inFlightRef.current) return Promise.resolve(null);
     const trip = useFieldTripStore.getState().local;
-    if (!trip || trip.phase !== 'ending' || trip.serverId == null || inFlight.current) return null;
-    inFlight.current = 'end';
-    try {
-      await flush().catch(() => {});
-      const res = await fieldTripApi.end(trip.serverId, {
-        endedAt: trip.endRequestedAt ?? new Date().toISOString(),
-        position: trip.endPosition,
-      });
-      useFieldTripStore.getState().setLocal(null);
-      setLastEnded(res.trip);
-      refresh();
-      void queryClient.invalidateQueries({ queryKey: ['field-activity'] });
-      return res.trip;
-    } catch (error) {
-      if (!isNetworkError(error)) {
+    if (!trip || trip.phase !== 'ending' || trip.serverId == null) return Promise.resolve(null);
+    const serverId = trip.serverId;
+
+    const promise = (async (): Promise<FieldTripDto | null> => {
+      try {
+        await flush().catch(() => {});
+        // Stop any status check already on its way: it predates this end.
+        await queryClient.cancelQueries({ queryKey: fieldTripKeys.current });
+        const res = await fieldTripApi.end(serverId, {
+          endedAt: trip.endRequestedAt ?? new Date().toISOString(),
+          position: trip.endPosition,
+        });
+        lastMutationAtRef.current = Date.now();
+        endedIdsRef.current.add(serverId);
         useFieldTripStore.getState().setLocal(null);
+        writeCurrent(null);
+        setLastEnded(res.trip);
         refresh();
+        void queryClient.invalidateQueries({ queryKey: ['field-activity'] });
+        return res.trip;
+      } catch (error) {
+        if (!isNetworkError(error)) {
+          endedIdsRef.current.add(serverId);
+          useFieldTripStore.getState().setLocal(null);
+          writeCurrent(null);
+          refresh();
+        }
+        return null;
+      } finally {
+        inFlightRef.current = null;
       }
-      return null;
-    } finally {
-      inFlight.current = null;
-    }
-  }, [flush, queryClient, refresh]);
+    })();
+    inFlightRef.current = { kind: 'end', promise };
+    return promise;
+  }, [flush, queryClient, refresh, writeCurrent]);
 
   // Retry queued start/end when back online and periodically.
   useEffect(() => {
@@ -169,13 +220,14 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
 
   // ── Reconcile this device with the server ─────────────────────────────────
   useEffect(() => {
-    if (!current || inFlight.current) return;
-    // Ignore answers fetched before this device's last start reached the server.
-    if (currentQuery.dataUpdatedAt <= syncedAtRef.current) return;
+    if (!current || inFlightRef.current) return;
+    // Ignore answers requested before this device's last start/end: they can
+    // arrive afterwards and would undo what the user just did.
+    if ((current.requestedAt ?? 0) < lastMutationAtRef.current) return;
     const trip = useFieldTripStore.getState().local;
     const server = current.trip;
 
-    if (!trip && server && server.status === 'active') {
+    if (!trip && server && server.status === 'active' && !endedIdsRef.current.has(server.id)) {
       // Started on another device or before a reinstall: adopt it here.
       setLocal({
         clientTripId: server.client_trip_id ?? `server-${server.id}`,
@@ -194,7 +246,7 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
       setLocal(null);
       toast.info('Your field trip has ended', reasonMessage(null));
     }
-  }, [current, currentQuery.dataUpdatedAt, setLocal]);
+  }, [current, setLocal]);
 
   const startTrip = useCallback(
     async (position: TripPosition | null): Promise<boolean> => {
@@ -216,9 +268,9 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
       if (position) {
         useFieldTripStore.getState().recordFix(position.accuracyMeters, [position.longitude, position.latitude]);
       }
-      await syncStart();
+      const synced = await syncStart();
       const started = useFieldTripStore.getState().local;
-      if (started && started.serverId == null) {
+      if (!synced && started && started.serverId == null) {
         toast.info('Field trip started offline', 'Tracking is on. It will sync when you are back online.');
       }
       return started != null;
