@@ -85,7 +85,7 @@ export function PayrollList({
             <div
               key={agent.id}
               onClick={() => onSelect(agent.id)}
-              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer ${isSelected ? "bg-dash-dark" : "bg-[#F8F9FA]"
+              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer shadow-[0_4px_4px_-1px_rgb(12_12_13_/_10%),0_4px_4px_-1px_rgb(12_12_13_/_5%)] transition-shadow hover:shadow-[0_6px_10px_-1px_rgb(12_12_13_/_16%)] ${isSelected ? "bg-dash-dark" : "bg-[#F8F9FA]"
                 }`}
             >
               <div className={`w-5 self-stretch shrink-0 rounded-l-[30px] ${isSelected ? "" : "bg-[#83C4F8]"}`} />
