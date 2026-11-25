@@ -98,7 +98,7 @@ export function useFieldTripReporter(options: {
     if (!isActive || !tripId) return;
 
     recordBackgroundLocationFix();
-    useFieldTripStore.getState().recordFix(loc.coords.accuracy ?? null);
+    useFieldTripStore.getState().recordFix(loc.coords.accuracy ?? null, [loc.coords.longitude, loc.coords.latitude]);
 
     if (loc.coords.accuracy != null && loc.coords.accuracy > MAX_ACCURACY_M) return;
 
@@ -265,6 +265,30 @@ export function useFieldTripReporter(options: {
       }
     };
   }, [active, clientTripId, flush, restartWatch, startWatch, stopWatching]);
+
+  // After a reload the in-memory trail is empty: rebuild it from this trip's
+  // points saved on the device (synced or not).
+  useEffect(() => {
+    if (!active || !clientTripId) return;
+    if (useFieldTripStore.getState().trail.length > 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const db = await getDb();
+        const rows = (await db.getAll('locationQueue'))
+          .filter((r) => r.fieldTripClientId === clientTripId)
+          .sort((a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt));
+        if (!cancelled && rows.length > 0 && useFieldTripStore.getState().trail.length === 0) {
+          useFieldTripStore.getState().setTrail(rows.map((r) => [r.longitude, r.latitude] as [number, number]));
+        }
+      } catch {
+        // No local history (private mode): the line starts from the next fix.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [active, clientTripId]);
 
   // Upload straight away once the server id becomes known (offline start synced).
   useEffect(() => {

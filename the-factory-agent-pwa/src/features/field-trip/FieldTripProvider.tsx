@@ -213,7 +213,9 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
         endRequestedAt: null,
         endPosition: null,
       });
-      if (position) useFieldTripStore.getState().recordFix(position.accuracyMeters);
+      if (position) {
+        useFieldTripStore.getState().recordFix(position.accuracyMeters, [position.longitude, position.latitude]);
+      }
       await syncStart();
       const started = useFieldTripStore.getState().local;
       if (started && started.serverId == null) {

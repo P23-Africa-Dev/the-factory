@@ -21,6 +21,9 @@ import {
 } from 'lucide-react';
 
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
+import { useFieldTripStore } from '@/features/field-trip/store';
+import { useAuth } from '@/features/auth';
+import { getSafeAvatarSrc } from '@/lib/avatar';
 import {
   useGeolocation,
   useFleetAgentLocations,
@@ -317,6 +320,12 @@ function MapContent() {
   }, [clockInLatParam, clockInLngParam, clockInNameParam, showClockIns, attendanceSnapshots, selectedAgentId]);
 
   // Center position for MapboxMap (`agentPosition` prop centers camera when updated)
+  // The manager's own field trip: shown when nothing else is selected.
+  const onFieldTrip = useFieldTripStore((s) => s.local != null);
+  const tripTrail = useFieldTripStore((s) => s.trail);
+  const tripPosition = useFieldTripStore((s) => s.lastPosition);
+  const { user: authUser } = useAuth();
+
   const focusedMapPosition = useMemo<[number, number] | null>(() => {
     if (
       selectedAgent &&
@@ -331,6 +340,9 @@ function MapContent() {
     if (selectedSavedLocation) {
       return [selectedSavedLocation.longitude, selectedSavedLocation.latitude];
     }
+    if (onFieldTrip && tripPosition) {
+      return tripPosition;
+    }
     if (fleetAgentPins.length > 0) {
       return [fleetAgentPins[0].longitude, fleetAgentPins[0].latitude];
     }
@@ -338,15 +350,18 @@ function MapContent() {
       return [managerGpsLocation.coords.longitude, managerGpsLocation.coords.latitude];
     }
     return null;
-  }, [selectedAgent, activeClockInPin, selectedSavedLocation, fleetAgentPins, managerGpsLocation]);
+  }, [selectedAgent, activeClockInPin, selectedSavedLocation, onFieldTrip, tripPosition, fleetAgentPins, managerGpsLocation]);
 
   // Route polyline for selected task or agent
   const traveledRouteCoords = useMemo<[number, number][]>(() => {
-    if (!selectedTaskRoute?.points?.length) return [];
+    if (!selectedTaskRoute?.points?.length) {
+      // No task route selected: draw the manager's own field trip, if any.
+      return !selectedAgent && onFieldTrip && tripTrail.length > 1 ? tripTrail : [];
+    }
     return selectedTaskRoute.points
       .filter((p) => typeof p.longitude === 'number' && typeof p.latitude === 'number')
       .map((p) => [p.longitude, p.latitude] as [number, number]);
-  }, [selectedTaskRoute]);
+  }, [selectedTaskRoute, selectedAgent, onFieldTrip, tripTrail]);
 
   // Compute driving directions preview when both a selected agent and destination exist
   useEffect(() => {
@@ -479,6 +494,12 @@ function MapContent() {
         }
         traveledCoords={traveledRouteCoords}
         remainingRouteCoords={plannedRouteCoords}
+        agentMarker={
+          // Own field trip: show "you" (avatar) at the live position.
+          onFieldTrip && !selectedAgent && !activeClockInPin && !selectedSavedLocation && tripPosition
+            ? { displayName: authUser?.name ?? 'You', avatarUrl: getSafeAvatarSrc(authUser?.avatar_url ?? null) }
+            : undefined
+        }
         mode="preview"
         destinationMarkerKind={customDestination?.kind ?? 'place'}
         radiusMeters={customDestination?.radiusMeters ?? null}
