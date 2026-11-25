@@ -111,7 +111,7 @@ class FieldStopDetectionServiceTest extends TestCase
         $summaries = Mockery::mock(FieldDailySummaryService::class);
         $summaries->shouldReceive('buildForSession')->andReturnUsing(static fn ($s) => $s);
 
-        return [$session, new FieldStopDetectionService($intelligence, $realtime, $summaries)];
+        return [$session, new FieldStopDetectionService($intelligence, $realtime, $summaries, new \App\Services\FieldActivity\FieldActivitySettingService())];
     }
 
     private function addPoint(

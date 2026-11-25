@@ -22,24 +22,28 @@ class FieldActivityAnalyticsService
         ?string $from = null,
         ?string $to = null,
         ?int $userId = null,
+        ?array $visibleUserIds = null,
     ): array {
         $fromDate = $from ? Carbon::parse($from)->startOfDay() : now()->subDays(7)->startOfDay();
         $toDate = $to ? Carbon::parse($to)->endOfDay() : now()->endOfDay();
 
         $summaries = FieldDailySummary::query()
             ->where('company_id', $company->id)
+            ->when($visibleUserIds !== null, fn ($q) => $q->whereIn('user_id', $visibleUserIds))
             ->whereBetween('summary_date', [$fromDate->toDateString(), $toDate->toDateString()])
             ->when($userId !== null, fn ($q) => $q->where('user_id', $userId))
             ->get();
 
         $sessions = FieldActivitySession::query()
             ->where('company_id', $company->id)
+            ->when($visibleUserIds !== null, fn ($q) => $q->whereIn('user_id', $visibleUserIds))
             ->whereBetween('started_at', [$fromDate, $toDate])
             ->when($userId !== null, fn ($q) => $q->where('user_id', $userId))
             ->get();
 
         $stops = FieldStop::query()
             ->where('company_id', $company->id)
+            ->when($visibleUserIds !== null, fn ($q) => $q->whereIn('user_id', $visibleUserIds))
             ->whereBetween('arrived_at', [$fromDate, $toDate])
             ->when($userId !== null, fn ($q) => $q->where('user_id', $userId))
             ->get();

@@ -39,6 +39,7 @@ import {
 } from '@/manager/features/tasks';
 import { useAgentUploadsOverview, AddLeadModal } from '@/manager/features/crm';
 import { AttendanceCard, useAttendanceMetrics } from '@/manager/features/attendance';
+import { FieldTripCard } from '@/features/field-trip';
 import {
   FieldActivitySummaryCard,
 } from '@/manager/features/field-activity';
@@ -615,6 +616,9 @@ export default function ManagerHomeScreen() {
             <ChevronRight size={16} className="text-[#FD6046]" />
           </button>
         )}
+
+        {/* ─── Start / End Field Trip (managers are tracked too) ─── */}
+        <FieldTripCard journeyBasePath="/manager/field-activity/journeys" mapPath="/manager/map" />
 
         {/* ─── Dual Hero Cards Row: Team Leads Card + Workforce Attendance Card ─── */}
         <div className="flex gap-2.5 mb-2.5">

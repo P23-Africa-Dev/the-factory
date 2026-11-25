@@ -19,7 +19,7 @@ import {
   ArrowLeft
 } from "lucide-react";
 import { useAgentJourneys } from "@/hooks/use-field-journeys";
-import { useInternalUsers } from "@/hooks/use-internal-users";
+import { useInternalUsers, useSupervisorCandidates } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { resolveAvatarSrc } from "@/lib/avatar";
@@ -92,7 +92,26 @@ function SupervisorJourneyContent() {
     role: "agent",
   });
 
-  const agents = agentsData ?? [];
+  // Managers go on field trips too: list owners/admins/supervisors (a supervisor
+  // sees only themselves here) alongside the agents.
+  const { data: managersData } = useSupervisorCandidates(apiCompanyId ?? undefined);
+  const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Admin", supervisor: "Supervisor" };
+  const agents = [
+    ...(managersData ?? []).map((m) => ({
+      id: m.id,
+      name: m.name,
+      email: m.email ?? null,
+      avatar_url: m.avatar_url ?? null,
+      assigned_zone: ROLE_LABEL[m.role] ?? m.role,
+    })),
+    ...(agentsData ?? []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      email: a.email ?? null,
+      avatar_url: a.avatar_url ?? null,
+      assigned_zone: a.assigned_zone ?? null,
+    })),
+  ].filter((person, idx, all) => all.findIndex((p) => p.id === person.id) === idx);
   const filteredAgents = agents.filter((agent) =>
     agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (agent.email && agent.email.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -268,7 +287,7 @@ function SupervisorJourneyContent() {
               {/* Stats Counters */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white border border-gray-100 rounded-3xl p-4 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col justify-between min-h-28">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Days Logged</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Journeys</span>
                   <div>
                     <h4 className="text-xl font-black text-[#0B1215]">
                       {summary?.journey_count ?? 0} {summary?.journey_count === 1 ? "Day" : "Days"}
@@ -328,13 +347,13 @@ function SupervisorJourneyContent() {
                       const dayLabel = date ? format(date, "EEE") : "—";
                       const dayNum = date ? format(date, "d") : "—";
                       const monthLabel = date ? format(date, "MMM") : "";
-                      const clockIn = journey.clock_in_at
-                        ? format(parseISO(journey.clock_in_at), "h:mma")
-                        : null;
-                      const clockOut = journey.clock_out_at
-                        ? format(parseISO(journey.clock_out_at), "h:mma")
-                        : null;
+                      const isTrip = journey.source === "field_trip";
+                      const startIso = (isTrip ? journey.started_at : null) ?? journey.clock_in_at;
+                      const endIso = (isTrip ? journey.ended_at : null) ?? journey.clock_out_at;
+                      const clockIn = startIso ? format(parseISO(startIso), "h:mma") : null;
+                      const clockOut = endIso ? format(parseISO(endIso), "h:mma") : null;
                       const isActive = journey.status === "active";
+                      const autoEnded = journey.end_reason === "auto_no_signal";
 
                       return (
                         <div key={journey.id} className="flex items-stretch gap-4 group">
@@ -364,6 +383,13 @@ function SupervisorJourneyContent() {
                             <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-[0_1px_3px_rgba(0,0,0,0.01)] group-hover:shadow-[0_4px_14px_rgba(0,0,0,0.05)] transition-all duration-300">
                               <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                                 <div className="flex items-center gap-2">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                      isTrip ? "bg-[#FFF1EE] text-[#C2412B]" : "bg-gray-100 text-gray-500"
+                                    }`}
+                                  >
+                                    {isTrip ? "Field Trip" : "Clock-in day"}
+                                  </span>
                                   {clockIn ? (
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -390,10 +416,12 @@ function SupervisorJourneyContent() {
                                   className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                                     isActive
                                       ? "bg-sky-50 text-sky-700"
-                                      : "bg-[#EEF4F4] text-[#094B5C]"
+                                      : autoEnded
+                                        ? "bg-amber-50 text-amber-700"
+                                        : "bg-[#EEF4F4] text-[#094B5C]"
                                   }`}
                                 >
-                                  {isActive ? "Active" : "Completed"}
+                                  {isActive ? "● Live" : autoEnded ? "Auto-ended" : "Completed"}
                                 </span>
                               </div>
 

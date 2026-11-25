@@ -5,6 +5,12 @@ import { apiRequest } from "./onboarding";
 export type FieldActivitySettings = {
   enabled: boolean;
   company_id: number;
+  /** Time in one place before it counts as a stop (default 300 = 5 min). */
+  stop_dwell_seconds?: number;
+  /** Long field trip reminder interval (default 18000 = 5 h, repeats). */
+  trip_reminder_seconds?: number;
+  /** Auto-end a trip after this long with no location (default 7200 = 2 h). */
+  trip_auto_end_seconds?: number;
 };
 
 export type FieldActivityAnalytics = {
@@ -73,7 +79,15 @@ export type JourneyCard = {
   travel_efficiency: number | null;
   narrative: string | null;
   attendance_record_id: number | null;
+  /** "field_trip" (Start/End Field Trip) or "attendance" (legacy clock-in day journey). */
+  source?: JourneySource;
+  started_at?: string | null;
+  ended_at?: string | null;
+  /** "user", "auto_no_signal" (no location for the company's limit) or "auto_legacy". */
+  end_reason?: string | null;
 };
+
+export type JourneySource = "field_trip" | "attendance";
 
 export type JourneyTimelineEvent = {
   id: string;
@@ -288,7 +302,13 @@ export function getFieldActivitySettings(token: string, companyId?: number) {
 }
 
 export function updateFieldActivitySettings(
-  payload: { enabled: boolean; company_id?: number },
+  payload: {
+    enabled?: boolean;
+    company_id?: number;
+    stop_dwell_seconds?: number;
+    trip_reminder_seconds?: number;
+    trip_auto_end_seconds?: number;
+  },
   token: string,
 ) {
   return apiRequest<FieldActivitySettings>({

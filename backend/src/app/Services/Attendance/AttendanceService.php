@@ -138,23 +138,9 @@ class AttendanceService
             'dedupe_key' => 'attendance-clock-in:' . (int) $context->company->id . ':' . (int) $user->id . ':' . $attendanceDate,
         ]);
 
-        $record = $record->fresh();
-        try {
-            $session = $this->fieldActivitySessionService->startForAttendance($record, $context->company);
-            Log::info('field_activity.lifecycle.attendance_clock_in_hook', [
-                'company_id' => (int) $context->company->id,
-                'attendance_record_id' => (int) $record->id,
-                'user_id' => (int) $record->user_id,
-                'field_activity_session_id' => $session?->id,
-            ]);
-        } catch (Throwable $e) {
-            Log::warning('field_activity.start_on_clock_in_failed', [
-                'attendance_record_id' => $record->id,
-                'message' => $e->getMessage(),
-            ]);
-        }
-
-        return $record;
+        // Clock-in no longer starts location tracking: field tracking is started
+        // on demand with "Start Field Trip" (FieldTripService).
+        return $record->fresh();
     }
 
     public function clockOut(User $user, array $data): AttendanceRecord
@@ -250,6 +236,8 @@ class AttendanceService
         ]);
 
         $record = $record->fresh();
+        // Legacy cleanup only: closes a clock-in session still linked to this
+        // record (started before Field Trips). Field trips are never touched.
         try {
             $this->fieldActivitySessionService->endForAttendance($record, autoClosed: false, withNarrative: true);
         } catch (Throwable $e) {

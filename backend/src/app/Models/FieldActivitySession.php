@@ -16,13 +16,26 @@ class FieldActivitySession extends Model
 {
     use HasFactory;
 
+    /** Legacy: started by clock-in (one per attendance day). */
+    public const SOURCE_ATTENDANCE = 'attendance';
+
+    /** Started on demand with "Start Field Trip"; any number per day. */
+    public const SOURCE_FIELD_TRIP = 'field_trip';
+
+    public const END_REASON_USER = 'user';
+    public const END_REASON_AUTO_NO_SIGNAL = 'auto_no_signal';
+    public const END_REASON_AUTO_LEGACY = 'auto_legacy';
+
     protected $fillable = [
         'company_id',
         'user_id',
         'attendance_record_id',
+        'source',
+        'client_trip_id',
         'status',
         'started_at',
         'ended_at',
+        'end_reason',
         'distance_meters',
         'travel_seconds',
         'stationary_seconds',
@@ -37,6 +50,8 @@ class FieldActivitySession extends Model
         'last_persisted_latitude',
         'last_persisted_longitude',
         'last_persisted_recorded_at',
+        'last_reminded_at',
+        'signal_lost_notified_at',
         'meta',
     ];
 
@@ -60,6 +75,8 @@ class FieldActivitySession extends Model
             'last_persisted_latitude' => 'float',
             'last_persisted_longitude' => 'float',
             'last_persisted_recorded_at' => 'datetime',
+            'last_reminded_at' => 'datetime',
+            'signal_lost_notified_at' => 'datetime',
             'meta' => 'array',
         ];
     }
@@ -92,6 +109,11 @@ class FieldActivitySession extends Model
     public function dailySummary(): HasOne
     {
         return $this->hasOne(FieldDailySummary::class);
+    }
+
+    public function isFieldTrip(): bool
+    {
+        return ($this->source ?? self::SOURCE_ATTENDANCE) === self::SOURCE_FIELD_TRIP;
     }
 
     public function isActive(): bool

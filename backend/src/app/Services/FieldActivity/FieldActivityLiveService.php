@@ -42,11 +42,21 @@ class FieldActivityLiveService
             ? $filters['date']
             : now()->toDateString();
 
+        $isToday = $date === now()->toDateString();
+
         $sessions = FieldActivitySession::query()
             ->with('user')
             ->where('company_id', $companyId)
             ->where('status', FieldActivitySessionStatus::ACTIVE)
-            ->whereDate('started_at', $date)
+            // Today: every running trip, even one started before midnight.
+            ->when(! $isToday, fn ($q) => $q->whereDate('started_at', $date))
+            // Supervisors see their own team and themselves, like the rest of tracking.
+            ->when($context->role === 'supervisor', function ($q) use ($actor): void {
+                $q->where(function ($inner) use ($actor): void {
+                    $inner->where('user_id', $actor->id)
+                        ->orWhereIn('user_id', User::query()->select('id')->where('supervisor_user_id', $actor->id));
+                });
+            })
             ->orderByDesc('started_at')
             ->get();
 

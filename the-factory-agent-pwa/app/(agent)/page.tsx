@@ -8,6 +8,7 @@ import { useAuth, useLogoutMutation, useAuthNavigation, useAgentIdentity } from 
 import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AttendanceCard } from '@/features/attendance';
+import { FieldTripCard } from '@/features/field-trip';
 import { FieldActivitySummaryCard } from '@/features/field-activity/components/FieldActivitySummaryCard';
 import {
   PendingReviewSoftBanner,
@@ -622,6 +623,9 @@ export default function AgentDashboardPage() {
               <span className="font-normal text-[10px] tracking-wide capitalize truncate">Add Lead</span>
             </button>
           </div>
+
+          {/* Start / End Field Trip — on-demand route + stop tracking (not tied to clock-in). */}
+          <FieldTripCard journeyBasePath="/field-activity/journeys" />
 
           {/* Dashboard cards: Leads + Attendance */}
           <div className="flex gap-3.5 mb-5 items-stretch">

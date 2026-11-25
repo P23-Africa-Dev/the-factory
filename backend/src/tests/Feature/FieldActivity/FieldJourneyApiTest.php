@@ -20,6 +20,20 @@ class FieldJourneyApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Seeded journeys are dated 2026-07-29; pin "now" so date presets
+        // (last_30_days) include them regardless of when the suite runs.
+        \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-07-30 12:00:00', 'Africa/Lagos'));
+    }
+
+    protected function tearDown(): void
+    {
+        \Carbon\Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_management_can_list_and_show_agent_journeys(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();

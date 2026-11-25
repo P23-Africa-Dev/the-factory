@@ -97,7 +97,7 @@ class TrackingSocketAuthorizationService
      */
     private function supervisedAgentIds(User $supervisor, int $companyId): array
     {
-        return DB::table('users')
+        $ids = DB::table('users')
             ->join('company_users', 'company_users.user_id', '=', 'users.id')
             ->where('company_users.company_id', $companyId)
             ->where('users.supervisor_user_id', $supervisor->id)
@@ -107,6 +107,11 @@ class TrackingSocketAuthorizationService
             ->map(static fn(mixed $id): int => (int) $id)
             ->values()
             ->all();
+
+        // Supervisors go on field trips too and must see their own live trail.
+        $ids[] = (int) $supervisor->id;
+
+        return array_values(array_unique($ids));
     }
 
     /**

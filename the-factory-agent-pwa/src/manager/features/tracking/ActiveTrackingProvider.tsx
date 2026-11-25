@@ -11,7 +11,6 @@ import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { useLocationReporter } from './hooks/useLocationReporter';
 import { isNativeAndroid } from './native/capacitorPlatform';
-import { stopNativeBackgroundWatch } from './native/nativeBackgroundGeolocation';
 import {
   endLiveTrackingIndicator,
   notifyTrackingCompleted,
@@ -109,9 +108,10 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
       if (flushRef.current) {
         await flushRef.current();
       }
-      if (isNativeAndroid()) {
-        await stopNativeBackgroundWatch();
-      } else {
+      // The task reporter unmounts below and releases its geolocation
+      // subscription; the shared native watcher stops only when no other
+      // tracker (e.g. an active field trip) still needs it.
+      if (!isNativeAndroid()) {
         await endLiveTrackingIndicator();
       }
 

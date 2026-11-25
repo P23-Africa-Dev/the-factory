@@ -238,6 +238,8 @@ async function postLocationBatch(apiBaseUrl, token, path, companyId, points) {
         speed_mps: r.speedMps ?? null,
         heading_degrees: r.headingDegrees ?? null,
         recorded_at: r.recordedAt,
+        // Lets the server ignore points it already stored (offline replays).
+        client_point_id: r.clientPointId ?? undefined,
       })),
     }),
   });
@@ -282,7 +284,8 @@ async function uploadQueuedLocationsFromIdb() {
         const res = await postLocationBatch(
           credentials.apiBaseUrl,
           credentials.token,
-          `/agent/field-activity/sessions/${sessionIdRaw}/points`,
+          // Field trips: shared endpoint for agents and managers (ownership-checked).
+          `/field-trips/${sessionIdRaw}/points`,
           companyId,
           batch,
         );

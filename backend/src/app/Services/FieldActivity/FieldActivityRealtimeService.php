@@ -54,6 +54,26 @@ class FieldActivityRealtimeService
         ]);
     }
 
+    /** A field trip started or ended (event: field_activity.trip_started / trip_ended). */
+    public function publishTripLifecycle(FieldActivitySession $session, string $event): void
+    {
+        $this->publish([
+            'event' => 'field_activity.'.$event,
+            'version' => 1,
+            'company_id' => (int) $session->company_id,
+            'user_id' => (int) $session->user_id,
+            'field_activity_session_id' => (int) $session->id,
+            'source' => $session->source,
+            'status' => $session->status?->value,
+            'started_at' => $session->started_at?->toIso8601String(),
+            'ended_at' => $session->ended_at?->toIso8601String(),
+            'end_reason' => $session->end_reason,
+            'latitude' => $session->last_latitude !== null ? (float) $session->last_latitude : null,
+            'longitude' => $session->last_longitude !== null ? (float) $session->last_longitude : null,
+            'occurred_at' => now()->toIso8601String(),
+        ]);
+    }
+
     public function publishStopCreated(FieldActivitySession $session, FieldStop $stop): void
     {
         $this->publish([

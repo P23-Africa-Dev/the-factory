@@ -335,9 +335,37 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         }
 
         if (msg.type === "attendance.clocked_out" && msg.payload?.user_id) {
-          const userId = Number(msg.payload.user_id);
-          attendanceStore.removeSnapshot(userId);
+          // Clock-out no longer ends field tracking (field trips are independent),
+          // so the live trail stays until the trip itself ends.
+          attendanceStore.removeSnapshot(Number(msg.payload.user_id));
+        }
+        return;
+      }
+
+      if (msg.type === "field_activity.trip_started" || msg.type === "field_activity.trip_ended") {
+        const payload = msg.payload as {
+          user_id?: number;
+          field_activity_session_id?: number;
+          latitude?: number | null;
+          longitude?: number | null;
+          started_at?: string | null;
+        } | undefined;
+        if (payload?.user_id == null) return;
+        const userId = Number(payload.user_id);
+
+        if (msg.type === "field_activity.trip_ended") {
           useFieldActivityLiveStore.getState().removeAgent(userId);
+          return;
+        }
+        if (payload.latitude != null && payload.longitude != null) {
+          useFieldActivityLiveStore.getState().appendPoint(
+            userId,
+            [Number(payload.longitude), Number(payload.latitude)],
+            {
+              sessionId: payload.field_activity_session_id ? Number(payload.field_activity_session_id) : undefined,
+              recordedAt: payload.started_at ?? null,
+            },
+          );
         }
         return;
       }

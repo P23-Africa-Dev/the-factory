@@ -42,7 +42,8 @@ class TrackingSocketAuthorizationTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.scope', 'supervisor')
             ->assertJsonPath('data.access_role', 'management')
-            ->assertJsonPath('data.visible_user_ids', [$f['agentA']->id])
+            // Supervisors also see themselves (they go on field trips too).
+            ->assertJsonPath('data.visible_user_ids', [$f['agentA']->id, $f['supervisor']->id])
             ->assertJsonPath('data.allowed_task_ids', [$f['taskA']->id]);
     }
 

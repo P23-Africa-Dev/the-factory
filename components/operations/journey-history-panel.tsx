@@ -98,7 +98,7 @@ function JourneyEntry({
                   )}
                 </div>
               ) : (
-                <span className="text-[11px] text-gray-400 italic">No clock in recorded</span>
+                <span className="text-[11px] text-gray-400 italic">No start time recorded</span>
               )}
             </div>
             <span
@@ -279,7 +279,7 @@ export function JourneyHistoryPanel({
             <Route size={28} className="text-gray-300" />
             <p className="text-[12px] text-gray-400 font-medium">No journeys yet</p>
             <p className="text-[10px] text-gray-400 text-center max-w-[220px]">
-              Journeys appear when Field Activity is enabled and the agent clocks in.
+              Journeys appear when Field Activity is enabled and the person starts a field trip in the mobile app.
             </p>
           </div>
         ) : (

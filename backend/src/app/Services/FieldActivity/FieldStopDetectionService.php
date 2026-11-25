@@ -19,12 +19,19 @@ class FieldStopDetectionService
         private readonly FieldLocationIntelligenceService $intelligenceService,
         private readonly FieldActivityRealtimeService $realtimeService,
         private readonly FieldDailySummaryService $dailySummaryService,
+        private readonly FieldActivitySettingService $settingService,
     ) {}
+
+    /** Company setting (default 5 min); falls back to config when the company is unknown. */
+    private function dwellSecondsFor(FieldActivitySession $session): int
+    {
+        return $this->settingService->stopDwellSeconds($session->company);
+    }
 
     /**
      * Detect stops from the session trail.
      *
-     * A stop is five minutes in the same place (within stop_radius_meters),
+     * A stop is the company's dwell time (default five minutes) in the same place (within stop_radius_meters),
      * regardless of GPS "slow" vs "stopped" labels. Instantaneous phone speed
      * is too noisy to reset a dwell cluster.
      *
@@ -50,7 +57,7 @@ class FieldStopDetectionService
             ->first();
 
         $radius = (float) config('field_activity.stop_radius_meters', 50);
-        $dwellSeconds = (int) config('field_activity.stop_dwell_seconds', 300);
+        $dwellSeconds = $this->dwellSecondsFor($session);
         $maxGapSeconds = (int) config('field_activity.stop_max_gap_seconds', 900);
 
         $cluster = [];
@@ -140,7 +147,7 @@ class FieldStopDetectionService
 
         foreach ($openStops as $stop) {
             $dwell = $stop->arrived_at->diffInSeconds($departure);
-            $minDwell = (int) config('field_activity.stop_dwell_seconds', 300);
+            $minDwell = $this->dwellSecondsFor($session);
             if ($dwell < $minDwell) {
                 $stop->delete();
                 continue;

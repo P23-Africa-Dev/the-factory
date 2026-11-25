@@ -25,9 +25,24 @@ class FieldDailySummaryService
         $session->refresh();
         $date = ($session->started_at ?? now())->toDateString();
 
-        $stops = FieldStop::query()
-            ->where('field_activity_session_id', $session->id)
+        // A day can hold several field trips: the daily summary adds up every
+        // session the user started that day (one row per user per day).
+        $daySessions = FieldActivitySession::query()
+            ->where('company_id', $session->company_id)
+            ->where('user_id', $session->user_id)
+            ->whereDate('started_at', $date)
             ->get();
+        if (! $daySessions->contains('id', $session->id)) {
+            $daySessions->push($session);
+        }
+
+        $stops = FieldStop::query()
+            ->whereIn('field_activity_session_id', $daySessions->pluck('id')->all())
+            ->get();
+
+        $dayDistance = (int) $daySessions->sum('distance_meters');
+        $dayTravel = (int) $daySessions->sum('travel_seconds');
+        $dayStationary = (int) $daySessions->sum('stationary_seconds');
 
         $personal = $stops->where('classification', FieldStopClassification::PERSONAL)->count();
         $ignored = $stops->where('classification', FieldStopClassification::IGNORE)->count();
@@ -35,9 +50,10 @@ class FieldDailySummaryService
         $visits = $stops->filter(static fn (FieldStop $s): bool => $s->isVisit())->count();
 
         $metrics = [
-            'distance_km' => round(((int) $session->distance_meters) / 1000, 2),
-            'travel_hours' => round(((int) $session->travel_seconds) / 3600, 2),
-            'stationary_hours' => round(((int) $session->stationary_seconds) / 3600, 2),
+            'distance_km' => round($dayDistance / 1000, 2),
+            'travel_hours' => round($dayTravel / 3600, 2),
+            'stationary_hours' => round($dayStationary / 3600, 2),
+            'trips' => $daySessions->count(),
             'stops' => $stops->count(),
             'visits' => $visits,
             'unknown' => $unknown,
@@ -53,9 +69,9 @@ class FieldDailySummaryService
 
         $summaryPayload = [
             'field_activity_session_id' => $session->id,
-            'distance_meters' => (int) $session->distance_meters,
-            'travel_seconds' => (int) $session->travel_seconds,
-            'stationary_seconds' => (int) $session->stationary_seconds,
+            'distance_meters' => $dayDistance,
+            'travel_seconds' => $dayTravel,
+            'stationary_seconds' => $dayStationary,
             'stop_count' => $stops->count(),
             'visit_count' => $visits,
             'unknown_stop_count' => $unknown,

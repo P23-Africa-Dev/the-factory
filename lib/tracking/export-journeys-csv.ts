@@ -32,6 +32,10 @@ export function buildJourneysCsv(
     "travel_seconds",
     "clock_in_at",
     "clock_out_at",
+    "source",
+    "started_at",
+    "ended_at",
+    "end_reason",
   ].join(",");
 
   const rows = journeys.map((j) =>
@@ -46,6 +50,10 @@ export function buildJourneysCsv(
       csvEscape(j.travel_seconds),
       csvEscape(j.clock_in_at),
       csvEscape(j.clock_out_at),
+      csvEscape(j.source ?? "attendance"),
+      csvEscape(j.started_at ?? j.clock_in_at),
+      csvEscape(j.ended_at ?? j.clock_out_at),
+      csvEscape(j.end_reason ?? ""),
     ].join(","),
   );
 

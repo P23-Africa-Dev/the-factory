@@ -17,6 +17,7 @@ class FieldLocationPoint extends Model
         'field_activity_session_id',
         'company_id',
         'user_id',
+        'client_point_id',
         'task_id',
         'task_tracking_session_id',
         'latitude',

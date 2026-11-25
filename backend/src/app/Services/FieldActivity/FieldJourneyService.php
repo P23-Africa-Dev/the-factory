@@ -45,7 +45,7 @@ class FieldJourneyService
             $this->attendanceAccessService->ensureCanManage($context);
             $this->assertUserInCompany($target, (int) $company->id);
 
-            if ($context->role === 'supervisor') {
+            if ($context->role === 'supervisor' && (int) $target->id !== (int) $actor->id) {
                 if ((int) $target->supervisor_user_id !== (int) $actor->id) {
                     throw ValidationException::withMessages([
                         'authorization' => ['Supervisors can only view journey history of agents assigned to them.'],
@@ -80,7 +80,7 @@ class FieldJourneyService
         $items = collect($paginator->items())->map(function (FieldActivitySession $session) use ($summaries, $attendanceByDate): array {
             $date = $session->started_at?->toDateString() ?? '';
             $summary = $summaries->get($session->id);
-            $attendance = $attendanceByDate->get($date);
+            $attendance = $session->isFieldTrip() ? null : $attendanceByDate->get($date);
 
             return $this->serializeJourneyCard($session, $summary, $attendance);
         })->values()->all();
@@ -149,7 +149,7 @@ class FieldJourneyService
         if (! $context->isAgent()) {
             $this->attendanceAccessService->ensureCanManage($context);
 
-            if ($context->role === 'supervisor') {
+            if ($context->role === 'supervisor' && (int) $session->user_id !== (int) $actor->id) {
                 $sessionUser = User::query()->find($session->user_id);
                 if (! $sessionUser || (int) $sessionUser->supervisor_user_id !== (int) $actor->id) {
                     throw ValidationException::withMessages([
@@ -166,12 +166,16 @@ class FieldJourneyService
             ->where('field_activity_session_id', $session->id)
             ->first();
 
-        $attendance = AttendanceRecord::query()->find($session->attendance_record_id)
-            ?? AttendanceRecord::query()
-                ->where('company_id', $session->company_id)
-                ->where('user_id', $session->user_id)
-                ->whereDate('attendance_date', $session->started_at?->toDateString())
-                ->first();
+        // Field trips are independent of attendance; only legacy clock-in
+        // sessions borrow clock-in/out times and positions.
+        $attendance = $session->isFieldTrip()
+            ? null
+            : (($session->attendance_record_id ? AttendanceRecord::query()->find($session->attendance_record_id) : null)
+                ?? AttendanceRecord::query()
+                    ->where('company_id', $session->company_id)
+                    ->where('user_id', $session->user_id)
+                    ->whereDate('attendance_date', $session->started_at?->toDateString())
+                    ->first());
 
         $stops = FieldStop::query()
             ->where('field_activity_session_id', $session->id)
@@ -344,13 +348,14 @@ class FieldJourneyService
                 'meta' => [],
             ];
         } elseif ($session->started_at) {
+            $tripStart = is_array($session->meta['start'] ?? null) ? $session->meta['start'] : null;
             $events[] = [
                 'id' => 'session_start_'.$session->id,
                 'type' => 'clock_in',
-                'label' => 'Journey Started',
+                'label' => $session->isFieldTrip() ? 'Field Trip Started' : 'Journey Started',
                 'occurred_at' => $session->started_at->toIso8601String(),
-                'latitude' => $session->last_latitude,
-                'longitude' => null,
+                'latitude' => $tripStart['latitude'] ?? null,
+                'longitude' => $tripStart['longitude'] ?? null,
                 'address' => null,
                 'color' => 'green',
                 'meta' => [],
@@ -430,7 +435,10 @@ class FieldJourneyService
             $events[] = [
                 'id' => 'session_end_'.$session->id,
                 'type' => 'clock_out',
-                'label' => 'Journey Ended',
+                'label' => match ($session->end_reason) {
+                    FieldActivitySession::END_REASON_AUTO_NO_SIGNAL => 'Field Trip Auto-ended (no location)',
+                    default => $session->isFieldTrip() ? 'Field Trip Ended' : 'Journey Ended',
+                },
                 'occurred_at' => $session->ended_at->toIso8601String(),
                 'latitude' => $session->last_latitude,
                 'longitude' => $session->last_longitude,
@@ -524,6 +532,14 @@ class FieldJourneyService
             ];
         }
 
+        if ($session->isFieldTrip()) {
+            // Trip start = first trail point; end = last point once ended.
+            $first = $points->first();
+            $last = $points->last();
+            $clockIn = $first ? ['latitude' => (float) $first->latitude, 'longitude' => (float) $first->longitude, 'address' => null] : null;
+            $clockOut = ($last && $session->ended_at) ? ['latitude' => (float) $last->latitude, 'longitude' => (float) $last->longitude, 'address' => null] : null;
+        }
+
         return [
             'type' => 'LineString',
             'coordinates' => $coordinates,
@@ -609,16 +625,22 @@ class FieldJourneyService
             'status' => $session->status?->value ?? (string) $session->status,
             'clock_in_at' => $attendance?->clock_in_at?->toIso8601String() ?? $session->started_at?->toIso8601String(),
             'clock_out_at' => $attendance?->clock_out_at?->toIso8601String() ?? $session->ended_at?->toIso8601String(),
-            'distance_meters' => (int) ($summary?->distance_meters ?? $session->distance_meters),
-            'travel_seconds' => (int) ($summary?->travel_seconds ?? $session->travel_seconds),
-            'stationary_seconds' => (int) ($summary?->stationary_seconds ?? $session->stationary_seconds),
+            // Per-session metrics: a day may hold several field trips, and the
+            // daily summary now adds them all up.
+            'distance_meters' => (int) $session->distance_meters,
+            'travel_seconds' => (int) $session->travel_seconds,
+            'stationary_seconds' => (int) $session->stationary_seconds,
             'active_seconds' => (int) $session->travel_seconds + (int) $session->stationary_seconds,
             'stop_count' => $stopCount,
             'visit_count' => $visitCount,
             'unknown_stop_count' => $unknownStopCount,
             'travel_efficiency' => $efficiency,
-            'narrative' => $summary?->narrative,
+            'narrative' => $session->isFieldTrip() ? null : $summary?->narrative,
             'attendance_record_id' => $session->attendance_record_id,
+            'source' => $session->source ?? FieldActivitySession::SOURCE_ATTENDANCE,
+            'started_at' => $session->started_at?->toIso8601String(),
+            'ended_at' => $session->ended_at?->toIso8601String(),
+            'end_reason' => $session->end_reason,
         ];
     }
 

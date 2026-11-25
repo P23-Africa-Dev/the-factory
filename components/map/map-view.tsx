@@ -2129,7 +2129,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         />
       )}
 
-      {(leftTab === 'clocked-in' || compact) && (
+      {/* Field trip trails show on every tab: trips are independent of clock-in. */}
+      {(leftTab !== 'businesses' || compact) && (
         <FieldActivityLiveLayer
           provider="mapbox"
           ready={mapVersion > 0}
@@ -3447,7 +3448,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         />
       )}
 
-      {(leftTab === 'clocked-in' || compact) && (
+      {/* Field trip trails show on every tab: trips are independent of clock-in. */}
+      {(leftTab !== 'businesses' || compact) && (
         <FieldActivityLiveLayer
           provider="google"
           ready={googleReady}

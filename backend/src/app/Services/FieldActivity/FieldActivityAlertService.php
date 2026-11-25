@@ -168,8 +168,11 @@ class FieldActivityAlertService
         $eodHour = (int) config('field_activity.eod_hour', 19);
         $closed = 0;
 
+        // Legacy clock-in sessions only. Field trips are independent of the work
+        // day: they end by the user, or by FieldTripService::monitor (no signal).
         $sessions = FieldActivitySession::query()
             ->where('status', FieldActivitySessionStatus::ACTIVE)
+            ->where('source', FieldActivitySession::SOURCE_ATTENDANCE)
             ->when($companyId !== null, fn ($q) => $q->where('company_id', $companyId))
             ->where('started_at', '<', now()->startOfDay()->addHours($eodHour))
             ->whereDate('started_at', '<', now()->toDateString())
@@ -179,7 +182,7 @@ class FieldActivityAlertService
 
         foreach ($sessions as $session) {
             $endedAt = Carbon::parse($session->started_at->toDateString())->setTime($eodHour, 0);
-            $sessionService->completeSession($session, $endedAt, autoClosed: true, withNarrative: true);
+            $sessionService->completeSession($session, $endedAt, autoClosed: true, withNarrative: true, endReason: FieldActivitySession::END_REASON_AUTO_LEGACY);
             $closed++;
         }
 

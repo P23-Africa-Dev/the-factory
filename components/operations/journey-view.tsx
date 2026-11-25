@@ -517,7 +517,13 @@ export function JourneyView({
             </Link>
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                Daily Journey
+                {journey?.source === "field_trip"
+                  ? journey.end_reason === "auto_no_signal"
+                    ? "Field Trip · Auto-ended (no location)"
+                    : journey.status === "active"
+                      ? "Field Trip · Live"
+                      : "Field Trip"
+                  : "Daily Journey"}
               </p>
               <h1 className="text-[18px] font-black text-[#0B1215] truncate">
                 {data?.agent?.name ?? "Agent"}
@@ -551,7 +557,7 @@ export function JourneyView({
               className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-[11px] font-bold text-[#0B1215] disabled:opacity-40"
             >
               <ChevronLeft size={14} />
-              Previous Day
+              Previous
             </button>
             <button
               type="button"
@@ -562,7 +568,7 @@ export function JourneyView({
               }
               className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-[11px] font-bold text-[#0B1215] disabled:opacity-40"
             >
-              Next Day
+              Next
               <ChevronRight size={14} />
             </button>
           </div>

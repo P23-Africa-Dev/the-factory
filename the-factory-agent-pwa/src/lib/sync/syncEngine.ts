@@ -124,7 +124,8 @@ async function syncLocationQueue(): Promise<void> {
 
       try {
         await client.post(
-          `/agent/field-activity/sessions/${sessionId}/points`,
+          // Field trips: shared endpoint for agents and managers (ownership-checked).
+          `/field-trips/${sessionId}/points`,
           {
             company_id: companyId,
             points: batch.map((r) => ({
@@ -134,6 +135,7 @@ async function syncLocationQueue(): Promise<void> {
               speed_mps: r.speedMps ?? null,
               heading_degrees: r.headingDegrees ?? null,
               recorded_at: r.recordedAt,
+              client_point_id: r.clientPointId ?? undefined,
             })),
           },
           BACKGROUND_REQUEST,

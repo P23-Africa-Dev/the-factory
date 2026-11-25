@@ -48,32 +48,7 @@ class FieldActivityApiTest extends TestCase
         $this->app->instance(AiProviderRouter::class, $ai);
     }
 
-    public function test_clock_in_creates_field_session_when_enabled(): void
-    {
-        [$company, $owner, $agent] = $this->seedCompany();
-        $company->forceFill(['field_activity_enabled' => true])->save();
-        $this->seedAttendanceSettings($company);
-
-        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
-
-        $response = $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
-                'company_id' => $company->id,
-                'latitude' => 6.5244,
-                'longitude' => 3.3792,
-                'accuracy_m' => 10,
-            ]);
-
-        $response->assertCreated();
-
-        $this->assertDatabaseHas('field_activity_sessions', [
-            'company_id' => $company->id,
-            'user_id' => $agent->id,
-            'status' => 'active',
-        ]);
-    }
-
-    public function test_clock_in_seeds_initial_field_location_point(): void
+    public function test_clock_in_no_longer_starts_field_tracking(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();
         $company->forceFill(['field_activity_enabled' => true])->save();
@@ -87,6 +62,30 @@ class FieldActivityApiTest extends TestCase
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
                 'accuracy_m' => 10,
+            ])
+            ->assertCreated();
+
+        // Tracking is started on demand with "Start Field Trip", not by attendance.
+        $this->assertDatabaseMissing('field_activity_sessions', [
+            'company_id' => $company->id,
+            'user_id' => $agent->id,
+        ]);
+    }
+
+    public function test_field_trip_start_seeds_initial_location_point(): void
+    {
+        [$company, $owner, $agent] = $this->seedCompany();
+        $company->forceFill(['field_activity_enabled' => true])->save();
+        $this->seedAttendanceSettings($company);
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
+
+        $this->actingAs($agent, 'sanctum')
+            ->postJson('/api/v1/field-trips', [
+                'company_id' => $company->id,
+                'latitude' => 6.5244,
+                'longitude' => 3.3792,
+                'accuracy_meters' => 10,
             ])
             ->assertCreated();
 
@@ -139,7 +138,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -191,7 +190,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -199,6 +198,8 @@ class FieldActivityApiTest extends TestCase
             ->assertCreated();
 
         $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+        // Uploads arrive after the points were recorded (future timestamps are clamped).
+        Carbon::setTestNow(Carbon::parse('2026-07-29 20:00:00', 'Africa/Lagos'));
 
         // Simulate device coming back online after 5 hours offline.
         $this->actingAs($agent, 'sanctum')
@@ -232,11 +233,11 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
-                'accuracy_m' => 10,
+                'accuracy_meters' => 10,
             ])
             ->assertCreated();
 
@@ -314,7 +315,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -322,6 +323,8 @@ class FieldActivityApiTest extends TestCase
             ->assertCreated();
 
         $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+        // Uploads arrive after the points were recorded (future timestamps are clamped).
+        Carbon::setTestNow(Carbon::parse('2026-07-29 20:00:00', 'Africa/Lagos'));
 
         $baseLat = 6.5300;
         $baseLng = 3.3800;
@@ -360,7 +363,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -368,6 +371,8 @@ class FieldActivityApiTest extends TestCase
             ->assertCreated();
 
         $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+        // Uploads arrive after the points were recorded (future timestamps are clamped).
+        Carbon::setTestNow(Carbon::parse('2026-07-29 20:00:00', 'Africa/Lagos'));
         $baseLat = 6.5310;
         $baseLng = 3.3810;
 
@@ -401,7 +406,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -409,6 +414,8 @@ class FieldActivityApiTest extends TestCase
             ->assertCreated();
 
         $session = FieldActivitySession::query()->where('user_id', $agent->id)->firstOrFail();
+        // Uploads arrive after the points were recorded (future timestamps are clamped).
+        Carbon::setTestNow(Carbon::parse('2026-07-29 20:00:00', 'Africa/Lagos'));
 
         $points = [];
         for ($i = 0; $i <= 6; $i++) {
@@ -444,7 +451,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -478,7 +485,7 @@ class FieldActivityApiTest extends TestCase
         ]);
     }
 
-    public function test_clock_out_closes_session_and_builds_summary(): void
+    public function test_ending_field_trip_closes_session_and_builds_summary(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();
         $company->forceFill(['field_activity_enabled' => true])->save();
@@ -486,7 +493,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -496,7 +503,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 16:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-out', [
+            ->postJson('/api/v1/field-trips/'.FieldActivitySession::query()->where('user_id', $agent->id)->latest('id')->value('id').'/end', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -606,7 +613,7 @@ class FieldActivityApiTest extends TestCase
         $this->assertTrue((bool) $company->fresh()->field_activity_enabled);
     }
 
-    public function test_auto_clock_out_exposes_pending_review_backlog_on_next_day(): void
+    public function test_auto_ended_trip_exposes_pending_review_backlog_on_next_day(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();
         $company->forceFill(['field_activity_enabled' => true])->save();
@@ -615,11 +622,11 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 09:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
-                'accuracy_m' => 10,
+                'accuracy_meters' => 10,
             ])
             ->assertCreated();
 
@@ -640,9 +647,8 @@ class FieldActivityApiTest extends TestCase
         ]);
 
         Carbon::setTestNow(Carbon::parse('2026-07-29 18:20:00', 'Africa/Lagos'));
-        /** @var AttendanceService $attendanceService */
-        $attendanceService = app(AttendanceService::class);
-        $attendanceService->autoClockOutForOpenRecords($company->id);
+        // No location since 09:00: the monitor auto-ends the trip (default 2 h limit).
+        app(\App\Services\FieldActivity\FieldTripService::class)->monitor();
 
         $this->assertDatabaseHas('field_activity_sessions', [
             'id' => $session->id,
@@ -663,7 +669,7 @@ class FieldActivityApiTest extends TestCase
             ->assertJsonPath('data.pending_review.pending_stop_count', 1);
     }
 
-    public function test_manual_clock_out_exposes_pending_review_backlog_on_next_day(): void
+    public function test_ended_trip_exposes_pending_review_backlog_on_next_day(): void
     {
         [$company, $owner, $agent] = $this->seedCompany();
         $company->forceFill(['field_activity_enabled' => true])->save();
@@ -672,11 +678,11 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 09:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
-                'accuracy_m' => 10,
+                'accuracy_meters' => 10,
             ])
             ->assertCreated();
 
@@ -700,7 +706,7 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 15:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-out', [
+            ->postJson('/api/v1/field-trips/'.FieldActivitySession::query()->where('user_id', $agent->id)->latest('id')->value('id').'/end', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
@@ -743,11 +749,11 @@ class FieldActivityApiTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-07-29 09:00:00', 'Africa/Lagos'));
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson('/api/v1/agent/attendance/clock-in', [
+            ->postJson('/api/v1/field-trips', [
                 'company_id' => $company->id,
                 'latitude' => 6.5244,
                 'longitude' => 3.3792,
-                'accuracy_m' => 10,
+                'accuracy_meters' => 10,
             ])
             ->assertCreated();
 
@@ -768,9 +774,8 @@ class FieldActivityApiTest extends TestCase
         ]);
 
         Carbon::setTestNow(Carbon::parse('2026-07-29 18:20:00', 'Africa/Lagos'));
-        /** @var AttendanceService $attendanceService */
-        $attendanceService = app(AttendanceService::class);
-        $attendanceService->autoClockOutForOpenRecords($company->id);
+        // No location since 09:00: the monitor auto-ends the trip (default 2 h limit).
+        app(\App\Services\FieldActivity\FieldTripService::class)->monitor();
 
         Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
 

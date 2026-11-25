@@ -70,15 +70,17 @@ class FieldActivitySessionService
             return $existing;
         }
 
-        // Close any stale active sessions for this user.
-        $staleClosed = FieldActivitySession::query()
+        // Close any stale active sessions for this user properly (stops + summary).
+        $staleClosed = 0;
+        FieldActivitySession::query()
             ->where('company_id', $company->id)
             ->where('user_id', $record->user_id)
             ->where('status', FieldActivitySessionStatus::ACTIVE)
-            ->update([
-                'status' => FieldActivitySessionStatus::AUTO_CLOSED,
-                'ended_at' => now(),
-            ]);
+            ->get()
+            ->each(function (FieldActivitySession $stale) use (&$staleClosed): void {
+                $this->completeSession($stale, $stale->last_recorded_at ?? now(), autoClosed: true, endReason: FieldActivitySession::END_REASON_AUTO_LEGACY);
+                $staleClosed++;
+            });
 
         $meta = is_array($record->metadata) ? $record->metadata : [];
 
@@ -119,15 +121,10 @@ class FieldActivitySessionService
             ->where('status', FieldActivitySessionStatus::ACTIVE)
             ->first();
 
-        if ($session === null) {
-            $session = FieldActivitySession::query()
-                ->where('attendance_record_id', $record->id)
-                ->orderByDesc('id')
-                ->first();
-        }
 
         if ($session === null) {
-            Log::warning('field_activity.lifecycle.end_missing_session', [
+            // Normal since Field Trips: clock-in no longer opens a session.
+            Log::debug('field_activity.lifecycle.end_missing_session', [
                 'attendance_record_id' => $record->id,
                 'company_id' => $record->company_id,
                 'user_id' => $record->user_id,
@@ -149,8 +146,12 @@ class FieldActivitySessionService
         Carbon|string|null $endedAt = null,
         bool $autoClosed = false,
         bool $withNarrative = false,
+        ?string $endReason = null,
     ): FieldDailySummary {
         $ended = $endedAt instanceof Carbon ? $endedAt : ClientTime::parse($endedAt);
+        if ($session->started_at !== null && $ended->lt($session->started_at)) {
+            $ended = $session->started_at->copy();
+        }
 
         $this->stopDetectionService->finalizeOpenStops($session, $ended);
 
@@ -159,6 +160,7 @@ class FieldActivitySessionService
                 ? FieldActivitySessionStatus::AUTO_CLOSED
                 : FieldActivitySessionStatus::COMPLETED,
             'ended_at' => $ended,
+            'end_reason' => $endReason ?? ($autoClosed ? FieldActivitySession::END_REASON_AUTO_LEGACY : FieldActivitySession::END_REASON_USER),
         ]);
 
         $summary = $this->dailySummaryService->buildForSession($session->fresh() ?? $session, $withNarrative);
@@ -186,13 +188,14 @@ class FieldActivitySessionService
      */
     public function recordPoints(User $user, FieldActivitySession $session, array $data): array
     {
+        // Any role may record points for their OWN session (field trips are for
+        // agents and managers alike); ownership is the access rule.
         $context = $this->attendanceAccessService->resolve($user, $data['company_id'] ?? $session->company_id);
-        $this->attendanceAccessService->ensureAgent($context);
 
         if ((int) $session->company_id !== (int) $context->company->id
             || (int) $session->user_id !== (int) $user->id) {
             throw ValidationException::withMessages([
-                'session' => ['Field activity session not found for this agent.'],
+                'session' => ['Field activity session not found for this user.'],
             ]);
         }
 
@@ -220,6 +223,7 @@ class FieldActivitySessionService
                 'recorded_at' => $data['recorded_at'] ?? null,
                 'task_id' => $data['task_id'] ?? null,
                 'task_tracking_session_id' => $data['task_tracking_session_id'] ?? null,
+                'client_point_id' => $data['client_point_id'] ?? null,
             ]];
         }
 
@@ -230,9 +234,32 @@ class FieldActivitySessionService
             ]);
         }
 
+        // Sort by actual instant, not string: mixed offsets ("+01:00" vs "Z")
+        // sort wrongly as text.
         usort($rawPoints, static function (array $a, array $b): int {
-            return strcmp((string) ($a['recorded_at'] ?? ''), (string) ($b['recorded_at'] ?? ''));
+            return ClientTime::parse($a['recorded_at'] ?? null)->getTimestamp()
+                <=> ClientTime::parse($b['recorded_at'] ?? null)->getTimestamp();
         });
+
+        // Replayed offline batches: skip points this session already stored.
+        $clientIds = array_values(array_filter(array_map(
+            static fn (array $p): ?string => isset($p['client_point_id']) && is_string($p['client_point_id']) ? $p['client_point_id'] : null,
+            $rawPoints,
+        )));
+        if ($clientIds !== []) {
+            $seen = FieldLocationPoint::query()
+                ->where('field_activity_session_id', $session->id)
+                ->whereIn('client_point_id', $clientIds)
+                ->pluck('client_point_id')
+                ->all();
+            if ($seen !== []) {
+                $seenSet = array_flip($seen);
+                $rawPoints = array_values(array_filter(
+                    $rawPoints,
+                    static fn (array $p): bool => ! isset($p['client_point_id']) || ! isset($seenSet[$p['client_point_id']]),
+                ));
+            }
+        }
 
         $activeTaskSession = TaskTrackingSession::query()
             ->where('company_id', $session->company_id)
@@ -306,7 +333,15 @@ class FieldActivitySessionService
             return null;
         }
 
+        // Clamp device clocks: never in the future, never before the session.
         $recordedAt = ClientTime::parse($raw['recorded_at'] ?? null);
+        $latest = now()->addSeconds(120);
+        if ($recordedAt->gt($latest)) {
+            $recordedAt = now();
+        }
+        if ($session->started_at !== null && $recordedAt->lt($session->started_at->copy()->subMinutes(5))) {
+            return null;
+        }
 
         // Never rewind the session's time cursor: an out-of-order or
         // clock-skewed point must not move last_recorded_at into the past,
@@ -345,15 +380,24 @@ class FieldActivitySessionService
             return null;
         }
 
-        $taskId = isset($raw['task_id']) ? (int) $raw['task_id'] : ($activeTaskSession?->task_id);
-        $taskSessionId = isset($raw['task_tracking_session_id'])
-            ? (int) $raw['task_tracking_session_id']
-            : $activeTaskSession?->id;
+        // Only trust task links that belong to this user's open task session;
+        // client-sent ids are otherwise ignored.
+        $taskId = $activeTaskSession?->task_id;
+        $taskSessionId = $activeTaskSession?->id;
+        if (isset($raw['task_tracking_session_id']) && $activeTaskSession !== null
+            && (int) $raw['task_tracking_session_id'] !== (int) $activeTaskSession->id) {
+            $taskId = null;
+            $taskSessionId = null;
+        }
+        $clientPointId = isset($raw['client_point_id']) && is_string($raw['client_point_id'])
+            ? substr($raw['client_point_id'], 0, 36)
+            : null;
 
         $point = FieldLocationPoint::query()->create([
             'field_activity_session_id' => $session->id,
             'company_id' => $session->company_id,
             'user_id' => $user->id,
+            'client_point_id' => $clientPointId,
             'task_id' => $taskId,
             'task_tracking_session_id' => $taskSessionId,
             'latitude' => $lat,
@@ -712,6 +756,51 @@ class FieldActivitySessionService
     }
 
     /**
+     * First trail point of a session from a known position (field trip start).
+     */
+    public function seedInitialPoint(
+        FieldActivitySession $session,
+        float $lat,
+        float $lng,
+        ?float $accuracy,
+        Carbon $recordedAt,
+    ): bool {
+        if (! GeoDistance::isValidCoordinate($lat, $lng)) {
+            return false;
+        }
+        if (FieldLocationPoint::query()->where('field_activity_session_id', $session->id)->exists()) {
+            return false;
+        }
+
+        FieldLocationPoint::query()->create([
+            'field_activity_session_id' => $session->id,
+            'company_id' => $session->company_id,
+            'user_id' => $session->user_id,
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'accuracy_meters' => $accuracy,
+            'speed_mps' => 0.0,
+            'heading_degrees' => null,
+            'distance_from_previous_meters' => 0.0,
+            'movement_state' => FieldMovementState::STOPPED,
+            'recorded_at' => $recordedAt,
+        ]);
+
+        $session->forceFill([
+            'last_latitude' => $lat,
+            'last_longitude' => $lng,
+            'last_accuracy_meters' => $accuracy,
+            'last_recorded_at' => $recordedAt,
+            'last_movement_state' => FieldMovementState::STOPPED,
+            'last_persisted_latitude' => $lat,
+            'last_persisted_longitude' => $lng,
+            'last_persisted_recorded_at' => $recordedAt,
+        ])->save();
+
+        return true;
+    }
+
+    /**
      * @param  array<string, mixed>  $clockMeta
      */
     private function seedInitialPointFromClockIn(
@@ -842,9 +931,12 @@ class FieldActivitySessionService
             'company_id' => $session->company_id,
             'user_id' => $session->user_id,
             'attendance_record_id' => $session->attendance_record_id,
+            'source' => $session->source ?? FieldActivitySession::SOURCE_ATTENDANCE,
+            'client_trip_id' => $session->client_trip_id,
             'status' => $session->status?->value ?? (string) $session->status,
             'started_at' => $session->started_at?->toIso8601String(),
             'ended_at' => $session->ended_at?->toIso8601String(),
+            'end_reason' => $session->end_reason,
             'distance_meters' => (int) $session->distance_meters,
             'travel_seconds' => (int) $session->travel_seconds,
             'stationary_seconds' => (int) $session->stationary_seconds,
@@ -891,19 +983,25 @@ class FieldActivitySessionService
      */
     public function serializeSummary(FieldDailySummary $summary): array
     {
-        $session = $summary->field_activity_session_id
-            ? FieldActivitySession::query()->find($summary->field_activity_session_id)
-            : null;
+        // Live totals across every session of the day (several field trips),
+        // so an in-progress trip is reflected before its summary is rebuilt.
+        $day = FieldActivitySession::query()
+            ->where('company_id', $summary->company_id)
+            ->where('user_id', $summary->user_id)
+            ->whereDate('started_at', $summary->summary_date?->toDateString())
+            ->selectRaw('COUNT(*) as sessions, COALESCE(SUM(distance_meters),0) as distance_meters, COALESCE(SUM(travel_seconds),0) as travel_seconds, COALESCE(SUM(stationary_seconds),0) as stationary_seconds, COALESCE(SUM(stop_count),0) as stop_count, COALESCE(SUM(visit_count),0) as visit_count, COALESCE(SUM(unknown_stop_count),0) as unknown_stop_count')
+            ->first();
+        $hasDay = (int) ($day->sessions ?? 0) > 0;
 
         return [
             'id' => $summary->id,
             'summary_date' => $summary->summary_date?->toDateString(),
-            'distance_meters' => (int) ($session?->distance_meters ?? $summary->distance_meters),
-            'travel_seconds' => (int) ($session?->travel_seconds ?? $summary->travel_seconds),
-            'stationary_seconds' => (int) ($session?->stationary_seconds ?? $summary->stationary_seconds),
-            'stop_count' => (int) ($session?->stop_count ?? $summary->stop_count),
-            'visit_count' => (int) ($session?->visit_count ?? $summary->visit_count),
-            'unknown_stop_count' => (int) ($session?->unknown_stop_count ?? $summary->unknown_stop_count),
+            'distance_meters' => (int) ($hasDay ? $day->distance_meters : $summary->distance_meters),
+            'travel_seconds' => (int) ($hasDay ? $day->travel_seconds : $summary->travel_seconds),
+            'stationary_seconds' => (int) ($hasDay ? $day->stationary_seconds : $summary->stationary_seconds),
+            'stop_count' => (int) ($hasDay ? $day->stop_count : $summary->stop_count),
+            'visit_count' => (int) ($hasDay ? $day->visit_count : $summary->visit_count),
+            'unknown_stop_count' => (int) ($hasDay ? $day->unknown_stop_count : $summary->unknown_stop_count),
             'personal_stop_count' => (int) $summary->personal_stop_count,
             'ignored_stop_count' => (int) $summary->ignored_stop_count,
             'narrative' => $summary->narrative,

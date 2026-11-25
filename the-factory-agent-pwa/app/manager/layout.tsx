@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/features/auth';
+import { FieldTripProvider, FieldTripStatusPill } from '@/features/field-trip';
 import { usePushSubscription } from '@/manager/features/notifications/hooks/usePushSubscription';
 import { useDeviceNotificationBridge } from '@/manager/features/notifications/hooks/useDeviceNotificationBridge';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
@@ -130,7 +131,11 @@ export default function ManagerLayout({
 
   return (
     <ModeGate mode="manager">
-      <ManagerShell>{children}</ManagerShell>
+      {/* Managers take field trips too; same feature as agents. */}
+      <FieldTripProvider>
+        <FieldTripStatusPill homePath="/manager" />
+        <ManagerShell>{children}</ManagerShell>
+      </FieldTripProvider>
     </ModeGate>
   );
 }

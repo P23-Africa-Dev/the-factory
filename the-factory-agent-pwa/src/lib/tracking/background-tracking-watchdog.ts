@@ -1,5 +1,5 @@
 /**
- * Shared watchdog for field-activity (clock-in) and task live tracking.
+ * Shared watchdog for field trips and task live tracking.
  * Detects GPS silence ("zombie watcher") and triggers watcher restarts.
  */
 
@@ -116,7 +116,9 @@ export function createBackgroundTrackingWatchdog(
       if (typeof window !== 'undefined') {
         window.removeEventListener('online', onOnline);
       }
-      resetBackgroundTrackingWatchdog();
+      // Do not reset the shared last-fix clock: every tracker shares one GPS
+      // watcher, and wiping it made a still-running tracker (e.g. a field trip
+      // after a task ended) think GPS had gone silent and restart needlessly.
     },
 
     poke: tick,

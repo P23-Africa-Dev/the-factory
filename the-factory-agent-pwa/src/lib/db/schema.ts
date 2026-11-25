@@ -7,8 +7,16 @@ export interface LocationQueueEntry {
   taskId: number;
   /** Company that owns the task/session — preferred over active company at sync time. */
   companyId?: number | null;
-  /** When set, point belongs to a day-level field activity session (not a task). */
+  /** When set, point belongs to a field trip session (not a task). */
   fieldActivitySessionId?: number | null;
+  /**
+   * Field trip started offline: the server id is not known yet. Rows carry the
+   * trip's client id and are back-filled with fieldActivitySessionId once the
+   * start syncs (taskId is 0, so task sync skips them meanwhile).
+   */
+  fieldTripClientId?: string | null;
+  /** Stable per-point id; the server ignores duplicates (offline replays). */
+  clientPointId?: string | null;
   latitude: number;
   longitude: number;
   accuracyMeters: number | null;

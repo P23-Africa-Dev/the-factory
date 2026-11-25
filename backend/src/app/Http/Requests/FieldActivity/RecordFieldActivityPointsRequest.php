@@ -35,6 +35,7 @@ class RecordFieldActivityPointsRequest extends FormRequest
             'recorded_at' => ['nullable', 'date'],
             'task_id' => ['nullable', 'integer', 'exists:tasks,id'],
             'task_tracking_session_id' => ['nullable', 'integer', 'exists:task_tracking_sessions,id'],
+            'client_point_id' => ['nullable', 'string', 'max:36'],
             'points' => ['nullable', 'array', 'max:50'],
             'points.*.latitude' => ['required_with:points', 'numeric', 'between:-90,90'],
             'points.*.longitude' => ['required_with:points', 'numeric', 'between:-180,180'],
@@ -44,6 +45,7 @@ class RecordFieldActivityPointsRequest extends FormRequest
             'points.*.recorded_at' => ['nullable', 'date'],
             'points.*.task_id' => ['nullable', 'integer', 'exists:tasks,id'],
             'points.*.task_tracking_session_id' => ['nullable', 'integer', 'exists:task_tracking_sessions,id'],
+            'points.*.client_point_id' => ['nullable', 'string', 'max:36'],
         ];
     }
 }

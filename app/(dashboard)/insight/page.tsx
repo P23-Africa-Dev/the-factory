@@ -18,6 +18,26 @@ function formatHours(s: number): string {
   return `${(s / 3600).toFixed(1)} h`;
 }
 
+const STOP_DWELL_OPTIONS = [3, 5, 10, 15, 20, 30].map((m) => ({ value: m * 60, label: `${m} minutes` }));
+const REMINDER_OPTIONS = [2, 3, 4, 5, 6, 8, 10, 12].map((h) => ({ value: h * 3600, label: `${h} hours` }));
+const AUTO_END_OPTIONS = [
+  { value: 1800, label: "30 minutes" },
+  { value: 3600, label: "1 hour" },
+  { value: 7200, label: "2 hours" },
+  { value: 10800, label: "3 hours" },
+  { value: 14400, label: "4 hours" },
+  { value: 21600, label: "6 hours" },
+];
+
+type TripSettingKey = "stop_dwell_seconds" | "trip_reminder_seconds" | "trip_auto_end_seconds";
+
+/** Ensures the saved value shows even if it is not one of the presets. */
+function withCurrent(options: { value: number; label: string }[], current: number | undefined) {
+  if (current == null || options.some((o) => o.value === current)) return options;
+  const label = current % 3600 === 0 ? `${current / 3600} hours` : `${Math.round(current / 60)} minutes`;
+  return [...options, { value: current, label }].sort((a, b) => a.value - b.value);
+}
+
 export default function InsightPage() {
   const queryClient = useQueryClient();
   const token = typeof window !== "undefined" ? getAuthTokenFromDocument() : "";
@@ -57,6 +77,16 @@ export default function InsightPage() {
     },
   });
 
+  const tripSettingMutation = useMutation({
+    mutationFn: async (patch: Partial<Record<TripSettingKey, number>>) => {
+      const res = await updateFieldActivitySettings(patch, token);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["field-activity-settings"] });
+    },
+  });
+
   const totals = analyticsQuery.data?.totals;
   const agents = analyticsQuery.data?.agents ?? [];
 
@@ -93,8 +123,8 @@ export default function InsightPage() {
           <p className="text-sm font-semibold">Field Activity Intelligence</p>
           <p className="text-xs text-white/50 mt-1">
             {settingsQuery.data?.enabled
-              ? "Enabled for this organization. Clock in starts day tracking."
-              : "Disabled — enable to start attendance-linked field sessions."}
+              ? "Enabled for this organization. Team members track routes and stops with Start Field Trip in the mobile app."
+              : "Disabled — enable so team members can start field trips from the mobile app."}
           </p>
         </div>
         <button
@@ -106,6 +136,62 @@ export default function InsightPage() {
           {settingsQuery.data?.enabled ? "Disable" : "Enable"}
         </button>
       </section>
+
+      {settingsQuery.data?.enabled && (
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
+          <div>
+            <p className="text-sm font-semibold">Field trip rules</p>
+            <p className="text-xs text-white/50 mt-1">Apply to every field trip in your organization.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {(
+              [
+                {
+                  key: "stop_dwell_seconds",
+                  title: "Stop detection",
+                  hint: "Count a stop after this long in one place",
+                  options: STOP_DWELL_OPTIONS,
+                },
+                {
+                  key: "trip_reminder_seconds",
+                  title: "Long-trip reminder",
+                  hint: "Remind the person after this long (repeats)",
+                  options: REMINDER_OPTIONS,
+                },
+                {
+                  key: "trip_auto_end_seconds",
+                  title: "Auto-end",
+                  hint: "End a trip after this long with no location",
+                  options: AUTO_END_OPTIONS,
+                },
+              ] as { key: TripSettingKey; title: string; hint: string; options: { value: number; label: string }[] }[]
+            ).map((field) => {
+              const current = settingsQuery.data?.[field.key];
+              return (
+                <label key={field.key} className="text-sm">
+                  <span className="block font-medium">{field.title}</span>
+                  <span className="block text-white/50 text-xs mb-1.5">{field.hint}</span>
+                  <select
+                    value={current ?? ""}
+                    disabled={tripSettingMutation.isPending}
+                    onChange={(e) => tripSettingMutation.mutate({ [field.key]: Number(e.target.value) })}
+                    className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2"
+                  >
+                    {withCurrent(field.options, current).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })}
+          </div>
+          {tripSettingMutation.isError && (
+            <p className="text-xs text-red-300">Could not save that setting. Please try again.</p>
+          )}
+        </section>
+      )}
 
       {settingsQuery.data?.enabled && (
         <>

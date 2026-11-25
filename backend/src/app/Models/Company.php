@@ -47,6 +47,9 @@ class Company extends Model
         'settings',
         'map_poi_display_enabled',
         'field_activity_enabled',
+        'field_stop_dwell_seconds',
+        'field_trip_reminder_seconds',
+        'field_trip_auto_end_seconds',
     ];
 
     protected function casts(): array
@@ -57,6 +60,9 @@ class Company extends Model
             'settings' => 'array',
             'map_poi_display_enabled' => 'boolean',
             'field_activity_enabled' => 'boolean',
+            'field_stop_dwell_seconds' => 'integer',
+            'field_trip_reminder_seconds' => 'integer',
+            'field_trip_auto_end_seconds' => 'integer',
             'activated_at' => 'datetime',
             'subscription_current_period_start' => 'datetime',
             'subscription_current_period_end' => 'datetime',
