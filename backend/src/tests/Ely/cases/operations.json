@@ -28,7 +28,9 @@
         { "id": "merge-duplicate-leads", "role": "admin", "message": "Acme Retail and Bright Pharmacy are the same business. Merge Bright Pharmacy into Acme Retail.", "expect": { "tools_all": ["crm.merge_leads"], "confirmation": true } },
         { "id": "merge-agent-denied", "role": "agent", "message": "Merge Acme Retail into Bright Pharmacy", "expect": { "forbidden_tools": ["crm.merge_leads"], "no_write": true } },
         { "id": "import-without-file", "role": "agent", "message": "Import my leads from a spreadsheet", "expect": { "forbidden_tools": ["crm.import_leads"], "no_write": true }, "rubric": "Explains how to attach a CSV in the chat or use CRM import; does not claim to import anything." },
-        { "id": "import-preview-attached", "role": "admin", "message": "Import the leads in the file I just attached", "expect": { "tools_any": ["crm.import_preview", "crm.import_leads"], "no_successful_write": true } },
+        { "id": "import-preview-attached", "role": "admin", "message": "Import the leads in the file I just attached", "page": { "path": "/dashboard", "attachment_id": "{attachment}", "attachment_name": "leads.csv" }, "expect": { "tools_any": ["crm.import_preview", "crm.import_leads"], "no_successful_write": true } },
+        { "id": "zones-list", "role": "admin", "message": "Which territory zones do we have?", "expect": { "tools_all": ["zones.list"], "no_write": true, "answer_contains_any": ["Eti-Osa", "Eti Osa"] } },
+        { "id": "reassignment-inbox", "role": "other_agent", "message": "Do I have any task handover requests waiting for me?", "expect": { "tools_all": ["tasks.reassignments.inbox"], "no_write": true, "answer_contains_any": ["Visit Shoprite Lekki"] } },
         { "id": "drive-delete", "role": "admin", "message": "Delete the old price list file from Drive", "expect": { "tools_any": ["drive.files", "drive.delete_file"], "no_successful_write": true } }
     ]
 }

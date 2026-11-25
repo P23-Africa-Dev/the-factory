@@ -1,6 +1,16 @@
-@import "tailwindcss";
+/*
+ * Only scan the frontend for class names. Without this, Tailwind scans the whole
+ * repo (Laravel backend, agent PWA, local worktrees), which makes `next dev`
+ * heavier than it needs to be.
+ */
+@import "tailwindcss" source(none);
 @import "mapbox-gl/dist/mapbox-gl.css";
 @import "react-phone-number-input/style.css";
+
+@source "../app";
+@source "../components";
+@source "../lib";
+@source "../hooks";
 
 html {
   scroll-behavior: smooth;

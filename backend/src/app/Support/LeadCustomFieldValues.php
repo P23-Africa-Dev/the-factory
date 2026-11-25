@@ -52,11 +52,33 @@ class LeadCustomFieldValues
     {
         return LeadFieldDefinition::query()
             ->where('company_id', $companyId)
-            ->whereIn('status', [LeadFieldStatus::ACTIVE->value, LeadFieldStatus::PENDING->value])
+            ->where('status', LeadFieldStatus::ACTIVE->value)
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
             ->keyBy(fn (LeadFieldDefinition $field): string => $field->key);
+    }
+
+    /**
+     * Capitalize each word. Hyphens start a new word. Extra spaces collapse.
+     */
+    public static function titleCaseLabel(string $label): string
+    {
+        $collapsed = preg_replace('/\s+/u', ' ', trim($label)) ?? trim($label);
+        if ($collapsed === '') {
+            return '';
+        }
+
+        return (string) preg_replace_callback(
+            '/[^\s\-]+/u',
+            static function (array $matches): string {
+                $word = mb_strtolower($matches[0]);
+                $first = mb_strtoupper(mb_substr($word, 0, 1));
+
+                return $first.mb_substr($word, 1);
+            },
+            $collapsed,
+        );
     }
 
     public static function keyFromLabel(string $label): string
@@ -179,12 +201,19 @@ class LeadCustomFieldValues
                 if (
                     $mode === 'import'
                     && $definition->status === LeadFieldStatus::ACTIVE
+                    && (bool) $definition->is_universal
                     && $definition->is_required
                 ) {
                     $errors["custom_fields.{$key}"][] = "{$definition->label} is required.";
                 }
 
-                unset($result[$key]);
+                // Keep an explicitly sent lead-only key so the column stays on that lead,
+                // except on file import: a blank cell must not register the field on the lead.
+                if (! (bool) $definition->is_universal && $mode !== 'import') {
+                    $result[$key] = '';
+                } else {
+                    unset($result[$key]);
+                }
 
                 continue;
             }
@@ -194,7 +223,11 @@ class LeadCustomFieldValues
 
         if ($mode === 'create' || $mode === 'update') {
             foreach ($definitions as $definition) {
-                if ($definition->status !== LeadFieldStatus::ACTIVE || ! $definition->is_required) {
+                if (
+                    $definition->status !== LeadFieldStatus::ACTIVE
+                    || ! (bool) $definition->is_universal
+                    || ! $definition->is_required
+                ) {
                     continue;
                 }
 

@@ -216,7 +216,13 @@ export function useCreateLeadField(options?: { onSuccess?: (field: LeadFieldDefi
     mutationFn: (payload: CreateLeadFieldPayload) => crmApi.createLeadField(payload),
     onSuccess: (field) => {
       void queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
-      toast.success('Lead field added');
+      if (field.universal_request_status === 'pending') {
+        toast.info('Saved on this lead', 'Universal use is awaiting approval.');
+      } else if (field.is_universal) {
+        toast.success('Universal lead field added');
+      } else {
+        toast.success('Lead field added for this lead');
+      }
       options?.onSuccess?.(field);
     },
     onError: (error) => {
@@ -242,10 +248,60 @@ export function useDeclineLeadField() {
   const queryClient = useQueryClient();
   const companyId = getActiveCompanyId();
   return useMutation({
-    mutationFn: (fieldId: number | string) => crmApi.declineLeadField(fieldId),
+    mutationFn: ({ fieldId, reason }: { fieldId: number | string; reason?: string }) =>
+      crmApi.declineLeadField(fieldId, reason),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
       toast.success('Custom lead field declined');
+    },
+  });
+}
+
+export function useDeleteLeadField() {
+  const queryClient = useQueryClient();
+  const companyId = getActiveCompanyId();
+  return useMutation({
+    mutationFn: (fieldId: number | string) => crmApi.deleteLeadField(fieldId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
+      toast.success('Lead field deleted');
+    },
+  });
+}
+
+export function useReorderLeadFields() {
+  const queryClient = useQueryClient();
+  const companyId = getActiveCompanyId();
+  return useMutation({
+    mutationFn: (orderedIds: Array<number | string>) => crmApi.reorderLeadFields(orderedIds),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
+    },
+  });
+}
+
+export function useUpdateLeadField() {
+  const queryClient = useQueryClient();
+  const companyId = getActiveCompanyId();
+  return useMutation({
+    mutationFn: ({
+      fieldId,
+      payload,
+    }: {
+      fieldId: number | string;
+      payload: {
+        label?: string;
+        description?: string | null;
+        options?: string[];
+        is_required?: boolean;
+        is_universal?: boolean;
+        show_on_create?: boolean;
+        show_in_list?: boolean;
+      };
+    }) => crmApi.updateLeadField(fieldId, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: crmKeys.leadFields(companyId) });
+      toast.success('Lead field updated');
     },
   });
 }

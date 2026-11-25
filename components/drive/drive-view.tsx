@@ -29,7 +29,12 @@ import {
   type DriveFile,
 } from "@/hooks/use-drive";
 import { formatDriveBytes } from "@/lib/api/drive";
-import { canPreviewDriveFile } from "@/lib/drive-preview";
+import {
+  canPreviewDriveFile,
+  ELY_REPORTS_RETENTION_NOTE,
+  formatDriveExpiryNote,
+} from "@/lib/drive-preview";
+import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { DriveShareModal } from "./drive-share-modal";
 import { DriveQuickPreview } from "./drive-quick-preview";
 import { DrivePreviewModal } from "./drive-preview-modal";
@@ -54,6 +59,8 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
   const [search, setSearch] = useState("");
   const [shareFile, setShareFile] = useState<DriveFile | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
+  const [pendingDeleteFile, setPendingDeleteFile] = useState<DriveFile | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data: usage, isLoading: usageLoading } = useDriveUsage(apiCompanyId ?? undefined);
   const { data: folders = [], isLoading: foldersLoading } = useDriveFolders(apiCompanyId ?? undefined);
@@ -70,12 +77,13 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
   const downloadFile = useDownloadDriveFile();
   const syncGrants = useSyncDriveGrants();
 
-  const files = filesData?.items ?? [];
+  const files = useMemo(() => filesData?.items ?? [], [filesData]);
 
   const elyFolder = useMemo(
     () => folders.find((f) => f.system_key === "ely_reports") ?? null,
     [folders],
   );
+  const isElyFolderSelected = elyFolder != null && elyFolder.id === selectedFolderId;
 
   useEffect(() => {
     if (selectedFolderId != null || folders.length === 0) return;
@@ -106,6 +114,31 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
       company_id: apiCompanyId ?? undefined,
       filename: file.original_name,
     });
+  }
+
+  function requestDelete(file: DriveFile) {
+    setDeleteError(null);
+    setPendingDeleteFile(file);
+  }
+
+  function closeDeleteDialog() {
+    if (deleteFile.isPending) return;
+    setPendingDeleteFile(null);
+    setDeleteError(null);
+  }
+
+  async function confirmDelete() {
+    const file = pendingDeleteFile;
+    if (!file) return;
+    setDeleteError(null);
+    try {
+      await deleteFile.mutateAsync({ fileId: file.id, company_id: apiCompanyId ?? undefined });
+      if (selectedFile?.id === file.id) setSelectedFile(null);
+      if (previewModalFile?.id === file.id) setPreviewModalFile(null);
+      setPendingDeleteFile(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error && err.message ? err.message : "Could not delete this file.");
+    }
   }
 
   async function handleUpload(fileList: FileList | null) {
@@ -248,6 +281,10 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
                 )}
               </div>
 
+              {isElyFolderSelected && (
+                <p className="text-[12px] text-gray-400 -mt-1">{ELY_REPORTS_RETENTION_NOTE}</p>
+              )}
+
               {filesLoading ? (
                 <div className="flex justify-center py-16">
                   <Loader2 className="animate-spin text-gray-300" size={28} />
@@ -263,6 +300,7 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
                     const isSelected = selectedFile?.id === file.id;
                     const isHighlighted = highlightedFileId === file.id;
                     const previewable = canPreviewDriveFile(file);
+                    const expiryNote = formatDriveExpiryNote(file.expires_at);
 
                     return (
                       <div
@@ -293,6 +331,7 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
                             {formatDriveBytes(file.size_bytes)}
                             {file.source === "ely_report" ? " · ELY Report" : ""}
                           </p>
+                          {expiryNote && <p className="text-[11px] text-gray-400">{expiryNote}</p>}
                         </div>
                         <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                           {previewable && (
@@ -325,10 +364,7 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  deleteFile.mutate({ fileId: file.id, company_id: apiCompanyId ?? undefined });
-                                  if (selectedFile?.id === file.id) setSelectedFile(null);
-                                }}
+                                onClick={() => requestDelete(file)}
                                 className="p-2 rounded-full hover:bg-red-50 text-red-500"
                                 title="Delete"
                               >
@@ -374,6 +410,27 @@ export function DriveView({ basePath = "" }: { basePath?: string }) {
           isSaving={syncGrants.isPending}
         />
       )}
+
+      <ConfirmDeleteModal
+        isOpen={pendingDeleteFile != null}
+        onClose={closeDeleteDialog}
+        onConfirm={() => void confirmDelete()}
+        title="Delete file?"
+        description={
+          pendingDeleteFile
+            ? `"${pendingDeleteFile.original_name}" will be permanently deleted. This can't be undone.`
+            : ""
+        }
+        confirmLabel={deleteFile.isPending ? "Deleting..." : "Delete"}
+        closeOnConfirm={false}
+        confirmDisabled={deleteFile.isPending}
+      >
+        {deleteError ? (
+          <p className="text-[12px] text-red-500 text-center" role="alert">
+            {deleteError}
+          </p>
+        ) : null}
+      </ConfirmDeleteModal>
 
       {previewModalFile && apiCompanyId && (
         <DrivePreviewModal

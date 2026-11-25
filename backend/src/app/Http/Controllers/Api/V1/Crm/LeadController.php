@@ -120,6 +120,50 @@ class LeadController extends Controller
         );
     }
 
+    public function companyGroups(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'lead_ids' => ['required', 'array', 'max:5000'],
+            'lead_ids.*' => ['integer'],
+        ]);
+
+        $groups = $this->leadService->companyGroups(
+            $request->user(),
+            $data['lead_ids'],
+            $this->resolveCompanyContextId($data['company_id'] ?? null),
+        );
+
+        return $this->success(
+            message: 'Same-company lead groups fetched successfully.',
+            data: ['groups' => $groups],
+        );
+    }
+
+    public function mergeByCompany(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'lead_ids' => ['required', 'array', 'min:2', 'max:200'],
+            'lead_ids.*' => ['integer'],
+        ]);
+
+        $result = $this->leadService->mergeLeadsIntoCompany(
+            $request->user(),
+            $data['lead_ids'],
+            $this->resolveCompanyContextId($data['company_id'] ?? null),
+        );
+
+        return $this->success(
+            message: 'Leads merged into one company lead.',
+            data: [
+                'lead' => new LeadResource($result['lead']),
+                'merged_count' => $result['merged_count'],
+                'merged_lead_ids' => $result['merged_lead_ids'],
+            ],
+        );
+    }
+
     public function merge(Request $request, Lead $lead): JsonResponse
     {
         $data = $request->validate([

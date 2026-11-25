@@ -140,4 +140,15 @@ return Application::configure(basePath: dirname(__DIR__))
             }
             return null;
         });
+        // Any other HTTP error raised on purpose (e.g. Drive's "file no longer
+        // available" 404 or "storage unavailable" 503) keeps its status and
+        // message as JSON. Registered last so the specific handlers win.
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\HttpException $e, Request $request) use ($jsonError, $isApiRequest): ?JsonResponse {
+            if ($isApiRequest($request) || $request->expectsJson()) {
+                $message = trim($e->getMessage()) !== '' ? $e->getMessage() : (\Symfony\Component\HttpFoundation\Response::$statusTexts[$e->getStatusCode()] ?? 'Request failed.');
+
+                return $jsonError($message, null, $e->getStatusCode())->withHeaders($e->getHeaders());
+            }
+            return null;
+        });
     })->create();

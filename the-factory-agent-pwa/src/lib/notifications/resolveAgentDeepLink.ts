@@ -100,6 +100,9 @@ function resolveAgentPath(pathname: string, search: string): string {
   }
   if (pathname === '/assistant' || pathname.startsWith('/assistant/')) return '/assistant';
 
+  // Company Drive (keeps ?file= so the file opens)
+  if (pathname === '/drive' || pathname.startsWith('/drive/')) return `/drive${search}`;
+
   // Attendance (clock-in card on home)
   if (pathname === '/operations/attendance' || pathname.startsWith('/operations/attendance/')) {
     return '/?section=attendance';
@@ -162,6 +165,9 @@ function resolveManagerPath(pathname: string, search: string): string {
     return '/manager/profile';
   }
   if (pathname === '/assistant' || pathname.startsWith('/assistant/')) return '/manager/assistant';
+
+  // Company Drive (keeps ?file= so the file opens)
+  if (pathname === '/drive' || pathname.startsWith('/drive/')) return `/manager/drive${search}`;
 
   return '/manager';
 }

@@ -10,6 +10,10 @@ return [
 
     'max_upload_bytes' => (int) env('DRIVE_MAX_UPLOAD_MB', 50) * 1024 * 1024,
 
+    // Files ELY generates (e.g. weekly report PDFs) are removed this many
+    // days after creation by `drive:prune-expired`. Uploads never expire.
+    'generated_retention_days' => (int) env('DRIVE_GENERATED_RETENTION_DAYS', 60),
+
     'default_quota_gb' => (float) env('DRIVE_DEFAULT_QUOTA_GB', 2),
 
     'plan_quotas_gb' => [

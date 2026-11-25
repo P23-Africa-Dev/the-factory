@@ -82,7 +82,7 @@ class LeadResource extends JsonResource
         if (! is_array($keys)) {
             $keys = LeadFieldDefinition::query()
                 ->where('company_id', $companyId)
-                ->whereIn('status', ['active', 'pending'])
+                ->where('status', 'active')
                 ->pluck('key')
                 ->all();
             $request->attributes->set($cacheKey, $keys);

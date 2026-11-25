@@ -18,6 +18,8 @@ export interface ThreadSummary {
   created_at: string;
   message_count: number;
   last_message_preview: string;
+  /** Short chat title from the server; older servers leave it out. */
+  title?: string;
 }
 
 export interface ThreadDetail {
@@ -39,4 +41,14 @@ export interface SendMessageResult {
   sources: string[];
   tool: string | null;
   payload: Record<string, unknown> | null;
+}
+
+/** GET /copilot/reports/weekly-summary/{id}: the queued report's progress. */
+export interface WeeklySummaryStatus {
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  progress: number;
+  report: { narrative: string; title: string } | null;
+  /** Set when a PDF copy was saved to Drive. */
+  drive_file_id: number | null;
+  error: string | null;
 }

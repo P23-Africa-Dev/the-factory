@@ -160,7 +160,9 @@ final class CopilotFileTextExtractor
             return null;
         }
 
-        if (preg_match_all('/[\x20-\x7E]{4,}/', $bytes, $matches) !== 1) {
+        // preg_match_all returns the number of matches (false on error).
+        $found = preg_match_all('/[\x20-\x7E]{4,}/', $bytes, $matches);
+        if ($found === false || $found === 0) {
             return null;
         }
 

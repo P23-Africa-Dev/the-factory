@@ -21,6 +21,90 @@ export function isSelectField(type: LeadFieldType): boolean {
     return type === "select" || type === "multi_select";
 }
 
+export function isActiveLeadField(field: LeadFieldDefinition): boolean {
+    return field.status === "active";
+}
+
+export function isUniversalLeadField(field: LeadFieldDefinition): boolean {
+    return isActiveLeadField(field) && Boolean(field.is_universal);
+}
+
+export function isPendingUniversalRequest(field: LeadFieldDefinition): boolean {
+    return isActiveLeadField(field) && field.universal_request_status === "pending";
+}
+
+/** Same base key the server derives from a label (LeadCustomFieldValues::keyFromLabel). */
+export function leadFieldKeyFromLabel(label: string): string {
+    return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+/**
+ * A field that would block creating one with this name: the server keeps one field per
+ * name per company. Archived or declined fields are revived instead, so they don't block.
+ */
+export function findExistingLeadField(
+    fields: LeadFieldDefinition[],
+    label: string,
+): LeadFieldDefinition | undefined {
+    const wanted = leadFieldKeyFromLabel(label.trim());
+    if (!wanted) return undefined;
+    return fields.find((field) => {
+        if (field.status === "archived" || field.status === "declined") return false;
+        const base = field.key.replace(/_custom$/, "").replace(/^field_/, "");
+        return field.key === wanted || base === wanted || leadFieldKeyFromLabel(field.label) === wanted;
+    });
+}
+
+/**
+ * Fields a file column can be imported into: every active or pending field, including
+ * lead-only fields created by earlier uploads (they are hidden from add-lead forms only).
+ */
+export function importableLeadFields(fields: LeadFieldDefinition[]): {
+    company: LeadFieldDefinition[];
+    leadOnly: LeadFieldDefinition[];
+} {
+    const usable = fields.filter((field) => field.status === "active" || field.status === "pending");
+    return {
+        company: usable.filter((field) => isUniversalLeadField(field)),
+        leadOnly: usable.filter((field) => !isUniversalLeadField(field)),
+    };
+}
+
+/**
+ * Fields shown on add-lead / import: universal company fields plus any
+ * definitions created in the current session so the user can fill them now.
+ */
+export function visibleLeadFieldsForCreate(
+    fields: LeadFieldDefinition[],
+    sessionFieldIds: Iterable<number | string> = [],
+): LeadFieldDefinition[] {
+    const session = new Set(Array.from(sessionFieldIds, (id) => Number(id)));
+    return fields.filter((field) => {
+        if (!isActiveLeadField(field)) return false;
+        if (isUniversalLeadField(field) && field.show_on_create) return true;
+        return session.has(Number(field.id));
+    });
+}
+
+/**
+ * Fields shown on lead detail: universal fields, lead-only keys already on
+ * the lead, and fields added during this edit session.
+ */
+export function visibleLeadFieldsForDetail(
+    fields: LeadFieldDefinition[],
+    stored: LeadCustomFields | null | undefined,
+    sessionFieldIds: Iterable<number | string> = [],
+): LeadFieldDefinition[] {
+    const source = readCustomFields(stored);
+    const session = new Set(Array.from(sessionFieldIds, (id) => Number(id)));
+    return fields.filter((field) => {
+        if (!isActiveLeadField(field)) return false;
+        if (isUniversalLeadField(field)) return true;
+        if (session.has(Number(field.id))) return true;
+        return Object.prototype.hasOwnProperty.call(source, field.key);
+    });
+}
+
 export function readCustomFields(value: unknown): LeadCustomFields {
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
     return value as LeadCustomFields;
@@ -64,7 +148,7 @@ export function validateCustomFieldValues(
 ): Record<string, string> {
     const errors: Record<string, string> = {};
     fields.forEach((field) => {
-        if (field.status !== "active" || !field.is_required) return;
+        if (!isUniversalLeadField(field) || !field.is_required) return;
         const value = values[field.key];
         const empty = value === null
             || value === undefined
@@ -82,19 +166,22 @@ export function serializeCustomFields(
 ): Record<string, string> {
     const payload: Record<string, string> = {};
     fields.forEach((field) => {
-        if (field.status !== "active" && field.status !== "pending") return;
+        if (!isActiveLeadField(field)) return;
         const value = values[field.key];
+        const requiredUniversal = isUniversalLeadField(field) && field.is_required;
+        const keepLeadOnly = !field.is_universal && Object.prototype.hasOwnProperty.call(values, field.key);
         if (field.type === "checkbox") {
             if (value === true || value === false) payload[field.key] = value ? "true" : "false";
+            else if (keepLeadOnly) payload[field.key] = "false";
             return;
         }
         if (Array.isArray(value)) {
             if (value.length > 0) payload[field.key] = value.join(", ");
-            else if (field.is_required && field.status === "active") payload[field.key] = "";
+            else if (requiredUniversal || keepLeadOnly) payload[field.key] = "";
             return;
         }
         if (value === null || value === undefined || value === "") {
-            if (field.is_required && field.status === "active") payload[field.key] = "";
+            if (requiredUniversal || keepLeadOnly) payload[field.key] = "";
             return;
         }
         payload[field.key] = String(value);
@@ -109,7 +196,7 @@ export function formValuesFromLead(
     const source = readCustomFields(stored);
     const values: LeadCustomFields = {};
     fields.forEach((field) => {
-        if (field.status !== "active" && field.status !== "pending") return;
+        if (!isActiveLeadField(field)) return;
         const current = source[field.key];
         if (field.type === "checkbox") {
             values[field.key] = current === true || current === "true" || current === "Yes" || current === 1;

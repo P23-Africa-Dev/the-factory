@@ -626,13 +626,13 @@ export default function AgentDashboardPage() {
           {/* Dashboard cards: Leads + Attendance */}
           <div className="flex gap-3.5 mb-5 items-stretch">
             {/* Leads card */}
-            <div className="flex-1 h-[154px] bg-[#FFFDFE] rounded-[20px] flex flex-row items-center overflow-hidden shadow-md text-black relative select-none">
+            <div className="flex-1 min-w-0 h-[154px] bg-[#FFFDFE] rounded-[20px] flex flex-row items-center overflow-hidden shadow-md text-black relative select-none">
               <img
                 src={avatarSrc}
                 alt="Leads"
                 className="w-[115px] h-[115px] mr-0.5 object-cover rounded-full flex-shrink-0"
               />
-              <div className="flex-1 flex flex-col justify-center pr-2">
+              <div className="flex-1 min-w-0 flex flex-col justify-center pr-2">
                 {isLoadingLeadsOverview ? (
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                 ) : (
@@ -660,7 +660,7 @@ export default function AgentDashboardPage() {
             <div
               ref={attendanceSectionRef}
               id="attendance-section"
-              className={`flex-1 flex rounded-[20px] transition-all duration-300 ${
+              className={`flex-shrink-0 flex rounded-[20px] transition-all duration-300 ${
                 attendanceHighlighted ? 'ring-2 ring-[#44AFCD] ring-offset-2 ring-offset-[#0A1D25]' : ''
               }`}
             >

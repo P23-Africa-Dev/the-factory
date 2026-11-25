@@ -300,10 +300,20 @@ class CopilotController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'company_id' => ['nullable'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:200'],
+        ]);
+
         $threads = $this->copilotService->listThreads(
             user: $request->user(),
-            companyId: $this->resolveCompanyContextId($request->input('company_id')),
+            companyId: $this->resolveCompanyContextId($validated['company_id'] ?? null),
         );
+
+        // Newest first; the chat switcher asks only for the recent ones.
+        if (isset($validated['limit'])) {
+            $threads = array_slice($threads, 0, (int) $validated['limit']);
+        }
 
         return $this->success(
             message: 'Copilot threads fetched successfully.',

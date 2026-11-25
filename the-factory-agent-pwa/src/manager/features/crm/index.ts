@@ -38,6 +38,9 @@ export {
   useCreateLeadField,
   useApproveLeadField,
   useDeclineLeadField,
+  useDeleteLeadField,
+  useReorderLeadFields,
+  useUpdateLeadField,
 } from './queries';
 
 export { useCrmNavigation } from './navigation';

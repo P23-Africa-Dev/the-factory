@@ -13,6 +13,8 @@ import {
   Trash,
   Trash2,
   Paperclip,
+  FileSpreadsheet,
+  X,
 } from 'lucide-react';
 import { ScreenErrorBoundary } from '@/components/shared/ScreenErrorBoundary';
 import { useAgentIdentity } from '@/features/auth';
@@ -32,13 +34,17 @@ import {
   type DailyPlanPayload,
   type PlanEditsMap,
 } from '@/features/planning';
+import { InlineVoiceRecorder } from '@/components/ely/InlineVoiceRecorder';
+import { ActionReceipts, receiptsFromPayload } from '@/components/ely/ActionReceipts';
+import { ChatSwitcher } from '@/components/ely/ChatSwitcher';
 import { ELY_INPUT_PLACEHOLDER, ELY_INTRO, ELY_NAME, ELY_TYPING_LABEL } from '@/lib/ely-brand';
 import { toast } from '@/lib/toast';
 
 type LocalAction = 'liked' | 'disliked' | null;
 
+// Any reply carrying plan items shows the plan card, whatever tool produced it.
 function asDailyPlanPayload(payload: Record<string, unknown> | null | undefined): DailyPlanPayload | null {
-  if (!payload || !Array.isArray(payload.items)) return null;
+  if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) return null;
   return payload as unknown as DailyPlanPayload;
 }
 
@@ -74,10 +80,15 @@ export default function AiAssistantPage() {
     send,
     confirmAction,
     cancelAction,
+    undoAction,
     runPlanMyDay,
     clearCurrent,
     clearAll,
     threadId,
+    threads,
+    refreshThreads,
+    switchThread,
+    startNewChat,
   } = useAssistantConversation();
   const suggestions = useDynamicSuggestions();
   const acceptPlan = useAcceptDailyPlan();
@@ -99,6 +110,8 @@ export default function AiAssistantPage() {
   const contentRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
+  // A CSV attached for ELY to import; sent with the next message.
+  const [attachment, setAttachment] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -142,11 +155,10 @@ export default function AiAssistantPage() {
 
   useEffect(() => {
     for (const msg of messages) {
-      if (msg.role !== 'assistant' || msg.tool !== 'planning.daily' || notifiedPlanIds.has(msg.id)) {
+      if (msg.role !== 'assistant' || notifiedPlanIds.has(msg.id)) {
         continue;
       }
-      const payload = msg.payload as DailyPlanPayload | null | undefined;
-      if (!payload?.items?.length) continue;
+      if (!asDailyPlanPayload(msg.payload)) continue;
 
       // eslint-disable-next-line react-hooks/set-state-in-effect -- mark assistant plan toast as shown once
       setNotifiedPlanIds((prev) => new Set(prev).add(msg.id));
@@ -162,15 +174,34 @@ export default function AiAssistantPage() {
     const content = (text ?? input).trim();
     if (!content) return;
     setInput('');
-    void send(content, { withGeolocation, context });
+    const attached = attachment;
+    setAttachment(null);
+    void send(content, {
+      withGeolocation,
+      context: attached ? { ...context, attachment: attached } : context,
+    });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // ELY reads documents and spreadsheets, not photos.
+    if (file.type.startsWith('image/')) {
+      toast.error('ELY can read documents and spreadsheets, but not photos yet.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setIsAnalyzingPhoto(true);
     try {
+      // A CSV is attached so ELY can import it (e.g. a lead list) when asked.
+      if (/\.csv$/i.test(file.name)) {
+        const attached = await assistantApi.attachFile(file);
+        setAttachment(attached);
+        if (!input.trim()) setInput('Import these leads');
+        return;
+      }
       const result = await assistantApi.analyzeFile(file);
       void send(`File Analysis (${file.name}):\n\n${result.summary}`);
     } catch (err) {
@@ -221,8 +252,7 @@ export default function AiAssistantPage() {
       );
     }
 
-    const planPayload =
-      msg.tool === 'planning.daily' ? asDailyPlanPayload(msg.payload) : null;
+    const planPayload = asDailyPlanPayload(msg.payload);
     const planStorageKey = `plan-edit:${threadId ?? 'default'}:${msg.id}`;
     const planEdits =
       planPayload !== null
@@ -241,6 +271,12 @@ export default function AiAssistantPage() {
         <div className="max-w-[85%] flex flex-col gap-2">
           <div className="bg-gradient-to-b from-[#333] to-[#16384B] border border-white/10 rounded-[24px] rounded-tl-none p-5 shadow-lg relative">
             <ParsedHtmlText text={msg.content} />
+            <ActionReceipts
+              receipts={receiptsFromPayload(msg.payload)}
+              area="agent"
+              disabled={isSending}
+              onUndo={undoAction}
+            />
             {showActionCard && actionProposal && (
               <ActionConfirmCard
                 proposal={actionProposal}
@@ -355,7 +391,10 @@ export default function AiAssistantPage() {
             <button
               type="button"
               aria-label="Conversation options"
-              onClick={() => setMenuOpen((v) => !v)}
+              onClick={() => {
+                  if (!menuOpen) void refreshThreads();
+                  setMenuOpen((v) => !v);
+                }}
               className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/10 text-white focus:outline-none transition-colors"
             >
               <MoreVertical size={18} />
@@ -422,11 +461,27 @@ export default function AiAssistantPage() {
 
         {/* Input Bar pinned above Bottom Navigation */}
         <div className="fixed bottom-[80px] left-0 right-0 max-w-md mx-auto z-50 pb-1">
+          {attachment && (
+            <div className="mx-4 mb-2 flex items-center gap-2 rounded-2xl bg-[#16384B] px-3 py-2 text-xs text-white shadow-lg">
+              <FileSpreadsheet size={16} className="flex-shrink-0 text-[#7BB6B8]" />
+              <span className="min-w-0 flex-1 truncate">
+                {attachment.name} is attached. Tell ELY what to do with it.
+              </span>
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                aria-label="Remove attachment"
+                className="flex-shrink-0 rounded-full p-1 active:bg-white/10"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
           <div className="bg-white rounded-t-3xl shadow-xl flex items-center p-6 gap-3 border border-gray-100">
             <input
               type="file"
               ref={fileInputRef}
-              accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.csv,image/*"
+              accept=".pdf,.doc,.docx,.txt,.xlsx,.csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -439,7 +494,7 @@ export default function AiAssistantPage() {
               <Paperclip size={20} />
             </button>
 
-            <div className="flex-1 bg-gray-100 rounded-full h-12 flex items-center px-4">
+            <div className="relative flex-1 min-w-0 bg-gray-100 rounded-full h-12 flex items-center pl-4 pr-1.5 gap-1">
               <input
                 type="text"
                 placeholder={ELY_INPUT_PLACEHOLDER}
@@ -448,7 +503,13 @@ export default function AiAssistantPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSend();
                 }}
-                className="w-full bg-transparent border-none text-[#091519] font-medium text-sm focus:outline-none placeholder-[#091519]/45 p-0"
+                className="w-full min-w-0 bg-transparent border-none text-[#091519] font-medium text-sm focus:outline-none placeholder-[#091519]/45 p-0"
+              />
+              <InlineVoiceRecorder
+                disabled={isSending}
+                onTranscribe={assistantApi.transcribeVoice}
+                onTranscribed={(text) => setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))}
+                onError={(message) => toast.error(message)}
               />
             </div>
 
@@ -472,6 +533,23 @@ export default function AiAssistantPage() {
         <>
           <div onClick={() => setMenuOpen(false)} className="fixed inset-0 z-[200]" />
           <div className="fixed right-4 top-[72px] w-52 bg-[#0F2D3D] border border-white/10 rounded-2xl shadow-2xl z-[201] py-1 flex flex-col">
+            <ChatSwitcher
+              threads={threads}
+              activeThreadId={threadId}
+              disabled={isSending}
+              canStartNew={messages.length > 0 || threadId !== null}
+              onNewChat={() => {
+                setMenuOpen(false);
+                setAttachment(null);
+                startNewChat();
+              }}
+              onSelect={(id) => {
+                setMenuOpen(false);
+                void switchThread(id).then((ok) => {
+                  if (!ok) toast.error('Could not open that chat. Please try again.');
+                });
+              }}
+            />
             <button
               onClick={() => {
                 setMenuOpen(false);

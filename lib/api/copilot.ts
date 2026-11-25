@@ -37,6 +37,8 @@ export type CopilotThreadSummary = {
     created_at: string;
     message_count: number;
     last_message_preview: string | null;
+    /** Short chat title. Optional until every server version sends it. */
+    title?: string | null;
 };
 
 export type CopilotThreadSearchResult = {
@@ -198,11 +200,12 @@ function buildQueryString(params?: Record<string, string | number | null | undef
 
 export function listCopilotThreads(
     token: string,
-    companyId?: number | string
+    companyId?: number | string,
+    limit?: number
 ): Promise<ApiEnvelope<{ items: CopilotThreadSummary[] }>> {
     return apiRequest<{ items: CopilotThreadSummary[] }>({
         method: "GET",
-        path: `/copilot/threads${buildQuery(companyId)}`,
+        path: `/copilot/threads${buildQueryString({ company_id: companyId, limit })}`,
         token,
     });
 }

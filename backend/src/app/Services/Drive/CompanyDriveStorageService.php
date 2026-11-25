@@ -9,6 +9,10 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use League\Flysystem\FilesystemException;
+use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
+use Throwable;
 
 class CompanyDriveStorageService
 {
@@ -74,7 +78,12 @@ class CompanyDriveStorageService
         $directory = $this->companyPrefix($companyId) . '/folders/' . $folderId;
         $path = $directory . '/' . $storedName;
 
-        $this->disk()->put($path, $content, ['visibility' => 'private']);
+        // With throw=false a failed write only returns false; never create a
+        // Drive row that points at nothing.
+        $stored = $this->guard(fn () => $this->disk()->put($path, $content, ['visibility' => 'private']));
+        if ($stored !== true) {
+            throw new RuntimeException("Unable to save {$originalName} to Drive storage.");
+        }
 
         return [
             'disk' => $this->diskName(),
@@ -85,20 +94,77 @@ class CompanyDriveStorageService
         ];
     }
 
+    /**
+     * Deletes the stored object. A missing object counts as deleted. Throws a
+     * 503 when storage can't be reached, so the caller keeps the Drive row.
+     */
     public function delete(string $disk, string $path): void
     {
-        if ($disk === $this->diskName() && $this->disk()->exists($path)) {
-            $this->disk()->delete($path);
+        $filesystem = $this->diskFor($disk);
+        if ($filesystem === null) {
+            return;
+        }
+
+        // Deleting a missing object succeeds on S3/Spaces; false means the
+        // storage refused the request.
+        if ($this->guard(fn () => $filesystem->delete($path)) === false) {
+            throw $this->unavailable(new RuntimeException("Delete was refused for {$path}."));
         }
     }
 
+    /**
+     * @return resource|null null when the file is not in storage (404)
+     */
     public function readStream(string $disk, string $path)
     {
-        if ($disk !== $this->diskName() || ! $this->disk()->exists($path)) {
+        $filesystem = $this->diskFor($disk);
+        if ($filesystem === null || ! $this->guard(fn () => $filesystem->fileExists($path))) {
             return null;
         }
 
-        return $this->disk()->readStream($path);
+        $stream = $this->guard(fn () => $filesystem->readStream($path));
+        if (! is_resource($stream)) {
+            throw $this->unavailable(new RuntimeException("Read was refused for {$path}."));
+        }
+
+        return $stream;
+    }
+
+    /** The disk a Drive row was stored on, or null if that disk no longer exists. */
+    private function diskFor(string $disk): ?Filesystem
+    {
+        if ($disk === '' || ! is_array(config("filesystems.disks.{$disk}"))) {
+            return null;
+        }
+
+        return Storage::disk($disk);
+    }
+
+    /**
+     * Runs a storage call. Errors from the storage service (e.g. a rejected
+     * access key) become a 503 with a clear message instead of a raw 500.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $call
+     * @return T
+     */
+    private function guard(callable $call): mixed
+    {
+        try {
+            return $call();
+        } catch (FilesystemException $e) {
+            throw $this->unavailable($e);
+        } catch (\Aws\Exception\AwsException $e) {
+            throw $this->unavailable($e);
+        }
+    }
+
+    private function unavailable(Throwable $cause): HttpException
+    {
+        report($cause);
+
+        return new HttpException(503, 'Drive storage is unavailable right now. Please try again later.', $cause);
     }
 
     private function assertAllowedUpload(UploadedFile $file): void

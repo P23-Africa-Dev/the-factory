@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useRef, useState, useEffect, useMemo } from "react";
-import { LEAD_INDUSTRIES, LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
+import { LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
 import { useLead, useUpdateLead, useAddLeadNote, useAddLeadActivity, useCrmAssignees, useCrmLabels, useCrmPipelines, useLeadFields } from "@/hooks/use-crm";
 import { useAuthStore } from "@/store/auth";
 import { toast } from "sonner";
@@ -45,11 +45,17 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { EmailPanel } from "@/components/crm/email/email-panel";
 import { isValidUrl, normalizeWebsite, parseProfileUrls } from "@/lib/crm/lead-fields";
-import { formValuesFromLead, serializeCustomFields, validateCustomFieldValues } from "@/lib/crm/custom-fields";
+import {
+  formValuesFromLead,
+  serializeCustomFields,
+  validateCustomFieldValues,
+  visibleLeadFieldsForDetail,
+} from "@/lib/crm/custom-fields";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
 import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
+import { IndustryCombobox } from "@/components/crm/industry-combobox";
 
 /* --- Mock Lead Data -------------------------------------- */
 
@@ -510,6 +516,11 @@ export default function LeadDetailsPage() {
   // Real data fetching
   const { data: leadData, isLoading } = useLead(leadId, companyId, "/admin");
   const { data: leadFields = [] } = useLeadFields(companyId, "/admin");
+  const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
+  const visibleCustomFields = useMemo(
+    () => visibleLeadFieldsForDetail(leadFields, leadData?.custom_fields, sessionFieldIds),
+    [leadFields, leadData?.custom_fields, sessionFieldIds],
+  );
   const { data: pipelines = [] } = useCrmPipelines(companyId, "/admin");
   // The company's real stages (labels). Hard-coded names produced slugs that
   // didn't exist ("new_lead", "won"…), so status changes here failed with 422.
@@ -645,7 +656,7 @@ export default function LeadDetailsPage() {
       toast.error("One or more profile URLs are invalid.");
       return;
     }
-    const customErrors = validateCustomFieldValues(leadFields, editForm.customFields);
+    const customErrors = validateCustomFieldValues(visibleCustomFields, editForm.customFields);
     if (Object.keys(customErrors).length > 0) {
       toast.error(Object.values(customErrors)[0]);
       return;
@@ -683,7 +694,7 @@ export default function LeadDetailsPage() {
       assigned_to_user_id: editForm.assigned_to_user_id
         ? Number(editForm.assigned_to_user_id)
         : null,
-      custom_fields: serializeCustomFields(leadFields, editForm.customFields),
+      custom_fields: serializeCustomFields(visibleCustomFields, editForm.customFields),
     };
     updateLead({ leadId, payload });
   };
@@ -925,22 +936,13 @@ export default function LeadDetailsPage() {
                       Industry
                     </label>
                     {isEditing ? (
-                      <>
-                        <input
-                          type="text"
-                          list="lead-detail-industry-options"
-                          maxLength={LEAD_INDUSTRY_MAX_LENGTH}
-                          value={editForm.industry}
-                          onChange={(e) => updateField("industry", e.target.value)}
-                          placeholder="Pick or type an industry"
-                          className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
-                        />
-                        <datalist id="lead-detail-industry-options">
-                          {LEAD_INDUSTRIES.map((option) => (
-                            <option key={option} value={option} />
-                          ))}
-                        </datalist>
-                      </>
+                      <IndustryCombobox
+                        value={editForm.industry}
+                        maxLength={LEAD_INDUSTRY_MAX_LENGTH}
+                        onChange={(value) => updateField("industry", value)}
+                        placeholder="Pick or type an industry"
+                        inputClassName="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 pr-9 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
+                      />
                     ) : (
                       <p className="text-white text-[16px] font-semibold truncate">
                         {leadData.industry || "N/A"}
@@ -1185,13 +1187,12 @@ export default function LeadDetailsPage() {
               <div className="mt-8 border-t border-gray-100 pt-6">
                 <h3 className="mb-4 text-[14px] font-semibold text-[#0B1215]">Custom fields</h3>
                 <LeadCustomFieldsEditor
-                  fields={leadFields}
-                  values={isEditing ? editForm.customFields : formValuesFromLead(leadFields, leadData.custom_fields)}
+                  fields={visibleCustomFields}
+                  values={isEditing ? editForm.customFields : formValuesFromLead(visibleCustomFields, leadData.custom_fields)}
                   disabled={!isEditing}
                   showAdd={isEditing}
                   onAddField={() => setShowFieldDialog(true)}
                   onChange={(key, value) => updateField("customFields", { ...editForm.customFields, [key]: value })}
-                  visibility="all"
                 />
               </div>
             </div>
@@ -1213,8 +1214,16 @@ export default function LeadDetailsPage() {
         <LeadFieldDialog
           companyId={companyId}
           apiBasePath="/admin"
+          canManage
           onClose={() => setShowFieldDialog(false)}
-          onCreated={() => setShowFieldDialog(false)}
+          onCreated={(field) => {
+            setSessionFieldIds((current) => current.includes(field.id) ? current : [...current, field.id]);
+            updateField("customFields", {
+              ...editForm.customFields,
+              [field.key]: field.type === "checkbox" ? false : field.type === "multi_select" ? [] : "",
+            });
+            setShowFieldDialog(false);
+          }}
         />
       )}
     </div>

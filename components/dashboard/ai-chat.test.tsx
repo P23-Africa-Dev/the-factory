@@ -1,7 +1,32 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { toast } from "sonner";
 
 import { AIChat } from "@/components/dashboard/ai-chat";
+
+function findVoiceInput(): HTMLInputElement {
+    return document.querySelector('input[type="file"][accept*=".m4a"]') as HTMLInputElement;
+}
+
+function fakeAudioBuffer(sampleRate: number, length: number): AudioBuffer {
+    const data = new Float32Array(length).fill(0.25);
+    return {
+        numberOfChannels: 1,
+        length,
+        sampleRate,
+        duration: length / sampleRate,
+        getChannelData: () => data,
+    } as unknown as AudioBuffer;
+}
+
+function stubAudioContext(decode: () => Promise<AudioBuffer>) {
+    class FakeAudioContext {
+        decodeAudioData = vi.fn(decode);
+        close = vi.fn(() => Promise.resolve());
+    }
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+}
 
 const {
     initializeMock,
@@ -88,6 +113,7 @@ vi.mock("@/lib/company-context", () => ({
 describe("AIChat", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.unstubAllGlobals();
         Element.prototype.scrollIntoView = vi.fn();
         searchAssigneesMock.mockResolvedValue([
             { id: 42, name: "John Wick", email: "john.wick@example.com", role: "agent" },
@@ -470,9 +496,10 @@ describe("AIChat", () => {
                 })
         );
 
+        stubAudioContext(async () => fakeAudioBuffer(48000, 48000));
         render(<AIChat open onClose={() => { }} />);
 
-        const voiceInput = document.querySelector('input[type="file"][accept="audio/*"]') as HTMLInputElement;
+        const voiceInput = findVoiceInput();
         expect(voiceInput).toBeTruthy();
 
         const audioFile = new File(["audio-bytes"], "field-update.m4a", { type: "audio/mp4" });
@@ -511,7 +538,7 @@ describe("AIChat", () => {
 
         render(<AIChat open onClose={() => { }} />);
 
-        const voiceInput = document.querySelector('input[type="file"][accept="audio/*"]') as HTMLInputElement;
+        const voiceInput = findVoiceInput();
         const audioFile = new File(["audio-bytes"], "note.wav", { type: "audio/wav" });
         fireEvent.change(voiceInput, { target: { files: [audioFile] } });
 
@@ -627,6 +654,182 @@ describe("AIChat", () => {
         await waitFor(() => {
             expect(screen.queryByText("Building Forecast…")).toBeNull();
             expect(loadForecastOverviewMock).toHaveBeenCalledWith(99, 7);
+        });
+    });
+    describe("chats menu, clear, and quick-action fixes", () => {
+        const refreshThreadsMock = vi.fn();
+        const loadThreadMock = vi.fn();
+        const startNewChatMock = vi.fn();
+        const clearCurrentThreadMock = vi.fn();
+
+        function mockHook(overrides: Record<string, unknown> = {}) {
+            useCopilotChatMock.mockReturnValue({
+                messages: [],
+                isStreaming: false,
+                weeklyReport: null,
+                isQueueingWeeklyReport: false,
+                initialize: initializeMock,
+                loadThread: loadThreadMock,
+                threadId: "thread-2",
+                threads: [
+                    { thread_id: "thread-2", updated_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), created_at: "2026-01-02T00:00:00.000Z", message_count: 4, last_message_preview: "preview two", title: "Fleet check" },
+                    { thread_id: "thread-1", updated_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z", message_count: 2, last_message_preview: "Show overdue tasks" },
+                ],
+                refreshThreads: refreshThreadsMock,
+                startNewChat: startNewChatMock,
+                clearCurrentThread: clearCurrentThreadMock,
+                sendMessage: sendMessageMock,
+                queueWeeklyReport: queueWeeklyReportMock,
+                downloadWeeklyReport: downloadWeeklyReportMock,
+                runVoiceTranscription: runVoiceTranscriptionMock,
+                runFileAnalysis: runFileAnalysisMock,
+                runTranscriptSummary: runTranscriptSummaryMock,
+                loadForecastOverview: loadForecastOverviewMock,
+                searchAssignees: searchAssigneesMock,
+                ...overrides,
+            });
+        }
+
+        beforeEach(() => {
+            refreshThreadsMock.mockReset().mockResolvedValue([]);
+            loadThreadMock.mockReset().mockResolvedValue(undefined);
+            startNewChatMock.mockReset();
+            clearCurrentThreadMock.mockReset().mockResolvedValue(undefined);
+            mockHook();
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        async function openChats() {
+            fireEvent.click(screen.getByLabelText("More options"));
+            fireEvent.click(await screen.findByText("Chats"));
+        }
+
+        it("lists recent chats when the Chats section opens and ticks the current one", async () => {
+            render(<AIChat open onClose={() => { }} />);
+            await openChats();
+
+            expect(refreshThreadsMock).toHaveBeenCalledWith(99);
+            expect(screen.getByText("New chat")).toBeTruthy();
+            const current = screen.getByText("Fleet check").closest("button");
+            expect(current?.getAttribute("aria-current")).toBe("true");
+            expect(screen.getByText("2h ago")).toBeTruthy();
+            // Falls back to the last message preview without a title.
+            const other = screen.getByText("Show overdue tasks").closest("button");
+            expect(other?.getAttribute("aria-current")).toBeNull();
+        });
+
+        it("switches to another chat", async () => {
+            render(<AIChat open onClose={() => { }} />);
+            await openChats();
+
+            fireEvent.click(screen.getByText("Show overdue tasks"));
+
+            await waitFor(() => expect(loadThreadMock).toHaveBeenCalledWith("thread-1", 99));
+            // Menu closes after picking a chat.
+            expect(screen.queryByText("New chat")).toBeNull();
+        });
+
+        it("starts a new chat from the menu", async () => {
+            render(<AIChat open onClose={() => { }} />);
+            await openChats();
+
+            fireEvent.click(screen.getByText("New chat"));
+
+            expect(startNewChatMock).toHaveBeenCalledTimes(1);
+            expect(loadThreadMock).not.toHaveBeenCalled();
+        });
+
+        it("shows an empty new chat after Clear Chat instead of loading an older one", async () => {
+            render(<AIChat open onClose={() => { }} />);
+            await waitFor(() => expect(initializeMock).toHaveBeenCalledTimes(1));
+
+            fireEvent.click(screen.getByLabelText("More options"));
+            fireEvent.click(await screen.findByText("Clear Chat"));
+            const confirm = (await screen.findAllByRole("button", { name: "Clear Chat" })).at(-1)!;
+            fireEvent.click(confirm);
+
+            await waitFor(() => expect(clearCurrentThreadMock).toHaveBeenCalledWith(99));
+            await waitFor(() => expect(startNewChatMock).toHaveBeenCalledTimes(1));
+            expect(initializeMock).toHaveBeenCalledTimes(1);
+        });
+
+        it("converts a non-WAV/MP3 voice upload to 16 kHz WAV before transcribing", async () => {
+            stubAudioContext(async () => fakeAudioBuffer(44100, 44100));
+            runVoiceTranscriptionMock.mockResolvedValue({ transcript: "hello" });
+            render(<AIChat open onClose={() => { }} />);
+
+            const voiceInput = findVoiceInput();
+            expect(voiceInput.getAttribute("accept")).not.toContain("audio/*");
+            fireEvent.change(voiceInput, { target: { files: [new File(["ogg"], "memo.ogg", { type: "audio/ogg" })] } });
+
+            await waitFor(() => expect(runVoiceTranscriptionMock).toHaveBeenCalled());
+            const uploaded = runVoiceTranscriptionMock.mock.calls[0][0] as File;
+            expect(uploaded.name).toBe("memo.wav");
+            expect(uploaded.type).toBe("audio/wav");
+            expect(uploaded.size).toBe(44 + 16000 * 2);
+        });
+
+        it("uploads MP3 as is", async () => {
+            runVoiceTranscriptionMock.mockResolvedValue({ transcript: "hello" });
+            render(<AIChat open onClose={() => { }} />);
+
+            const mp3 = new File(["mp3"], "memo.mp3", { type: "audio/mpeg" });
+            fireEvent.change(findVoiceInput(), { target: { files: [mp3] } });
+
+            await waitFor(() => expect(runVoiceTranscriptionMock).toHaveBeenCalledWith(mp3, 99));
+        });
+
+        it("tells the user when an audio file cannot be decoded", async () => {
+            const errorSpy = vi.spyOn(toast, "error");
+            stubAudioContext(async () => { throw new Error("EncodingError"); });
+            render(<AIChat open onClose={() => { }} />);
+
+            fireEvent.change(findVoiceInput(), { target: { files: [new File(["?"], "memo.webm", { type: "audio/webm" })] } });
+
+            await waitFor(() =>
+                expect(errorSpy).toHaveBeenCalledWith("This audio format isn't supported. Record in the chat or upload WAV/MP3.")
+            );
+            expect(runVoiceTranscriptionMock).not.toHaveBeenCalled();
+            errorSpy.mockRestore();
+        });
+
+        it("uses provider_summary as the transcript summary text when present", async () => {
+            runTranscriptSummaryMock.mockResolvedValue({
+                summary: {
+                    key_points: ["Point 1"],
+                    action_items: ["Action 1"],
+                    provider_summary: "The team agreed to ship on Friday.",
+                },
+            });
+            // With a message on screen the landing quick actions are hidden.
+            mockHook({ messages: [{ id: "a1", role: "assistant", content: "Hi", sources: [] }] });
+            render(<AIChat open onClose={() => { }} />);
+
+            fireEvent.click(screen.getByLabelText("More options"));
+            fireEvent.click(await screen.findByText("AI Tools"));
+            fireEvent.click(await screen.findByText("Summarize Transcript"));
+            const textarea = await screen.findByPlaceholderText(/paste your meeting transcript/i);
+            fireEvent.change(textarea, { target: { value: "A long enough meeting transcript about the release plan." } });
+            const summarizeBtn = screen.getAllByText(/Summarize/i).find((btn) => btn.tagName === "BUTTON");
+            fireEvent.click(summarizeBtn!);
+
+            await waitFor(() =>
+                expect(sendMessageMock).toHaveBeenCalledWith({
+                    message: "Transcript Summary\n\nThe team agreed to ship on Friday.",
+                    companyId: 99,
+                })
+            );
+        });
+
+        it("does not offer .xls in the Analyze File picker", () => {
+            render(<AIChat open onClose={() => { }} />);
+            const accepts = Array.from(document.querySelectorAll('input[type="file"]')).map((el) => el.getAttribute("accept") ?? "");
+            const analyze = accepts.find((value) => value.includes(".xlsx"));
+            expect(analyze).toBeTruthy();
+            expect(analyze!.split(",")).not.toContain(".xls");
         });
     });
 });

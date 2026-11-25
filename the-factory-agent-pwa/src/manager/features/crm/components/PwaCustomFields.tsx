@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { useCreateLeadField } from '../queries';
-import { visibleLeadFields } from '../customFields';
+import { isUniversalLeadField } from '../customFields';
 import type { LeadCustomFields, LeadFieldDefinition } from '../types';
 
 const FIELD_TYPES = [
@@ -28,30 +28,34 @@ export function PwaCustomFields({
   onChange,
   disabled = false,
   errors,
-  visibility = 'create',
   onAddField,
+  agentNotice = false,
 }: {
   fields: LeadFieldDefinition[];
   values: LeadCustomFields;
   onChange: (key: string, value: LeadCustomFields[string]) => void;
   disabled?: boolean;
   errors?: Record<string, string>;
-  visibility?: 'create' | 'all';
   onAddField?: () => void;
+  agentNotice?: boolean;
 }) {
-  const visible = visibleLeadFields(fields, visibility);
-  if (visible.length === 0 && !onAddField) return null;
+  if (fields.length === 0 && !onAddField) return null;
 
   return (
     <div className="flex flex-col gap-4">
-      {visible.map((field) => (
+      {fields.map((field) => (
         <label key={field.id} className="flex flex-col">
           <span className="mb-1.5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-white/50">
             {field.label}
-            {field.is_required && field.status === 'active' ? <span className="text-[#EF4444]">*</span> : null}
-            {field.status === 'pending' ? (
+            {isUniversalLeadField(field) && field.is_required ? <span className="text-[#EF4444]">*</span> : null}
+            {!field.is_universal ? (
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-bold tracking-wide text-white/70">
+                This lead
+              </span>
+            ) : null}
+            {field.universal_request_status === 'pending' ? (
               <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[9px] font-bold tracking-wide text-amber-200">
-                Pending
+                Awaiting approval
               </span>
             ) : null}
           </span>
@@ -64,9 +68,9 @@ export function PwaCustomFields({
           Add field
         </button>
       ) : null}
-      {onAddField ? (
+      {agentNotice || onAddField ? (
         <p className="text-[11px] text-white/45">
-          Fields you add stay visible and pending until a manager approves them.
+          New fields stay on this lead unless you request universal use. Universal requests need manager approval before they appear on every form.
         </p>
       ) : null}
     </div>
@@ -90,63 +94,52 @@ function FieldControl({
         value={typeof value === 'string' ? value : ''}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className={`${inputClass} min-h-20`}
+        className={`${inputClass} min-h-24`}
       />
     );
   }
-
   if (field.type === 'checkbox') {
     return (
       <input
         type="checkbox"
-        checked={value === true}
+        checked={value === true || value === 'true' || value === 'Yes' || value === 1}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-5 w-5"
+        className="mt-1 h-4 w-4"
       />
     );
   }
-
   if (field.type === 'select') {
     return (
       <select
-        value={typeof value === 'string' ? value : ''}
+        value={value == null ? '' : String(value)}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         className={inputClass}
       >
-        <option value="">Select</option>
-        {field.options.map((option) => (
+        <option value="">Select…</option>
+        {(field.options ?? []).map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
     );
   }
-
   if (field.type === 'multi_select') {
-    const selected = Array.isArray(value) ? value : [];
+    const selected = Array.isArray(value) ? value.map(String) : [];
     return (
-      <div className="flex flex-col gap-2">
-        {field.options.map((option) => (
-          <label key={option.value} className="flex items-center gap-2 text-sm text-white/80">
-            <input
-              type="checkbox"
-              disabled={disabled}
-              checked={selected.includes(option.value)}
-              onChange={(event) => {
-                const next = event.target.checked
-                  ? [...selected, option.value]
-                  : selected.filter((item) => item !== option.value);
-                onChange(next);
-              }}
-            />
-            {option.label}
-          </label>
+      <select
+        multiple
+        value={selected}
+        disabled={disabled}
+        onChange={(event) => onChange(Array.from(event.target.selectedOptions).map((option) => option.value))}
+        className={`${inputClass} min-h-24`}
+      >
+        {(field.options ?? []).map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
         ))}
-      </div>
+      </select>
     );
   }
-
   return (
     <input
       type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'url' ? 'url' : field.type === 'phone' ? 'tel' : 'text'}
@@ -161,14 +154,24 @@ function FieldControl({
 export function PwaAddLeadFieldSheet({
   visible,
   onClose,
+  onCreated,
+  isAgentContext = false,
 }: {
   visible: boolean;
   onClose: () => void;
+  onCreated?: (field: LeadFieldDefinition) => void;
+  isAgentContext?: boolean;
 }) {
   const [label, setLabel] = useState('');
   const [type, setType] = useState<(typeof FIELD_TYPES)[number]['value']>('text');
   const [optionsText, setOptionsText] = useState('');
-  const createField = useCreateLeadField({ onSuccess: () => onClose() });
+  const [makeUniversal, setMakeUniversal] = useState(false);
+  const createField = useCreateLeadField({
+    onSuccess: (field) => {
+      onCreated?.(field);
+      onClose();
+    },
+  });
 
   if (!visible) return null;
 
@@ -193,8 +196,7 @@ export function PwaAddLeadFieldSheet({
       label: trimmed,
       type,
       options: options.length > 0 ? options : undefined,
-      show_on_create: true,
-      show_in_list: true,
+      make_universal: makeUniversal,
     });
   };
 
@@ -202,7 +204,14 @@ export function PwaAddLeadFieldSheet({
     <div className="fixed inset-0 z-[11000] flex items-end justify-center bg-black/50">
       <button type="button" className="absolute inset-0" aria-label="Close add field" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md rounded-t-3xl border-t border-white/10 bg-[#0A1D25] px-6 pb-8 pt-5">
-        <h3 className="mb-4 text-lg font-bold text-white">Add lead field</h3>
+        <h3 className="mb-2 text-lg font-bold text-white">Add lead field</h3>
+        <p className="mb-4 text-[11px] text-white/50">
+          {makeUniversal && isAgentContext
+            ? 'This lead keeps the field now. An owner, admin, or supervisor must approve it before it appears on every new lead form.'
+            : makeUniversal
+              ? 'This field will appear on every new lead form for the organization.'
+              : 'By default this field is saved only on the lead you are working on.'}
+        </p>
         <div className="flex flex-col gap-3">
           <input
             value={label}
@@ -223,6 +232,22 @@ export function PwaAddLeadFieldSheet({
               className={`${inputClass} min-h-24`}
             />
           ) : null}
+          <label className="flex items-start gap-2 text-xs text-white/80">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={makeUniversal}
+              onChange={(event) => setMakeUniversal(event.target.checked)}
+            />
+            <span>
+              <span className="font-semibold text-white">Use on every new lead</span>
+              <span className="mt-0.5 block text-white/50">
+                {isAgentContext
+                  ? 'Requests approval before this becomes a company-wide field.'
+                  : 'Shows on add-lead for everyone in the organization.'}
+              </span>
+            </span>
+          </label>
           <button
             type="button"
             onClick={submit}

@@ -21,6 +21,8 @@ class LeadFieldDefinition extends Model
         'is_required',
         'show_on_create',
         'show_in_list',
+        'is_universal',
+        'universal_request_status',
         'status',
         'sort_order',
         'created_by_user_id',
@@ -38,6 +40,7 @@ class LeadFieldDefinition extends Model
             'is_required' => 'boolean',
             'show_on_create' => 'boolean',
             'show_in_list' => 'boolean',
+            'is_universal' => 'boolean',
             'reviewed_at' => 'datetime',
         ];
     }

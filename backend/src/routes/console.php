@@ -61,6 +61,9 @@ Schedule::command('field-activity:prune')->dailyAt('02:30');
 // Generate attendance payroll summaries for the previous month.
 Schedule::command('attendance:generate-monthly-payroll')->monthlyOn(1, '00:30');
 
+// Remove ELY-generated Drive files (weekly reports) after their 60-day retention.
+Schedule::command('drive:prune-expired')->dailyAt('03:15')->withoutOverlapping();
+
 // Prune AI logs older than 30 days every day at 03:00.
 Schedule::command('ai:prune-logs --days=30')->dailyAt('03:00');
 Schedule::command('ai:health-check')->everyTenMinutes();
