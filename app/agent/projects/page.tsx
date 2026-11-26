@@ -56,7 +56,7 @@ function ProjectsContent() {
       <div className="max-w-400 mx-auto flex flex-col gap-5">
         {/* ── Tabs ── */}
         <div className="flex items-center gap-4 relative z-20 w-fit">
-          <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-sm">
+          <div className="flex gap-1 bg-white rounded-full p-1.5 border border-gray-100 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
             {TABS.map((tab) => (
               <button
                 key={tab.value}

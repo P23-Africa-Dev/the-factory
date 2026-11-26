@@ -70,35 +70,35 @@ function AttendanceSidebar({ record }: { record: AttendanceItem }) {
           <div className="flex sm:flex-row xl:flex-row items-start gap-6">
             <div className="flex-1 space-y-4 min-w-0">
               <div>
-                <h3 className="text-[17px] font-bold text-dash-dark">{record.name}</h3>
-                <p className="text-[12px] text-gray-400 mt-1 leading-relaxed">{record.address}</p>
+                <h3 className="text-[17px] font-bold text-white">{record.name}</h3>
+                <p className="text-[12px] text-white/65 mt-1 leading-relaxed">{record.address}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Date</p>
-                <p className="text-[13px] text-gray-400">{record.date}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Date</p>
+                <p className="text-[13px] text-white/65">{record.date}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
-                <p className="text-[13px] text-gray-400">{record.checkIn}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Check In</p>
+                <p className="text-[13px] text-white/65">{record.checkIn}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check Out</p>
-                <p className="text-[13px] text-gray-400">{record.checkOut}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Check Out</p>
+                <p className="text-[13px] text-white/65">{record.checkOut}</p>
               </div>
               <div>
-                <p className="text-[13px] font-bold text-dash-dark mb-0.5">Location</p>
-                <p className="text-[13px] text-gray-400">{record.address}</p>
+                <p className="text-[13px] font-bold text-white mb-0.5">Location</p>
+                <p className="text-[13px] text-white/65">{record.address}</p>
               </div>
             </div>
-            <div className="shrink-0 w-36">
-              <div className="w-36 h-44 rounded-3xl overflow-hidden shadow-lg bg-[#C9A84C]">
-                <img src={record.avatar} className="w-full h-full object-cover" alt={record.name} />
-              </div>
-              <div className="mt-2 text-center">
-                <p className="text-[12px] font-bold text-dash-dark">{record.name}</p>
-                <div className="flex items-center justify-center gap-2 mt-0.5">
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                    record.active ? 'bg-[#1A452C] text-[#4ADE80]' : 'bg-[#F48243]/20 text-[#F48243]'
+            <div className="shrink-0 flex flex-col items-center">
+              <div className="bg-white p-2 rounded-[30px] shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
+                <div className="w-32 h-32 rounded-[22px] overflow-hidden shadow-md">
+                  <img src={record.avatar} className="w-full h-full object-cover" alt={record.name} />
+                </div>
+                <div className="mt-2.5 flex flex-col items-center gap-1">
+                  <p className="text-[13px] font-bold text-dash-dark">{record.name}</p>
+                  <span className={`px-2.5 py-0.75 rounded-full text-[9px] font-bold ${
+                    record.active ? 'bg-[#22C55E] text-white' : 'bg-[#F48243]/20 text-[#F48243]'
                   }`}>
                     {record.status}
                   </span>
@@ -255,13 +255,13 @@ export default function AgentAttendanceListPage() {
       <div className="max-w-350 mx-auto">
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <Link href="/agent/operations?tab=attendance" className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-sm hover:shadow-md transition-all">
+        <div className="flex flex-wrap items-center gap-4 mb-6">
+          <Link href="/agent/operations?tab=attendance" className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] hover:opacity-90 transition-all">
             <ArrowLeft size={18} className="text-dash-dark" />
           </Link>
           <div>
-            <h1 className="text-[22px] font-bold text-dash-dark">My Attendance</h1>
-            <p className="text-[13px] text-gray-400 mt-0.5">{filtered.length} records found</p>
+            <h1 className="text-[22px] font-bold text-white">My Attendance</h1>
+            <p className="text-[13px] text-white/65 mt-0.5">{filtered.length} records found</p>
           </div>
           {/* Date range */}
           <div className="ml-auto flex items-center gap-2">
@@ -269,14 +269,14 @@ export default function AgentAttendanceListPage() {
               type="date"
               value={fromDate}
               onChange={(e) => { setFromDate(e.target.value); setPage(1); setSelectedId(null); }}
-              className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[12px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+              className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[12px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]"
             />
-            <span className="text-[12px] text-gray-400">to</span>
+            <span className="text-[12px] text-white/65">to</span>
             <input
               type="date"
               value={toDate}
               onChange={(e) => { setToDate(e.target.value); setPage(1); setSelectedId(null); }}
-              className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[12px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-sm"
+              className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-[12px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/10 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]"
             />
           </div>
         </div>
@@ -290,13 +290,13 @@ export default function AgentAttendanceListPage() {
               value={search}
               onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search by name......"
-              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] outline-none focus:ring-2 focus:ring-dash-dark/20 transition-all shadow-sm"
+              className="w-full bg-white border border-gray-100 rounded-full py-3.5 pl-12 pr-5 text-[13px] text-dash-dark outline-none focus:ring-2 focus:ring-dash-dark/20 transition-all shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]"
             />
           </div>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-5 py-3.5 rounded-full text-[13px] font-bold transition-all shadow-sm border ${
-              showFilters ? 'bg-dash-dark text-white border-dash-dark' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'
+            className={`se-control flex items-center gap-2 px-5 py-3.5 text-[13px] font-bold transition-all cursor-pointer ${
+              showFilters ? 'se-control-active' : ''
             }`}
           >
             <SlidersHorizontal size={14} />
@@ -306,14 +306,14 @@ export default function AgentAttendanceListPage() {
 
         {/* Filter Panel */}
         {showFilters && (
-          <div className="flex flex-wrap gap-3 mb-4 p-4 bg-white rounded-2xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="se-stat-card flex flex-wrap gap-3 mb-4 p-4 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-gray-400 px-1">Status</label>
+              <label className="text-[11px] font-bold text-white/75 px-1">Status</label>
               <div className="flex gap-1">
                 {(['all', 'present', 'absent'] as const).map((s) => (
                   <button key={s} onClick={() => handleStatus(s)}
-                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all ${
-                      statusFilter === s ? 'bg-dash-dark text-white' : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'
+                    className={`px-4 py-2 rounded-full text-[12px] font-bold capitalize transition-all cursor-pointer ${
+                      statusFilter === s ? 'bg-[#6FA8A6] text-dash-dark' : 'bg-white/10 border border-white/20 text-white/75 hover:bg-white/15'
                     }`}>
                     {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
                   </button>
@@ -323,7 +323,7 @@ export default function AgentAttendanceListPage() {
             {statusFilter !== 'all' && (
               <div className="flex flex-col justify-end">
                 <button onClick={() => { setStatusFilter('all'); setPage(1); }}
-                  className="px-4 py-2 rounded-full text-[12px] font-bold text-red-400 hover:bg-red-50 transition-all border border-red-200">
+                  className="px-4 py-2 rounded-full text-[12px] font-bold text-rose-300 hover:bg-rose-500/15 transition-all border border-rose-400/30 cursor-pointer">
                   Clear filters
                 </button>
               </div>
@@ -388,7 +388,7 @@ export default function AgentAttendanceListPage() {
           {selectedRecord ? (
             <AttendanceSidebar record={selectedRecord} />
           ) : (
-            <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-gray-400 text-[13px]">
+            <div className="flex items-center justify-center w-full xl:w-90 xl:shrink-0 h-40 text-white/65 text-[13px]">
               Select a record to view details
             </div>
           )}
