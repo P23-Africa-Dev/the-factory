@@ -22,11 +22,34 @@ const DEFAULT_MESSAGE = 'Location sharing is on · Tap to return to the map';
 /** Native FGS delivers ~1s interval; 0m filter keeps fixes while stationary (stops). */
 const NATIVE_DISTANCE_FILTER_METERS = 0;
 
+/**
+ * One native watcher (one foreground service) shared by every tracker.
+ *
+ * Field trips, task tracking and the map preview each subscribe under their own
+ * owner key. The watcher starts with the first subscriber and stops only when
+ * the last one leaves, so ending a task (or leaving the map) can never silently
+ * kill an active field trip's GPS. Callers that pass no owner use "shared"
+ * (the useGeolocation shared watch), which keeps old call sites working.
+ */
+export type NativeWatchOwner = 'shared' | 'field-trip' | (string & {});
+
+type Subscriber = { onUpdate: LocationCallback; onError: ErrorCallback | null };
+
 let watcherId: string | null = null;
-let onUpdateCb: LocationCallback | null = null;
-let onErrorCb: ErrorCallback | null = null;
+const subscribers = new Map<string, Subscriber>();
 let lastWatchTitle = DEFAULT_TITLE;
 let lastWatchMessage = DEFAULT_MESSAGE;
+
+/** Exported for tests. */
+export function nativeWatchOwners(): string[] {
+  return [...subscribers.keys()];
+}
+
+/** Exported for tests: forget all state without touching the plugin. */
+export function resetNativeWatchStateForTests(): void {
+  watcherId = null;
+  subscribers.clear();
+}
 
 function normalizeNativeLocationError(error: { message?: string; code?: string | number }): string {
   const code = String(error.code ?? '').toUpperCase();
@@ -109,7 +132,43 @@ export function buildLiveTrackingMessage(distanceMeters?: number | null): string
   return DEFAULT_MESSAGE;
 }
 
+/**
+ * The native watcher outlives a WebView reload, but its id (and callback) do
+ * not: without this, every reload left one more invisible watcher running GPS.
+ * The id is kept in storage and any leftover is removed before adding a new one.
+ */
+const WATCHER_KEY = 'tracking:native_watcher_id';
+let orphanCheckDone = false;
+
+function rememberWatcher(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(WATCHER_KEY, id);
+    else localStorage.removeItem(WATCHER_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+async function removeOrphanWatcher(): Promise<void> {
+  if (orphanCheckDone) return;
+  orphanCheckDone = true;
+  let orphan: string | null = null;
+  try {
+    orphan = localStorage.getItem(WATCHER_KEY);
+  } catch {
+    return;
+  }
+  if (!orphan || orphan === watcherId) return;
+  try {
+    await BackgroundGeolocation.removeWatcher({ id: orphan });
+  } catch {
+    // Already gone (app was restarted).
+  }
+  rememberWatcher(null);
+}
+
 async function addWatcherInternal(title: string, message: string): Promise<void> {
+  await removeOrphanWatcher();
   watcherId = await BackgroundGeolocation.addWatcher(
     {
       backgroundMessage: message,
@@ -120,15 +179,18 @@ async function addWatcherInternal(title: string, message: string): Promise<void>
     },
     (location, error) => {
       if (error) {
-        onErrorCb?.(normalizeNativeLocationError(error));
+        const message = normalizeNativeLocationError(error);
+        subscribers.forEach((sub) => sub.onError?.(message));
         return;
       }
       if (!location) return;
       if (location.latitude === 0 && location.longitude === 0) return;
       recordBackgroundLocationFix();
-      onUpdateCb?.(toLocationObject(location));
+      const loc = toLocationObject(location);
+      subscribers.forEach((sub) => sub.onUpdate(loc));
     },
   );
+  rememberWatcher(watcherId);
 }
 
 /**
@@ -139,19 +201,19 @@ export async function startNativeBackgroundWatch(
   onUpdate: LocationCallback,
   onError?: ErrorCallback,
   options?: NativeWatchOptions,
+  owner: NativeWatchOwner = 'shared',
 ): Promise<void> {
   if (!isNativeAndroid()) {
     throw new Error('Native background geolocation is only available on Android APK.');
   }
 
+  subscribers.set(owner, { onUpdate, onError: onError ?? null });
+
+  // Already running for another tracker: just join it (no FGS restart, so the
+  // ongoing notification and the other tracker's fixes are not interrupted).
+  if (watcherId) return;
+
   await ensureNativeNotificationPermission();
-
-  onUpdateCb = onUpdate;
-  onErrorCb = onError ?? null;
-
-  if (watcherId) {
-    await stopNativeBackgroundWatch({ keepCallbacks: true });
-  }
 
   const title = options?.title?.trim() || DEFAULT_TITLE;
   // Freeze body at start — never restart the FGS just to refresh distance copy.
@@ -179,10 +241,17 @@ export async function startNativeBackgroundWatch(
  */
 export async function forceRestartNativeBackgroundWatch(): Promise<void> {
   if (!isNativeAndroid()) return;
-  if (!onUpdateCb) return;
+  if (subscribers.size === 0) return;
 
   if (watcherId) {
-    await stopNativeBackgroundWatch({ keepCallbacks: true });
+    const id = watcherId;
+    watcherId = null;
+    rememberWatcher(null);
+    try {
+      await BackgroundGeolocation.removeWatcher({ id });
+    } catch {
+      // Ignore — watcher may already be gone.
+    }
   }
   await addWatcherInternal(lastWatchTitle, lastWatchMessage);
 }
@@ -199,46 +268,42 @@ export async function updateNativeBackgroundNotification(_options: {
   // Intentionally a no-op: notification copy is set once at start and stays until stop.
 }
 
+/**
+ * Leave the shared native watcher. The watcher (and its foreground service)
+ * stops only when no tracker is subscribed any more.
+ */
 export async function stopNativeBackgroundWatch(opts?: {
-  keepCallbacks?: boolean;
+  owner?: NativeWatchOwner;
 }): Promise<void> {
-  if (!watcherId) {
-    if (!opts?.keepCallbacks) {
-      onUpdateCb = null;
-      onErrorCb = null;
-      try {
-        const { endLiveTrackingIndicator } = await import('@/lib/notifications/trackingAlerts');
-        await endLiveTrackingIndicator();
-      } catch {
-        // ignore
-      }
+  subscribers.delete(opts?.owner ?? 'shared');
+  if (subscribers.size > 0) return;
+
+  if (watcherId) {
+    const id = watcherId;
+    watcherId = null;
+    rememberWatcher(null);
+    try {
+      await BackgroundGeolocation.removeWatcher({ id });
+    } catch {
+      // Ignore — watcher may already be gone.
     }
-    return;
-  }
-  const id = watcherId;
-  watcherId = null;
-  if (!opts?.keepCallbacks) {
-    onUpdateCb = null;
-    onErrorCb = null;
-  }
-  try {
-    await BackgroundGeolocation.removeWatcher({ id });
-  } catch {
-    // Ignore — watcher may already be gone.
   }
 
-  if (!opts?.keepCallbacks) {
-    try {
-      const { endLiveTrackingIndicator } = await import('@/lib/notifications/trackingAlerts');
-      await endLiveTrackingIndicator();
-    } catch {
-      // ignore
-    }
+  try {
+    const { endLiveTrackingIndicator } = await import('@/lib/notifications/trackingAlerts');
+    await endLiveTrackingIndicator();
+  } catch {
+    // ignore
   }
 }
 
 export function isNativeBackgroundWatching(): boolean {
   return watcherId != null;
+}
+
+/** True when this owner currently receives native fixes. */
+export function isNativeWatchOwner(owner: NativeWatchOwner): boolean {
+  return subscribers.has(owner) && watcherId != null;
 }
 
 /** Open OS app settings (useful when location was denied). */

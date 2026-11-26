@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\V1\Enterprise\SetupInfoController;
 use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\FieldActivity\FieldActivityAgentController;
 use App\Http\Controllers\Api\V1\FieldActivity\FieldActivityManagementController;
+use App\Http\Controllers\Api\V1\FieldTrip\FieldTripController;
 use App\Http\Controllers\Api\V1\GeographyController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
@@ -225,6 +226,37 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
     // Used by the realtime tracking relay to scope what a socket may receive.
     Route::get('/tracking/socket-authorization', TrackingSocketAuthorizationController::class)
         ->name('tracking.socket-authorization');
+
+    // Field Trips: on-demand field tracking for every company member (agents and
+    // managers). Not tied to clock-in. Ownership is enforced in FieldTripService.
+    Route::prefix('field-trips')->name('field-trips.')->group(function (): void {
+        Route::get('/current', [FieldTripController::class, 'current'])->name('current');
+        Route::post('/', [FieldTripController::class, 'start'])
+            ->middleware('throttle:api')
+            ->name('start');
+        Route::post('/{trip}/end', [FieldTripController::class, 'end'])
+            ->middleware('throttle:api')
+            ->name('end');
+        Route::post('/{trip}/points', [FieldTripController::class, 'points'])
+            ->whereNumber('trip')
+            ->middleware('throttle:api-heavy')
+            ->name('points');
+        Route::post('/{trip}/health', [FieldTripController::class, 'health'])
+            ->whereNumber('trip')
+            ->middleware('throttle:api')
+            ->name('health');
+        // Stops and the day view for every member (managers take trips too);
+        // the service checks the caller owns the trip / stop.
+        Route::get('/today', [FieldTripController::class, 'today'])->name('today');
+        Route::get('/pending-review', [FieldTripController::class, 'pendingReview'])->name('pending-review');
+        Route::get('/{trip}/stops', [FieldTripController::class, 'stops'])
+            ->whereNumber('trip')
+            ->name('stops');
+        Route::post('/stops/{stop}/classify', [FieldTripController::class, 'classifyStop'])
+            ->whereNumber('stop')
+            ->middleware('throttle:api')
+            ->name('stops.classify');
+    });
 
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])
         ->name('support-access.status');

@@ -46,6 +46,7 @@ import {
   requestTrackingNotificationPermission,
 } from '@/lib/notifications/trackingAlerts';
 import { getApiErrorMessage, startMapTaskSession } from '@/features/tracking/lib/startMapTaskSession';
+import { useFieldTripStore } from '@/features/field-trip/store';
 import { demoSyntheticStartFromDestination, isDemoOrganization } from '@/features/tracking/lib/demoTracking';
 import { toast } from '@/lib/toast';
 import {
@@ -884,12 +885,14 @@ function MapContent() {
     };
   }, []);
 
-  // Stop orphan GPS when opening /map without ?taskId (tracking store outlives page state).
+  // Opening /map without ?taskId while a task is being tracked (e.g. from the
+  // field-trip card or a menu): show that task's map. Never stop its tracking —
+  // only the agent ends a task.
   useEffect(() => {
     if (isFromTrackingScreen) return;
     if (activeTaskId == null) return;
-    void stopTracking();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hygiene
+    router.replace(`/map?taskId=${activeTaskId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only redirect
   }, []);
 
   // Determine which task to work with — filter to only tasks assigned to this agent
@@ -1985,12 +1988,17 @@ function MapContent() {
 
   // Derived positions
   const isNavigating = phase === 'activity_started';
+  // Field trip (not a task): show the person's own live route and position.
+  const onFieldTrip = useFieldTripStore((s) => s.local != null);
+  const tripTrail = useFieldTripStore((s) => s.trail);
+  const tripPosition = useFieldTripStore((s) => s.lastPosition);
+  const showTripOnMap = onFieldTrip && !isNavigating;
   const agentLng = isNavigating
     ? liveTask?.lastPosition?.[0] ?? lastPosition?.coords.longitude ?? customOrigin?.longitude ?? null
-    : customOrigin?.longitude ?? lastPosition?.coords.longitude ?? null;
+    : customOrigin?.longitude ?? (showTripOnMap ? tripPosition?.[0] : null) ?? lastPosition?.coords.longitude ?? null;
   const agentLat = isNavigating
     ? liveTask?.lastPosition?.[1] ?? lastPosition?.coords.latitude ?? customOrigin?.latitude ?? null
-    : customOrigin?.latitude ?? lastPosition?.coords.latitude ?? null;
+    : customOrigin?.latitude ?? (showTripOnMap ? tripPosition?.[1] : null) ?? lastPosition?.coords.latitude ?? null;
   const agentPosition = useMemo<[number, number] | null>(
     () => (agentLng != null && agentLat != null ? [agentLng, agentLat] : null),
     [agentLng, agentLat],
@@ -1998,8 +2006,8 @@ function MapContent() {
 
   const mapMode = isNavigating ? 'navigation' as const : 'preview' as const;
   const traveledCoords = useMemo(
-    () => buildTraveledSegment(livePolyline),
-    [livePolyline],
+    () => (showTripOnMap && tripTrail.length > 1 ? tripTrail : buildTraveledSegment(livePolyline)),
+    [showTripOnMap, tripTrail, livePolyline],
   );
   const remainingRouteCoords = useMemo(() => {
     if (!isNavigating) return plannedRoute;

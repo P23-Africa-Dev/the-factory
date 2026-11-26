@@ -54,10 +54,44 @@ class FieldActivityRealtimeService
         ]);
     }
 
-    public function publishStopCreated(FieldActivitySession $session, FieldStop $stop): void
+    /** A field trip started or ended (event: field_activity.trip_started / trip_ended). */
+    public function publishTripLifecycle(FieldActivitySession $session, string $event): void
     {
         $this->publish([
-            'event' => 'field_activity.stop_created',
+            'event' => 'field_activity.'.$event,
+            'version' => 1,
+            'company_id' => (int) $session->company_id,
+            'user_id' => (int) $session->user_id,
+            'field_activity_session_id' => (int) $session->id,
+            'source' => $session->source,
+            // Lets the management map show the person in Live Feeds right away.
+            'name' => $session->user?->name,
+            'avatar_url' => \App\Support\AvatarUrlResolver::resolveOrDefault($session->user?->avatar, $session->user?->gender),
+            'status' => $session->status?->value,
+            'started_at' => $session->started_at?->toIso8601String(),
+            'ended_at' => $session->ended_at?->toIso8601String(),
+            'end_reason' => $session->end_reason,
+            'latitude' => $session->last_latitude !== null ? (float) $session->last_latitude : null,
+            'longitude' => $session->last_longitude !== null ? (float) $session->last_longitude : null,
+            'occurred_at' => now()->toIso8601String(),
+        ]);
+    }
+
+    public function publishStopCreated(FieldActivitySession $session, FieldStop $stop): void
+    {
+        $this->publishStop('field_activity.stop_created', $session, $stop);
+    }
+
+    /** A stop closed (departure known), was enriched/auto-classified, or was classified by its owner. */
+    public function publishStopUpdated(FieldActivitySession $session, FieldStop $stop): void
+    {
+        $this->publishStop('field_activity.stop_updated', $session, $stop);
+    }
+
+    private function publishStop(string $event, FieldActivitySession $session, FieldStop $stop): void
+    {
+        $this->publish([
+            'event' => $event,
             'version' => 1,
             'company_id' => (int) $session->company_id,
             'user_id' => (int) $session->user_id,
@@ -71,6 +105,8 @@ class FieldActivityRealtimeService
                 'address' => $stop->address,
                 'duration_seconds' => (int) $stop->duration_seconds,
                 'classification' => $stop->classification?->value,
+                'match_type' => $stop->match_type?->value,
+                'lead_id' => $stop->lead_id,
                 'arrived_at' => $stop->arrived_at?->toIso8601String(),
                 'departed_at' => $stop->departed_at?->toIso8601String(),
             ],

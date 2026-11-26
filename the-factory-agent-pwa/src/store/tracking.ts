@@ -71,7 +71,8 @@ export const useTrackingStore = create<TrackingStore>((set) => ({
       const existing = state.liveTaskMap[taskId];
       if (!existing) return state;
 
-      const polyline = [...existing.polyline, point];
+      // Entries created by a partial upsert may not have a trail yet.
+      const polyline = [...(Array.isArray(existing.polyline) ? existing.polyline : []), point];
       const capped =
         polyline.length > POLYLINE_CAP
           ? polyline.slice(polyline.length - POLYLINE_CAP)

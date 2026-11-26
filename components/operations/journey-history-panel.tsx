@@ -1,22 +1,33 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { format, parse, parseISO, subDays } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 import {
+  AlertTriangle,
   CalendarDays,
   Clock,
   Download,
   Loader2,
   MapPinned,
   Navigation,
+  RefreshCw,
   Route,
 } from "lucide-react";
 import { useAgentJourneys, useMyJourneys } from "@/hooks/use-field-journeys";
-import type { JourneyCard } from "@/lib/api/field-activity";
+import { getAgentJourneys, getMyJourneys, type JourneyCard } from "@/lib/api/field-activity";
+import { getAuthTokenFromDocument } from "@/lib/auth/session";
 import {
   buildJourneysCsv,
   downloadTextFile,
+  fetchAllPages,
+  fileSlug,
 } from "@/lib/tracking/export-journeys-csv";
+import {
+  sortTripsNewestFirst,
+  tripEndIso,
+  tripStartIso,
+} from "@/lib/tracking/journey-history";
 
 function formatKm(meters: number): string {
   if (meters < 1000) return `${meters} m`;
@@ -38,16 +49,16 @@ function JourneyEntry({
   journey: JourneyCard;
   href: string;
 }) {
-  const date = journey.date ? parse(journey.date, "yyyy-MM-dd", new Date()) : null;
+  const startIso = tripStartIso(journey);
+  const endIso = tripEndIso(journey);
+  const dayIso = startIso ?? journey.date;
+  const date = dayIso ? parseISO(dayIso) : null;
   const dayLabel = date ? format(date, "EEE") : "—";
   const dayNum = date ? format(date, "d") : "—";
   const monthLabel = date ? format(date, "MMM") : "";
-  const clockIn = journey.clock_in_at
-    ? format(parseISO(journey.clock_in_at), "h:mma")
-    : null;
-  const clockOut = journey.clock_out_at
-    ? format(parseISO(journey.clock_out_at), "h:mma")
-    : null;
+  const clockIn = startIso ? format(parseISO(startIso), "h:mma") : null;
+  const clockOut = endIso ? format(parseISO(endIso), "h:mma") : null;
+  const isTrip = journey.source === "field_trip";
   const isActive = journey.status === "active";
   const hasNoRoutePoints = !isActive && journey.distance_meters <= 0;
 
@@ -76,6 +87,13 @@ function JourneyEntry({
         <div className="bg-white border border-gray-100 rounded-2xl px-4 py-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)] group-hover:shadow-[0_2px_8px_rgba(0,0,0,0.1)] transition-shadow">
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="flex flex-col gap-1">
+              <span
+                className={`self-start px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                  isTrip ? "bg-[#FFF1EE] text-[#C2412B]" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {isTrip ? "Field Trip" : "Clock-in day"}
+              </span>
               {clockIn ? (
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5">
@@ -98,7 +116,7 @@ function JourneyEntry({
                   )}
                 </div>
               ) : (
-                <span className="text-[11px] text-gray-400 italic">No clock in recorded</span>
+                <span className="text-[11px] text-gray-400 italic">No start time recorded</span>
               )}
             </div>
             <span
@@ -145,7 +163,9 @@ function JourneyEntry({
 
           {hasNoRoutePoints && (
             <p className="mb-2 text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
-              Session exists, but route points were not captured for this day.
+              {isTrip
+                ? "No route points were recorded for this trip."
+                : "Session exists, but route points were not captured for this day."}
             </p>
           )}
 
@@ -153,7 +173,7 @@ function JourneyEntry({
             href={href}
             className="inline-flex items-center justify-center w-full rounded-xl bg-[#0B1215] text-white text-[11px] font-bold py-2 hover:bg-[#1a2428] transition-colors"
           >
-            View Journey
+            {isTrip ? "View Trip" : "View Journey"}
           </Link>
         </div>
       </div>
@@ -191,17 +211,38 @@ export function JourneyHistoryPanel({
   );
   const mineQuery = useMyJourneys(mode === "mine" ? params : { company_id: undefined });
 
-  const data = mode === "mine" ? mineQuery.data : managedQuery.data;
-  const isLoading = mode === "mine" ? mineQuery.isLoading : managedQuery.isLoading;
+  const activeQuery = mode === "mine" ? mineQuery : managedQuery;
+  const data = activeQuery.data;
+  const isLoading = activeQuery.isLoading;
 
-  const journeys = data?.items ?? [];
+  const journeys = useMemo(() => sortTripsNewestFirst(data?.items ?? []), [data]);
   const summary = data?.summary;
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  const handleExportCsv = () => {
-    if (journeys.length === 0) return;
-    const csv = buildJourneysCsv(journeys, selected.name);
-    const stamp = format(new Date(), "yyyy-MM-dd");
-    downloadTextFile(`journey-history-${selected.userId}-${stamp}.csv`, csv);
+  // Export every trip in the range, not just the page on screen.
+  const handleExportCsv = async () => {
+    if (journeys.length === 0 || exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const token = getAuthTokenFromDocument();
+      const all = sortTripsNewestFirst(
+        await fetchAllPages(async (page) => {
+          const res =
+            mode === "mine"
+              ? await getMyJourneys({ ...params, page, per_page: 60 }, token)
+              : await getAgentJourneys(selected.userId, { ...params, page, per_page: 60 }, token);
+          return res.data;
+        }),
+      );
+      const csv = buildJourneysCsv(all, selected.name);
+      downloadTextFile(`trips-${fileSlug(selected.name)}-${fromDate}_to_${toDate}.csv`, csv);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -217,12 +258,16 @@ export function JourneyHistoryPanel({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleExportCsv}
-              disabled={journeys.length === 0 || isLoading}
+              onClick={() => void handleExportCsv()}
+              disabled={journeys.length === 0 || isLoading || exporting}
               className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/15 disabled:opacity-40 px-3 py-1.5 rounded-full transition-colors"
-              title="Export CSV"
+              title="Export every trip in the last 30 days as CSV"
             >
-              <Download size={11} className="text-white/70" />
+              {exporting ? (
+                <Loader2 size={11} className="text-white/70 animate-spin" />
+              ) : (
+                <Download size={11} className="text-white/70" />
+              )}
               <span className="text-[10px] font-bold text-white/70">Export</span>
             </button>
             <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full">
@@ -240,7 +285,7 @@ export function JourneyHistoryPanel({
             <div className="flex items-center gap-1 mt-1">
               <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
               <span className="text-[9px] font-bold text-sky-400 uppercase tracking-wide">
-                Days
+                {summary?.journey_count === 1 ? "Trip" : "Trips"}
               </span>
             </div>
           </div>
@@ -270,16 +315,33 @@ export function JourneyHistoryPanel({
       </div>
 
       <div className="bg-[#F8F9FA] flex-1 overflow-y-auto max-h-80 p-4 pt-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-200">
+        {exportError && (
+          <p role="alert" className="mb-3 text-[11px] font-semibold text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            Export failed: {exportError}
+          </p>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 size={22} className="animate-spin text-gray-300" />
           </div>
+        ) : activeQuery.isError ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3 text-center" role="alert">
+            <AlertTriangle size={22} className="text-amber-500" />
+            <p className="text-[12px] text-gray-500 font-medium">We couldn&apos;t load trips.</p>
+            <button
+              type="button"
+              onClick={() => void activeQuery.refetch()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B1215] px-3 py-1.5 text-[11px] font-bold text-white"
+            >
+              <RefreshCw size={12} /> Try again
+            </button>
+          </div>
         ) : journeys.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <Route size={28} className="text-gray-300" />
-            <p className="text-[12px] text-gray-400 font-medium">No journeys yet</p>
+            <p className="text-[12px] text-gray-400 font-medium">No trips yet</p>
             <p className="text-[10px] text-gray-400 text-center max-w-[220px]">
-              Journeys appear when Field Activity is enabled and the agent clocks in.
+              Journeys appear when Field Activity is enabled and the person starts a field trip in the mobile app.
             </p>
           </div>
         ) : (

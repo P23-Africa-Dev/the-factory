@@ -117,6 +117,24 @@ const cases: Array<{
     manager: '/manager/task/12',
   },
   {
+    name: 'field trip auto-ended opens the trip',
+    source: { type: 'field_trip.auto_ended', actionUrl: '/?field_trip=1', referenceType: 'App\Models\FieldActivitySession', referenceId: 41 },
+    agent: '/field-activity/journeys/41',
+    manager: '/manager/field-activity/journeys/41',
+  },
+  {
+    name: 'field trip reminder opens the trip card',
+    source: { type: 'field_trip.reminder', actionUrl: '/?field_trip=1', referenceType: 'App\Models\FieldActivitySession', referenceId: 41 },
+    agent: '/',
+    manager: '/manager',
+  },
+  {
+    name: 'team member lost signal opens the live map',
+    source: { type: 'field_trip.signal_lost', actionUrl: '/map?agent=7', referenceType: 'App\Models\FieldActivitySession', referenceId: 41 },
+    agent: '/map?agent=7',
+    manager: '/manager/map?agent=7',
+  },
+  {
     name: 'attendance',
     source: { type: 'attendance.clock_in_reminder', actionUrl: '/agent/operations/attendance', referenceType: 'App\\Models\\AttendanceRecord', referenceId: 3 },
     agent: '/?section=attendance',

@@ -88,7 +88,11 @@ import { FieldActivityLiveLayer } from '@/components/map/FieldActivityLiveLayer'
 import { useAttendanceMapSnapshots } from '@/hooks/use-attendance-map';
 import { useFieldActivityLiveHydrate } from '@/hooks/use-field-activity-live';
 import { useAttendanceMapStore } from '@/store/attendance-map';
-import { useFieldActivityLiveStore } from '@/store/field-activity-live';
+import {
+  activeFieldTripPositions,
+  activeFieldTripPositionsKey,
+  useFieldActivityLiveStore,
+} from '@/store/field-activity-live';
 import type { AttendanceMapSnapshotItem } from '@/lib/api/attendance';
 import { isInsideLocationContext, type LocationContext } from '@/lib/map/location-search';
 import {
@@ -431,19 +435,28 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
   useFieldActivityLiveHydrate(!compact);
-  const fieldLiveAgentsMap = useFieldActivityLiveStore((s) => s.agents);
-  const fieldLiveAgents = useMemo(() => Object.values(fieldLiveAgentsMap), [fieldLiveAgentsMap]);
+  // Field trips: subscribe only to what the page needs (the followed person's
+  // position, and positions while following all) — the layer and the Live
+  // Feeds panel subscribe to the full list themselves, so a new point does
+  // not re-render this whole page.
   const fieldFollowUserId = useFieldActivityLiveStore((s) => s.followUserId);
-  const fieldFollowAll = useFieldActivityLiveStore((s) => s.followAll);
+  const fieldFollowPaused = useFieldActivityLiveStore((s) => s.followPaused);
   const fieldFocusMode = useFieldActivityLiveStore((s) => s.focusMode);
+  const followedFieldPosition = useFieldActivityLiveStore((s) =>
+    s.followUserId != null ? s.agents[s.followUserId]?.lastPosition ?? null : null,
+  );
+  const fieldFollowAllKey = useFieldActivityLiveStore((s) =>
+    s.followAll ? activeFieldTripPositionsKey(s.agents) : '',
+  );
   const setFieldFollowUserId = useFieldActivityLiveStore((s) => s.setFollowUserId);
   const setFieldFollowAll = useFieldActivityLiveStore((s) => s.setFollowAll);
   const setFieldFocusMode = useFieldActivityLiveStore((s) => s.setFocusMode);
-  const fieldFollowAllLastFitRef = useRef(0);
   const clockedInItemMap = useAttendanceMapStore((s) => s.items);
   const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
   const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
   const setSelectedClockedInUserId = useAttendanceMapStore((s) => s.setSelectedUserId);
+  // Stable getters: inline arrows made layers re-run (and tear down) every render.
+  const getMapboxMap = useCallback(() => mapRef.current, []);
 
   const handleClockedInSelect = useCallback((item: AttendanceMapSnapshotItem) => {
     setSelectedClockedInUserId(item.user_id);
@@ -456,9 +469,25 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     map.flyTo({ center, zoom: Math.max(map.getZoom(), 14), speed: 1.2 });
   }, [setSelectedClockedInUserId]);
 
+  /** Live Feeds / avatar click: select and follow a person on a field trip. */
+  const handleFieldAgentSelect = useCallback((userId: number) => {
+    setFieldFollowUserId(userId);
+    setFollowAllActive(false);
+    setIsFollowing(false);
+    const live = useFieldActivityLiveStore.getState().agents[userId];
+    const map = mapRef.current;
+    if (!map || !live?.lastPosition) return;
+    suppressFollowBreakRef.current = true;
+    map.flyTo({ center: live.lastPosition, zoom: Math.max(map.getZoom(), 15), speed: 1.2 });
+    map.once('moveend', () => {
+      suppressFollowBreakRef.current = false;
+    });
+  }, [setFieldFollowUserId, setFollowAllActive, setIsFollowing]);
+
   const highlightedClockedInUserId =
     selectedClockedInUserId ??
     (Number.isFinite(initialAgentId) ? initialAgentId : null);
+  const highlightedFieldUserId = fieldFollowUserId ?? highlightedClockedInUserId;
 
   const filteredBusinesses = useMemo(() => {
     if (!locationCtx) return savedLocations;
@@ -526,6 +555,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
 
   const handleSelectTask = useCallback((taskId: number) => {
     setSelectedTaskId(taskId);
+    // A task card takes the camera: stop following a field-trip person.
+    useFieldActivityLiveStore.setState({ followPaused: true });
     const task = useTrackingStore.getState().liveTasks[taskId];
     const map = mapRef.current;
     if (!task || !map) return;
@@ -571,32 +602,16 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     // setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
   }, [setHistoryTask]);
 
+  /** One "Follow all" for people on tasks and people on field trips. */
   const handleToggleFollowAll = useCallback(() => {
-    setFollowAllActive((prev) => {
-      if (!prev) {
-        setIsFollowing(false);
-        followAllLastFitRef.current = 0;
-      }
-      return !prev;
-    });
-  }, [setFollowAllActive, setIsFollowing]);
-
-  const handleToggleSelectedFollowGoogle = useCallback(() => {
-    const task = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
-    if (!task) return;
-    if (isFollowing) {
+    const next = !followAllActive;
+    if (next) {
       setIsFollowing(false);
-      return;
+      followAllLastFitRef.current = 0;
     }
-    setFollowAllActive(false);
-    const map = mapRef.current;
-    const [lng, lat] = task.lastPosition;
-    if (map && Number.isFinite(lng) && Number.isFinite(lat)) {
-      map.panTo({ lat, lng });
-      if (map.getZoom() < 15) map.setZoom(15);
-    }
-    setIsFollowing(true);
-  }, [isFollowing, liveTasks, selectedTaskId, setFollowAllActive, setIsFollowing]);
+    setFollowAllActive(next);
+    setFieldFollowAll(next);
+  }, [followAllActive, setFieldFollowAll, setFollowAllActive, setIsFollowing]);
 
   const handleToggleSelectedFollow = useCallback(() => {
     if (!selectedTask) return;
@@ -916,78 +931,45 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
     });
   }, [isFollowing, followAllActive, selectedTask, selectedTask?.lastPosition?.[0], selectedTask?.lastPosition?.[1]]);
 
-  // Field-activity follow: keep camera on selected clocked-in agent day trail.
+  // Field-trip follow (any tab): keep the camera on the followed person.
+  // Depends only on that person's position, not on every agent's points.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || leftTab !== 'clocked-in' || fieldFollowAll || fieldFollowUserId == null) return;
-    const agent = fieldLiveAgentsMap[fieldFollowUserId];
-    const pos = agent?.lastPosition;
-    if (!pos) return;
-    const [lng, lat] = pos;
+    if (!map || fieldFollowUserId == null || fieldFollowPaused || !followedFieldPosition) return;
+    const [lng, lat] = followedFieldPosition;
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
     suppressFollowBreakRef.current = true;
     map.easeTo({ center: [lng, lat], duration: 900, essential: true });
     map.once('moveend', () => {
       suppressFollowBreakRef.current = false;
     });
-  }, [
-    leftTab,
-    fieldFollowAll,
-    fieldFollowUserId,
-    fieldLiveAgentsMap,
-    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[0],
-    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[1],
-  ]);
+  }, [fieldFollowUserId, fieldFollowPaused, followedFieldPosition]);
 
-  // Field-activity follow-all: fit bounds to every active field agent.
+  // Follow-all: fit bounds to everyone live — tasks and field trips (throttled).
+  const activeTaskPositionsKey = feedGroups.active.map((t) => t.lastPosition.join(',')).join('|');
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || leftTab !== 'clocked-in' || !fieldFollowAll || fieldLiveAgents.length === 0) return;
-
-    const now = Date.now();
-    if (now - fieldFollowAllLastFitRef.current < 2000) return;
-    fieldFollowAllLastFitRef.current = now;
-
-    const bounds = new mapboxgl.LngLatBounds();
-    let hasPoint = false;
-    for (const agent of fieldLiveAgents) {
-      const pos = agent.lastPosition ?? agent.polyline[agent.polyline.length - 1];
-      if (!pos) continue;
-      bounds.extend(pos);
-      hasPoint = true;
-    }
-    if (!hasPoint) return;
-    suppressFollowBreakRef.current = true;
-    map.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 900 });
-    map.once('moveend', () => {
-      suppressFollowBreakRef.current = false;
-    });
-  }, [leftTab, fieldFollowAll, fieldLiveAgents]);
-
-  // Follow-all: fit bounds to every actively tracking agent (throttled).
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !followAllActive || feedGroups.active.length === 0) return;
+    if (!map || !followAllActive) return;
+    const points: [number, number][] = [
+      ...feedGroups.active.map((task) => task.lastPosition as [number, number]),
+      ...activeFieldTripPositions(useFieldActivityLiveStore.getState().agents),
+    ];
+    if (points.length === 0) return;
 
     const now = Date.now();
     if (now - followAllLastFitRef.current < 2000) return;
     followAllLastFitRef.current = now;
 
     const bounds = new mapboxgl.LngLatBounds();
-    for (const task of feedGroups.active) {
-      bounds.extend(task.lastPosition);
-    }
+    for (const point of points) bounds.extend(point);
     suppressFollowBreakRef.current = true;
     map.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 900 });
     map.once('moveend', () => {
       suppressFollowBreakRef.current = false;
     });
-  }, [
-    followAllActive,
-    feedGroups.active,
-    feedGroups.active.map((t) => t.lastPosition.join(',')).join('|'),
-    mapVersion,
-  ]);
+    // feedGroups.active is covered by its positions key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followAllActive, activeTaskPositionsKey, fieldFollowAllKey, mapVersion]);
 
   // Break follow mode the moment the user pans/zooms/rotates manually.
   useEffect(() => {
@@ -998,6 +980,8 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
       if (suppressFollowBreakRef.current) return;
       if (isFollowingRef.current) setIsFollowing(false);
       setFollowAllActive(false);
+      // Field trips too: stop moving the camera, keep the person highlighted.
+      useFieldActivityLiveStore.getState().pauseFollow();
     };
 
     map.on('dragstart', breakFollow);
@@ -1805,7 +1789,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         <SavedLocationsLayer
           provider="mapbox"
           ready={mapVersion > 0}
-          getMapboxMap={() => mapRef.current}
+          getMapboxMap={getMapboxMap}
           pinMode={false}
           onPinModeChange={() => { }}
           readOnly
@@ -1818,7 +1802,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             items={clockedInItems}
             selectedUserId={highlightedClockedInUserId}
             onSelectUserId={setSelectedClockedInUserId}
-            getMapboxMap={() => mapRef.current}
+            getMapboxMap={getMapboxMap}
           />
         )}
 
@@ -1994,20 +1978,29 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         </div>
 
         {/* Tab bar */}
-        <div className="flex border-b border-slate-100 shrink-0 mx-4">
+        <div className="flex border-b border-slate-100 shrink-0 mx-4" role="tablist" aria-label="Map panels">
           <button
+            type="button"
+            role="tab"
+            aria-selected={leftTab === 'feeds'}
             onClick={() => { setLeftTab('feeds'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Live Feeds
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={leftTab === 'clocked-in'}
             onClick={() => { setLeftTab('clocked-in'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Clocked In ({clockedInItems.length})
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={leftTab === 'businesses'}
             onClick={() => { setLeftTab('businesses'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
@@ -2028,6 +2021,11 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
             onViewHistoryTask={handleViewHistoryTask}
+            selectedFieldUserId={fieldFollowUserId}
+            fieldFollowPaused={fieldFollowPaused}
+            onSelectFieldAgent={handleFieldAgentSelect}
+            focusMode={fieldFocusMode}
+            onToggleFocusMode={() => setFieldFocusMode(!fieldFocusMode)}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
@@ -2035,15 +2033,6 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
-            followAllActive={fieldFollowAll}
-            focusMode={fieldFocusMode}
-            onFollowSelected={() => {
-              if (highlightedClockedInUserId != null) {
-                setFieldFollowUserId(highlightedClockedInUserId);
-              }
-            }}
-            onToggleFollowAll={() => setFieldFollowAll(!fieldFollowAll)}
-            onToggleFocusMode={() => setFieldFocusMode(!fieldFocusMode)}
           />
         ) : (
           <BusinessListPanel
@@ -2085,7 +2074,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         <SavedLocationsLayer
           provider="mapbox"
           ready={mapVersion > 0}
-          getMapboxMap={() => mapRef.current}
+          getMapboxMap={getMapboxMap}
           pinMode={pinMode}
           onPinModeChange={setPinMode}
           focusLocation={focusLocation}
@@ -2125,18 +2114,18 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
           items={clockedInItems}
           selectedUserId={highlightedClockedInUserId}
           onSelectUserId={setSelectedClockedInUserId}
-          getMapboxMap={() => mapRef.current}
+          getMapboxMap={getMapboxMap}
         />
       )}
 
-      {(leftTab === 'clocked-in' || compact) && (
+      {/* Field trip trails show on every tab: trips are independent of clock-in. */}
+      {(leftTab !== 'businesses' || compact) && (
         <FieldActivityLiveLayer
           provider="mapbox"
           ready={mapVersion > 0}
-          agents={fieldLiveAgents}
-          selectedUserId={highlightedClockedInUserId}
-          followAll={fieldFollowAll}
-          getMapboxMap={() => mapRef.current}
+          selectedUserId={highlightedFieldUserId}
+          onSelectUserId={handleFieldAgentSelect}
+          getMapboxMap={getMapboxMap}
         />
       )}
 
@@ -2144,7 +2133,7 @@ export function MapboxMapView({ compact = false, providerState }: MapViewProps &
         variant="admin"
         provider="mapbox"
         ready={mapVersion > 0}
-        getMapboxMap={() => mapRef.current}
+        getMapboxMap={getMapboxMap}
         toggleClassName="absolute bottom-6 left-4 z-30 flex flex-col-reverse items-start gap-2"
       />
 
@@ -2405,19 +2394,32 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
   const savedLocationPermissions = useSavedLocationPermissions();
   const { isLoading: clockedInLoading } = useAttendanceMapSnapshots({}, { scope: 'management' });
   useFieldActivityLiveHydrate(!compact);
-  const fieldLiveAgentsMap = useFieldActivityLiveStore((s) => s.agents);
-  const fieldLiveAgents = useMemo(() => Object.values(fieldLiveAgentsMap), [fieldLiveAgentsMap]);
+  // See the Mapbox view: narrow subscriptions keep new points from
+  // re-rendering the whole page.
   const fieldFollowUserId = useFieldActivityLiveStore((s) => s.followUserId);
-  const fieldFollowAll = useFieldActivityLiveStore((s) => s.followAll);
+  const fieldFollowPaused = useFieldActivityLiveStore((s) => s.followPaused);
   const fieldFocusMode = useFieldActivityLiveStore((s) => s.focusMode);
+  const followedFieldPosition = useFieldActivityLiveStore((s) =>
+    s.followUserId != null ? s.agents[s.followUserId]?.lastPosition ?? null : null,
+  );
+  const fieldFollowAllKey = useFieldActivityLiveStore((s) =>
+    s.followAll ? activeFieldTripPositionsKey(s.agents) : '',
+  );
   const setFieldFollowUserId = useFieldActivityLiveStore((s) => s.setFollowUserId);
   const setFieldFollowAll = useFieldActivityLiveStore((s) => s.setFollowAll);
   const setFieldFocusMode = useFieldActivityLiveStore((s) => s.setFocusMode);
-  const fieldFollowAllLastFitRef = useRef(0);
   const clockedInItemMap = useAttendanceMapStore((s) => s.items);
   const clockedInItems = useMemo(() => Object.values(clockedInItemMap), [clockedInItemMap]);
   const selectedClockedInUserId = useAttendanceMapStore((s) => s.selectedUserId);
   const setSelectedClockedInUserId = useAttendanceMapStore((s) => s.setSelectedUserId);
+  // Stable getter: inline arrows made layers re-run (and tear down) every render.
+  const getGoogleBridge = useCallback(
+    () =>
+      mapRef.current && googleRef.current
+        ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
+        : null,
+    [],
+  );
 
   const handleClockedInSelect = useCallback((item: AttendanceMapSnapshotItem) => {
     setSelectedClockedInUserId(item.user_id);
@@ -2432,9 +2434,22 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     }
   }, [setSelectedClockedInUserId]);
 
+  /** Live Feeds / avatar click: select and follow a person on a field trip. */
+  const handleFieldAgentSelect = useCallback((userId: number) => {
+    setFieldFollowUserId(userId);
+    setFollowAllActive(false);
+    setIsFollowing(false);
+    const live = useFieldActivityLiveStore.getState().agents[userId];
+    const map = mapRef.current;
+    if (!map || !live?.lastPosition) return;
+    map.panTo({ lat: live.lastPosition[1], lng: live.lastPosition[0] });
+    if ((map.getZoom() ?? 0) < 15) map.setZoom(15);
+  }, [setFieldFollowUserId, setFollowAllActive, setIsFollowing]);
+
   const highlightedClockedInUserId =
     selectedClockedInUserId ??
     (Number.isFinite(initialAgentId) ? initialAgentId : null);
+  const highlightedFieldUserId = fieldFollowUserId ?? highlightedClockedInUserId;
 
   const filteredBusinesses = useMemo(() => {
     if (!locationCtx) return savedLocations;
@@ -2466,6 +2481,8 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
 
   const handleSelectTask = useCallback((taskId: number) => {
     setSelectedTaskId(taskId);
+    // A task card takes the camera: stop following a field-trip person.
+    useFieldActivityLiveStore.setState({ followPaused: true });
     const task = useTrackingStore.getState().liveTasks[taskId];
     const map = mapRef.current;
     if (!task || !map) return;
@@ -2506,15 +2523,16 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     // setHistoryTask({ id: task.taskId, title: task.taskTitle ?? `Task #${task.taskId}` });
   }, [setHistoryTask]);
 
+  /** One "Follow all" for people on tasks and people on field trips. */
   const handleToggleFollowAll = useCallback(() => {
-    setFollowAllActive((prev) => {
-      if (!prev) {
-        setIsFollowing(false);
-        followAllLastFitRef.current = 0;
-      }
-      return !prev;
-    });
-  }, [setFollowAllActive, setIsFollowing]);
+    const next = !followAllActive;
+    if (next) {
+      setIsFollowing(false);
+      followAllLastFitRef.current = 0;
+    }
+    setFollowAllActive(next);
+    setFieldFollowAll(next);
+  }, [followAllActive, setFieldFollowAll, setFollowAllActive, setIsFollowing]);
 
   const handleToggleSelectedFollowGoogle = useCallback(() => {
     const task = selectedTaskId != null ? liveTasks[selectedTaskId] ?? null : null;
@@ -2816,75 +2834,51 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
     map.panTo({ lat, lng });
   }, [isFollowing, followAllActive, followedTask, followedTask?.lastPosition?.[0], followedTask?.lastPosition?.[1]]);
 
+  // Field-trip follow (any tab): depends only on the followed person's position.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || leftTab !== 'clocked-in' || fieldFollowAll || fieldFollowUserId == null) return;
-    const agent = fieldLiveAgentsMap[fieldFollowUserId];
-    const pos = agent?.lastPosition;
-    if (!pos) return;
-    map.panTo({ lat: pos[1], lng: pos[0] });
-  }, [
-    leftTab,
-    fieldFollowAll,
-    fieldFollowUserId,
-    fieldLiveAgentsMap,
-    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[0],
-    fieldLiveAgentsMap[fieldFollowUserId ?? -1]?.lastPosition?.[1],
-  ]);
+    if (!map || fieldFollowUserId == null || fieldFollowPaused || !followedFieldPosition) return;
+    const [lng, lat] = followedFieldPosition;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    map.panTo({ lat, lng });
+  }, [fieldFollowUserId, fieldFollowPaused, followedFieldPosition, googleReady]);
 
+  // Follow-all: fit bounds to everyone live — tasks and field trips (throttled).
+  const activeTaskPositionsKey = feedGroups.active.map((t) => t.lastPosition.join(',')).join('|');
   useEffect(() => {
     const map = mapRef.current;
     const google = googleRef.current;
-    if (!map || !google || leftTab !== 'clocked-in' || !fieldFollowAll || fieldLiveAgents.length === 0) return;
-
-    const now = Date.now();
-    if (now - fieldFollowAllLastFitRef.current < 2000) return;
-    fieldFollowAllLastFitRef.current = now;
-
-    const bounds = new google.maps.LatLngBounds();
-    let hasPoint = false;
-    for (const agent of fieldLiveAgents) {
-      const pos = agent.lastPosition ?? agent.polyline[agent.polyline.length - 1];
-      if (!pos) continue;
-      bounds.extend({ lat: pos[1], lng: pos[0] });
-      hasPoint = true;
-    }
-    if (!hasPoint) return;
-    map.fitBounds(bounds, 80);
-  }, [leftTab, fieldFollowAll, fieldLiveAgents, googleReady]);
-
-  // Follow-all: fit bounds to every actively tracking agent (throttled).
-  useEffect(() => {
-    const map = mapRef.current;
-    const google = googleRef.current;
-    if (!map || !google || !followAllActive || feedGroups.active.length === 0) return;
+    if (!map || !google || !followAllActive) return;
+    const points: [number, number][] = [
+      ...feedGroups.active.map((task) => task.lastPosition as [number, number]),
+      ...activeFieldTripPositions(useFieldActivityLiveStore.getState().agents),
+    ];
+    if (points.length === 0) return;
 
     const now = Date.now();
     if (now - followAllLastFitRef.current < 2000) return;
     followAllLastFitRef.current = now;
 
     const bounds = new google.maps.LatLngBounds();
-    for (const task of feedGroups.active) {
-      bounds.extend({ lat: task.lastPosition[1], lng: task.lastPosition[0] });
-    }
+    for (const point of points) bounds.extend({ lat: point[1], lng: point[0] });
     map.fitBounds(bounds, 80);
-  }, [
-    followAllActive,
-    feedGroups.active,
-    feedGroups.active.map((t) => t.lastPosition.join(',')).join('|'),
-    googleReady,
-  ]);
+    // feedGroups.active is covered by its positions key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followAllActive, activeTaskPositionsKey, fieldFollowAllKey, googleReady]);
 
-  // Break follow mode when the user drags the map manually.
+  // Break follow mode when the user drags or zooms the map manually.
   useEffect(() => {
     const map = mapRef.current;
     const google = googleRef.current;
     if (!map || !google || !googleReady) return;
 
-    const listener = google.maps.event.addListener(map, 'dragstart', () => {
+    const breakFollow = () => {
       if (isFollowingRef.current) setIsFollowing(false);
       setFollowAllActive(false);
-    });
+      // Field trips too: stop moving the camera, keep the person highlighted.
+      useFieldActivityLiveStore.getState().pauseFollow();
+    };
+    const listener = google.maps.event.addListener(map, 'dragstart', breakFollow);
     return () => {
       google.maps.event.removeListener(listener);
     };
@@ -3223,11 +3217,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         <SavedLocationsLayer
           provider="google"
           ready={googleReady}
-          getGoogleMap={() =>
-            mapRef.current && googleRef.current
-              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
-              : null
-          }
+          getGoogleMap={getGoogleBridge}
           pinMode={false}
           onPinModeChange={() => { }}
           readOnly
@@ -3325,20 +3315,29 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         </div>
 
         {/* Tab bar */}
-        <div className="flex border-b border-slate-100 shrink-0 mx-4">
+        <div className="flex border-b border-slate-100 shrink-0 mx-4" role="tablist" aria-label="Map panels">
           <button
+            type="button"
+            role="tab"
+            aria-selected={leftTab === 'feeds'}
             onClick={() => { setLeftTab('feeds'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'feeds' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Live Feeds
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={leftTab === 'clocked-in'}
             onClick={() => { setLeftTab('clocked-in'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'clocked-in' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
             Clocked In ({clockedInItems.length})
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={leftTab === 'businesses'}
             onClick={() => { setLeftTab('businesses'); setLeftSearchQuery(''); }}
             className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors ${leftTab === 'businesses' ? 'text-dash-dark border-b-2 border-dash-dark' : 'text-slate-400 hover:text-slate-600'}`}
           >
@@ -3359,6 +3358,11 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             onToggleFollowAll={handleToggleFollowAll}
             onSelectTask={handleSelectTask}
             onViewHistoryTask={handleViewHistoryTask}
+            selectedFieldUserId={fieldFollowUserId}
+            fieldFollowPaused={fieldFollowPaused}
+            onSelectFieldAgent={handleFieldAgentSelect}
+            focusMode={fieldFocusMode}
+            onToggleFocusMode={() => setFieldFocusMode(!fieldFocusMode)}
           />
         ) : leftTab === 'clocked-in' ? (
           <ClockedInPanel
@@ -3366,15 +3370,6 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
             isLoading={clockedInLoading}
             selectedUserId={highlightedClockedInUserId}
             onSelect={handleClockedInSelect}
-            followAllActive={fieldFollowAll}
-            focusMode={fieldFocusMode}
-            onFollowSelected={() => {
-              if (highlightedClockedInUserId != null) {
-                setFieldFollowUserId(highlightedClockedInUserId);
-              }
-            }}
-            onToggleFollowAll={() => setFieldFollowAll(!fieldFollowAll)}
-            onToggleFocusMode={() => setFieldFocusMode(!fieldFocusMode)}
           />
         ) : (
           <BusinessListPanel
@@ -3419,11 +3414,7 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
         <SavedLocationsLayer
           provider="google"
           ready={googleReady}
-          getGoogleMap={() =>
-            mapRef.current && googleRef.current
-              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
-              : null
-          }
+          getGoogleMap={getGoogleBridge}
           pinMode={pinMode}
           onPinModeChange={setPinMode}
           focusLocation={focusLocation}
@@ -3439,26 +3430,18 @@ function GoogleMapView({ compact = false, providerState }: MapViewProps & { prov
           items={clockedInItems}
           selectedUserId={highlightedClockedInUserId}
           onSelectUserId={setSelectedClockedInUserId}
-          getGoogleMap={() =>
-            mapRef.current && googleRef.current
-              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
-              : null
-          }
+          getGoogleMap={getGoogleBridge}
         />
       )}
 
-      {(leftTab === 'clocked-in' || compact) && (
+      {/* Field trip trails show on every tab: trips are independent of clock-in. */}
+      {(leftTab !== 'businesses' || compact) && (
         <FieldActivityLiveLayer
           provider="google"
           ready={googleReady}
-          agents={fieldLiveAgents}
-          selectedUserId={highlightedClockedInUserId}
-          followAll={fieldFollowAll}
-          getGoogleMap={() =>
-            mapRef.current && googleRef.current
-              ? ({ map: mapRef.current, maps: googleRef.current } as unknown as GoogleMapBridge)
-              : null
-          }
+          selectedUserId={highlightedFieldUserId}
+          onSelectUserId={handleFieldAgentSelect}
+          getGoogleMap={getGoogleBridge}
         />
       )}
 

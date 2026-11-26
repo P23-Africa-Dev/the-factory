@@ -195,8 +195,8 @@ export function LocationPermissionGate({
         {isResume
           ? 'This task is already in progress. Allow location access to resume tracking from where you left off.'
           : platform === 'android-native'
-            ? 'To start this task we track your location in the background (even when minimized or the screen is locked). Allow location “all the time” and notifications so the live-tracking indicator can stay on.'
-            : 'To start this task we track your location so supervisors can monitor your route and confirm you reached the destination. Your location is only shared while the task is active.'}
+            ? 'Factory 23 records your route only while tracking is on — even when the app is minimised or the screen is locked. Tap below and choose “Allow all the time”.'
+            : 'Factory 23 uses your location to record your route and confirm arrivals. It is only shared while tracking is on.'}
       </p>
       <button
         onClick={onRequest}

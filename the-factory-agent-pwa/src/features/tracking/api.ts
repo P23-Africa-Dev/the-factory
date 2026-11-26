@@ -14,7 +14,7 @@ import type {
 
 export const trackingApi = {
   startTask: async (taskId: number, payload: StartTaskPayload): Promise<StartTaskResponse> => {
-    const res = await client.post(`/agent/tasks/${taskId}/start`, {
+    const res = await client.post(`/tasks/${taskId}/start`, {
       company_id: payload.companyId,
       location_permission_granted: true,
       latitude: payload.latitude,
@@ -29,7 +29,7 @@ export const trackingApi = {
     taskId: number,
     payload: RecordLocationPayload,
   ): Promise<RecordLocationResponse> => {
-    const res = await client.post(`/agent/tasks/${taskId}/location`, {
+    const res = await client.post(`/tasks/${taskId}/location`, {
       company_id: payload.companyId,
       points: payload.points.map((p) => ({
         latitude: p.latitude,
@@ -44,7 +44,7 @@ export const trackingApi = {
   },
 
   getTaskRoute: async (taskId: number, companyId: number): Promise<TaskRoute> => {
-    const res = await client.get(`/agent/tasks/${taskId}/route`, {
+    const res = await client.get(`/tasks/${taskId}/route`, {
       params: { company_id: companyId, include_points: true, limit: 500 },
     });
     return parseTaskRouteResponse(res.data);

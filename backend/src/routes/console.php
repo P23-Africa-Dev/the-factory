@@ -55,6 +55,10 @@ Schedule::command('attendance:auto-clockout')->everyTenMinutes();
 // Field Activity Intelligence: EOD close, alerts, optional narratives.
 Schedule::command('field-activity:eod --narrative')->hourly();
 
+// Field trips: reminders, lost-signal pushes and auto-end after the company's
+// no-location limit. Independent of the work day.
+Schedule::command('field-trips:monitor')->everyFiveMinutes()->withoutOverlapping();
+
 // Prune old field activity trails.
 Schedule::command('field-activity:prune')->dailyAt('02:30');
 

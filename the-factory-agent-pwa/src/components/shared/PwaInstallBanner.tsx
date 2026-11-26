@@ -64,7 +64,7 @@ export function PwaInstallBanner() {
 
   return (
     <AnimatePresence>
-      <div className="fixed bottom-0 left-0 right-0 z-[100] p-4 md:p-6 pointer-events-none flex justify-center">
+      <div className="fixed bottom-0 left-0 right-0 z-[10040] p-4 md:p-6 pointer-events-none flex justify-center">
         <motion.div
           initial={{ opacity: 0, y: 100, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}

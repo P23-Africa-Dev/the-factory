@@ -18,6 +18,7 @@ use App\Services\Location\MapboxGeocodingService;
 use App\Services\Places\PlaceSearchService;
 use App\Support\GeoDistance;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -136,14 +137,23 @@ class FieldLocationIntelligenceService
     private function attachReverseGeocode(FieldStop $stop): void
     {
         try {
-            $company = $stop->company;
-            $result = $this->mapboxGeocodingService->reverseGeocodeCoordinates(
-                (float) $stop->latitude,
-                (float) $stop->longitude,
-                $company,
-            );
-            if (! empty($result['place_name'])) {
-                $stop->update(['address' => (string) $result['place_name']]);
+            // Cached per ~11 m cell: agents stop at the same places every day,
+            // and each Mapbox call costs money and latency.
+            $cacheKey = sprintf('field_activity:revgeo:%.4f:%.4f', (float) $stop->latitude, (float) $stop->longitude);
+            $placeName = Cache::get($cacheKey);
+            if (! is_string($placeName) || $placeName === '') {
+                $result = $this->mapboxGeocodingService->reverseGeocodeCoordinates(
+                    (float) $stop->latitude,
+                    (float) $stop->longitude,
+                    $stop->company,
+                );
+                $placeName = ! empty($result['place_name']) ? (string) $result['place_name'] : null;
+                if ($placeName !== null) {
+                    Cache::put($cacheKey, $placeName, now()->addDays(30));
+                }
+            }
+            if ($placeName !== null) {
+                $stop->update(['address' => $placeName]);
             }
         } catch (Throwable $e) {
             Log::debug('field_activity.reverse_geocode_failed', [

@@ -27,6 +27,22 @@ class AgentLocationSnapshotService
         // stale (is_online=false) and the agent never appears as actively tracking.
         $seenAt = now();
 
+        // Never rewind the live position: an older fix (offline replay, out of
+        // order batch) only refreshes last_seen_at.
+        $existing = AgentLocationSnapshot::query()
+            ->where('company_id', (int) $payload['company_id'])
+            ->where('user_id', (int) $payload['user_id'])
+            ->first();
+        if ($existing !== null && $existing->recorded_at !== null && $recordedAt->lt($existing->recorded_at)) {
+            $existing->forceFill(['last_seen_at' => $seenAt])->save();
+
+            return $existing->load([
+                'agent:id,name,email,avatar,gender,internal_role',
+                'task:id,title,status,latitude,longitude,address_full,location_text,due_at',
+                'trackingSession:id,task_id,start_latitude,start_longitude,near_detected_at,arrival_detected_at,destination_latitude,destination_longitude,destination_radius_meters',
+            ]);
+        }
+
         AgentLocationSnapshot::query()->updateOrCreate(
             [
                 'company_id' => (int) $payload['company_id'],
@@ -80,8 +96,12 @@ class AgentLocationSnapshotService
             $query->where('user_id', $actor->id);
         } else {
             if ($role === 'supervisor') {
-                $query->whereHas('agent', function (\Illuminate\Database\Eloquent\Builder $agentQuery) use ($actor): void {
-                    $agentQuery->where('supervisor_user_id', $actor->id);
+                // Their team and themselves (supervisors take field trips too).
+                $query->where(function (\Illuminate\Database\Eloquent\Builder $scope) use ($actor): void {
+                    $scope->where('user_id', $actor->id)
+                        ->orWhereHas('agent', function (\Illuminate\Database\Eloquent\Builder $agentQuery) use ($actor): void {
+                            $agentQuery->where('supervisor_user_id', $actor->id);
+                        });
                 });
             }
 
@@ -128,7 +148,9 @@ class AgentLocationSnapshotService
             ]);
         }
 
-        if ($role === 'supervisor' && (int) $targetUser->supervisor_user_id !== (int) $actor->id) {
+        if ($role === 'supervisor'
+            && (int) $targetUser->id !== (int) $actor->id
+            && (int) $targetUser->supervisor_user_id !== (int) $actor->id) {
             throw ValidationException::withMessages([
                 'authorization' => ['Supervisors can only access location snapshots of agents assigned to them.'],
             ]);

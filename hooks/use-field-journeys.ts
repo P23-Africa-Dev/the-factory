@@ -5,6 +5,8 @@ import {
   getAgentJourneys,
   getJourneyDetail,
   getMyJourneys,
+  type JourneyDetail,
+  type JourneyHistoryResponse,
   type JourneyListParams,
 } from "@/lib/api/field-activity";
 import { getAuthTokenFromDocument } from "@/lib/auth/session";
@@ -18,6 +20,19 @@ export const FIELD_JOURNEY_KEYS = {
   detail: (sessionId: number | string | undefined, asAgent?: boolean) =>
     [...FIELD_JOURNEY_KEYS.all, "detail", sessionId, asAgent ? "agent" : "mgmt"] as const,
 };
+
+/** Lists refresh every minute while one of the shown trips is still running. */
+export const ACTIVE_LIST_REFETCH_MS = 60_000;
+/** An open journey page refreshes faster while the trip is still running. */
+export const ACTIVE_DETAIL_REFETCH_MS = 30_000;
+
+export function listRefetchInterval(data: JourneyHistoryResponse | undefined): number | false {
+  return data?.items.some((item) => item.status === "active") ? ACTIVE_LIST_REFETCH_MS : false;
+}
+
+export function detailRefetchInterval(data: JourneyDetail | undefined): number | false {
+  return data?.journey.status === "active" ? ACTIVE_DETAIL_REFETCH_MS : false;
+}
 
 export function useAgentJourneys(
   userId: number | string | undefined,
@@ -33,6 +48,7 @@ export function useAgentJourneys(
     },
     enabled: hasActiveApiSession(token) && !!userId && !!params.company_id,
     staleTime: 1000 * 60 * 2,
+    refetchInterval: (query) => listRefetchInterval(query.state.data),
   });
 }
 
@@ -47,6 +63,7 @@ export function useMyJourneys(params: JourneyListParams) {
     },
     enabled: hasActiveApiSession(token) && !!params.company_id,
     staleTime: 1000 * 60 * 2,
+    refetchInterval: (query) => listRefetchInterval(query.state.data),
   });
 }
 
@@ -80,5 +97,7 @@ export function useJourneyDetail(
       hasActiveApiSession(token) &&
       !!sessionId,
     staleTime: 1000 * 60,
+    // A running trip keeps growing: keep the open journey page current.
+    refetchInterval: (query) => detailRefetchInterval(query.state.data),
   });
 }

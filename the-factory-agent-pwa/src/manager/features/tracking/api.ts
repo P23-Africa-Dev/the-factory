@@ -3,6 +3,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { client } from '@/lib/api/client';
+import { trackingApi as sharedTrackingApi } from '@/features/tracking/api';
 import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
 import type { TaskStatus } from '@/manager/features/tasks';
 import {
@@ -232,30 +233,13 @@ export const trackingApi = {
     return Array.isArray(list) ? list : [];
   },
 
-  startTask: async (taskId: number, payload: StartTaskPayload): Promise<StartTaskResponse> => {
-    await client.patch(`/admin/tasks/${taskId}/status`, {
-      status: 'in_progress' satisfies TaskStatus,
-      company_id: payload.companyId,
-    });
-    return parseStartTaskResponse({
-      data: {
-        status: 'in_progress',
-        started_at: payload.recordedAt ?? new Date().toISOString(),
-      },
-    });
-  },
+  // Same calls as agents (role-neutral /tasks/{id}/… endpoints): a manager's
+  // own task gets a real tracking session, route and arrival detection.
+  startTask: (taskId: number, payload: StartTaskPayload): Promise<StartTaskResponse> =>
+    sharedTrackingApi.startTask(taskId, payload),
 
-  recordLocation: async (
-    _taskId: number,
-    payload: RecordLocationPayload,
-  ): Promise<RecordLocationResponse> => {
-    return parseRecordLocationResponse({
-      data: {
-        accepted: payload.points.length,
-        operational_status: 'en_route',
-      },
-    });
-  },
+  recordLocation: (taskId: number, payload: RecordLocationPayload): Promise<RecordLocationResponse> =>
+    sharedTrackingApi.recordLocation(taskId, payload),
 
   getTaskRoute: async (taskId: number, companyId?: number): Promise<TaskRoute> => {
     const resolvedCompanyId = companyId ?? getActiveCompanyId() ?? undefined;

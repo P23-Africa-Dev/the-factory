@@ -12,6 +12,7 @@ use App\Models\FieldDailySummary;
 use App\Models\FieldStop;
 use App\Models\User;
 use App\Services\Company\CompanyContextService;
+use App\Support\CompanyClock;
 use Carbon\Carbon;
 
 class FieldActivityElyService
@@ -21,7 +22,21 @@ class FieldActivityElyService
         private readonly FieldActivityAnalyticsService $analyticsService,
         private readonly FieldActivitySessionService $sessionService,
         private readonly FieldJourneyService $journeyService,
+        private readonly FieldActivityVisibility $visibility,
     ) {}
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function notVisible(string $tool): array
+    {
+        return [
+            'tool' => $tool,
+            'summary' => 'You can only view field activity for yourself and the people on your team.',
+            'payload' => ['authorized' => false],
+            'sources' => [$tool],
+        ];
+    }
 
     /**
      * @param  array<string, mixed>  $args
@@ -33,7 +48,8 @@ class FieldActivityElyService
         $company = $context['company'];
         $role = (string) $context['role'];
 
-        $date = isset($args['date']) ? Carbon::parse((string) $args['date'])->toDateString() : now()->toDateString();
+        $today = CompanyClock::today($company);
+        $date = isset($args['date']) ? Carbon::parse((string) $args['date'])->toDateString() : $today;
         $from = isset($args['from']) ? Carbon::parse((string) $args['from'])->toDateString() : $date;
         $to = isset($args['to']) ? Carbon::parse((string) $args['to'])->toDateString() : $date;
 
@@ -54,13 +70,19 @@ class FieldActivityElyService
             $targetUserId = (int) $user->id;
         }
 
+        // Supervisors: their team and themselves only.
+        $visibleIds = $this->visibility->visibleUserIds($user, (int) $company->id, $role);
+        if ($targetUserId !== null && $visibleIds !== null && ! in_array($targetUserId, $visibleIds, true)) {
+            return $this->notVisible('field.daily_summary');
+        }
+
         // Management asking about "today's tracking" with no named agent → team overview.
         if ($targetUserId === null) {
             if ($from !== $to) {
-                return $this->teamRangeOverview($company, $from, $to, $args);
+                return $this->teamRangeOverview($company, $from, $to, $args, $visibleIds);
             }
 
-            return $this->teamDayOverview($company, $date, $args);
+            return $this->teamDayOverview($company, $date, $args, $visibleIds);
         }
 
         if ($from !== $to) {
@@ -98,15 +120,18 @@ class FieldActivityElyService
             ->whereDate('summary_date', $date)
             ->first();
 
-        $session = FieldActivitySession::query()
+        // Every trip of that (company-local) day, not just the last one.
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds($company, $date);
+        $daySessions = FieldActivitySession::query()
             ->with('user')
             ->where('company_id', $company->id)
             ->where('user_id', $targetUserId)
-            ->whereDate('started_at', $date)
-            ->orderByDesc('id')
-            ->first();
+            ->whereBetween('started_at', [$dayStart, $dayEnd])
+            ->orderBy('started_at')
+            ->get();
+        $session = $daySessions->firstWhere(fn (FieldActivitySession $s): bool => $s->isActive()) ?? $daySessions->last();
 
-        if ($summary === null && $session === null && $targetUserId === (int) $user->id && $date === now()->toDateString()) {
+        if ($summary === null && $session === null && $targetUserId === (int) $user->id && $date === $today) {
             $today = $this->sessionService->todayForAgent($user, $company->id);
 
             return [
@@ -122,21 +147,23 @@ class FieldActivityElyService
         $agentName = $session?->user?->name
             ?? User::query()->whereKey($targetUserId)->value('name')
             ?? 'Agent';
-        $distance = (int) ($summary?->distance_meters ?? $session?->distance_meters ?? 0);
-        $visits = (int) ($summary?->visit_count ?? $session?->visit_count ?? 0);
-        $stops = (int) ($summary?->stop_count ?? $session?->stop_count ?? 0);
+        $hasTrips = $daySessions->isNotEmpty();
+        $distance = (int) ($hasTrips ? $daySessions->sum('distance_meters') : ($summary?->distance_meters ?? 0));
+        $visits = (int) ($hasTrips ? $daySessions->sum('visit_count') : ($summary?->visit_count ?? 0));
+        $stops = (int) ($hasTrips ? $daySessions->sum('stop_count') : ($summary?->stop_count ?? 0));
         $status = $session?->status?->value;
 
         $summaryText = ($summary === null && $session === null)
             ? sprintf('No field tracking for %s on %s.', $agentName, $date)
             : sprintf(
-                '%s field tracking on %s: %.1f km, %d visits, %d stops%s.',
+                '%s field tracking on %s: %.1f km, %d visits, %d stops%s%s.',
                 $agentName,
                 $date,
                 $distance / 1000,
                 $visits,
                 $stops,
-                $status ? " (session {$status})" : '',
+                $daySessions->count() > 1 ? sprintf(' across %d trips', $daySessions->count()) : '',
+                $status ? " (latest trip {$status})" : '',
             );
 
         return [
@@ -148,6 +175,7 @@ class FieldActivityElyService
                 'user_id' => $targetUserId,
                 'agent_name' => $agentName,
                 'session' => $session ? $this->sessionService->serializeSession($session) : null,
+                'sessions' => $daySessions->map(fn (FieldActivitySession $s): array => $this->sessionService->serializeSession($s))->values()->all(),
                 'summary' => $summary ? $this->sessionService->serializeSummary($summary) : null,
             ],
             'sources' => ['field.daily_summary'],
@@ -161,17 +189,20 @@ class FieldActivityElyService
      * @param  array<string, mixed>  $args
      * @return array<string, mixed>
      */
-    private function teamDayOverview(Company $company, string $date, array $args = []): array
+    private function teamDayOverview(Company $company, string $date, array $args = [], ?array $visibleIds = null): array
     {
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds($company, $date);
         $sessions = FieldActivitySession::query()
             ->with('user')
             ->where('company_id', $company->id)
-            ->whereDate('started_at', $date)
+            ->when($visibleIds !== null, fn ($q) => $q->whereIn('user_id', $visibleIds))
+            ->whereBetween('started_at', [$dayStart, $dayEnd])
             ->orderByDesc('started_at')
             ->get();
 
         $summaries = FieldDailySummary::query()
             ->where('company_id', $company->id)
+            ->when($visibleIds !== null, fn ($q) => $q->whereIn('user_id', $visibleIds))
             ->whereDate('summary_date', $date)
             ->get()
             ->keyBy('user_id');
@@ -189,15 +220,22 @@ class FieldActivityElyService
                     'is_actively_tracking' => $session->isActive(),
                     'started_at' => $session->started_at?->toIso8601String(),
                     'ended_at' => $session->ended_at?->toIso8601String(),
-                    'distance_meters' => (int) ($summary?->distance_meters ?? $session->distance_meters),
-                    'visit_count' => (int) ($summary?->visit_count ?? $session->visit_count),
-                    'stop_count' => (int) ($summary?->stop_count ?? $session->stop_count),
-                    'travel_seconds' => (int) ($summary?->travel_seconds ?? $session->travel_seconds),
+                    // Totals over every trip of the day (added below).
+                    'distance_meters' => 0,
+                    'visit_count' => 0,
+                    'stop_count' => 0,
+                    'travel_seconds' => 0,
+                    'trip_count' => 0,
                 ];
             } elseif ($session->isActive()) {
                 $agentsByUser[$uid]['is_actively_tracking'] = true;
                 $agentsByUser[$uid]['session_status'] = $session->status?->value;
             }
+            $agentsByUser[$uid]['distance_meters'] += (int) $session->distance_meters;
+            $agentsByUser[$uid]['visit_count'] += (int) $session->visit_count;
+            $agentsByUser[$uid]['stop_count'] += (int) $session->stop_count;
+            $agentsByUser[$uid]['travel_seconds'] += (int) $session->travel_seconds;
+            $agentsByUser[$uid]['trip_count']++;
         }
 
         foreach ($summaries as $uid => $summary) {
@@ -277,7 +315,7 @@ class FieldActivityElyService
                 ],
                 'actively_tracking_names' => $activeNames,
                 'agents' => $preview,
-                'truncated' => count($agents),
+                'total' => count($agents),
                 'truncated' => $truncated,
                 'offer_full_list' => $truncated,
             ],
@@ -289,9 +327,9 @@ class FieldActivityElyService
      * @param  array<string, mixed>  $args
      * @return array<string, mixed>
      */
-    private function teamRangeOverview(Company $company, string $from, string $to, array $args = []): array
+    private function teamRangeOverview(Company $company, string $from, string $to, array $args = [], ?array $visibleIds = null): array
     {
-        $overview = $this->analyticsService->companyOverview($company, $from, $to, null);
+        $overview = $this->analyticsService->companyOverview($company, $from, $to, null, $visibleIds);
         $agents = is_array($overview['agents'] ?? null) ? $overview['agents'] : [];
         $totals = is_array($overview['totals'] ?? null) ? $overview['totals'] : [];
         $expand = ($args['expand_full_list'] ?? false) === true;
@@ -353,13 +391,14 @@ class FieldActivityElyService
         $company = $context['company'];
         $role = (string) $context['role'];
 
-        $from = isset($args['from']) ? Carbon::parse((string) $args['from'])->startOfDay() : now()->subDay()->startOfDay();
-        $to = isset($args['to']) ? Carbon::parse((string) $args['to'])->endOfDay() : now()->endOfDay();
+        $today = CompanyClock::today($company);
+        $fromDay = isset($args['from']) ? (string) $args['from'] : Carbon::parse($today)->subDay()->toDateString();
+        $toDay = isset($args['to']) ? (string) $args['to'] : $today;
         if (isset($args['date']) && ! isset($args['from']) && ! isset($args['to'])) {
-            $day = Carbon::parse((string) $args['date']);
-            $from = $day->copy()->startOfDay();
-            $to = $day->copy()->endOfDay();
+            $fromDay = (string) $args['date'];
+            $toDay = (string) $args['date'];
         }
+        [$from, $to] = CompanyClock::rangeBounds($company, $fromDay, $toDay);
 
         $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : null;
         if (is_string($args['agent_name'] ?? null) && trim((string) $args['agent_name']) !== '') {
@@ -377,10 +416,16 @@ class FieldActivityElyService
             $targetUserId = (int) $user->id;
         }
 
+        $visibleIds = $this->visibility->visibleUserIds($user, (int) $company->id, $role);
+        if ($targetUserId !== null && $visibleIds !== null && ! in_array($targetUserId, $visibleIds, true)) {
+            return $this->notVisible('field.agent_visits');
+        }
+
         $stops = FieldStop::query()
             ->where('company_id', $company->id)
             ->whereBetween('arrived_at', [$from, $to])
             ->when($targetUserId !== null, fn ($q) => $q->where('user_id', $targetUserId))
+            ->when($targetUserId === null && $visibleIds !== null, fn ($q) => $q->whereIn('user_id', $visibleIds))
             ->whereIn('classification', [
                 FieldStopClassification::CUSTOMER_VISIT->value,
                 FieldStopClassification::LEAD_VISIT->value,
@@ -396,8 +441,8 @@ class FieldActivityElyService
             'tool' => 'field.agent_visits',
             'summary' => sprintf('Found %d field visits in range.', count($stops)),
             'payload' => [
-                'from' => $from->toDateString(),
-                'to' => $to->toDateString(),
+                'from' => Carbon::parse($fromDay)->toDateString(),
+                'to' => Carbon::parse($toDay)->toDateString(),
                 'visits' => $stops,
             ],
             'sources' => ['field.agent_visits'],
@@ -469,11 +514,19 @@ class FieldActivityElyService
     public function territoryCoverage(User $user, int $companyId, array $args = []): array
     {
         $context = $this->companyContextService->resolve($user, $companyId);
+        $role = (string) $context['role'];
+        $targetUserId = isset($args['user_id']) ? (int) $args['user_id'] : null;
+        $visibleIds = $this->visibility->visibleUserIds($user, (int) $context['company']->id, $role);
+        if ($targetUserId !== null && $visibleIds !== null && ! in_array($targetUserId, $visibleIds, true)) {
+            return $this->notVisible('field.territory_coverage');
+        }
+        $today = CompanyClock::today($context['company']);
         $overview = $this->analyticsService->companyOverview(
             $context['company'],
-            $args['from'] ?? now()->subDays(7)->toDateString(),
-            $args['to'] ?? now()->toDateString(),
-            isset($args['user_id']) ? (int) $args['user_id'] : null,
+            $args['from'] ?? Carbon::parse($today)->subDays(7)->toDateString(),
+            $args['to'] ?? $today,
+            $targetUserId,
+            $visibleIds,
         );
 
         return [
@@ -504,12 +557,18 @@ class FieldActivityElyService
         if ($role === 'agent') {
             $userId = (int) $user->id;
         }
+        $visibleIds = $this->visibility->visibleUserIds($user, (int) $context['company']->id, $role);
+        if ($userId !== null && $visibleIds !== null && ! in_array($userId, $visibleIds, true)) {
+            return $this->notVisible('field.travel_vs_visit_time');
+        }
 
+        $today = CompanyClock::today($context['company']);
         $overview = $this->analyticsService->companyOverview(
             $context['company'],
-            $args['from'] ?? now()->toDateString(),
-            $args['to'] ?? now()->toDateString(),
+            $args['from'] ?? $today,
+            $args['to'] ?? $today,
             $userId,
+            $visibleIds,
         );
 
         $travel = (int) ($overview['totals']['travel_seconds'] ?? 0);
@@ -621,10 +680,11 @@ class FieldActivityElyService
         if ($sessionId) {
             $session = FieldActivitySession::query()->find($sessionId);
         } elseif ($date) {
+            [$dayStart, $dayEnd] = CompanyClock::dayBounds($company, $date);
             $session = FieldActivitySession::query()
                 ->where('company_id', $companyId)
                 ->where('user_id', $targetUserId)
-                ->whereDate('started_at', $date)
+                ->whereBetween('started_at', [$dayStart, $dayEnd])
                 ->orderByDesc('started_at')
                 ->first();
         }

@@ -4,14 +4,15 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from 'react';
 import { useTrackingStore } from '@/store/tracking';
 import { getActiveCompanyId } from '@/lib/storage/stores';
+import { client } from '@/lib/api/client';
 import { useLocationReporter } from './hooks/useLocationReporter';
 import { isNativeAndroid } from './native/capacitorPlatform';
-import { stopNativeBackgroundWatch } from './native/nativeBackgroundGeolocation';
 import {
   endLiveTrackingIndicator,
   notifyTrackingCompleted,
@@ -80,6 +81,30 @@ function ActiveTrackingReporter({
   return null;
 }
 
+/** The task being tracked survives reloads / app restarts (cleared on stop). */
+const ACTIVE_TASK_KEY = 'tracking:active_task_v1';
+
+function saveActiveTask(value: { taskId: number; companyId: number } | null): void {
+  try {
+    if (value) localStorage.setItem(ACTIVE_TASK_KEY, JSON.stringify(value));
+    else localStorage.removeItem(ACTIVE_TASK_KEY);
+  } catch {
+    // Storage unavailable: tracking simply does not resume after a reload.
+  }
+}
+
+function readActiveTask(): { taskId: number; companyId: number } | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_TASK_KEY);
+    const parsed = raw ? (JSON.parse(raw) as { taskId?: unknown; companyId?: unknown }) : null;
+    const taskId = Number(parsed?.taskId);
+    const companyId = Number(parsed?.companyId);
+    return taskId > 0 && companyId > 0 ? { taskId, companyId } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ActiveTrackingProvider({ children }: { children: React.ReactNode }) {
   const activeTrackingTaskId = useTrackingStore((s) => s.activeTrackingTaskId);
   const serverSimulatesMovement = useTrackingStore((s) => s.serverSimulatesMovement);
@@ -92,11 +117,41 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
   const startTracking = useCallback(
     (taskId: number, resolvedCompanyId: number, callbacks?: TrackingCallbacks) => {
       callbacksRef.current = callbacks ?? {};
-      setCompanyId(resolvedCompanyId || getActiveCompanyId() || 0);
+      const company = resolvedCompanyId || getActiveCompanyId() || 0;
+      setCompanyId(company);
       setActiveTrackingTaskId(taskId);
+      saveActiveTask(company > 0 ? { taskId, companyId: company } : null);
     },
     [setActiveTrackingTaskId],
   );
+
+  // App reloaded or reopened while a task was being tracked: resume it, but
+  // only if the server still has the task in progress.
+  useEffect(() => {
+    const saved = readActiveTask();
+    if (!saved || useTrackingStore.getState().activeTrackingTaskId != null) return;
+    let cancelled = false;
+    void client
+      .get(`/tasks/${saved.taskId}`, { params: { company_id: saved.companyId } })
+      .then((res) => {
+        const body = res.data as { data?: { task?: { status?: string } } & { status?: string } };
+        const status = body?.data?.task?.status ?? body?.data?.status;
+        if (cancelled || useTrackingStore.getState().activeTrackingTaskId != null) return;
+        if (status === 'in_progress') {
+          setCompanyId(saved.companyId);
+          setActiveTrackingTaskId(saved.taskId);
+        } else {
+          saveActiveTask(null);
+        }
+      })
+      .catch((error: { status?: number }) => {
+        // Gone / not yours any more: forget it. Offline: keep it for next time.
+        if (error?.status === 403 || error?.status === 404 || error?.status === 422) saveActiveTask(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setActiveTrackingTaskId]);
 
   const stopTracking = useCallback(
     async (options?: StopTrackingOptions) => {
@@ -109,9 +164,10 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
       if (flushRef.current) {
         await flushRef.current();
       }
-      if (isNativeAndroid()) {
-        await stopNativeBackgroundWatch();
-      } else {
+      // The task reporter unmounts below and releases its geolocation
+      // subscription; the shared native watcher stops only when no other
+      // tracker (e.g. an active field trip) still needs it.
+      if (!isNativeAndroid()) {
         await endLiveTrackingIndicator();
       }
 
@@ -119,6 +175,7 @@ export function ActiveTrackingProvider({ children }: { children: React.ReactNode
       setActiveTrackingTaskId(null);
       setServerSimulatesMovement(false);
       setCompanyId(0);
+      saveActiveTask(null);
 
       if (taskId == null || reason === 'silent') return;
 

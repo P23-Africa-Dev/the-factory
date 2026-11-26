@@ -31,11 +31,11 @@ describe("useFieldActivityLiveStore", () => {
     expect(agent.lastPosition).toEqual([3.38, 6.53]);
   });
 
+  // More cases (merge, trip start/end, follow pause) live in
+  // lib/tracking/field-activity-live-store.test.ts, which vitest runs.
   it("upserts stops and supports follow/focus modes", () => {
-    useFieldActivityLiveStore.getState().appendPoint(3, [3.1, 6.1], {
-      sessionId: 12,
-      name: "Agent",
-    });
+    useFieldActivityLiveStore.getState().startTrip(3, { sessionId: 12, name: "Bola" });
+    useFieldActivityLiveStore.getState().appendPoint(3, [3.1, 6.1], { sessionId: 12 });
     useFieldActivityLiveStore.getState().upsertStop(3, {
       id: 77,
       field_activity_session_id: 12,
@@ -48,7 +48,8 @@ describe("useFieldActivityLiveStore", () => {
 
     useFieldActivityLiveStore.getState().setFollowUserId(3);
     expect(useFieldActivityLiveStore.getState().followUserId).toBe(3);
-    expect(useFieldActivityLiveStore.getState().focusMode).toBe(true);
+    // Selecting someone no longer hides the panel.
+    expect(useFieldActivityLiveStore.getState().focusMode).toBe(false);
 
     useFieldActivityLiveStore.getState().setFollowAll(true);
     expect(useFieldActivityLiveStore.getState().followAll).toBe(true);

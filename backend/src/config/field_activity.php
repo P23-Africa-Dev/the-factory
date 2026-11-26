@@ -62,6 +62,8 @@ return [
     'eod_hour' => (int) env('FIELD_ACTIVITY_EOD_HOUR', 19),
     'long_stationary_alert_seconds' => (int) env('FIELD_ACTIVITY_LONG_STATIONARY_ALERT_SECONDS', 10800),
     'retention_days' => (int) env('FIELD_ACTIVITY_RETENTION_DAYS', 90),
+    // Daily summaries (small aggregates) outlive the raw trail for analytics.
+    'summary_retention_days' => (int) env('FIELD_ACTIVITY_SUMMARY_RETENTION_DAYS', 365),
     'prune_chunk_size' => (int) env('FIELD_ACTIVITY_PRUNE_CHUNK_SIZE', 1000),
 
     'redis_channel_prefix' => (string) env('FIELD_ACTIVITY_REDIS_CHANNEL_PREFIX', 'factory23.tracking'),

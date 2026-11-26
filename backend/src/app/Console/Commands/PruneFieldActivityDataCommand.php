@@ -43,8 +43,15 @@ class PruneFieldActivityDataCommand extends Command
             ->where('ended_at', '<', $cutoff)
             ->delete();
 
+        // Daily summaries are small aggregates kept longer for analytics
+        // (default one year), but not forever.
+        $summaryDays = max($days, (int) config('field_activity.summary_retention_days', 365));
+        $deletedSummaries = FieldDailySummary::query()
+            ->where('summary_date', '<', now()->subDays($summaryDays)->toDateString())
+            ->delete();
+
         $this->info("Pruned field activity older than {$days} days.");
-        $this->line("points={$deletedPoints} stops={$deletedStops} sessions={$deletedSessions}");
+        $this->line("points={$deletedPoints} stops={$deletedStops} sessions={$deletedSessions} summaries={$deletedSummaries}");
 
         return self::SUCCESS;
     }

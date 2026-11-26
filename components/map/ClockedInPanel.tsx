@@ -148,7 +148,11 @@ export function ClockedInPanel({
 
       {showAttendanceLink ? (
         <Link
-          href="/operations"
+          href={
+            selectedUserId != null
+              ? `/operations/journey_history?user=${selectedUserId}`
+              : "/operations/journey_history"
+          }
           className="block text-center text-[12px] font-semibold text-[#2F5E71] pt-2"
         >
           Open Journey History
