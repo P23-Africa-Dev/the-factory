@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { formatDistance, plural } from '../format';
 import { journeySubtitle, journeyTitle, type JourneyDetailDto } from '../journeyDetail';
@@ -43,7 +43,7 @@ export function JourneyDetailScreen({
   const journey = data?.journey;
   const isTrip = journey?.source === 'field_trip';
   const stats = data?.stats ?? {};
-  const stops = data?.stops ?? [];
+  const stops = useMemo(() => data?.stops ?? [], [data?.stops]);
   const timeline = data?.timeline ?? [];
   const navigation = data?.navigation;
   const running = journey?.status === 'active' || (isTrip && !journey?.ended_at);

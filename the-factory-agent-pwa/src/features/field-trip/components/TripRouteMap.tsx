@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Pause, Play } from 'lucide-react';
@@ -43,10 +43,23 @@ export function TripRouteMap({
   useEffect(() => {
     progressRef.current = progress;
   }, [progress]);
-  const coords = route?.coordinates ?? [];
-
-  // Build the map once per route.
+  const coords = useMemo(() => route?.coordinates ?? [], [route]);
+  // Rebuild the map only when the drawn data really changes (a refetch returns
+  // new objects with the same content; parents may pass a fresh [] each render).
+  const dataKey = useMemo(
+    () =>
+      `${coords.length}:${coords[0]?.join(',') ?? ''}:${coords[coords.length - 1]?.join(',') ?? ''}|` +
+      `${stops.map((s) => `${s.id}@${s.latitude},${s.longitude}`).join(';')}|${running ? 1 : 0}`,
+    [coords, stops, running],
+  );
+  const latest = useRef({ coords, stops, running });
   useEffect(() => {
+    latest.current = { coords, stops, running };
+  }, [coords, stops, running]);
+
+  // Build the map once per drawn route.
+  useEffect(() => {
+    const { coords, stops, running } = latest.current;
     if (!containerRef.current || coords.length === 0) return undefined;
     const token = getMapboxPublicToken() || env.MAPBOX_TOKEN;
     if (!token) {
@@ -90,23 +103,23 @@ export function TripRouteMap({
         paint: { 'line-color': '#EA580C', 'line-width': 4 },
         layout: { 'line-cap': 'round', 'line-join': 'round' },
       });
-
-      markers.push(new mapboxgl.Marker({ element: pin('#10B981') }).setLngLat(coords[0]).addTo(map));
-      const last = coords[coords.length - 1];
-      if (coords.length > 1 && last) {
-        markers.push(new mapboxgl.Marker({ element: pin(running ? '#F97316' : '#EF4444') }).setLngLat(last).addTo(map));
-      }
-      stops.forEach((stop, i) => {
-        const at = coordinatesOf(stop);
-        if (!at) return;
-        const marker = new mapboxgl.Marker({ element: pin('#F59E0B', String(i + 1)) }).setLngLat(at);
-        if (stop.address) marker.setPopup(new mapboxgl.Popup({ offset: 14, closeButton: false }).setText(stop.address));
-        markers.push(marker.addTo(map));
-      });
-
-      const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
-      map.fitBounds(bounds, { padding: 36, maxZoom: 16, duration: 0 });
     });
+    // Pins and the camera do not need the style: show them straight away.
+    markers.push(new mapboxgl.Marker({ element: pin('#10B981') }).setLngLat(coords[0]).addTo(map));
+    const last = coords[coords.length - 1];
+    if (coords.length > 1 && last) {
+      markers.push(new mapboxgl.Marker({ element: pin(running ? '#F97316' : '#EF4444') }).setLngLat(last).addTo(map));
+    }
+    stops.forEach((stop, i) => {
+      const at = coordinatesOf(stop);
+      if (!at) return;
+      const marker = new mapboxgl.Marker({ element: pin('#F59E0B', String(i + 1)) }).setLngLat(at);
+      if (stop.address) marker.setPopup(new mapboxgl.Popup({ offset: 14, closeButton: false }).setText(stop.address));
+      markers.push(marker.addTo(map));
+    });
+
+    const bounds = coords.reduce((b, c) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+    map.fitBounds(bounds, { padding: 36, maxZoom: 16, duration: 0 });
     map.on('error', () => {
       // Tile errors are recoverable; only a map that never loads shows the fallback.
       if (!map.loaded()) setFailed(true);
@@ -119,9 +132,7 @@ export function TripRouteMap({
       map.remove();
       mapRef.current = null;
     };
-    // coords identity changes only when the route changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, stops, running]);
+  }, [dataKey]);
 
   // Playback marker follows the scrubber.
   useEffect(() => {
