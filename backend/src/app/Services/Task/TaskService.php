@@ -468,7 +468,8 @@ class TaskService
         bool $completeIncompleteSubtasks = false,
     ): Task {
         $context = $this->accessService->resolve($user, $companyId);
-        $this->accessService->ensureAgent($context);
+        // Any role may update a task assigned to them (managers track and
+        // complete their own tasks too); the assignment is the access rule.
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
 
         if (! $this->isUserAssignedToTask($task, $user)) {
@@ -582,7 +583,7 @@ class TaskService
     public function uploadProof(User $user, Task $task, UploadedFile $file, array $data): TaskProof
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
-        $this->accessService->ensureAgent($context);
+        // Assigned to the caller (any role): the assignment is the access rule.
         $this->assertTaskIntegrityInCompany($task, $context->company->id);
 
         if (! $this->isUserAssignedToTask($task, $user)) {
