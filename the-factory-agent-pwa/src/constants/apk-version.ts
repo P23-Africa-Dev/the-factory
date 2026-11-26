@@ -2,8 +2,8 @@
  * Bump these whenever `npm run apk:release` publishes a new factory23-agent.apk.
  * Keep in sync with android versionCode and root lib/agent-apk-version.ts.
  */
-export const AGENT_APK_VERSION_CODE = '4';
-export const AGENT_APK_VERSION_NAME = '1.0.3';
+export const AGENT_APK_VERSION_CODE = '5';
+export const AGENT_APK_VERSION_NAME = '1.0.4';
 
 export const CANONICAL_AGENT_APK_URL =
   'https://thefactory23.com/downloads/factory23-agent.apk';

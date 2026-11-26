@@ -68,6 +68,8 @@ public class FieldTripTrackingService extends Service {
     private long lastSavedAt = 0;
     private long lastHealthAt = 0;
     private long lastAttemptAt = 0;
+    private Location previousFix;
+    private boolean derivedMoving = false;
 
     public static boolean isRunning() {
         return running;
@@ -195,7 +197,19 @@ public class FieldTripTrackingService extends Service {
         }
 
         boolean accurate = config.recording && (!l.hasAccuracy() || l.getAccuracy() <= MAX_ACCURACY_M);
-        boolean moving = l.hasSpeed() && l.getSpeed() >= MOVING_SPEED_MPS;
+        // Movement from the measured position over a window of at least 15 s
+        // (fixes 5 s apart are within GPS noise when walking). Used as well as
+        // the reported speed: some phones report no speed, or 0 while moving.
+        if (previousFix == null) {
+            previousFix = l;
+        } else if (l.getTime() - previousFix.getTime() >= 15_000) {
+            float metres = l.distanceTo(previousFix);
+            float seconds = (l.getTime() - previousFix.getTime()) / 1000f;
+            float noise = Math.max(l.hasAccuracy() ? l.getAccuracy() : 10f, 10f);
+            derivedMoving = metres > noise && metres / seconds >= MOVING_SPEED_MPS;
+            previousFix = l;
+        }
+        boolean moving = (l.hasSpeed() && l.getSpeed() >= MOVING_SPEED_MPS) || derivedMoving;
         long intervalMs = (moving ? config.movingIntervalSeconds : Math.min(config.stationaryIntervalSeconds, 60)) * 1000L;
         if (accurate && now - lastSavedAt >= intervalMs * 85 / 100) {
             lastSavedAt = now;
