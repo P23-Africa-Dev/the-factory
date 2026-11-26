@@ -41,7 +41,7 @@ export function KpiColumn({ id, title, color, items, canDrag = true, onKpiClick,
       <div
         ref={setNodeRef}
         className={`flex-1 relative z-10 -mt-8 transition-colors duration-200 min-h-[300px] flex flex-col ${
-          isOver ? "bg-gray-100/50 rounded-[32px] ring-2 ring-inset ring-gray-200" : ""
+          isOver ? "bg-white/10 rounded-[32px] ring-2 ring-inset ring-white/25" : ""
         }`}
       >
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -60,7 +60,7 @@ export function KpiColumn({ id, title, color, items, canDrag = true, onKpiClick,
         </SortableContext>
 
         {items.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-gray-300 mt-8">
+          <div className="flex flex-col items-center justify-center gap-2 py-10 text-white/50 mt-8">
             <BarChart2 size={28} strokeWidth={1.5} />
             <span className="text-[12px] font-medium">No KPIs here</span>
           </div>

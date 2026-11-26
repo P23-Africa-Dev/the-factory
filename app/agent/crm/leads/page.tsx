@@ -1,5 +1,7 @@
 "use client";
 
+import "@/components/sales-engine/sales-engine-workspace.css";
+
 import {
   BookmarkPlus,
   ChevronDown,
@@ -22,9 +24,6 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { useCrmFilters } from "@/hooks/use-crm-filters";
 import { getApiErrorMessage } from "@/lib/api/errors";
-
-/** Toolbar trigger style when its filter is applied. */
-const TRIGGER_ACTIVE_CLS = "border-[#2ae9c9] bg-[#ECFDF8] text-[#0B1215] ring-2 ring-[#2ae9c9]/50";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { LeadPagination } from "@/components/crm/lead-pagination";
@@ -346,7 +345,7 @@ export default function AllLeadsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="se-workspace min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-5">
         {/* Top bar */}
         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
@@ -364,7 +363,7 @@ export default function AllLeadsPage() {
                 if (e.key === "Enter") e.preventDefault();
               }}
               placeholder="Search for Leads"
-              className="w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
+              className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
             />
           </div>
 
@@ -376,8 +375,8 @@ export default function AllLeadsPage() {
               onSelect={setSelectedPipelineId}
               onManage={() => setShowPipelineModal(true)}
               manageLabel="Set my default pipeline…"
-              className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
-              activeClassName={TRIGGER_ACTIVE_CLS}
+              className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm"
+              activeClassName="se-control-active"
             />
             <MapLeadsToolbarButton
               pipelines={pipelines}
@@ -389,7 +388,7 @@ export default function AllLeadsPage() {
               onClick={() => setShowFilter(true)}
               aria-pressed={selectedLabel !== "all"}
               title="Filter by stage"
-              className={`flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${selectedLabel !== "all" ? TRIGGER_ACTIVE_CLS : ""}`}
+              className={`se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${selectedLabel !== "all" ? "se-control-active" : ""}`}
             >
               <Tag size={13} />
               {selectedStageName ? `Stage: ${selectedStageName}` : "Stage"}
@@ -399,7 +398,7 @@ export default function AllLeadsPage() {
               aria-expanded={showFilter}
               aria-pressed={activeFilterCount > 0}
               onClick={() => setShowFilter((prev) => !prev)}
-              className={`flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${activeFilterCount > 0 ? TRIGGER_ACTIVE_CLS : ""}`}
+              className={`se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm ${activeFilterCount > 0 ? "se-control-active" : showFilter ? "ring-1 ring-[#2ae9c9]/60" : ""}`}
             >
               <SlidersHorizontal size={13} />
               Filter
@@ -434,7 +433,7 @@ export default function AllLeadsPage() {
                 setFilters(() => ({ pipeline: "all" }));
               }}
             />
-            <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
+            <button onClick={() => setShowAddModal(true)} className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
               Add New Leads
               <BookmarkPlus size={15} />
             </button>
@@ -465,7 +464,7 @@ export default function AllLeadsPage() {
         )}
 
         {/* Table card */}
-        <div className="bg-white rounded-[24px] shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col h-[calc(100vh-200px)] min-h-96">
+        <div className="se-surface se-list-surface bg-white rounded-[24px] shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col h-[calc(100vh-200px)] min-h-96">
           {/* Select all + view toggle */}
           <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0">
             <label className="flex items-center gap-2.5 cursor-pointer select-none group">
@@ -516,7 +515,7 @@ export default function AllLeadsPage() {
                   <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" />
                 </svg>
               </button>
-              <button className="p-1.5 rounded-md bg-[#0B1215] text-white transition-colors">
+              <button className="se-primary p-1.5 rounded-md bg-[#0B1215] text-white transition-colors">
                 {/* List icon */}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <rect x="1" y="3" width="14" height="2" rx="1" fill="currentColor" />
@@ -530,7 +529,7 @@ export default function AllLeadsPage() {
           <div className="flex-1 min-h-0 overflow-x-auto flex flex-col">
           <div className="w-full flex-1 min-h-0 flex flex-col" style={{ minWidth: `${tableMinWidth}px` }}>
           {/* Column headers */}
-          <div className="grid w-full gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
+          <div className="se-list-heading grid w-full gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
             <div />
             {leadColumns.visible("name") && (
             <div className="bg-[#3B82F6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
@@ -616,7 +615,7 @@ export default function AllLeadsPage() {
                 <div
                   key={lead.id}
                   onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                  className={`relative ${isStatusOpen ? "z-30" : ""} grid w-full gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
+                  className={`se-list-row relative ${isStatusOpen ? "z-30" : ""} ${isSelected ? "se-table-row-active" : ""} grid w-full gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
                     ? "bg-[#0B1215]"
                     : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
                     }`}

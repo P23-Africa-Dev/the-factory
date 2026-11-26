@@ -201,7 +201,7 @@ function AttendanceHistoryPanel({
     : 0;
 
   return (
-    <div className="flex flex-col rounded-3xl overflow-hidden shadow-[0px_4px_14px_rgba(9,35,45,0.18)]">
+    <div className="flex flex-col rounded-3xl overflow-hidden border border-[rgb(71_120_147_/_20%)] shadow-[0_0_12px_2px_rgb(241_241_241_/_24%),0_0_22px_4px_rgb(71_120_147_/_22%),0_5px_10px_1px_rgb(0_0_0_/_25%),0_2px_4px_rgb(0_0_0_/_18%)]">
       {/* Dark header */}
       <div className="bg-dash-dark px-5 py-5 shrink-0">
         <div className="flex items-center justify-between mb-4">
@@ -405,7 +405,7 @@ export function AttendanceViewAgent() {
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* ── Toolbar ──────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-6 mb-2">
-        <h1 className="text-[18px] font-extrabold text-dash-dark shrink-0 whitespace-nowrap">
+        <h1 className="text-[18px] font-extrabold text-white shrink-0 whitespace-nowrap">
           My Attendance Stats
         </h1>
 
@@ -438,30 +438,25 @@ export function AttendanceViewAgent() {
         <div className="flex items-center gap-2.5 shrink-0">
           <AgentPileInboxButton onClick={() => setPileInboxOpen(true)} />
           {/* Monthly Filter */}
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E5E5] rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-all">
+          <button className="se-control flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-all cursor-pointer">
             <span>Monthly</span>
             <ChevronDown size={16} />
           </button>
 
           {/* Download */}
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#E5E5E5] rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-50 transition-all">
-            <Download size={16} className="text-gray-400" />
+          <button className="se-control flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-all cursor-pointer">
+            <Download size={16} />
             <span>Download</span>
           </button>
 
           {/* Filter */}
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-[13px] font-medium transition-all ${
-              showFilters
-                ? "bg-dash-dark text-white border-dash-dark"
-                : "bg-white text-gray-600 border-[#E5E5E5] hover:bg-gray-50"
+            className={`se-control flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium transition-all cursor-pointer ${
+              showFilters ? "se-control-active" : ""
             }`}
           >
-            <SlidersHorizontal
-              size={16}
-              className={showFilters ? "text-white" : "text-gray-400"}
-            />
+            <SlidersHorizontal size={16} />
             <span>Filter</span>
           </button>
 
@@ -475,7 +470,7 @@ export function AttendanceViewAgent() {
                   ? todayData?.message ?? (todayError ? "Attendance settings not configured" : "No action available right now")
                   : undefined
               }
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#0D1E25] text-white rounded-xl text-[13px] font-bold hover:opacity-90 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="se-primary flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isClockPending ? (
                 <Loader2 size={16} className="animate-spin" />
@@ -515,9 +510,9 @@ export function AttendanceViewAgent() {
         {/* ── Left: attendance list ──────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-5">
           {/* Stats Cards */}
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {statsLoading ? (
-              <div className="flex items-center justify-center w-full h-35">
+              <div className="sm:col-span-3 flex items-center justify-center w-full h-35">
                 <Loader2 size={24} className="animate-spin text-gray-400" />
               </div>
             ) : (
@@ -671,33 +666,33 @@ export function AttendanceViewAgent() {
                 <div className="flex items-start gap-5">
                   <div className="flex-1 space-y-3 min-w-0">
                     <div>
-                      <h3 className="text-[13px] font-extrabold text-dash-dark leading-tight">
+                      <h3 className="text-[13px] font-extrabold text-white leading-tight">
                         {selected.name}
                       </h3>
-                      <p className="text-[11px] text-gray-400 mt-1 leading-relaxed max-w-45">
+                      <p className="text-[11px] text-white/65 mt-1 leading-relaxed max-w-45">
                         {selected.address}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Role</p>
-                      <p className="text-[12px] text-gray-400">{selected.role}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Role</p>
+                      <p className="text-[12px] text-white/65">{selected.role}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Date</p>
-                      <p className="text-[12px] text-gray-400">{selected.date}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Date</p>
+                      <p className="text-[12px] text-white/65">{selected.date}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check In</p>
-                      <p className="text-[12px] text-gray-400">{selected.checkIn}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Check In</p>
+                      <p className="text-[12px] text-white/65">{selected.checkIn}</p>
                     </div>
                     <div>
-                      <p className="text-[13px] font-bold text-dash-dark mb-0.5">Check Out</p>
-                      <p className="text-[12px] text-gray-400">{selected.checkOut}</p>
+                      <p className="text-[13px] font-bold text-white mb-0.5">Check Out</p>
+                      <p className="text-[12px] text-white/65">{selected.checkOut}</p>
                     </div>
                   </div>
 
                   <div className="shrink-0 flex flex-col items-center">
-                    <div className="bg-white p-2 rounded-[30px]">
+                    <div className="bg-white p-2 rounded-[30px] shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
                       <div className="w-32 h-32 rounded-[22px] overflow-hidden shadow-md">
                         <img
                           src={selected.avatar}
@@ -794,15 +789,15 @@ function StatCard({
   data: { value: number }[];
 }) {
   return (
-    <div className="px-5 sm:px-6 pb-2 bg-white rounded-[20px] overflow-hidden border border-gray-100 shadow-[0_2px_12px_rgba(0,0,0,0.04)] relative flex flex-col min-h-35 flex-1 min-w-50 shrink-0">
+    <div className="se-stat-card px-5 sm:px-6 pb-2 overflow-hidden relative flex flex-col min-h-35 w-full min-w-0">
       <div className="flex flex-col pt-5 sm:pt-6">
         <div className="flex items-baseline gap-1.5 mb-1">
-          <h2 className="text-[48px] font-bold text-[#34373C] leading-none tracking-[-0.04em]">
+          <h2 className="text-[48px] font-bold text-white leading-none tracking-[-0.04em]">
             {value}
           </h2>
-          <span className="text-[18px] font-bold text-[#34373C]">{unit}</span>
+          <span className="text-[18px] font-bold text-white/85">{unit}</span>
         </div>
-        <p className="text-[12px] font-medium text-[#A3A3A3]">{label}</p>
+        <p className="text-[12px] font-medium text-white/75">{label}</p>
       </div>
       <div className="w-full h-12 mt-auto -mx-1">
         <ResponsiveContainer width="100%" height="100%">
