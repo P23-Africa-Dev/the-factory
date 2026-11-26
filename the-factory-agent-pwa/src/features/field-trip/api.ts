@@ -21,7 +21,9 @@ function positionBody(position: TripPosition | null | undefined) {
 export const fieldTripApi = {
   current: async (): Promise<FieldTripCurrent> => {
     const res = await client.get('/field-trips/current', {
-      params: { company_id: getActiveCompanyId() ?? undefined },
+      // `_t` makes every status check unique, so no cache layer (an older
+      // service worker on the phone, the WebView) can answer with a stale one.
+      params: { company_id: getActiveCompanyId() ?? undefined, _t: Date.now() },
     });
     return unwrap<FieldTripCurrent>(res.data);
   },

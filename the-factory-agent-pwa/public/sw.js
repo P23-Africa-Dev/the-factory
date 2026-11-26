@@ -20,7 +20,7 @@
 const CACHE_NAME = "factory-agent-pwa-v14";
 const STATIC_CACHE = "factory-static-v14";
 const API_CACHE = "factory-api-v15";
-const PAGE_CACHE = "factory-pages-v14";
+const PAGE_CACHE = "factory-pages-v15";
 
 /** Keep in sync with src/lib/notifications/pwaNotificationIcons.ts */
 const PWA_NOTIFICATION_ICON = "/icons/icon-192x192.png";
@@ -89,8 +89,20 @@ self.addEventListener("fetch", (event) => {
 
   if (request.method !== "GET") return;
 
-  // Live trip state must never come from a cache: an old "no trip" answer
-  // served offline would end the trip running on this phone.
+  // APK: Capacitor's native HTTP sends every API call as a same-origin
+  // /_capacitor_http_interceptor_?u=<api url> request. Treat those as the API
+  // (fresh when online, cached copy only when offline), never as a page: the
+  // page cache answers stale-while-revalidate, i.e. with the PREVIOUS response.
+  if (url.pathname.startsWith("/_capacitor_http_interceptor_")) {
+    const target = url.searchParams.get("u") || "";
+    // Live trip state must never come from a cache: an old "no trip" answer
+    // would end the trip running on this phone.
+    if (target.includes("/field-trips")) return;
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  // Same rule for the browser PWA calling the API directly.
   if (url.pathname.includes("/field-trips")) return;
 
   if (

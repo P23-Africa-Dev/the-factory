@@ -125,21 +125,26 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
     idleConfirmed: current != null && current.trip == null && local == null,
   });
 
-  // An upload was refused because the server already ended this trip (auto-ended
-  // for no location, or ended on another device): stop recording right away,
-  // even in the background where the status check does not run.
   /**
    * The server ended this trip (auto-ended for no location, or on another
-   * device): stop here and show how it ended. End is idempotent on the server,
-   * so asking again simply returns the saved trip with its reason.
+   * device): stop here and say so.
+   *
+   * `refusedByServer`: an upload was just refused with "not active", so the
+   * trip is certainly over and End (idempotent) only reads back its reason.
+   * Otherwise (a status check said "no trip") End is NEVER called: a wrong or
+   * cached answer must not be able to end a trip that is still running.
    */
   const adoptServerEnd = useCallback(
-    (serverId: number) => {
+    (serverId: number, refusedByServer: boolean) => {
       endedIdsRef.current.add(serverId);
       lastMutationAtRef.current = Date.now();
       setLocal(null);
       writeCurrent(null);
       refresh();
+      if (!refusedByServer) {
+        toast.info('Your field trip has ended', reasonMessage(null));
+        return;
+      }
       void fieldTripApi
         .end(serverId, { endedAt: new Date().toISOString(), position: null })
         .then((res) => {
@@ -156,7 +161,7 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
       onFieldTripServerEnded((sessionId) => {
         const trip = useFieldTripStore.getState().local;
         if (!trip || trip.serverId !== sessionId) return;
-        adoptServerEnd(sessionId);
+        adoptServerEnd(sessionId, true);
       }),
     [adoptServerEnd],
   );
@@ -289,8 +294,20 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (trip && trip.serverId != null && trip.phase === 'active' && server?.id !== trip.serverId) {
-      // Ended on the server (auto-ended for no location, or on another device).
-      adoptServerEnd(trip.serverId);
+      // Looks ended on the server (auto-ended, or ended on another device).
+      // Ask once more, fresh, before dropping a running trip: one wrong answer
+      // (old cache, flaky network) must never stop a trip.
+      const serverId = trip.serverId;
+      const askedAt = Date.now();
+      void fieldTripApi
+        .current()
+        .then((fresh) => {
+          const still = useFieldTripStore.getState().local;
+          if (askedAt < lastMutationAtRef.current || still?.serverId !== serverId || still.phase !== 'active') return;
+          if (fresh.trip?.id === serverId) return; // still running: the first answer was wrong
+          adoptServerEnd(serverId, false);
+        })
+        .catch(() => {});
     }
   }, [current, setLocal, adoptServerEnd]);
 

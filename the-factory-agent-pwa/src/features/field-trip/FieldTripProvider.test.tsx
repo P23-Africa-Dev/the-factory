@@ -222,3 +222,57 @@ describe('isTripNotActiveError', () => {
     expect(isTripNotActiveError({ status: 500, message: 'not active' })).toBe(false);
   });
 });
+
+describe('FieldTripProvider never ends a running trip on one wrong status answer', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useFieldTripStore.setState({ local: null, trail: [], lastPosition: null });
+    Object.values(api).forEach((fn) => fn.mockReset());
+    Object.values(toasts).forEach((fn) => fn.mockReset());
+    reporter.flush.mockReset();
+    reporter.flush.mockResolvedValue(true);
+  });
+
+  it('keeps the trip when the fresh re-check says it is still running, and never calls End', async () => {
+    api.current.mockResolvedValue(current(null));
+    api.start.mockResolvedValue({ trip: trip(), created: true });
+    const client = setup();
+    await flushAsync();
+    await act(async () => {
+      await sink.current!.startTrip(null);
+    });
+
+    // A stale "no trip" answer arrives (e.g. from a cache)…
+    api.current.mockResolvedValueOnce(current(null)).mockResolvedValue(current(trip()));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      await client.refetchQueries({ queryKey: ['field-trip', 'current'] });
+    });
+    await flushAsync();
+
+    expect(useFieldTripStore.getState().local?.serverId).toBe(77);
+    expect(api.end).not.toHaveBeenCalled();
+    expect(toasts.info).not.toHaveBeenCalled();
+  });
+
+  it('drops the trip only when the re-check confirms it ended, still without calling End', async () => {
+    api.current.mockResolvedValue(current(null));
+    api.start.mockResolvedValue({ trip: trip(), created: true });
+    const client = setup();
+    await flushAsync();
+    await act(async () => {
+      await sink.current!.startTrip(null);
+    });
+
+    api.current.mockResolvedValue(current(null));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      await client.refetchQueries({ queryKey: ['field-trip', 'current'] });
+    });
+    await flushAsync();
+
+    expect(useFieldTripStore.getState().local).toBeNull();
+    expect(api.end).not.toHaveBeenCalled();
+    expect(toasts.info).toHaveBeenCalledWith('Your field trip has ended', expect.any(String));
+  });
+});

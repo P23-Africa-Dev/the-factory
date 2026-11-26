@@ -92,18 +92,18 @@ public class FieldTripTrackerPlugin extends Plugin {
             config.active = true;
             config.recording = true;
             config.clientTripId = clientTripId;
-            Long serverId = call.getLong("serverId");
+            Long serverId = longOf(call, "serverId");
             if (serverId != null && serverId > 0) config.serverId = serverId;
             config.apiBaseUrl = apiBaseUrl;
             String token = call.getString("token");
             if (token != null && !token.isEmpty()) config.token = token;
-            Long companyId = call.getLong("companyId");
+            Long companyId = longOf(call, "companyId");
             if (companyId != null) config.companyId = companyId;
             Integer moving = call.getInt("movingIntervalSeconds");
             if (moving != null && moving > 0) config.movingIntervalSeconds = moving;
             Integer stationary = call.getInt("stationaryIntervalSeconds");
             if (stationary != null && stationary > 0) config.stationaryIntervalSeconds = stationary;
-            Long startedAt = call.getLong("startedAtMillis");
+            Long startedAt = longOf(call, "startedAtMillis");
             if (startedAt != null && startedAt > 0) config.startedAtMillis = startedAt;
             config.save(getContext());
         }
@@ -120,11 +120,11 @@ public class FieldTripTrackerPlugin extends Plugin {
     public void update(PluginCall call) {
         FieldTripConfig config = FieldTripConfig.get(getContext());
         synchronized (config) {
-            Long serverId = call.getLong("serverId");
+            Long serverId = longOf(call, "serverId");
             if (serverId != null && serverId > 0) config.serverId = serverId;
             String token = call.getString("token");
             if (token != null && !token.isEmpty()) config.token = token;
-            Long companyId = call.getLong("companyId");
+            Long companyId = longOf(call, "companyId");
             if (companyId != null && companyId > 0) config.companyId = companyId;
             Boolean recording = call.getBoolean("recording");
             if (recording != null) config.recording = recording;
@@ -186,6 +186,23 @@ public class FieldTripTrackerPlugin extends Plugin {
             FieldTripStore.get(getContext()).clear();
             call.resolve(state());
         });
+    }
+
+    /**
+     * Capacitor's getLong() returns null for numbers that arrive as Integer
+     * (any id below 2^31), so read every number through this.
+     */
+    private static Long longOf(PluginCall call, String key) {
+        Object v = call.getData().opt(key);
+        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof String) {
+            try {
+                return Long.parseLong((String) v);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private JSObject state() {
