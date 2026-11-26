@@ -69,6 +69,19 @@ function persistQueue(sessionId: number, queue: FieldPointPayload[]): void {
   }
 }
 
+/**
+ * The web dashboard only reports into attendance-linked sessions. Field trips
+ * (`source === "field_trip"`) are tracked by the mobile app.
+ */
+export function isWebReportableSession(
+  enabled: boolean | undefined,
+  session: { status: string; source?: string | null } | null | undefined,
+): boolean {
+  if (!enabled || !session) return false;
+  if (session.status !== "active") return false;
+  return session.source !== "field_trip";
+}
+
 function isStationary(reading: GeoReading): boolean {
   if (reading.speedMps == null || !Number.isFinite(reading.speedMps)) return false;
   return reading.speedMps * 3.6 < 1;
@@ -102,9 +115,9 @@ export function FieldActivityReporterProvider({
   });
 
   const data = todayQuery.data;
-  const isActive = Boolean(
-    data?.enabled && data.session && data.session.status === "active",
-  );
+  // A phone "Start Field Trip" session belongs to the phone: posting this
+  // laptop's location into it would put the desk on the trip's route.
+  const isActive = isWebReportableSession(data?.enabled, data?.session);
   const sessionId = isActive ? data!.session!.id : null;
 
   const queueRef = useRef<FieldPointPayload[]>([]);

@@ -299,7 +299,7 @@ export const taskApi = {
     }
 
     const token = appStore.getString('auth_token');
-    const res = await fetch(`${env.API_BASE_URL}/agent/tasks/${taskId}/complete`, {
+    const res = await fetch(`${env.API_BASE_URL}/tasks/${taskId}/complete`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token ?? ''}`,

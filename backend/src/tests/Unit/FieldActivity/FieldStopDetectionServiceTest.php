@@ -108,10 +108,11 @@ class FieldStopDetectionServiceTest extends TestCase
         $intelligence->shouldReceive('enrichStop')->andReturnUsing(static fn ($stop) => $stop);
         $realtime = Mockery::mock(FieldActivityRealtimeService::class);
         $realtime->shouldReceive('publishStopCreated')->andReturnNull();
+        $realtime->shouldReceive('publishStopUpdated')->andReturnNull();
         $summaries = Mockery::mock(FieldDailySummaryService::class);
         $summaries->shouldReceive('buildForSession')->andReturnUsing(static fn ($s) => $s);
 
-        return [$session, new FieldStopDetectionService($intelligence, $realtime, $summaries)];
+        return [$session, new FieldStopDetectionService($intelligence, $realtime, $summaries, new \App\Services\FieldActivity\FieldActivitySettingService())];
     }
 
     private function addPoint(

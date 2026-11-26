@@ -39,6 +39,7 @@ import {
 } from '@/manager/features/tasks';
 import { useAgentUploadsOverview, AddLeadModal } from '@/manager/features/crm';
 import { AttendanceCard, useAttendanceMetrics } from '@/manager/features/attendance';
+import { FieldTripCard, useEndTripBeforeLogout } from '@/features/field-trip';
 import {
   FieldActivitySummaryCard,
 } from '@/manager/features/field-activity';
@@ -50,6 +51,7 @@ import {
 } from '@/manager/features/meetings';
 import { useUnreadCount } from '@/manager/features/notifications';
 import { NotificationPanel } from '@/manager/features/notifications/components/NotificationPanel';
+import { useNotificationDrawerState } from '@/manager/features/notifications';
 import { assistantApi } from '@/manager/features/assistant/api';
 import { resolveAssistantGeolocationContext } from '@/manager/features/assistant/geolocation';
 import {
@@ -133,11 +135,12 @@ function getStatusBadge(status: string): { bg: string; text: string; label: stri
 export default function ManagerHomeScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { prepareLogout } = useEndTripBeforeLogout();
   const { firstName, avatarSrc, roleLabel } = useManagerIdentity();
   const { canAccessPayroll } = useManagerPermissions();
 
   // Notification drawer
-  const [notifOpen, setNotifOpen] = useState(false);
+  const { isOpen: notifOpen, openDrawer: openNotifDrawer, closeDrawer: closeNotifDrawer } = useNotificationDrawerState();
   const { data: unreadCount = 0 } = useUnreadCount();
 
   // Profile dropdown
@@ -472,8 +475,10 @@ export default function ManagerHomeScreen() {
                     </button>
                     <div className="h-px bg-white/10 mx-2.5" />
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         setProfileMenuOpen(false);
+                        // A running field trip is ended and saved first.
+                        if (!(await prepareLogout())) return;
                         logout();
                       }}
                       className="w-full px-3.5 py-2.5 text-left text-xs font-semibold text-[#EF4444] hover:bg-white/5 flex items-center gap-2.5"
@@ -488,7 +493,7 @@ export default function ManagerHomeScreen() {
           </div>
 
           <button
-            onClick={() => setNotifOpen(true)}
+            onClick={openNotifDrawer}
             className="relative w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors focus:outline-none"
           >
             <Bell size={20} className="text-white" />
@@ -615,6 +620,9 @@ export default function ManagerHomeScreen() {
             <ChevronRight size={16} className="text-[#FD6046]" />
           </button>
         )}
+
+        {/* ─── Start / End Field Trip (managers are tracked too) ─── */}
+        <FieldTripCard journeyBasePath="/manager/field-activity/journeys" mapPath="/manager/map" />
 
         {/* ─── Dual Hero Cards Row: Team Leads Card + Workforce Attendance Card ─── */}
         <div className="flex gap-2.5 mb-2.5">
@@ -1058,7 +1066,7 @@ export default function ManagerHomeScreen() {
       </AnimatePresence>
 
       {/* ─── Modals ─── */}
-      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <NotificationPanel open={notifOpen} onClose={closeNotifDrawer} />
 
       <AddLeadModal
         visible={addLeadVisible}

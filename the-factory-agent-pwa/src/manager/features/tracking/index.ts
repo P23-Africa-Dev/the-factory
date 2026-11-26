@@ -1,20 +1,33 @@
-export { useGeolocation } from './hooks/useGeolocation';
-export type { PermissionStatus, LocationObject } from './hooks/useGeolocation';
-export { useLocationPermissionBootstrap } from './hooks/useLocationPermissionBootstrap';
-export { useMapPresenceHeartbeat } from './hooks/useMapPresenceHeartbeat';
-export { useLocationReporter } from './hooks/useLocationReporter';
-export { useProximityWatch } from './hooks/useProximityWatch';
-export { useTaskRoute, useStartTask } from './queries';
-export { useTrackingNavigation } from './navigation';
-export { ActiveTrackingProvider, useActiveTracking } from './ActiveTrackingProvider';
-export { getApiErrorMessage, startMapTaskSession } from './lib/startMapTaskSession';
-export type { StartMapTaskSessionResult } from './lib/startMapTaskSession';
-export { buildCompleteFormData } from './completeTaskForm';
+/**
+ * Managers track their own tasks with exactly the same code as agents (one
+ * tracker, one upload path, the role-neutral /tasks/{id}/… endpoints). Only
+ * navigation (manager routes) and the fleet / territory APIs are manager-only.
+ */
 export {
+  useGeolocation,
+  useLocationPermissionBootstrap,
+  useLocationReporter,
+  useProximityWatch,
+  useStartTask,
+  ActiveTrackingProvider,
+  useActiveTracking,
+  getApiErrorMessage,
+  startMapTaskSession,
+  buildCompleteFormData,
   resolveCompletionRequirements,
   validateCompletionRequirements,
-} from './completionRequirements';
-export type { CompletionRequirements } from './completionRequirements';
+} from '@/features/tracking';
+export type {
+  PermissionStatus,
+  LocationObject,
+  StartMapTaskSessionResult,
+  CompletionRequirements,
+} from '@/features/tracking';
+export { useTrackingNavigation } from './navigation';
+// Manager-only: any task's route (admin endpoint, fleet map) and no agent
+// presence heartbeat for managers.
+export { useTaskRoute } from './queries';
+export { useMapPresenceHeartbeat } from './hooks/useMapPresenceHeartbeat';
 export { CompleteRequirementsSheet } from './components/CompleteRequirementsSheet';
 export type { CompleteRequirementsSheetProps } from './components/CompleteRequirementsSheet';
 export { hydrateLiveTaskFromRoute } from './hydrateRoute';

@@ -1,3 +1,4 @@
+import type { JourneyDetailDto } from '@/features/field-trip/journeyDetail';
 /**
  * Management Field Activity & Journeys API (`/admin/field-activity/*`)
  */
@@ -134,24 +135,11 @@ export const fieldActivityApi = {
     return unwrap<JourneyHistoryResponse>(data);
   },
 
-  async journeyDetail(sessionId: number): Promise<{
-    journey: { id: number; date: string | null; distance_meters: number };
-    stats: Record<string, unknown>;
-    timeline: Array<{
-      id: string;
-      type: string;
-      label: string;
-      occurred_at: string | null;
-      duration_seconds?: number;
-      color: string;
-    }>;
-    navigation: {
-      previous_id: number | null;
-      next_id: number | null;
-    };
-  }> {
-    const { data } = await client.get(`/admin/field-activity/journeys/${sessionId}`);
-    return unwrap(data);
+  async journeyDetail(sessionId: number): Promise<JourneyDetailDto> {
+    const { data } = await client.get(`/admin/field-activity/journeys/${sessionId}`, {
+      params: { include_route: true, include_timeline: true },
+    });
+    return unwrap<JourneyDetailDto>(data);
   },
 
   async getSettings(): Promise<FieldActivitySettings> {

@@ -11,7 +11,9 @@ use App\Models\FieldStop;
 use App\Models\User;
 use App\Services\Attendance\AttendanceAccessService;
 use App\Support\AvatarUrlResolver;
+use App\Support\CompanyClock;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class FieldActivityLiveService
@@ -38,15 +40,28 @@ class FieldActivityLiveService
         $this->attendanceAccessService->ensureCanManage($context);
 
         $companyId = (int) $context->company->id;
+        // "Today" is the company's day, not the server's.
+        $today = CompanyClock::today($companyId);
         $date = isset($filters['date']) && is_string($filters['date']) && $filters['date'] !== ''
             ? $filters['date']
-            : now()->toDateString();
+            : $today;
+
+        $isToday = $date === $today;
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds($companyId, $date);
 
         $sessions = FieldActivitySession::query()
             ->with('user')
             ->where('company_id', $companyId)
             ->where('status', FieldActivitySessionStatus::ACTIVE)
-            ->whereDate('started_at', $date)
+            // Today: every running trip, even one started before midnight.
+            ->when(! $isToday, fn ($q) => $q->whereBetween('started_at', [$dayStart, $dayEnd]))
+            // Supervisors see their own team and themselves, like the rest of tracking.
+            ->when($context->role === 'supervisor', function ($q) use ($actor): void {
+                $q->where(function ($inner) use ($actor): void {
+                    $inner->where('user_id', $actor->id)
+                        ->orWhereIn('user_id', User::query()->select('id')->where('supervisor_user_id', $actor->id));
+                });
+            })
             ->orderByDesc('started_at')
             ->get();
 
@@ -59,13 +74,13 @@ class FieldActivityLiveService
             ->groupBy('field_activity_session_id');
 
         $agents = $sessions->map(function (FieldActivitySession $session) use ($pointsBySession, $stopsBySession, $rawCounts): array {
-            /** @var Collection<int, FieldLocationPoint> $points */
+            /** @var Collection<int, object{latitude: mixed, longitude: mixed}> $points */
             $points = $pointsBySession->get($session->id, collect());
             /** @var Collection<int, FieldStop> $stops */
             $stops = $stopsBySession->get($session->id, collect());
 
             $coordinates = $points
-                ->map(fn (FieldLocationPoint $p): array => [(float) $p->longitude, (float) $p->latitude])
+                ->map(fn (object $p): array => [(float) $p->longitude, (float) $p->latitude])
                 ->values()
                 ->all();
 
@@ -115,8 +130,11 @@ class FieldActivityLiveService
     }
 
     /**
+     * Routes thinned in SQL to at most MAX_ROUTE_POINTS per session (every
+     * n-th point plus the last one), selecting only what the map draws.
+     *
      * @param  list<int>  $sessionIds
-     * @return array{0: Collection<int, Collection<int, FieldLocationPoint>>, 1: array<int, int>}
+     * @return array{0: Collection<int, Collection<int, object>>, 1: array<int, int>}
      */
     private function loadDownsampledPoints(array $sessionIds): array
     {
@@ -124,41 +142,48 @@ class FieldActivityLiveService
             return [collect(), []];
         }
 
-        $all = FieldLocationPoint::query()
+        $rawCounts = FieldLocationPoint::query()
             ->whereIn('field_activity_session_id', $sessionIds)
-            ->orderBy('recorded_at')
-            ->orderBy('id')
-            ->get()
-            ->groupBy('field_activity_session_id');
+            ->groupBy('field_activity_session_id')
+            ->selectRaw('field_activity_session_id, COUNT(*) as point_count')
+            ->pluck('point_count', 'field_activity_session_id')
+            ->mapWithKeys(static fn ($count, $id): array => [(int) $id => (int) $count])
+            ->all();
 
-        $rawCounts = [];
-        $downsampled = $all->map(function (Collection $points, $sessionId) use (&$rawCounts): Collection {
-            $rawCounts[(int) $sessionId] = $points->count();
-
-            return $this->downsamplePoints($points, self::MAX_ROUTE_POINTS);
-        });
-
-        return [$downsampled, $rawCounts];
-    }
-
-    /**
-     * @param  Collection<int, FieldLocationPoint>  $points
-     * @return Collection<int, FieldLocationPoint>
-     */
-    private function downsamplePoints(Collection $points, int $max): Collection
-    {
-        $count = $points->count();
-        if ($count <= $max) {
-            return $points->values();
+        if ($rawCounts === []) {
+            return [collect(), []];
         }
 
-        $step = ($count - 1) / ($max - 1);
-        $sampled = collect();
-        for ($i = 0; $i < $max - 1; $i++) {
-            $sampled->push($points[(int) floor($i * $step)]);
+        $stepCase = 'CASE field_activity_session_id';
+        $lastCase = 'CASE field_activity_session_id';
+        $stepBindings = [];
+        $lastBindings = [];
+        foreach ($rawCounts as $sessionId => $count) {
+            $stepCase .= ' WHEN ? THEN ?';
+            $lastCase .= ' WHEN ? THEN ?';
+            array_push($stepBindings, $sessionId, max(1, (int) ceil($count / self::MAX_ROUTE_POINTS)));
+            array_push($lastBindings, $sessionId, $count);
         }
-        $sampled->push($points[$count - 1]);
+        $stepCase .= ' ELSE 1 END';
+        $lastCase .= ' ELSE 0 END';
 
-        return $sampled->values();
+        $numbered = DB::table('field_location_points')
+            ->select(['field_activity_session_id', 'latitude', 'longitude', 'recorded_at'])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY field_activity_session_id ORDER BY recorded_at, id) AS rn')
+            ->whereIn('field_activity_session_id', array_keys($rawCounts));
+
+        $rows = DB::query()
+            ->fromSub($numbered, 'p')
+            ->select(['field_activity_session_id', 'latitude', 'longitude', 'recorded_at'])
+            ->whereRaw("((rn - 1) % ({$stepCase}) = 0 OR rn = ({$lastCase}))", [...$stepBindings, ...$lastBindings])
+            ->orderBy('field_activity_session_id')
+            ->orderBy('rn')
+            ->get();
+
+        $grouped = $rows
+            ->groupBy(static fn (object $row): int => (int) $row->field_activity_session_id)
+            ->map(static fn (Collection $points): Collection => $points->values());
+
+        return [$grouped, $rawCounts];
     }
 }

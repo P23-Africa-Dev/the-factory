@@ -26,6 +26,8 @@ import { crmKeys } from '@/features/crm/queryKeys';
 import { locationKeys } from '@/features/locations/queryKeys';
 import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 import { withLocationUploadLock } from '@/lib/sync/locationUploadLock';
+import { isTripNotActiveError, notifyFieldTripServerEnded } from '@/features/field-trip/serverEnded';
+import { pruneSyncedLocationRows } from '@/lib/sync/locationQueueMaintenance';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
@@ -96,6 +98,8 @@ async function syncLocationQueue(): Promise<void> {
   const fallbackCompanyId = getActiveCompanyId();
 
   await withLocationUploadLock(async () => {
+    // Uploaded points older than 48 h are no longer needed on the phone.
+    await pruneSyncedLocationRows().catch(() => 0);
     const db = await getDb();
     const pending = await db.getAllFromIndex('locationQueue', 'by-synced', 0);
     const runnable = pending.filter(
@@ -124,7 +128,8 @@ async function syncLocationQueue(): Promise<void> {
 
       try {
         await client.post(
-          `/agent/field-activity/sessions/${sessionId}/points`,
+          // Field trips: shared endpoint for agents and managers (ownership-checked).
+          `/field-trips/${sessionId}/points`,
           {
             company_id: companyId,
             points: batch.map((r) => ({
@@ -134,6 +139,7 @@ async function syncLocationQueue(): Promise<void> {
               speed_mps: r.speedMps ?? null,
               heading_degrees: r.headingDegrees ?? null,
               recorded_at: r.recordedAt,
+              client_point_id: r.clientPointId ?? undefined,
             })),
           },
           BACKGROUND_REQUEST,
@@ -181,10 +187,11 @@ async function syncLocationQueue(): Promise<void> {
           }
         }
         await tx.done;
+        if (isTripNotActiveError(apiError)) notifyFieldTripServerEnded(sessionId);
       }
     }
 
-    const byTask = taskRows.reduce<Record<number, typeof taskRows>>((acc, row) => {
+    const byTask =taskRows.reduce<Record<number, typeof taskRows>>((acc, row) => {
       const existing = acc[row.taskId];
       if (existing) existing.push(row);
       else acc[row.taskId] = [row];
@@ -200,7 +207,7 @@ async function syncLocationQueue(): Promise<void> {
 
       try {
         const res = await client.post(
-          `/agent/tasks/${taskId}/location`,
+          `/tasks/${taskId}/location`,
           {
             company_id: companyId,
             points: batch.map((r) => ({
@@ -284,7 +291,7 @@ async function syncProofQueue(): Promise<void> {
         new File([proof.fileBlob], proof.fileName, { type: proof.mimeType }),
       );
 
-      await client.post(`/agent/tasks/${proof.taskId}/proofs`, formData, {
+      await client.post(`/tasks/${proof.taskId}/proofs`, formData, {
         ...BACKGROUND_REQUEST,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -382,7 +389,7 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
           recordedAt: payload.recorded_at,
         },
       });
-      await client.post(`/agent/tasks/${payload.taskId}/complete`, formData, {
+      await client.post(`/tasks/${payload.taskId}/complete`, formData, {
         ...BACKGROUND_REQUEST,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -601,16 +608,19 @@ async function scheduleNextSyncIfNeeded(): Promise<void> {
   }
 }
 
-async function hasRunnableSyncWork(): Promise<boolean> {
+/**
+ * True when queued actions or proofs (things that change lists on screen) are
+ * waiting. GPS points alone do not count: refetching every list after each
+ * location upload (every 30 s while tracking) only costs battery and data.
+ */
+async function hasRunnableListChangingWork(): Promise<boolean> {
   const db = await getDb();
-  const [actions, proofs, locations] = await Promise.all([
+  const [actions, proofs] = await Promise.all([
     getRunnableOfflineActions(),
     db.getAllFromIndex('proofQueue', 'by-uploaded', 0),
-    db.getAllFromIndex('locationQueue', 'by-synced', 0),
   ]);
   if (actions.length > 0) return true;
-  if (proofs.some((item) => canRunNow(item.nextAttemptAt))) return true;
-  return locations.some((item) => canRunNow(item.nextAttemptAt) && item.inFlight !== 1);
+  return proofs.some((item) => canRunNow(item.nextAttemptAt));
 }
 
 async function syncAll(): Promise<void> {
@@ -620,7 +630,7 @@ async function syncAll(): Promise<void> {
 
   setSyncInFlight(true);
   try {
-    const hadWork = await hasRunnableSyncWork();
+    const hadWork = await hasRunnableListChangingWork();
     await syncProofQueue();
     await syncOfflineActionQueue();
     await syncLocationQueue();

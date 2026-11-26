@@ -39,7 +39,8 @@ class TaskTrackingService
     public function start(User $user, Task $task, array $data): array
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
-        $this->accessService->ensureAgent($context);
+        // Anyone may track a task assigned to them (agents and managers alike):
+        // ownership is the access rule, as for field trips.
         $this->assertTaskInCompany($task, $context->company->id);
         $this->ensureAssignedUser($task, $user);
 
@@ -299,7 +300,8 @@ class TaskTrackingService
     public function recordLocation(User $user, Task $task, array $data): array
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
-        $this->accessService->ensureAgent($context);
+        // Anyone may track a task assigned to them (agents and managers alike):
+        // ownership is the access rule, as for field trips.
         $this->assertTaskInCompany($task, $context->company->id);
         $this->ensureAssignedUser($task, $user);
 
@@ -573,7 +575,8 @@ class TaskTrackingService
     public function complete(User $user, Task $task, array $data): array
     {
         $context = $this->accessService->resolve($user, $data['company_id'] ?? null);
-        $this->accessService->ensureAgent($context);
+        // Anyone may track a task assigned to them (agents and managers alike):
+        // ownership is the access rule, as for field trips.
         $this->assertTaskInCompany($task, $context->company->id);
         $this->ensureAssignedUser($task, $user);
 

@@ -42,10 +42,7 @@ class FieldActivityManagementController extends Controller
 
         return $this->success(
             message: 'Field activity settings loaded.',
-            data: [
-                'enabled' => $this->settingService->isEnabledForCompany($context->company),
-                'company_id' => $context->company->id,
-            ],
+            data: $this->settingService->serialize($context->company),
         );
     }
 
@@ -58,14 +55,14 @@ class FieldActivityManagementController extends Controller
         );
         $this->attendanceAccessService->ensureCanManage($context);
 
-        $this->settingService->setEnabled($context->company, (bool) $validated['enabled']);
+        if (array_key_exists('enabled', $validated) && $validated['enabled'] !== null) {
+            $this->settingService->setEnabled($context->company, (bool) $validated['enabled']);
+        }
+        $this->settingService->updateTripSettings($context->company, $validated);
 
         return $this->success(
             message: 'Field activity settings updated.',
-            data: [
-                'enabled' => $this->settingService->isEnabledForCompany($context->company->fresh() ?? $context->company),
-                'company_id' => $context->company->id,
-            ],
+            data: $this->settingService->serialize($context->company->fresh() ?? $context->company),
         );
     }
 
@@ -83,6 +80,13 @@ class FieldActivityManagementController extends Controller
             $validated['from'] ?? null,
             $validated['to'] ?? null,
             isset($validated['user_id']) ? (int) $validated['user_id'] : null,
+            // Supervisors: their own team plus themselves.
+            $context->role === 'supervisor'
+                ? [
+                    (int) $request->user()->id,
+                    ...User::query()->where('supervisor_user_id', $request->user()->id)->pluck('id')->map(static fn ($id): int => (int) $id)->all(),
+                ]
+                : null,
         );
 
         return $this->success(

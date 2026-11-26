@@ -214,7 +214,7 @@ export function FieldActivitySummaryCard(): React.ReactElement | null {
           <p className="mt-3 text-sm leading-relaxed text-white/90">{summary.narrative}</p>
         ) : (
           <p className="mt-3 text-sm text-white/70">
-            Automatic workday tracking from clock in to clock out.
+            Routes and stops from today&apos;s field trips. Tap Start Field Trip to record one.
           </p>
         )}
         <div className="mt-5 grid grid-cols-2 gap-3">

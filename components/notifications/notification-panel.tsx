@@ -277,6 +277,27 @@ function EmptyState({ filter }: { filter: "all" | "unread" }) {
 export function resolveWebNotificationUrl(notification: AppNotification, isAgent: boolean): string | null {
   const target = notification.action_url || notification.action_route;
 
+  // Field trips (Start/End Field Trip in the mobile app): open that trip's
+  // journey page; "signal lost" on a running trip goes to the live map.
+  if (notification.type?.startsWith("field_trip.")) {
+    const meta = notification.metadata ?? {};
+    const toId = (value: unknown): number | null => {
+      const n = typeof value === "string" ? Number.parseInt(value, 10) : value;
+      return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const sessionId =
+      toId(meta.field_activity_session_id) ??
+      toId(typeof target === "string" ? target.match(/journeys\/(\d+)/)?.[1] : undefined);
+    if (!isAgent && notification.type === "field_trip.signal_lost") {
+      const agentId = toId(meta.agent_user_id);
+      return agentId ? `/map?agent=${agentId}` : "/map";
+    }
+    if (sessionId) {
+      return isAgent ? `/agent/operations/journeys/${sessionId}` : `/operations/journeys/${sessionId}`;
+    }
+    return isAgent ? "/agent/operations/journey_history" : "/map";
+  }
+
   // Tracking events always deep-link managers to the live Map feed.
   if (notification.type?.startsWith("tracking.") && !isAgent) {
     const taskId =

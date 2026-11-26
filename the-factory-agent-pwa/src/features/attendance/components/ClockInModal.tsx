@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { toast } from '@/lib/toast';
 import { flattenApiError } from '@/lib/api/errors';
 import { useTodayAttendance, useClockIn, useClockOut } from '../queries';
 import { useFieldActivityReviewUi } from '@/features/field-activity/reviewUiStore';
-import { flushFieldActivityPoints } from '@/features/field-activity/flushRegistry';
 
 type ClockInModalProps = {
   visible: boolean;
@@ -16,7 +14,6 @@ type ClockInModalProps = {
 };
 
 export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModalProps): React.ReactElement | null {
-  const router = useRouter();
   const { data: today, isError: isTodayError, error: todayError } = useTodayAttendance();
   const { location, error: locationError, isLoading: isLocating, refresh } = useCurrentLocation();
   const { mutateAsync: clockIn, isPending: isClockingIn } = useClockIn();
@@ -60,17 +57,12 @@ export function ClockInModal({ visible, onClose, onPendingChange }: ClockInModal
     const wasClockIn = !isClockedIn;
 
     try {
-      if (isClockedIn) {
-        // Push buffered journey points first — once the session completes,
-        // late points are rejected and the final leg of the route is lost.
-        await flushFieldActivityPoints().catch(() => {});
-      }
+      // Attendance only: location tracking is started separately with
+      // "Start Field Trip", so clocking in/out no longer touches tracking.
       await actionFn(payload);
-      toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your location has been recorded.');
+      toast.success(isClockedIn ? 'Clocked out' : 'Clocked in', 'Your attendance has been recorded.');
       onClose();
-      if (wasClockIn) {
-        router.push('/map?highlight=clock-in');
-      } else {
+      if (!wasClockIn) {
         openDayReview();
       }
     } catch (err: unknown) {

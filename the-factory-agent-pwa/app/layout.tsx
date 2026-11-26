@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 
@@ -12,11 +13,20 @@ import { PwaInstallBanner } from '@/components/shared/PwaInstallBanner';
 import { PwaAccessGuard } from '@/components/guards/PwaAccessGuard';
 import { BrokenImageGuard } from '@/components/shared/BrokenImageGuard';
 import { ModalScrollLock } from '@/components/shared/ModalScrollLock';
+import { trackNotificationReturnPath } from '@/features/notifications/notificationReturnStore';
 import '@/lib/pwa/installPromptStore';
 import './globals.css';
 
 function SessionRevalidator(): null {
   useSessionRevalidation();
+  return null;
+}
+
+function NotificationReturnTracker(): null {
+  const pathname = usePathname();
+  useEffect(() => {
+    trackNotificationReturnPath(pathname);
+  }, [pathname]);
   return null;
 }
 
@@ -73,6 +83,7 @@ export default function RootLayout({
       >
         <BrokenImageGuard />
         <ModalScrollLock />
+        <NotificationReturnTracker />
         <AuthProvider>
           <SessionRevalidator />
           <QueryClientProvider client={queryClient}>

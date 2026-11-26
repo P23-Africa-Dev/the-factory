@@ -475,6 +475,57 @@ class TaskTrackingTest extends TestCase
         $this->assertGreaterThan(0, TaskLocationPoint::query()->where('task_id', $taskTwo->id)->count());
     }
 
+    public function test_a_manager_can_track_a_task_assigned_to_them_but_not_someone_elses(): void
+    {
+        [$company, $admin, $agent] = $this->seedCompanyUsers();
+        $own = $this->createAssignedTask($company->id, $admin->id, $admin->id, ['status' => 'pending']);
+        $others = $this->createAssignedTask($company->id, $admin->id, $agent->id, ['status' => 'pending']);
+        $token = $admin->createToken('admin-token', ['*'])->plainTextToken;
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:00:00'));
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $own->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+                'accuracy_meters' => 5,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.task.status', 'in_progress');
+
+        Carbon::setTestNow(Carbon::parse('2026-07-29 10:05:00'));
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $own->id . '/location', [
+                'company_id' => $company->id,
+                'points' => [[
+                    'latitude' => 6.4100,
+                    'longitude' => 3.4000,
+                    'accuracy_meters' => 5,
+                    'recorded_at' => '2026-07-29T10:04:30Z',
+                ]],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('task_tracking_sessions', [
+            'task_id' => $own->id,
+            'started_by_user_id' => $admin->id,
+        ]);
+
+        // Ownership is the rule: a manager still cannot track an agent's task.
+        $this->withToken($token)
+            ->postJson('/api/v1/tasks/' . $others->id . '/start', [
+                'company_id' => $company->id,
+                'location_permission_granted' => true,
+                'latitude' => 6.4000,
+                'longitude' => 3.3900,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.authorization.0', 'You can only track tasks currently assigned to you.');
+
+        Carbon::setTestNow();
+    }
+
     private function createAssignedTask(int $companyId, int $creatorId, int $agentId, array $overrides = []): Task
     {
         $task = Task::create(array_merge([

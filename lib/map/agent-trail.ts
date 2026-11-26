@@ -10,12 +10,12 @@ const AGENT_TRAIL_PALETTE = [
   "#E11D48", // rose
   "#7C3AED", // violet
   "#0284C7", // sky blue
-  "#16A34A", // green
+  "#EA580C", // orange (no green: the traffic layer is green)
   "#D97706", // amber
   "#DB2777", // pink
   "#0D9488", // teal
   "#4F46E5", // indigo
-  "#65A30D", // lime
+  "#9333EA", // purple
   "#C026D3", // fuchsia
   "#B91C1C", // dark red
   "#1D4ED8", // blue
@@ -31,6 +31,8 @@ export type LiveAgentMarkerOptions = {
   avatarUrl?: string | null;
   color: string;
   selected?: boolean;
+  /** Signal lost / trip ended: greyed out, no pulse. */
+  muted?: boolean;
 };
 
 type LiveAgentMarkerHandle = {
@@ -115,6 +117,9 @@ export function createLiveAgentMarkerElement(
     heading.style.background = next.color;
     root.style.zIndex = next.selected ? "40" : "20";
     avatar.style.transform = next.selected ? "scale(1.12)" : "scale(1)";
+    pulse.style.display = next.muted ? "none" : "block";
+    avatar.style.filter = next.muted ? "grayscale(1)" : "none";
+    avatar.style.opacity = next.muted ? "0.65" : "1";
 
     const resolvedAvatarUrl = getSafeAvatarSrc(next.avatarUrl);
     if (resolvedAvatarUrl !== renderedAvatarUrl || next.agentName !== renderedName) {
@@ -126,6 +131,13 @@ export function createLiveAgentMarkerElement(
         img.src = resolvedAvatarUrl;
         img.alt = next.agentName;
         img.style.cssText = "width:100%;height:100%;object-fit:cover";
+        // Broken photo URL: fall back to initials instead of an empty ring.
+        img.onerror = () => {
+          const initials = document.createElement("span");
+          initials.textContent = getAgentInitials(next.agentName) ?? "•";
+          initials.style.cssText = `font-size:12px;font-weight:700;color:${next.color}`;
+          content.replaceChildren(initials);
+        };
         content.appendChild(img);
       } else {
         const initials = document.createElement("span");

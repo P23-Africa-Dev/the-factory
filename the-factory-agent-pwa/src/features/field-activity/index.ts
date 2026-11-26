@@ -1,4 +1,3 @@
-export { FieldActivityProvider } from './FieldActivityProvider';
 export { FieldActivitySummaryCard } from './components/FieldActivitySummaryCard';
 export { JourneyHistoryPanel } from './components/JourneyHistoryPanel';
 export { DayReviewSheet } from './components/DayReviewSheet';

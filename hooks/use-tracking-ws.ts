@@ -11,6 +11,7 @@ import { getActiveCompanyContext } from "@/lib/company-context";
 import { getTrackingWebSocketUrl } from "@/lib/config/public-env";
 import { getTaskRoute, listAgentLocations } from "@/lib/api/tracking";
 import type { TrackingEnvelope } from "@/types/tracking";
+import { getSafeAvatarSrc } from "@/lib/avatar";
 
 const BACKOFF_STEPS = [1000, 2000, 4000, 8000, 16000, 30000];
 const POLL_INTERVAL_MS = 25_000;
@@ -97,6 +98,7 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
   const authenticatedRef = useRef(false);
   const connectionAttemptRef = useRef(0);
   const consecutiveFailuresRef = useRef(0);
+  const hasOpenedRef = useRef(false);
   const connectRef = useRef<() => void>(() => { });
   const subscribedTaskIdsRef = useRef<number[]>([]);
   const hydrateRef = useRef<(options?: { markInitial?: boolean }) => Promise<void>>(
@@ -265,6 +267,13 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         task_ids: subscribedTaskIds,
       }));
 
+      // Reconnected: field-trip points missed while the socket was down only
+      // exist in REST, so refetch the live list (the first open already has it).
+      if (hasOpenedRef.current) {
+        useFieldActivityLiveStore.getState().requestRefresh();
+      }
+      hasOpenedRef.current = true;
+
       void runRecoveryCycle();
     };
 
@@ -335,10 +344,52 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         }
 
         if (msg.type === "attendance.clocked_out" && msg.payload?.user_id) {
-          const userId = Number(msg.payload.user_id);
-          attendanceStore.removeSnapshot(userId);
-          useFieldActivityLiveStore.getState().removeAgent(userId);
+          // Clock-out no longer ends field tracking (field trips are independent),
+          // so the live trail stays until the trip itself ends.
+          attendanceStore.removeSnapshot(Number(msg.payload.user_id));
         }
+        return;
+      }
+
+      if (msg.type === "field_activity.trip_started" || msg.type === "field_activity.trip_ended") {
+        const payload = msg.payload as {
+          user_id?: number;
+          field_activity_session_id?: number;
+          latitude?: number | null;
+          longitude?: number | null;
+          started_at?: string | null;
+          name?: string | null;
+          avatar_url?: string | null;
+        } | undefined;
+        if (payload?.user_id == null) return;
+        const userId = Number(payload.user_id);
+        const sessionId = payload.field_activity_session_id
+          ? Number(payload.field_activity_session_id)
+          : undefined;
+        const fieldStore = useFieldActivityLiveStore.getState();
+
+        if (msg.type === "field_activity.trip_ended") {
+          // Linger briefly as "Trip ended", then drop off the map.
+          fieldStore.endTrip(userId, {
+            sessionId,
+            endedAt: (payload as { ended_at?: string | null }).ended_at ?? null,
+          });
+          return;
+        }
+        if (sessionId == null) {
+          fieldStore.requestRefresh();
+          return;
+        }
+        const lat = payload.latitude != null ? Number(payload.latitude) : NaN;
+        const lng = payload.longitude != null ? Number(payload.longitude) : NaN;
+        // Show the person right away (name + avatar) even before the first fix.
+        fieldStore.startTrip(userId, {
+          sessionId,
+          name: payload.name ?? null,
+          avatarUrl: getSafeAvatarSrc(payload.avatar_url ?? null),
+          startedAt: payload.started_at ?? null,
+          position: Number.isFinite(lat) && Number.isFinite(lng) ? [lng, lat] : null,
+        });
         return;
       }
 
@@ -355,10 +406,11 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
           payload?.user_id != null &&
           payload.latitude != null &&
           payload.longitude != null &&
-          Number.isFinite(payload.latitude) &&
-          Number.isFinite(payload.longitude)
+          Number.isFinite(Number(payload.latitude)) &&
+          Number.isFinite(Number(payload.longitude))
         ) {
-          useFieldActivityLiveStore.getState().appendPoint(
+          const fieldStore = useFieldActivityLiveStore.getState();
+          const accepted = fieldStore.appendPoint(
             Number(payload.user_id),
             [Number(payload.longitude), Number(payload.latitude)],
             {
@@ -369,6 +421,9 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
               recordedAt: payload.recorded_at ?? null,
             },
           );
+          // Someone we have no trip for (missed trip_started): fetch the live
+          // list instead of showing a nameless "Agent".
+          if (!accepted) fieldStore.requestRefresh();
         }
         return;
       }
@@ -389,7 +444,12 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
           };
         } | undefined;
         if (payload?.user_id != null && payload.stop?.id != null) {
-          useFieldActivityLiveStore.getState().upsertStop(Number(payload.user_id), {
+          const fieldStore = useFieldActivityLiveStore.getState();
+          if (!fieldStore.agents[Number(payload.user_id)]) {
+            fieldStore.requestRefresh();
+            return;
+          }
+          fieldStore.upsertStop(Number(payload.user_id), {
             id: payload.stop.id,
             field_activity_session_id: payload.stop.field_activity_session_id,
             latitude: payload.stop.latitude,
@@ -500,6 +560,8 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
+      // Background tabs throttle sockets/timers: catch field trips up too.
+      useFieldActivityLiveStore.getState().requestRefresh();
       void hydrateRef.current();
     };
     document.addEventListener("visibilitychange", onVisible);

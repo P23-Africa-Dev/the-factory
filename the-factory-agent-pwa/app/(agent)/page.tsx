@@ -8,6 +8,7 @@ import { useAuth, useLogoutMutation, useAuthNavigation, useAgentIdentity } from 
 import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AttendanceCard } from '@/features/attendance';
+import { FieldTripCard, useEndTripBeforeLogout } from '@/features/field-trip';
 import { FieldActivitySummaryCard } from '@/features/field-activity/components/FieldActivitySummaryCard';
 import {
   PendingReviewSoftBanner,
@@ -24,7 +25,6 @@ import {
 } from '@/lib/map/place-search';
 import { placeAttributionLabel, type PlaceSourceRef } from '@/lib/map/place-attribution';
 import { getCachedSearchProximity, warmSearchProximity } from '@/lib/map/search-proximity';
-import { useLocationPermissionBootstrap } from '@/features/tracking';
 import { useGeolocation } from '@/features/tracking';
 import { toast } from '@/lib/toast';
 
@@ -48,21 +48,18 @@ const PileInboxSheet = dynamic(
   () => import('@/features/field-activity/components/PileInbox').then((m) => m.PileInboxSheet),
   { ssr: false },
 );
-const LocationPermissionGate = dynamic(
-  () => import('@/features/tracking/components/LocationPermissionGate').then((m) => m.LocationPermissionGate),
-  { ssr: false },
-);
 const NotificationPanel = dynamic(
   () => import('@/features/notifications/components/NotificationPanel').then((m) => m.NotificationPanel),
   { ssr: false },
 );
+import { useNotificationDrawerState } from '@/features/notifications';
 
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const { isOpen: isNotificationOpen, openDrawer: openNotifications, closeDrawer: closeNotifications } = useNotificationDrawerState();
   const [locationQuery, setLocationQuery] = useState('');
   const [locationResults, setLocationResults] = useState<
     Array<{
@@ -125,8 +122,8 @@ export default function AgentDashboardPage() {
   const currentTranslateY = useRef(0);
   const calendarScrollRef = useRef<HTMLDivElement>(null);
 
-  const { gateVisible, gateMode, isGateBusy, dismissGate, retryGate } =
-    useLocationPermissionBootstrap();
+  // No location prompt on the dashboard: location is requested when it is
+  // actually needed (Start Field Trip pre-flight, task tracking, the map).
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -397,7 +394,20 @@ export default function AgentDashboardPage() {
     }
   }, [todayIndex]);
 
-  const handleConfirmLogout = () => {
+  const { onTrip, prepareLogout } = useEndTripBeforeLogout();
+  const [isEndingTripForLogout, setIsEndingTripForLogout] = useState(false);
+
+  const handleConfirmLogout = async () => {
+    if (onTrip) {
+      // Save the running field trip before this phone's session is wiped.
+      setIsEndingTripForLogout(true);
+      const ok = await prepareLogout({ confirm: false });
+      setIsEndingTripForLogout(false);
+      if (!ok) {
+        setIsLogoutModalOpen(false);
+        return;
+      }
+    }
     logoutMutate(undefined, {
       onSettled: () => {
         logout();
@@ -485,7 +495,7 @@ export default function AgentDashboardPage() {
                     <img src="/assets/search-icon.png" alt="Search" className="w-12 h-12 object-contain" />
                   </button>
                   <button
-                    onClick={() => setIsNotificationOpen(true)}
+                    onClick={openNotifications}
                     className="relative w-12 h-12 flex items-center justify-center bg-transparent focus:outline-none"
                   >
                     <img src="/assets/notification-icon.png" alt="Notification" className="w-12 h-12 object-contain" />
@@ -622,6 +632,9 @@ export default function AgentDashboardPage() {
               <span className="font-normal text-[10px] tracking-wide capitalize truncate">Add Lead</span>
             </button>
           </div>
+
+          {/* Start / End Field Trip — on-demand route + stop tracking (not tied to clock-in). */}
+          <FieldTripCard journeyBasePath="/field-activity/journeys" />
 
           {/* Dashboard cards: Leads + Attendance */}
           <div className="flex gap-3.5 mb-5 items-stretch">
@@ -830,7 +843,7 @@ export default function AgentDashboardPage() {
       </div>
 
       {isNotificationOpen ? (
-        <NotificationPanel open onClose={() => setIsNotificationOpen(false)} />
+        <NotificationPanel open onClose={closeNotifications} />
       ) : null}
 
       {isAddLeadOpen ? (
@@ -864,6 +877,11 @@ export default function AgentDashboardPage() {
             <p className="text-xs text-white/50 leading-relaxed">
               Are you sure you want to log out of your account?
             </p>
+            {onTrip ? (
+              <p className="text-xs text-[#FBBF24] leading-relaxed">
+                You are on a field trip. Logging out ends the trip and saves your route.
+              </p>
+            ) : null}
             <div className="flex gap-3 mt-2">
               <button
                 onClick={() => setIsLogoutModalOpen(false)}
@@ -873,29 +891,17 @@ export default function AgentDashboardPage() {
                 Cancel
               </button>
               <button
-                onClick={handleConfirmLogout}
-                disabled={isLoggingOut}
+                onClick={() => void handleConfirmLogout()}
+                disabled={isLoggingOut || isEndingTripForLogout}
                 className="flex-1 h-11 bg-[#FD6046] hover:bg-[#E0533C] rounded-full text-xs font-semibold text-white active:scale-95 transition-all flex items-center justify-center"
               >
-                {isLoggingOut ? (
+                {isLoggingOut || isEndingTripForLogout ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 ) : (
                   'Log Out'
                 )}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-      {gateVisible && (
-        <div className="fixed inset-0 z-[99999] flex items-end justify-center bg-black/50 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-t-3xl bg-[#0A1D25] border-t border-white/10 pb-[env(safe-area-inset-bottom,0px)]">
-            <LocationPermissionGate
-              mode={gateMode}
-              isBusy={isGateBusy}
-              onRequest={() => void retryGate()}
-              onDismiss={dismissGate}
-            />
           </div>
         </div>
       )}

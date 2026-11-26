@@ -3,6 +3,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { isNativeAndroid } from '../native/capacitorPlatform';
 import {
+  checkLocationSettings,
+  getPermissionStatus as getNativePermissionStatus,
+  isLocationSettingsAvailable,
+  openAppSettings,
+  requestBackgroundPermission,
+  requestForegroundPermission,
+} from '../native/locationSettings';
+import {
   startNativeBackgroundWatch,
   stopNativeBackgroundWatch,
   forceRestartNativeBackgroundWatch,
@@ -273,6 +281,13 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
   }, []);
 
   const checkPermission = useCallback(async (): Promise<PermissionStatus> => {
+    // APK: Android is the source of truth (the WebView can report "prompt"
+    // for a permission Android already granted, which showed the gate needlessly).
+    if (isLocationSettingsAvailable()) {
+      const native = await getNativePermissionStatus();
+      setPermission(native.foreground);
+      return native.foreground;
+    }
     if (typeof window === 'undefined' || !navigator.permissions) {
       setPermission('unknown');
       return 'unknown';
@@ -344,10 +359,40 @@ export const useGeolocation = (): GeolocationState & GeolocationActions => {
   }, [checkPermission, requestPermission]);
 
   const retryLocationPermission = useCallback(async (): Promise<PermissionStatus> => {
+    // APK 1.0.3+: the WebView's geolocation call cannot re-open Android's
+    // permission prompt once answered, nor reach "Allow all the time" or turn
+    // GPS on — so the button appeared to do nothing. Use the native plugin.
+    if (isLocationSettingsAvailable()) {
+      let native = await getNativePermissionStatus();
+      if (native.foreground !== 'granted') {
+        native = await requestForegroundPermission();
+      }
+      if (native.foreground !== 'granted') {
+        // Permanently refused: only the app settings page can change it.
+        await openAppSettings();
+        setPermission('denied');
+        return 'denied';
+      }
+      if (!native.locationServicesOn) {
+        const gps = await checkLocationSettings({ highAccuracy: true, showDialog: true });
+        if (!gps.enabled) {
+          setPermission('prompt');
+          return 'prompt';
+        }
+      }
+      if (native.background !== 'granted') {
+        // Best effort: tracking still works in the foreground without it.
+        await requestBackgroundPermission();
+      }
+      setPermission('granted');
+      void readPosition(HIGH_ACCURACY_OPTIONS).then(rememberPosition).catch(() => {});
+      return 'granted';
+    }
+
     const status = await checkPermission();
     if (status === 'granted') return 'granted';
     return requestPermission();
-  }, [checkPermission, requestPermission]);
+  }, [checkPermission, requestPermission, rememberPosition, setPermission]);
 
   const getCurrentPosition = useCallback(async (): Promise<LocationObject> => {
     try {
