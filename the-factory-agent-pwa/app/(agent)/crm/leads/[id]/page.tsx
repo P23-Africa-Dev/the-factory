@@ -280,14 +280,12 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
               <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-5 shadow-lg">
                 <h3 className="font-bold text-xl text-white mb-2">{lead.name}</h3>
                 {currentLabelInfo && (
-                  <div
-                    className="inline-flex rounded-full px-3 py-1 text-xs font-semibold mb-2"
-                    style={{
-                      backgroundColor: `${currentLabelInfo.color}22`,
-                      color: currentLabelInfo.color,
-                    }}
-                  >
-                    {currentLabelInfo.name}
+                  <div className="flex items-center gap-2 text-xs font-medium text-white/80 mb-2">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: currentLabelInfo.color }}
+                    />
+                    <span>{currentLabelInfo.name}</span>
                   </div>
                 )}
                 {lead.updatedAt && (

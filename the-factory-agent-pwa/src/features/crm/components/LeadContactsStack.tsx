@@ -30,36 +30,36 @@ export function LeadContactsStack({ contacts }: LeadContactsStackProps) {
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1B3A4B] text-[#44AFCD] border border-[#44AFCD]/20">
             <User size={16} />
           </div>
-          <div>
-            <h4 className="font-bold text-[15px] text-white leading-tight">{contact.name}</h4>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-[#44AFCD] bg-[#44AFCD]/10 px-2 py-0.5 rounded-full mt-1 inline-block">
+          <div className="min-w-0">
+            <h4 className="font-bold text-[15px] text-white leading-tight truncate">{contact.name}</h4>
+            <p className="text-[11px] font-medium text-white/45 mt-0.5">
               Primary Contact
-            </span>
+            </p>
           </div>
         </div>
 
         <div className="flex flex-col gap-3 text-sm text-white/70">
           {contact.position && (
             <div className="flex items-center gap-2.5">
-              <Briefcase size={14} className="text-[#44AFCD]/80 shrink-0" />
+              <Briefcase size={14} className="text-white/45 shrink-0" />
               <span className="truncate">{contact.position}</span>
             </div>
           )}
           {contact.email && (
-            <a href={`mailto:${contact.email}`} className="flex items-center gap-2.5 hover:text-white transition-colors">
-              <Mail size={14} className="text-[#44AFCD]/80" />
+            <a href={`mailto:${contact.email}`} className="flex items-center gap-2.5 text-[#7DD3FC] hover:underline transition-colors">
+              <Mail size={14} className="text-[#44AFCD] shrink-0" />
               <span className="truncate">{contact.email}</span>
             </a>
           )}
           {contact.phone && (
-            <a href={`tel:${contact.phone}`} className="flex items-center gap-2.5 hover:text-white transition-colors">
-              <Phone size={14} className="text-[#44AFCD]/80" />
+            <a href={`tel:${contact.phone}`} className="flex items-center gap-2.5 text-[#7DD3FC] hover:underline transition-colors">
+              <Phone size={14} className="text-[#44AFCD] shrink-0" />
               <span>{contact.phone}</span>
             </a>
           )}
           {contact.location && (
             <div className="flex items-center gap-2.5">
-              <MapPin size={14} className="text-[#44AFCD]/80" />
+              <MapPin size={14} className="text-white/45 shrink-0" />
               <span className="truncate">{contact.location}</span>
             </div>
           )}
@@ -112,8 +112,8 @@ export function LeadContactsStack({ contacts }: LeadContactsStackProps) {
       <div className="flex items-center justify-between px-1">
         <h4 className="font-bold text-sm text-white flex items-center gap-1.5">
           <span>Contacts</span>
-          <span className="text-[10px] text-white/40 bg-white/5 border border-white/10 rounded-full px-2 py-0.5 font-medium">
-            {contacts.length} total
+          <span className="text-[11px] text-white/45 font-medium">
+            ({contacts.length})
           </span>
         </h4>
         <div className="flex items-center gap-1">
