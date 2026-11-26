@@ -885,12 +885,14 @@ function MapContent() {
     };
   }, []);
 
-  // Stop orphan GPS when opening /map without ?taskId (tracking store outlives page state).
+  // Opening /map without ?taskId while a task is being tracked (e.g. from the
+  // field-trip card or a menu): show that task's map. Never stop its tracking —
+  // only the agent ends a task.
   useEffect(() => {
     if (isFromTrackingScreen) return;
     if (activeTaskId == null) return;
-    void stopTracking();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only hygiene
+    router.replace(`/map?taskId=${activeTaskId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only redirect
   }, []);
 
   // Determine which task to work with — filter to only tasks assigned to this agent

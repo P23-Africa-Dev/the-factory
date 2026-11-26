@@ -8,7 +8,7 @@ import { useAuth, useLogoutMutation, useAuthNavigation, useAgentIdentity } from 
 import { useTaskListItems, useTaskNavigation } from '@/features/tasks';
 import { useCrmNavigation, useAgentUploadsOverview } from '@/features/crm';
 import { AttendanceCard } from '@/features/attendance';
-import { FieldTripCard } from '@/features/field-trip';
+import { FieldTripCard, useEndTripBeforeLogout } from '@/features/field-trip';
 import { FieldActivitySummaryCard } from '@/features/field-activity/components/FieldActivitySummaryCard';
 import {
   PendingReviewSoftBanner,
@@ -393,7 +393,20 @@ export default function AgentDashboardPage() {
     }
   }, [todayIndex]);
 
-  const handleConfirmLogout = () => {
+  const { onTrip, prepareLogout } = useEndTripBeforeLogout();
+  const [isEndingTripForLogout, setIsEndingTripForLogout] = useState(false);
+
+  const handleConfirmLogout = async () => {
+    if (onTrip) {
+      // Save the running field trip before this phone's session is wiped.
+      setIsEndingTripForLogout(true);
+      const ok = await prepareLogout({ confirm: false });
+      setIsEndingTripForLogout(false);
+      if (!ok) {
+        setIsLogoutModalOpen(false);
+        return;
+      }
+    }
     logoutMutate(undefined, {
       onSettled: () => {
         logout();
@@ -863,6 +876,11 @@ export default function AgentDashboardPage() {
             <p className="text-xs text-white/50 leading-relaxed">
               Are you sure you want to log out of your account?
             </p>
+            {onTrip ? (
+              <p className="text-xs text-[#FBBF24] leading-relaxed">
+                You are on a field trip. Logging out ends the trip and saves your route.
+              </p>
+            ) : null}
             <div className="flex gap-3 mt-2">
               <button
                 onClick={() => setIsLogoutModalOpen(false)}
@@ -872,11 +890,11 @@ export default function AgentDashboardPage() {
                 Cancel
               </button>
               <button
-                onClick={handleConfirmLogout}
-                disabled={isLoggingOut}
+                onClick={() => void handleConfirmLogout()}
+                disabled={isLoggingOut || isEndingTripForLogout}
                 className="flex-1 h-11 bg-[#FD6046] hover:bg-[#E0533C] rounded-full text-xs font-semibold text-white active:scale-95 transition-all flex items-center justify-center"
               >
-                {isLoggingOut ? (
+                {isLoggingOut || isEndingTripForLogout ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 ) : (
                   'Log Out'

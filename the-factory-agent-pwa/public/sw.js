@@ -19,7 +19,7 @@
 
 const CACHE_NAME = "factory-agent-pwa-v14";
 const STATIC_CACHE = "factory-static-v14";
-const API_CACHE = "factory-api-v14";
+const API_CACHE = "factory-api-v15";
 const PAGE_CACHE = "factory-pages-v14";
 
 /** Keep in sync with src/lib/notifications/pwaNotificationIcons.ts */
@@ -88,6 +88,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.method !== "GET") return;
+
+  // Live trip state must never come from a cache: an old "no trip" answer
+  // served offline would end the trip running on this phone.
+  if (url.pathname.includes("/field-trips")) return;
 
   if (
     url.pathname.startsWith("/api/") ||

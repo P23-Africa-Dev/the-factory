@@ -26,6 +26,7 @@ import {
 import { maybePromptBatteryOptimizationOnTrackingStart } from '@/lib/tracking/battery-optimization-prompt';
 import { fieldTripApi } from './api';
 import { newClientId, useFieldTripStore } from './store';
+import { isTripNotActiveError, notifyFieldTripServerEnded } from './serverEnded';
 
 const MAX_BATCH = 50;
 const FLUSH_EVERY_MS = 30_000;
@@ -62,9 +63,7 @@ export function useFieldTripReporter(options: {
   serverId: number | null;
   movingIntervalSeconds?: number;
   stationaryIntervalSeconds?: number;
-  /** The server says this trip is no longer active (ended elsewhere / auto-ended). */
-  onServerEnded?: () => void;
-}): { flush: () => Promise<void> } {
+}): { flush: () => Promise<boolean> } {
   const { active, clientTripId, serverId } = options;
   const { startWatching, stopWatching } = useGeolocation();
   const refs = useRef({
@@ -73,7 +72,6 @@ export function useFieldTripReporter(options: {
     active,
     moving: options.movingIntervalSeconds ?? 30,
     stationary: Math.min(options.stationaryIntervalSeconds ?? 60, 60),
-    onServerEnded: options.onServerEnded,
   });
   const lastSampleAt = useRef(0);
   const lastToastAt = useRef(0);
@@ -86,9 +84,8 @@ export function useFieldTripReporter(options: {
       active,
       moving: options.movingIntervalSeconds ?? 30,
       stationary: Math.min(options.stationaryIntervalSeconds ?? 60, 60),
-      onServerEnded: options.onServerEnded,
     };
-  }, [active, clientTripId, serverId, options.movingIntervalSeconds, options.stationaryIntervalSeconds, options.onServerEnded]);
+  }, [active, clientTripId, serverId, options.movingIntervalSeconds, options.stationaryIntervalSeconds]);
 
   const enqueue = useCallback(async (loc: LocationObject) => {
     const { clientTripId: tripId, serverId: sid, active: isActive, moving, stationary } = refs.current;
@@ -130,17 +127,20 @@ export function useFieldTripReporter(options: {
     }
   }, []);
 
-  /** Upload this trip's queued points (back-filling the server id first). */
-  const flush = useCallback(async () => {
+  /**
+   * Upload this trip's queued points (back-filling the server id first).
+   * Resolves true once nothing of this trip is left waiting on this phone.
+   */
+  const flush = useCallback(async (): Promise<boolean> => {
     const { clientTripId: tripId, serverId: sid } = refs.current;
-    if (!tripId || !sid) return;
+    if (!tripId || !sid) return false;
 
-    await withLocationUploadLock(async () => {
+    return withLocationUploadLock(async (): Promise<boolean> => {
       const db = await getDb();
       const pending = (await db.getAllFromIndex('locationQueue', 'by-synced', 0)).filter(
         (row) => row.fieldTripClientId === tripId || row.fieldActivitySessionId === sid,
       );
-      if (pending.length === 0) return;
+      if (pending.length === 0) return true;
 
       for (let i = 0; i < pending.length; i += MAX_BATCH) {
         const batch = pending.slice(i, i + MAX_BATCH);
@@ -172,17 +172,16 @@ export function useFieldTripReporter(options: {
             // Trip already ended on the server (auto-ended or ended on another
             // device): these points can never be stored.
             await markAll({ synced: 1, inFlight: 0, lastError: apiError.message ?? null });
-            if (/not active|not found/i.test(apiError.message ?? '')) {
-              refs.current.onServerEnded?.();
-            }
-            return;
+            if (isTripNotActiveError(apiError)) notifyFieldTripServerEnded(sid);
+            return true;
           }
           // Network / server error: keep rows (now carrying the server id) for
           // the sync engine / service worker to retry.
           await markAll({ inFlight: 0 });
-          return;
+          return false;
         }
       }
+      return true;
     });
   }, []);
 

@@ -12,12 +12,14 @@ const api = vi.hoisted(() => ({
   recordPoints: vi.fn(),
 }));
 vi.mock('./api', () => ({ fieldTripApi: api }));
-vi.mock('./useFieldTripReporter', () => ({ useFieldTripReporter: () => ({ flush: async () => {} }) }));
+const reporter = vi.hoisted(() => ({ flush: vi.fn(async () => true) }));
+vi.mock('./useFieldTripReporter', () => ({ useFieldTripReporter: () => reporter }));
 const toasts = vi.hoisted(() => ({ info: vi.fn(), success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
 vi.mock('@/lib/toast', () => ({ toast: toasts }));
 
 import { FieldTripProvider, useFieldTrip } from './FieldTripProvider';
 import { useFieldTripStore } from './store';
+import { isTripNotActiveError, notifyFieldTripServerEnded } from './serverEnded';
 
 const trip = (over: Partial<FieldTripDto> = {}): FieldTripDto => ({
   id: 77,
@@ -80,6 +82,8 @@ describe('FieldTripProvider first-tap reliability', () => {
     useFieldTripStore.setState({ local: null, trail: [], lastPosition: null });
     Object.values(api).forEach((fn) => fn.mockReset());
     Object.values(toasts).forEach((fn) => fn.mockReset());
+    reporter.flush.mockReset();
+    reporter.flush.mockResolvedValue(true);
     sink.current = null;
   });
 
@@ -130,5 +134,91 @@ describe('FieldTripProvider first-tap reliability', () => {
     expect(useFieldTripStore.getState().local).toBeNull();
     expect(toasts.success).toHaveBeenCalledWith('Field trip saved', expect.any(String));
     expect(toasts.info).not.toHaveBeenCalled();
+  });
+
+  it('stops the trip at once when an upload says the server already ended it', async () => {
+    api.current.mockResolvedValue(current(null));
+    api.start.mockResolvedValue({ trip: trip(), created: true });
+    setup();
+    await flushAsync();
+    await act(async () => {
+      await sink.current!.startTrip(null);
+    });
+    expect(useFieldTripStore.getState().local?.serverId).toBe(77);
+
+    // Another trip's refusal is ignored.
+    await act(async () => notifyFieldTripServerEnded(12));
+    expect(useFieldTripStore.getState().local?.serverId).toBe(77);
+
+    // Server still says "running" in a stale cache: the refusal wins.
+    api.current.mockResolvedValue(current(trip()));
+    api.end.mockResolvedValue({ trip: trip({ status: 'auto_closed', end_reason: 'auto_no_signal' }) });
+    await act(async () => notifyFieldTripServerEnded(77));
+    await flushAsync();
+
+    expect(useFieldTripStore.getState().local).toBeNull();
+    expect(sink.current!.lastEnded?.end_reason).toBe('auto_no_signal'); // card can say why
+    expect(toasts.info).toHaveBeenCalledWith('Your field trip has ended', expect.any(String));
+  });
+});
+
+describe('FieldTripProvider end keeps the whole route', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useFieldTripStore.setState({ local: null, trail: [], lastPosition: null });
+    Object.values(api).forEach((fn) => fn.mockReset());
+    Object.values(toasts).forEach((fn) => fn.mockReset());
+    reporter.flush.mockReset();
+    reporter.flush.mockResolvedValue(true);
+  });
+
+  it('does not end the trip on the server while points are still waiting to upload', async () => {
+    api.current.mockResolvedValue(current(null));
+    api.start.mockResolvedValue({ trip: trip(), created: true });
+    setup();
+    await flushAsync();
+    await act(async () => {
+      await sink.current!.startTrip(null);
+    });
+
+    reporter.flush.mockResolvedValue(false); // offline: points still on the phone
+    let ended: FieldTripDto | null = null;
+    await act(async () => {
+      ended = await sink.current!.endTrip(null);
+    });
+
+    expect(ended).toBeNull();
+    expect(api.end).not.toHaveBeenCalled();
+    expect(useFieldTripStore.getState().local?.phase).toBe('ending');
+    expect(toasts.info).toHaveBeenCalledWith('Ending when back online', expect.any(String));
+  });
+
+  it('ends anyway once End has waited too long for the last points', async () => {
+    api.current.mockResolvedValue(current(null));
+    api.start.mockResolvedValue({ trip: trip(), created: true });
+    setup();
+    await flushAsync();
+    await act(async () => {
+      await sink.current!.startTrip(null);
+    });
+
+    reporter.flush.mockResolvedValue(false);
+    api.end.mockResolvedValue({ trip: trip({ status: 'completed', end_reason: 'user' }) });
+    const longAgo = new Date(Date.now() - 11 * 60_000).toISOString();
+    let ended: FieldTripDto | null = null;
+    await act(async () => {
+      ended = await sink.current!.endTrip({ latitude: 6.5, longitude: 3.3, accuracyMeters: 5, recordedAt: longAgo });
+    });
+
+    expect(ended).not.toBeNull();
+    expect(api.end).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isTripNotActiveError', () => {
+  it('matches only the server "not active" refusal', () => {
+    expect(isTripNotActiveError({ status: 422, message: 'Field activity session is not active.' })).toBe(true);
+    expect(isTripNotActiveError({ status: 422, message: 'The points field is required.' })).toBe(false);
+    expect(isTripNotActiveError({ status: 500, message: 'not active' })).toBe(false);
   });
 });

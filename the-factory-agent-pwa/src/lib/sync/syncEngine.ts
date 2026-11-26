@@ -26,6 +26,8 @@ import { crmKeys } from '@/features/crm/queryKeys';
 import { locationKeys } from '@/features/locations/queryKeys';
 import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 import { withLocationUploadLock } from '@/lib/sync/locationUploadLock';
+import { isTripNotActiveError, notifyFieldTripServerEnded } from '@/features/field-trip/serverEnded';
+import { pruneSyncedLocationRows } from '@/lib/sync/locationQueueMaintenance';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
@@ -96,6 +98,8 @@ async function syncLocationQueue(): Promise<void> {
   const fallbackCompanyId = getActiveCompanyId();
 
   await withLocationUploadLock(async () => {
+    // Uploaded points older than 48 h are no longer needed on the phone.
+    await pruneSyncedLocationRows().catch(() => 0);
     const db = await getDb();
     const pending = await db.getAllFromIndex('locationQueue', 'by-synced', 0);
     const runnable = pending.filter(
@@ -183,10 +187,11 @@ async function syncLocationQueue(): Promise<void> {
           }
         }
         await tx.done;
+        if (isTripNotActiveError(apiError)) notifyFieldTripServerEnded(sessionId);
       }
     }
 
-    const byTask = taskRows.reduce<Record<number, typeof taskRows>>((acc, row) => {
+    const byTask =taskRows.reduce<Record<number, typeof taskRows>>((acc, row) => {
       const existing = acc[row.taskId];
       if (existing) existing.push(row);
       else acc[row.taskId] = [row];

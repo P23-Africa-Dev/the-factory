@@ -19,6 +19,20 @@ const GPS_LABEL = {
   lost: 'GPS lost — keep the app open',
 } as const;
 
+function useOnline(): boolean {
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
+}
+
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -48,6 +62,7 @@ export function FieldTripCard({
   const [busy, setBusy] = useState(false);
   const active = trip.local != null;
   const now = useNow(active);
+  const online = useOnline();
 
   const onReady = useCallback(
     async (position: TripPosition | null) => {
@@ -111,9 +126,23 @@ export function FieldTripCard({
           <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-white/70">
             {server ? `${formatDistance(server.distance_meters)} · ${plural(server.stop_count, 'stop')}` : 'Recording your route'}
             <span aria-hidden>·</span>
-            {trip.synced ? <Wifi size={11} /> : <WifiOff size={11} />}
-            <span>{trip.synced ? GPS_LABEL[trip.gps] : 'Offline — will sync'}</span>
+            {online ? <Wifi size={11} /> : <WifiOff size={11} />}
+            <span>
+              {ending
+                ? online
+                  ? 'Saving your route…'
+                  : 'Saved on this phone · uploads when online'
+                : !online || !trip.synced
+                  ? `Offline · ${GPS_LABEL[trip.gps]} · will sync`
+                  : GPS_LABEL[trip.gps]}
+            </span>
           </p>
+          {!ending && trip.gps === 'lost' && (
+            <p className="mt-2 rounded-xl bg-[#FBBF24]/10 px-3 py-2 text-[11px] text-[#FBBF24]">
+              No GPS for over 2 minutes. Check that Location is on and set to precise, and that the app may use
+              location all the time.
+            </p>
+          )}
           {browserAndroid && (
             <p className="mt-2 rounded-xl bg-white/5 px-3 py-2 text-[11px] text-white/75">
               Keep this screen open. For tracking while the phone is locked,{' '}
@@ -184,7 +213,8 @@ export function FieldTripCard({
       {trip.lastEnded && (
         <div className="mb-3 flex items-center justify-between rounded-[18px] bg-white/5 px-4 py-2.5 text-white">
           <p className="text-[12px] text-white/80">
-            Trip saved · {formatDistance(trip.lastEnded.distance_meters)} · {plural(trip.lastEnded.stop_count, 'stop')}
+            {trip.lastEnded.end_reason === 'auto_no_signal' ? 'Trip ended automatically (no location)' : 'Trip saved'} ·{' '}
+            {formatDistance(trip.lastEnded.distance_meters)} · {plural(trip.lastEnded.stop_count, 'stop')}
           </p>
           <Link
             href={`${journeyBasePath}/${trip.lastEnded.id}`}

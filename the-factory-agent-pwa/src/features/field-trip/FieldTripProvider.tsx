@@ -7,6 +7,8 @@ import type { ApiError } from '@/types';
 import { fieldTripApi } from './api';
 import { newClientId, useFieldTripStore } from './store';
 import { useFieldTripReporter } from './useFieldTripReporter';
+import { onFieldTripServerEnded } from './serverEnded';
+import { deleteTripRows } from '@/lib/sync/locationQueueMaintenance';
 import type { FieldTripCurrent, FieldTripDto, GpsHealth, LocalTrip, TripPosition } from './types';
 
 export const fieldTripKeys = {
@@ -14,6 +16,8 @@ export const fieldTripKeys = {
 };
 
 const RETRY_MS = 20_000;
+/** How long End waits for the last points to upload before ending anyway. */
+const END_WAIT_FOR_POINTS_MS = 10 * 60_000;
 
 /** Server answer plus when it was requested (to spot stale answers). */
 type CurrentWithStamp = FieldTripCurrent & { requestedAt?: number };
@@ -110,18 +114,50 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
     void queryClient.invalidateQueries({ queryKey: fieldTripKeys.current });
   }, [queryClient]);
 
-  const onServerEnded = useCallback(() => {
-    refresh();
-  }, [refresh]);
-
   const { flush } = useFieldTripReporter({
-    active: local != null,
+    // Recording stops the moment End is tapped; uploading continues until done.
+    active: local != null && local.phase === 'active',
     clientTripId: local?.clientTripId ?? null,
     serverId: local?.serverId ?? null,
     movingIntervalSeconds: current?.settings.moving_interval_seconds,
     stationaryIntervalSeconds: current?.settings.stationary_interval_seconds,
-    onServerEnded,
   });
+
+  // An upload was refused because the server already ended this trip (auto-ended
+  // for no location, or ended on another device): stop recording right away,
+  // even in the background where the status check does not run.
+  /**
+   * The server ended this trip (auto-ended for no location, or on another
+   * device): stop here and show how it ended. End is idempotent on the server,
+   * so asking again simply returns the saved trip with its reason.
+   */
+  const adoptServerEnd = useCallback(
+    (serverId: number) => {
+      endedIdsRef.current.add(serverId);
+      lastMutationAtRef.current = Date.now();
+      setLocal(null);
+      writeCurrent(null);
+      refresh();
+      void fieldTripApi
+        .end(serverId, { endedAt: new Date().toISOString(), position: null })
+        .then((res) => {
+          setLastEnded(res.trip);
+          toast.info('Your field trip has ended', reasonMessage(res.trip));
+        })
+        .catch(() => toast.info('Your field trip has ended', reasonMessage(null)));
+    },
+    [refresh, setLocal, writeCurrent],
+  );
+
+  useEffect(
+    () =>
+      onFieldTripServerEnded((sessionId) => {
+        const trip = useFieldTripStore.getState().local;
+        if (!trip || trip.serverId !== sessionId) return;
+        adoptServerEnd(sessionId);
+      }),
+    [adoptServerEnd],
+  );
 
   // ── Send a queued start (offline start, or a failed request) ──────────────
   const syncStart = useCallback((): Promise<FieldTripDto | null> => {
@@ -144,8 +180,10 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
         return res.trip;
       } catch (error) {
         if (!isNetworkError(error)) {
-          // Refused (e.g. field trips turned off): drop the local trip.
+          // Refused (e.g. field trips turned off): drop the local trip and
+          // the points recorded for it (they can never be uploaded).
           useFieldTripStore.getState().setLocal(null);
+          void deleteTripRows(trip.clientTripId).catch(() => {});
           toast.error('Could not start field trip', (error as ApiError).message);
         }
         return null;
@@ -167,7 +205,14 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
 
     const promise = (async (): Promise<FieldTripDto | null> => {
       try {
-        await flush().catch(() => {});
+        // Every point first: once the trip is ended the server refuses more,
+        // so ending with points still on the phone would cut the route short.
+        // Not uploaded yet (offline / server error) → stay "ending", retry.
+        const allSent = await flush().catch(() => false);
+        const waitingMs = Date.now() - Date.parse(trip.endRequestedAt ?? new Date().toISOString());
+        // Never stuck on "ending": after a while end anyway (the server keeps
+        // accepting this trip's late points for a grace period).
+        if (!allSent && waitingMs < END_WAIT_FOR_POINTS_MS) return null;
         // Stop any status check already on its way: it predates this end.
         await queryClient.cancelQueries({ queryKey: fieldTripKeys.current });
         const res = await fieldTripApi.end(serverId, {
@@ -243,10 +288,9 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
 
     if (trip && trip.serverId != null && trip.phase === 'active' && server?.id !== trip.serverId) {
       // Ended on the server (auto-ended for no location, or on another device).
-      setLocal(null);
-      toast.info('Your field trip has ended', reasonMessage(null));
+      adoptServerEnd(trip.serverId);
     }
-  }, [current, setLocal]);
+  }, [current, setLocal, adoptServerEnd]);
 
   const startTrip = useCallback(
     async (position: TripPosition | null): Promise<boolean> => {
