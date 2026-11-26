@@ -14,20 +14,20 @@ export function PayrollHistory({ entries = [], currency = PAYROLL_DEFAULT_CURREN
 
   return (
     <div className="mt-6">
-      <h3 className="text-[16px] font-bold text-[#0B1215] mb-4">
+      <h3 className="text-[16px] font-bold text-white mb-4">
         Payroll History
       </h3>
 
       <div className="max-h-[420px] overflow-y-auto pr-1 space-y-3">
         {historyData.length === 0 ? (
-          <div className="rounded-[30px] sm:rounded-full px-5 sm:px-7.25 py-4 border-t border-[#CDCDCD] bg-[#F8F9FA] text-[12px] text-gray-400">
+          <div className="rounded-[30px] sm:rounded-full px-5 sm:px-7.25 py-4 border-t border-[#CDCDCD] bg-[#F8F9FA] text-[12px] text-gray-400 shadow-[0_4px_8px_rgba(0,0,0,0.2)]">
             No payroll history available.
           </div>
         ) : (
           historyData.map((entry) => (
             <div
               key={entry.id}
-              className={`rounded-[30px] sm:rounded-full px-5 sm:px-7.25 py-4 border-t border-[#CDCDCD] ${entry.status === "Pending" ? "bg-[#FFFFEF]" : "bg-[#E3F4FB]"
+              className={`rounded-[30px] sm:rounded-full px-5 sm:px-7.25 py-4 border-t border-[#CDCDCD] shadow-[0_4px_8px_rgba(0,0,0,0.2)] ${entry.status === "Pending" ? "bg-[#FFFFEF]" : "bg-[#E3F4FB]"
                 }`}
             >
               <div className="flex flex-wrap gap-4.5">

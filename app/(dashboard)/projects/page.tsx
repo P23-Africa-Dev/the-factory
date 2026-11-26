@@ -53,7 +53,7 @@ function ProjectsContent() {
   // };
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="app-workspace-bg min-h-screen p-4 md:p-6 lg:p-8">
       <div className="max-w-400 mx-auto flex flex-col gap-5">
         {/* ── Tabs ── */}
         <div className="flex items-center gap-4 relative z-20 w-fit">
@@ -94,7 +94,7 @@ export default function ProjectsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F4F7F9] p-8 flex items-center justify-center font-bold text-gray-400">
+        <div className="app-workspace-bg min-h-screen p-8 flex items-center justify-center font-bold text-white/60">
           Loading Projects...
         </div>
       }

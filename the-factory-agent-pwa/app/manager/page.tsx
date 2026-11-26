@@ -51,6 +51,7 @@ import {
 } from '@/manager/features/meetings';
 import { useUnreadCount } from '@/manager/features/notifications';
 import { NotificationPanel } from '@/manager/features/notifications/components/NotificationPanel';
+import { useNotificationDrawerState } from '@/manager/features/notifications';
 import { assistantApi } from '@/manager/features/assistant/api';
 import { resolveAssistantGeolocationContext } from '@/manager/features/assistant/geolocation';
 import {
@@ -139,7 +140,7 @@ export default function ManagerHomeScreen() {
   const { canAccessPayroll } = useManagerPermissions();
 
   // Notification drawer
-  const [notifOpen, setNotifOpen] = useState(false);
+  const { isOpen: notifOpen, openDrawer: openNotifDrawer, closeDrawer: closeNotifDrawer } = useNotificationDrawerState();
   const { data: unreadCount = 0 } = useUnreadCount();
 
   // Profile dropdown
@@ -492,7 +493,7 @@ export default function ManagerHomeScreen() {
           </div>
 
           <button
-            onClick={() => setNotifOpen(true)}
+            onClick={openNotifDrawer}
             className="relative w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors focus:outline-none"
           >
             <Bell size={20} className="text-white" />
@@ -1065,7 +1066,7 @@ export default function ManagerHomeScreen() {
       </AnimatePresence>
 
       {/* ─── Modals ─── */}
-      <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <NotificationPanel open={notifOpen} onClose={closeNotifDrawer} />
 
       <AddLeadModal
         visible={addLeadVisible}

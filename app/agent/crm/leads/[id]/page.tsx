@@ -132,7 +132,7 @@ function NotesPanel({ leadId, notes = [], basePath = "/agent" }: { leadId: strin
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 min-h-[500px]">
+    <div className="flex flex-col h-full bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] border border-gray-100 min-h-[500px]">
       <div className="flex items-center gap-3 sm:gap-4 mb-6 pb-4 border-b border-gray-100">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-orange-50 flex items-center justify-center border border-orange-100 shadow-sm shrink-0">
           <FileText size={18} className="text-orange-600" />
@@ -151,7 +151,7 @@ function NotesPanel({ leadId, notes = [], basePath = "/agent" }: { leadId: strin
           </div>
         ) : (
           notes.map((note) => (
-            <div key={note.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+            <div key={note.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[12px] font-semibold text-gray-700">{note.creator?.name || "System"}</span>
                 <span className="text-[10px] text-gray-400">
@@ -169,12 +169,12 @@ function NotesPanel({ leadId, notes = [], basePath = "/agent" }: { leadId: strin
           value={noteContent}
           onChange={(e) => setNoteContent(e.target.value)}
           placeholder="Type a new note..."
-          className="w-full h-[100px] resize-none outline-none text-[13px] text-[#374151] placeholder:text-gray-300 bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3"
+          className="w-full h-[100px] resize-none outline-none text-[13px] text-[#374151] placeholder:text-gray-300 bg-gray-50 border border-gray-200 rounded-xl p-3 mb-3 shadow-[0_2px_6px_rgba(0,0,0,0.06)]"
         />
         <button
           onClick={handleAddNote}
           disabled={!noteContent.trim() || isPending}
-          className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[12px] text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[12px] text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_10px_rgba(11,18,21,0.25)] cursor-pointer"
         >
           {isPending ? "Saving..." : "Add Note"}
         </button>
@@ -204,7 +204,7 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/agent" }: { lea
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 min-h-[500px]">
+    <div className="flex flex-col h-full bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] border border-gray-100 min-h-[500px]">
       <div className="flex items-center gap-3 sm:gap-4 mb-6 pb-4 border-b border-gray-100">
         <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100 shadow-sm shrink-0">
           <Activity size={18} className="text-blue-600" />
@@ -227,7 +227,7 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/agent" }: { lea
               <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm">
                 <Activity size={16} className="text-gray-500" />
               </div>
-              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+              <div className="flex-1 bg-gray-50 p-4 rounded-2xl border border-gray-100 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[13px] font-semibold text-gray-700 capitalize">{act.type.replace('_', ' ')}</span>
                   <span className="text-[10px] text-gray-400">
@@ -254,19 +254,19 @@ function ActivitiesPanel({ leadId, activities = [], basePath = "/agent" }: { lea
             { value: "status_change", label: "Status Change" },
             { value: "other", label: "Other" },
           ]}
-          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-[13px] text-gray-700"
+          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-[13px] text-gray-700 shadow-[0_2px_6px_rgba(0,0,0,0.06)]"
         />
         <input
           type="text"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Activity description..."
-          className="w-full outline-none text-[13px] text-[#374151] placeholder:text-gray-300 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5"
+          className="w-full outline-none text-[13px] text-[#374151] placeholder:text-gray-300 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 shadow-[0_2px_6px_rgba(0,0,0,0.06)]"
         />
         <button
           onClick={handleLogActivity}
           disabled={!description.trim() || isPending}
-          className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[12px] text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[12px] text-[13px] font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_4px_10px_rgba(11,18,21,0.25)] cursor-pointer"
         >
           {isPending ? "Logging..." : "Log Activity"}
         </button>
@@ -298,22 +298,22 @@ function LeadInteractionPanel({
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-[500px]">
-      <div className="flex items-center gap-2 mb-4 bg-gray-100/50 p-1 rounded-2xl w-fit">
+      <div className="flex items-center gap-2 mb-4 bg-white/10 border border-white/15 backdrop-blur-sm p-1 rounded-2xl w-fit shadow-[0_-2px_8px_rgb(255_255_255_/_15%),0_4px_10px_rgb(0_0_0_/_35%)]">
         <button
           onClick={() => setActiveTab("emails")}
-          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all ${activeTab === "emails" ? "bg-white text-[#0B1215] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all cursor-pointer ${activeTab === "emails" ? "bg-white text-[#0B1215] shadow-sm" : "text-white/70 hover:text-white"}`}
         >
           Emails
         </button>
         <button
           onClick={() => setActiveTab("notes")}
-          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all ${activeTab === "notes" ? "bg-white text-[#0B1215] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all cursor-pointer ${activeTab === "notes" ? "bg-white text-[#0B1215] shadow-sm" : "text-white/70 hover:text-white"}`}
         >
           Notes
         </button>
         <button
           onClick={() => setActiveTab("activities")}
-          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all ${activeTab === "activities" ? "bg-white text-[#0B1215] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          className={`px-5 py-2 rounded-[14px] text-[12px] font-semibold transition-all cursor-pointer ${activeTab === "activities" ? "bg-white text-[#0B1215] shadow-sm" : "text-white/70 hover:text-white"}`}
         >
           Activities
         </button>
@@ -359,7 +359,7 @@ function PillDropdown({
       <button
         onClick={() => !disabled && setOpen((p) => !p)}
         disabled={disabled}
-        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium transition-opacity hover:opacity-85"
+        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-medium transition-opacity hover:opacity-85 shadow-[0_2px_6px_rgba(0,0,0,0.18)]"
         style={{ backgroundColor: color }}
       >
         {value}
@@ -645,17 +645,17 @@ export default function LeadDetailsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F4F7F9] p-4 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-[#0B1215]/20 border-t-[#0B1215] rounded-full animate-spin" />
+      <div className="app-workspace-bg min-h-screen p-4 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-white/20 border-t-white rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!leadData) {
     return (
-      <div className="min-h-screen bg-[#F4F7F9] p-4 flex flex-col items-center justify-center">
-        <h2 className="text-xl font-bold text-gray-800">Lead not found</h2>
-        <button onClick={() => router.back()} className="mt-4 text-blue-500 hover:underline">Go back</button>
+      <div className="app-workspace-bg min-h-screen p-4 flex flex-col items-center justify-center">
+        <h2 className="text-xl font-bold text-white">Lead not found</h2>
+        <button onClick={() => router.back()} className="mt-4 text-[#2ae9c9] hover:underline">Go back</button>
       </div>
     );
   }
@@ -676,24 +676,25 @@ export default function LeadDetailsPage() {
   const selectedStatusOption = statusOptions.find((option) => option.value === selectedStatusValue);
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-10">
+    <div className="app-workspace-bg min-h-screen p-4 md:p-6 lg:p-10">
       <div className="max-w-[1500px] mx-auto flex flex-col gap-8">
         {/* -- Header ---------------------------------------- */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="p-2 rounded-xl hover:bg-white/80 transition-all shrink-0"
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] hover:opacity-90 transition-all shrink-0 cursor-pointer"
               id="lead-back-btn"
             >
-              <ArrowLeft size={22} className="text-[#0B1215]" />
+              <ArrowLeft size={18} className="text-[#0B1215]" />
             </button>
-            <h1 className="text-[20px] sm:text-[22px] font-semibold text-[#0B1215] tracking-tight truncate">
+            <h1 className="text-[20px] sm:text-[22px] font-semibold text-white tracking-tight truncate">
               Lead Details
             </h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Add New Lead button commented out per request
             <button
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 bg-white rounded-[14px] text-[13px] font-semibold text-[#64748B] hover:border-gray-300 transition-all shadow-sm whitespace-nowrap"
               id="add-new-lead-btn"
@@ -702,14 +703,15 @@ export default function LeadDetailsPage() {
               <span className="hidden min-[480px]:inline">Add New Lead</span>
               <span className="min-[480px]:hidden">Add</span>
             </button>
+            */}
             {isEditing ? (
               <button
                 onClick={handleSave}
                 disabled={isUpdating}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg disabled:opacity-70"
+                className="se-primary flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 text-[13px] font-bold transition-all disabled:opacity-70 cursor-pointer"
                 id="save-lead-btn"
               >
-                {isUpdating ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
+                {isUpdating ? <div className="w-4 h-4 border-2 border-[#022228]/30 border-t-[#022228] rounded-full animate-spin" /> : <Save size={16} />}
                 {isUpdating ? "Saving..." : "Save"}
               </button>
             ) : (
@@ -720,7 +722,7 @@ export default function LeadDetailsPage() {
                 <button
                   onClick={startEditing}
                   disabled={!canEditContacts}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0B1215] text-white rounded-[14px] text-[13px] font-bold hover:opacity-90 transition-all shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
+                  className="se-primary w-full flex items-center justify-center gap-2 px-6 py-2.5 text-[13px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer"
                   id="edit-lead-btn"
                 >
                   <Pencil size={16} />
@@ -736,10 +738,10 @@ export default function LeadDetailsPage() {
           {/* -- LEFT COLUMN -------------------------------- */}
           <div className="flex-[1.2] flex flex-col gap-8 min-w-[50%]">
             {/* -- Hero Card (dark) ------------------------- */}
-            <div className="bg-[#0B1A1E] rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col sm:flex-row gap-6 sm:gap-8">
+            <div className="se-stat-card rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 flex flex-col sm:flex-row gap-6 sm:gap-8">
               {/* Left Part: White Info Card */}
               <div className="flex flex-col items-center gap-4 shrink-0 w-full sm:w-[180px]">
-                <div className="bg-white rounded-[24px] sm:rounded-[28px] p-4 shadow-xl flex flex-col items-center w-full">
+                <div className="bg-white rounded-[24px] sm:rounded-[28px] p-4 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] flex flex-col items-center w-full">
                   <div className="relative w-24 sm:w-full aspect-square mb-4">
                     <div className="absolute inset-0 bg-black/20 rounded-[22px] blur-xl translate-y-4" />
                     <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-[#E8ECF1]">
@@ -803,17 +805,16 @@ export default function LeadDetailsPage() {
               {/* Right Part: Fields & Map */}
               <div className="flex-1 flex flex-col gap-6 w-full min-w-0">
                 {isEditing ? (
-                  <div className="rounded-[20px] bg-white p-4 sm:p-5">
-                    <LeadContactsSlider
-                      contacts={editForm.contacts}
-                      activeIndex={activeContactIndex}
-                      errors={contactErrors}
-                      onActiveIndexChange={setActiveContactIndex}
-                      onChange={updateContact}
-                      onAdd={addContact}
-                      onRemove={removeContact}
-                    />
-                  </div>
+                  <LeadContactsSlider
+                    contacts={editForm.contacts}
+                    activeIndex={activeContactIndex}
+                    errors={contactErrors}
+                    variant="dark"
+                    onActiveIndexChange={setActiveContactIndex}
+                    onChange={updateContact}
+                    onAdd={addContact}
+                    onRemove={removeContact}
+                  />
                 ) : (
                   <LeadContactHeroSlider contacts={leadContacts} />
                 )}
@@ -883,14 +884,14 @@ export default function LeadDetailsPage() {
                   </div>
                 </div>
                 {/* Map */}
-                <div className="w-full h-[160px] sm:flex-1 rounded-[24px] overflow-hidden shadow-inner">
+                <div className="w-full h-[160px] sm:flex-1 rounded-[24px] overflow-hidden border border-white/10 shadow-[0_4px_14px_rgba(0,0,0,0.45)]">
                   <MapPreview name={leadData.name} location={leadDisplay.mapLocationLabel} />
                 </div>
               </div>
             </div>
 
             {/* -- Lead Details Card ------------------------ */}
-            <div className="bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex-1">
+            <div className="bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] border border-gray-100 flex-1">
               <div className="flex items-center gap-4 mb-8 pb-4 border-b border-gray-100">
                 <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100 shadow-sm">
                   <Info size={20} className="text-[#0B1215]" />

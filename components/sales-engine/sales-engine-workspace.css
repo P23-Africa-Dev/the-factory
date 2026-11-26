@@ -108,7 +108,7 @@
 .se-workspace .se-table-row.se-table-row-active [class*="text-[#09232d]"] {
   color: white;
 }
-.se-workspace :is(.se-list-row, .se-lead-card):is(:hover, :focus-visible) :is(p, span:not([class*="capitalize"])),
+.se-workspace :is(.se-list-row, .se-lead-card):is(:hover, :focus-visible) :is(p, span:not([class*="capitalize"])):not([data-status-menu] *),
 .se-workspace .se-list-row.se-table-row-active > span {
   color: white;
 }

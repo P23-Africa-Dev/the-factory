@@ -523,7 +523,7 @@ function JourneyHistoryContent() {
 
 export default function JourneyHistoryPage() {
   return (
-    <div className="min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
+    <div className="app-workspace-bg min-h-screen p-4 md:p-6 lg:p-8">
       <Suspense
         fallback={
           <div className="min-h-[50vh] flex items-center justify-center text-gray-400 font-bold text-sm">

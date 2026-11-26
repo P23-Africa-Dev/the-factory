@@ -52,13 +52,14 @@ const NotificationPanel = dynamic(
   () => import('@/features/notifications/components/NotificationPanel').then((m) => m.NotificationPanel),
   { ssr: false },
 );
+import { useNotificationDrawerState } from '@/features/notifications';
 
 export default function AgentDashboardPage() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const { isOpen: isNotificationOpen, openDrawer: openNotifications, closeDrawer: closeNotifications } = useNotificationDrawerState();
   const [locationQuery, setLocationQuery] = useState('');
   const [locationResults, setLocationResults] = useState<
     Array<{
@@ -494,7 +495,7 @@ export default function AgentDashboardPage() {
                     <img src="/assets/search-icon.png" alt="Search" className="w-12 h-12 object-contain" />
                   </button>
                   <button
-                    onClick={() => setIsNotificationOpen(true)}
+                    onClick={openNotifications}
                     className="relative w-12 h-12 flex items-center justify-center bg-transparent focus:outline-none"
                   >
                     <img src="/assets/notification-icon.png" alt="Notification" className="w-12 h-12 object-contain" />
@@ -842,7 +843,7 @@ export default function AgentDashboardPage() {
       </div>
 
       {isNotificationOpen ? (
-        <NotificationPanel open onClose={() => setIsNotificationOpen(false)} />
+        <NotificationPanel open onClose={closeNotifications} />
       ) : null}
 
       {isAddLeadOpen ? (

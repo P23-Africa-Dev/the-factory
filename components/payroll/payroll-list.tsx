@@ -64,7 +64,7 @@ export function PayrollList({
     : source;
 
   return (
-    <div className="bg-white rounded-[30px] pt-5.75 px-4 sm:px-10 pb-6 flex-1 min-w-0 flex flex-col h-auto lg:h-140 shadow-[0px_1px_3px_0px_#0000004D,0px_4px_8px_3px_#00000026]">
+    <div className="bg-white rounded-[30px] pt-5.75 px-4 sm:px-10 pb-6 flex-1 min-w-0 flex flex-col h-auto lg:h-140 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)]">
       {/* Header */}
       {!showViewAll && (
         <div className="flex justify-end mb-7 shrink-0">
@@ -85,7 +85,7 @@ export function PayrollList({
             <div
               key={agent.id}
               onClick={() => onSelect(agent.id)}
-              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer ${isSelected ? "bg-dash-dark" : "bg-[#F8F9FA]"
+              className={`flex border-[#E8E5E5] border-[0.8px] items-center gap-3 sm:gap-5 rounded-[30px] pr-4 sm:pr-5 overflow-hidden cursor-pointer shadow-[0_4px_4px_-1px_rgb(12_12_13_/_10%),0_4px_4px_-1px_rgb(12_12_13_/_5%)] transition-shadow hover:shadow-[0_6px_10px_-1px_rgb(12_12_13_/_16%)] ${isSelected ? "bg-dash-dark" : "bg-[#F8F9FA]"
                 }`}
             >
               <div className={`w-5 self-stretch shrink-0 rounded-l-[30px] ${isSelected ? "" : "bg-[#83C4F8]"}`} />

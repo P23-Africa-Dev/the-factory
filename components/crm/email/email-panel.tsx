@@ -140,7 +140,7 @@ export function EmailPanel({
 
     if (!resolvedLeadEmail) {
         return (
-            <div className="flex-1 bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col min-h-[500px]">
+            <div className="flex-1 bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] border border-gray-100 flex flex-col min-h-[500px]">
                 <EmailConnectionBanner companyId={companyId} />
                 <div className="flex-1 flex flex-col items-center justify-center py-20">
                     <div className="mb-8 opacity-20 grayscale scale-125">
@@ -155,7 +155,7 @@ export function EmailPanel({
     }
 
     return (
-        <div className="flex-1 bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] border border-gray-100 flex flex-col min-h-[500px]">
+        <div className="flex-1 bg-white rounded-[24px] sm:rounded-[32px] p-6 sm:p-8 shadow-[0_-3px_9px_rgb(255_255_255_/_25%),0_6px_12px_rgb(0_0_0_/_45%)] border border-gray-100 flex flex-col min-h-[500px]">
             <EmailConnectionBanner companyId={companyId} />
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-100">

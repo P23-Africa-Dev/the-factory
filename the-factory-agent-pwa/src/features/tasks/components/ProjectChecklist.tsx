@@ -306,14 +306,7 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
               {step.dueAt && <time dateTime={step.dueAt} className={!locked && !step.done && overdue(step.dueAt) ? 'ml-2 text-[#ff8774]' : 'ml-2'}>{new Date(step.dueAt).toLocaleString()}</time>}
             </p>
           </div>
-          {compact && canEdit && index === 0 && <div className="flex gap-2">
-            <input aria-label="Subtask" placeholder="Subtask" className="min-w-0 flex-1 rounded bg-black/30 p-2"
-              value={title} onChange={(event) => setTitle(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
-            <button type="button" disabled={!title.trim() || busy} className="rounded bg-[#75ADAF] px-2 font-semibold text-[#0A1D25] disabled:opacity-50"
-              onClick={saveStep}>Add Subtask</button>
-          </div>}
-          {!compact && canEdit && <>
+          {!compact && canEdit && <div className="flex items-center gap-2 shrink-0">
             <button type="button" aria-label={`Edit ${step.title}`} disabled={busy} onClick={() => {
               setEditing(step.id); setTitle(step.title); setAssignee(step.assigneeId); setError('');
             }}>Edit</button>
@@ -326,16 +319,16 @@ export function ProjectChecklist({ task, compact = false, agents = [] }: {
               void run(() => taskApi.deleteSubtask(task.id, step.id));
               if (editing === step.id) resetForm();
             }}>×</button>
-          </>}
+          </div>}
         </div>
       ))}
       {compact && steps.length > 3 && <p className="text-white/60">+{steps.length - 3} more</p>}
-      {compact && canEdit && !steps.length && (
-        <div className="flex gap-2">
+      {compact && canEdit && (
+        <div className="flex flex-col min-[340px]:flex-row gap-2 pt-1">
           <input aria-label="Subtask" placeholder="Subtask" className="min-w-0 flex-1 rounded bg-black/30 p-2"
             value={title} onChange={(event) => setTitle(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveStep(); } }} />
-          <button type="button" disabled={!title.trim() || busy} className="rounded bg-[#75ADAF] px-2 font-semibold text-[#0A1D25] disabled:opacity-50"
+          <button type="button" disabled={!title.trim() || busy} className="shrink-0 rounded bg-[#75ADAF] px-3 py-2 font-semibold text-[#0A1D25] disabled:opacity-50"
             onClick={saveStep}>Add Subtask</button>
         </div>
       )}

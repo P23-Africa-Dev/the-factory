@@ -41,16 +41,17 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
   };
 
   return (
-    <main className="min-h-screen bg-[#0A1D25] text-white pb-24 pt-[calc(env(safe-area-inset-top,0px)+20px)] font-sans">
-      <header className="px-5 mb-4">
+    <main className="min-h-screen bg-[#0A1D25] text-white pb-24 pt-[calc(env(safe-area-inset-top,0px)+20px)] font-sans overflow-x-hidden">
+      <div className="max-w-3xl mx-auto w-full">
+      <header className="px-4 sm:px-5 mb-4">
         <div className="flex items-center gap-2 mb-2 text-[#75ADAF]">
           <ArrowLeft size={16} />
           <Link href="/manager" className="text-xs font-bold uppercase tracking-wider">
             Back to Dashboard
           </Link>
         </div>
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-bold text-white">Team Field Activity</h1>
             <p className="mt-1 text-xs text-[#8F9098]">
               Monitor live agent journeys, total field distance, client visits, and stop analytics.
@@ -67,7 +68,7 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
             </button>
             <Link
               href="/manager/field-activity/journeys"
-              className="rounded-full bg-[#75ADAF]/20 border border-[#75ADAF]/40 px-3 py-1.5 text-xs font-semibold text-[#75ADAF]"
+              className="rounded-full bg-[#75ADAF]/20 border border-[#75ADAF]/40 px-3 py-1.5 text-xs font-semibold text-[#75ADAF] whitespace-nowrap"
             >
               Agent Journeys
             </Link>
@@ -77,9 +78,9 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
 
       {/* Organization Field Activity Settings Drawer */}
       {showSettings && (
-        <div className="mx-5 mb-4 p-4 rounded-2xl bg-[#0B3343] border border-white/10 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
+        <div className="mx-4 sm:mx-5 mb-4 p-4 rounded-2xl bg-[#0B3343] border border-white/10 shadow-lg">
+          <div className="flex flex-col min-[380px]:flex-row min-[380px]:items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                 Automatic Journey Tracking
               </h3>
@@ -91,7 +92,7 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
               type="button"
               onClick={() => handleToggleTracking(!(settings?.enabled ?? true))}
               disabled={updateSettingsMutation.isPending}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+              className={`shrink-0 self-start min-[380px]:self-center px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
                 (settings?.enabled ?? true)
                   ? 'bg-emerald-500 text-white'
                   : 'bg-white/10 text-white/60'
@@ -107,9 +108,9 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
       <FieldActivitySummaryCard />
 
       {/* Team Analytics Breakdown */}
-      <section className="px-5 mt-5">
+      <section className="px-4 sm:px-5 mt-5">
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <Users className="w-4 h-4 text-[#75ADAF]" />
               Live Field Agents ({liveAgents.length})
@@ -162,7 +163,7 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
       </section>
 
       {analytics && (
-        <section className="px-5 mt-4 grid grid-cols-2 gap-3">
+        <section className="px-4 sm:px-5 mt-4 grid grid-cols-1 min-[340px]:grid-cols-2 gap-3">
           <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
             <span className="text-[10px] uppercase tracking-wider text-white/50 font-bold">
               Team Distance
@@ -182,6 +183,7 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
           </div>
         </section>
       )}
+      </div>
     </main>
   );
 }

@@ -32,7 +32,7 @@ import { PipelineManagerModal } from "@/components/crm/crm-toolbar-modals";
 import type { ApiLeadStatus, LeadCustomFields } from "@/lib/api/crm";
 import { resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { readCustomFields } from "@/lib/crm/custom-fields";
-import { LeadColumnMenu, LeadCustomColumnCells, LeadCustomColumnHeaders, leadListGridTemplate, useHiddenLeadColumns } from "@/components/crm/lead-list-columns";
+import { LeadColumnMenu, LeadCustomColumnCells, LeadCustomColumnHeaders, leadListGridTemplate, leadListMinWidth, useHiddenLeadColumns } from "@/components/crm/lead-list-columns";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
 import { toast } from "sonner";
 
@@ -58,42 +58,71 @@ function StatusDropdown({
   value,
   color,
   options,
+  open,
+  onOpenChange,
   onChange,
 }: {
   value: ApiLeadStatus;
   color: string;
   options: Array<{ label: string; value: ApiLeadStatus; color: string }>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onChange: (value: ApiLeadStatus, color: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const label = options.find((option) => option.value === value)?.label ?? "New Lead";
 
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        onOpenChange(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onOpenChange]);
+
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <button
-        onClick={() => setOpen((p) => !p)}
-        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-semibold transition-opacity hover:opacity-85"
+        type="button"
+        onClick={() => onOpenChange(!open)}
+        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-[11px] font-semibold transition-opacity hover:opacity-85 cursor-pointer"
         style={{ backgroundColor: color }}
       >
         {label}
         <ChevronDown size={11} />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]">
+        <div
+          data-status-menu=""
+          className="absolute z-50 top-full mt-1 left-0 bg-white text-[#0B1215] rounded-xl shadow-xl border border-gray-100 py-1.5 min-w-[150px]"
+        >
           {options.map((s) => (
             <button
               key={s.value}
+              type="button"
               onClick={() => {
                 onChange(s.value, s.color);
-                setOpen(false);
+                onOpenChange(false);
               }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[#0B1215] hover:bg-gray-100 transition-colors text-left cursor-pointer"
             >
               <span
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{ backgroundColor: s.color }}
               />
-              <span className="text-[12px] text-[#0B1215] font-medium">{s.label}</span>
+              <span className="text-[12px] text-[#0B1215] font-medium" style={{ color: "#0B1215" }}>
+                {s.label}
+              </span>
             </button>
           ))}
         </div>
@@ -119,6 +148,7 @@ export default function AllLeadsPage() {
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [openStatusLeadId, setOpenStatusLeadId] = useState<string | null>(null);
 
   const sourceParam = (filters.source ?? "").trim().toLowerCase();
   const agentUploadScope = [
@@ -240,6 +270,7 @@ export default function AllLeadsPage() {
     && leadColumns.visible(`custom:${field.key}`),
   );
   const listGridStyle = { gridTemplateColumns: leadListGridTemplate(leadColumns.visible, visibleCustomFields.length) };
+  const tableMinWidth = leadListMinWidth(leadColumns.visible, visibleCustomFields.length);
 
 
   const toggleAll = () => {
@@ -496,9 +527,10 @@ export default function AllLeadsPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="flex-1 min-h-0 overflow-x-auto flex flex-col">
+          <div className="w-full flex-1 min-h-0 flex flex-col" style={{ minWidth: `${tableMinWidth}px` }}>
           {/* Column headers */}
-          <div className="grid min-w-max gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
+          <div className="grid w-full gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
             <div />
             {leadColumns.visible("name") && (
             <div className="bg-[#3B82F6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
@@ -579,11 +611,12 @@ export default function AllLeadsPage() {
             )}
             {leads.map((lead) => {
               const isSelected = selected.has(lead.id);
+              const isStatusOpen = openStatusLeadId === lead.id;
               return (
                 <div
                   key={lead.id}
                   onClick={() => router.push(`${basePath}/leads/${lead.id}`)}
-                  className={`grid min-w-max gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
+                  className={`relative ${isStatusOpen ? "z-30" : ""} grid w-full gap-3 items-center px-2 py-3.5 rounded-2xl mb-1 transition-all duration-150 group/row cursor-pointer ${isSelected
                     ? "bg-[#0B1215]"
                     : "hover:bg-gray-50 border border-transparent hover:border-gray-100"
                     }`}
@@ -645,6 +678,8 @@ export default function AllLeadsPage() {
                       value={lead.status}
                       color={lead.statusColor}
                       options={statusOptions}
+                      open={isStatusOpen}
+                      onOpenChange={(nextOpen) => setOpenStatusLeadId(nextOpen ? lead.id : null)}
                       onChange={(s) => updateStatus(lead.id, s)}
                     />
                   </div>
@@ -722,6 +757,7 @@ export default function AllLeadsPage() {
                 </div>
               );
             })}
+          </div>
           </div>
           </div>
 

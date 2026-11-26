@@ -8,14 +8,14 @@ import {
   useCrmLabels,
   useCrmNavigation,
 } from '@/features/crm';
-import { NotificationPanel, useUnreadCount } from '@/features/notifications';
+import { NotificationPanel, useNotificationDrawerState, useUnreadCount } from '@/features/notifications';
 
 export default function AllLeadsPage() {
   const { goBack, goToLeadDetail } = useCrmNavigation();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const { isOpen: isNotificationOpen, openDrawer: openNotifications, closeDrawer: closeNotifications } = useNotificationDrawerState();
 
   const leadFilters = searchQuery.trim()
     ? { search: searchQuery.trim(), source: 'agent_upload' as const }
@@ -75,7 +75,7 @@ export default function AllLeadsPage() {
 
             {/* Notification Bell */}
             <button
-              onClick={() => setIsNotificationOpen(true)}
+              onClick={openNotifications}
               className="relative w-11 h-11 flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.12] rounded-full active:scale-95 transition-all focus:outline-none"
             >
               <img
@@ -129,7 +129,7 @@ export default function AllLeadsPage() {
       {/* Notification Drawer */}
       <NotificationPanel
         open={isNotificationOpen}
-        onClose={() => setIsNotificationOpen(false)}
+        onClose={closeNotifications}
       />
     </ScreenErrorBoundary>
   );
