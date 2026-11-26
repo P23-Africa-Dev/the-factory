@@ -43,16 +43,18 @@ class RedetectFieldStopsCommand extends Command
                     ->exists();
 
                 if ($hadClassified) {
-                    $detector->processSession($session);
+                    $affected = $detector->processSession($session);
                 } else {
                     FieldStop::query()
                         ->where('field_activity_session_id', $session->id)
                         ->delete();
-                    $detector->processSession($session);
+                    $detector->resetScanCursor($session);
+                    $affected = $detector->processSession($session);
                     if ($session->ended_at !== null) {
-                        $detector->finalizeOpenStops($session, $session->ended_at);
+                        $affected = array_merge($affected, $detector->finalizeOpenStops($session, $session->ended_at));
                     }
                 }
+                $detector->enrichStops(array_values(array_unique($affected)));
 
                 $processed++;
             }

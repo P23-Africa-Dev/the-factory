@@ -79,8 +79,19 @@ class FieldActivityRealtimeService
 
     public function publishStopCreated(FieldActivitySession $session, FieldStop $stop): void
     {
+        $this->publishStop('field_activity.stop_created', $session, $stop);
+    }
+
+    /** A stop closed (departure known), was enriched/auto-classified, or was classified by its owner. */
+    public function publishStopUpdated(FieldActivitySession $session, FieldStop $stop): void
+    {
+        $this->publishStop('field_activity.stop_updated', $session, $stop);
+    }
+
+    private function publishStop(string $event, FieldActivitySession $session, FieldStop $stop): void
+    {
         $this->publish([
-            'event' => 'field_activity.stop_created',
+            'event' => $event,
             'version' => 1,
             'company_id' => (int) $session->company_id,
             'user_id' => (int) $session->user_id,
@@ -94,6 +105,8 @@ class FieldActivityRealtimeService
                 'address' => $stop->address,
                 'duration_seconds' => (int) $stop->duration_seconds,
                 'classification' => $stop->classification?->value,
+                'match_type' => $stop->match_type?->value,
+                'lead_id' => $stop->lead_id,
                 'arrived_at' => $stop->arrived_at?->toIso8601String(),
                 'departed_at' => $stop->departed_at?->toIso8601String(),
             ],

@@ -12,6 +12,7 @@ use App\Models\FieldLocationPoint;
 use App\Models\FieldStop;
 use App\Models\User;
 use App\Services\Attendance\AttendanceAccessService;
+use App\Support\CompanyClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -54,13 +55,15 @@ class FieldJourneyService
             }
         }
 
-        [$from, $to] = $this->resolveDateRange($filters);
+        // Company-local dates; query bounds converted back to storage time.
+        [$from, $to] = $this->resolveDateRange($filters, (int) $company->id);
+        [$rangeStart, $rangeEnd] = CompanyClock::rangeBounds((int) $company->id, $from->toDateString(), $to->toDateString());
 
         /** @var LengthAwarePaginator $paginator */
         $paginator = FieldActivitySession::query()
             ->where('company_id', $company->id)
             ->where('user_id', $target->id)
-            ->whereBetween('started_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
+            ->whereBetween('started_at', [$rangeStart, $rangeEnd])
             ->orderByDesc('started_at')
             ->paginate(max(1, min(60, (int) ($filters['per_page'] ?? 30))));
 
@@ -78,7 +81,7 @@ class FieldJourneyService
             ->keyBy(fn (AttendanceRecord $r): string => $r->attendance_date?->toDateString() ?? '');
 
         $items = collect($paginator->items())->map(function (FieldActivitySession $session) use ($summaries, $attendanceByDate): array {
-            $date = $session->started_at?->toDateString() ?? '';
+            $date = CompanyClock::dateOf($session->started_at, (int) $session->company_id) ?? '';
             $summary = $summaries->get($session->id);
             $attendance = $session->isFieldTrip() ? null : $attendanceByDate->get($date);
 
@@ -88,7 +91,7 @@ class FieldJourneyService
         $aggregate = FieldActivitySession::query()
             ->where('company_id', $company->id)
             ->where('user_id', $target->id)
-            ->whereBetween('started_at', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
+            ->whereBetween('started_at', [$rangeStart, $rangeEnd])
             ->selectRaw('COUNT(*) as journey_count')
             ->selectRaw('COALESCE(SUM(distance_meters),0) as distance_meters')
             ->selectRaw('COALESCE(SUM(stop_count),0) as stop_count')
@@ -603,7 +606,7 @@ class FieldJourneyService
         ?FieldDailySummary $summary,
         ?AttendanceRecord $attendance,
     ): array {
-        $date = $session->started_at?->toDateString();
+        $date = CompanyClock::dateOf($session->started_at, (int) $session->company_id);
         $travel = (int) $session->travel_seconds;
         // Session counts are kept in sync by stop detection. Daily summaries can
         // lag (EOD snapshot taken before late GPS / redetect), so never let a
@@ -648,10 +651,11 @@ class FieldJourneyService
      * @param  array<string, mixed>  $filters
      * @return array{0: Carbon, 1: Carbon}
      */
-    private function resolveDateRange(array $filters): array
+    private function resolveDateRange(array $filters, int $companyId): array
     {
         $preset = (string) ($filters['preset'] ?? '');
-        $today = now()->startOfDay();
+        // "Today" / "this week" in the company's time zone.
+        $today = CompanyClock::now($companyId)->startOfDay();
 
         return match ($preset) {
             'today' => [$today->copy(), $today->copy()->endOfDay()],

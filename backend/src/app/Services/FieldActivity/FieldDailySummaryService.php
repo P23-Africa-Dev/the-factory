@@ -10,6 +10,7 @@ use App\Models\FieldDailySummary;
 use App\Models\FieldStop;
 use App\Models\User;
 use App\Services\AI\Providers\AiProviderRouter;
+use App\Support\CompanyClock;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -23,14 +24,17 @@ class FieldDailySummaryService
     public function buildForSession(FieldActivitySession $session, bool $withNarrative = false): FieldDailySummary
     {
         $session->refresh();
-        $date = ($session->started_at ?? now())->toDateString();
+        // The company's own calendar day (a trip at 00:30 Lagos time belongs
+        // to that Lagos day even though storage is in the app time zone).
+        $date = CompanyClock::dateOf($session->started_at ?? now(), (int) $session->company_id);
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds((int) $session->company_id, $date);
 
         // A day can hold several field trips: the daily summary adds up every
         // session the user started that day (one row per user per day).
         $daySessions = FieldActivitySession::query()
             ->where('company_id', $session->company_id)
             ->where('user_id', $session->user_id)
-            ->whereDate('started_at', $date)
+            ->whereBetween('started_at', [$dayStart, $dayEnd])
             ->get();
         if (! $daySessions->contains('id', $session->id)) {
             $daySessions->push($session);

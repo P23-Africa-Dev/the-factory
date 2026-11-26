@@ -23,7 +23,15 @@ class FieldActivitySettingService
 
     public function setEnabled(Company $company, bool $enabled): void
     {
+        $wasEnabled = $this->isEnabledForCompany($company);
         $company->forceFill(['field_activity_enabled' => $enabled])->save();
+
+        // Turning Field Activity off ends running trips cleanly instead of
+        // leaving them active (points would be refused and they would never
+        // finalize). Resolved lazily: the trip service depends on this one.
+        if ($wasEnabled && ! $enabled) {
+            app(FieldTripService::class)->endAllForCompany($company);
+        }
     }
 
     /** Time in one place before it counts as a stop (company setting, default 5 min). */

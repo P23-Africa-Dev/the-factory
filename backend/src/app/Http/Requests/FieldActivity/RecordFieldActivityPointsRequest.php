@@ -33,8 +33,11 @@ class RecordFieldActivityPointsRequest extends FormRequest
             'speed_mps' => ['nullable', 'numeric'],
             'heading_degrees' => ['nullable', 'numeric', 'between:0,360'],
             'recorded_at' => ['nullable', 'date'],
-            'task_id' => ['nullable', 'integer', 'exists:tasks,id'],
-            'task_tracking_session_id' => ['nullable', 'integer', 'exists:task_tracking_sessions,id'],
+            // Task links are derived server-side from the user's open task
+            // session; client ids are only compared, so no exists: lookups
+            // (one query per point, and a stale id must not fail the batch).
+            'task_id' => ['nullable', 'integer'],
+            'task_tracking_session_id' => ['nullable', 'integer'],
             'client_point_id' => ['nullable', 'string', 'max:36'],
             'points' => ['nullable', 'array', 'max:50'],
             'points.*.latitude' => ['required_with:points', 'numeric', 'between:-90,90'],
@@ -43,8 +46,8 @@ class RecordFieldActivityPointsRequest extends FormRequest
             'points.*.speed_mps' => ['nullable', 'numeric'],
             'points.*.heading_degrees' => ['nullable', 'numeric', 'between:0,360'],
             'points.*.recorded_at' => ['nullable', 'date'],
-            'points.*.task_id' => ['nullable', 'integer', 'exists:tasks,id'],
-            'points.*.task_tracking_session_id' => ['nullable', 'integer', 'exists:task_tracking_sessions,id'],
+            'points.*.task_id' => ['nullable', 'integer'],
+            'points.*.task_tracking_session_id' => ['nullable', 'integer'],
             'points.*.client_point_id' => ['nullable', 'string', 'max:36'],
         ];
     }

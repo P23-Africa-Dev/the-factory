@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\FieldTrip;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\FieldActivity\ClassifyFieldStopRequest;
 use App\Http\Requests\FieldActivity\RecordFieldActivityPointsRequest;
 use App\Http\Requests\FieldActivity\StartFieldTripRequest;
 use App\Models\FieldActivitySession;
+use App\Models\FieldStop;
 use App\Services\FieldActivity\FieldActivitySessionService;
 use App\Services\FieldActivity\FieldTripService;
 use Illuminate\Http\JsonResponse;
@@ -54,7 +56,48 @@ class FieldTripController extends Controller
     {
         return $this->success(
             message: 'Field trip points recorded.',
-            data: $this->sessionService->recordPoints($request->user(), $trip, $request->validated()),
+            data: $this->sessionService->recordPoints(
+                $request->user(),
+                $trip,
+                $request->validated(),
+                FieldActivitySessionService::ENDPOINT_FIELD_TRIP,
+            ),
+        );
+    }
+
+    /** Today's field activity for the caller (every trip of the day). Any member. */
+    public function today(Request $request): JsonResponse
+    {
+        return $this->success(
+            message: 'Field activity for today loaded.',
+            data: $this->sessionService->todayForAgent($request->user(), $request->integer('company_id') ?: null),
+        );
+    }
+
+    /** The caller's unclassified stops from ended trips. Any member. */
+    public function pendingReview(Request $request): JsonResponse
+    {
+        return $this->success(
+            message: 'Pending field stop review loaded.',
+            data: $this->sessionService->pendingReviewForAgent($request->user(), $request->integer('company_id') ?: null),
+        );
+    }
+
+    /** Stops of one of the caller's own trips. Any member. */
+    public function stops(Request $request, FieldActivitySession $trip): JsonResponse
+    {
+        return $this->success(
+            message: 'Field stops loaded.',
+            data: ['stops' => $this->sessionService->listStops($request->user(), $trip)],
+        );
+    }
+
+    /** Classify one of the caller's own stops. Any member. */
+    public function classifyStop(ClassifyFieldStopRequest $request, FieldStop $stop): JsonResponse
+    {
+        return $this->success(
+            message: 'Stop classified successfully.',
+            data: ['stop' => $this->sessionService->classifyStop($request->user(), $stop, $request->validated())],
         );
     }
 }

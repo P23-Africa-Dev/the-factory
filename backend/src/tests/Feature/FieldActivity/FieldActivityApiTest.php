@@ -151,7 +151,7 @@ class FieldActivityApiTest extends TestCase
         // way the PWA does (09:01Z == 10:01 Lagos). Before the timezone fix,
         // each mixed-timezone interval added ~3600 phantom seconds.
         $this->actingAs($agent, 'sanctum')
-            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+            ->postJson("/api/v1/field-trips/{$session->id}/points", [
                 'company_id' => $company->id,
                 'points' => [
                     [
@@ -203,7 +203,7 @@ class FieldActivityApiTest extends TestCase
 
         // Simulate device coming back online after 5 hours offline.
         $this->actingAs($agent, 'sanctum')
-            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+            ->postJson("/api/v1/field-trips/{$session->id}/points", [
                 'company_id' => $company->id,
                 'points' => [[
                     'latitude' => 6.5300,
@@ -342,7 +342,7 @@ class FieldActivityApiTest extends TestCase
         }
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+            ->postJson("/api/v1/field-trips/{$session->id}/points", [
                 'company_id' => $company->id,
                 'points' => $points,
             ])
@@ -378,7 +378,7 @@ class FieldActivityApiTest extends TestCase
 
         for ($i = 0; $i <= 6; $i++) {
             $this->actingAs($agent, 'sanctum')
-                ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+                ->postJson("/api/v1/field-trips/{$session->id}/points", [
                     'company_id' => $company->id,
                     'points' => [[
                         'latitude' => $baseLat,
@@ -431,7 +431,7 @@ class FieldActivityApiTest extends TestCase
         }
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+            ->postJson("/api/v1/field-trips/{$session->id}/points", [
                 'company_id' => $company->id,
                 'points' => $points,
             ])
@@ -474,7 +474,7 @@ class FieldActivityApiTest extends TestCase
         }
 
         $this->actingAs($agent, 'sanctum')
-            ->postJson("/api/v1/agent/field-activity/sessions/{$session->id}/points", [
+            ->postJson("/api/v1/field-trips/{$session->id}/points", [
                 'company_id' => $company->id,
                 'points' => $points,
             ])

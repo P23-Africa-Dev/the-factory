@@ -238,8 +238,20 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->middleware('throttle:api')
             ->name('end');
         Route::post('/{trip}/points', [FieldTripController::class, 'points'])
+            ->whereNumber('trip')
             ->middleware('throttle:api-heavy')
             ->name('points');
+        // Stops and the day view for every member (managers take trips too);
+        // the service checks the caller owns the trip / stop.
+        Route::get('/today', [FieldTripController::class, 'today'])->name('today');
+        Route::get('/pending-review', [FieldTripController::class, 'pendingReview'])->name('pending-review');
+        Route::get('/{trip}/stops', [FieldTripController::class, 'stops'])
+            ->whereNumber('trip')
+            ->name('stops');
+        Route::post('/stops/{stop}/classify', [FieldTripController::class, 'classifyStop'])
+            ->whereNumber('stop')
+            ->middleware('throttle:api')
+            ->name('stops.classify');
     });
 
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])

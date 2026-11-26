@@ -15,12 +15,14 @@ use App\Models\User;
 use App\Services\Attendance\AttendanceAccessService;
 use App\Services\Notification\NotificationService;
 use App\Support\ClientTime;
+use App\Support\CompanyClock;
 use App\Support\GeoDistance;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Throwable;
 
 /**
@@ -102,6 +104,7 @@ class FieldTripService
                     'last_longitude' => $hasFix ? $lng : null,
                     'last_accuracy_meters' => $hasFix ? $accuracy : null,
                     'last_recorded_at' => $startedAt,
+                    'last_received_at' => now(),
                     'last_movement_state' => FieldMovementState::STOPPED,
                     'meta' => $hasFix ? ['start' => ['latitude' => $lat, 'longitude' => $lng]] : [],
                 ]);
@@ -113,12 +116,32 @@ class FieldTripService
                 return $session;
             });
         } catch (QueryException $e) {
-            // Lost a race with a concurrent start (one-active-per-user index).
+            // Lost a race with a concurrent start (one active trip per user per
+            // company, or the same client_trip_id): return the winner.
             $existing = $this->activeFor((int) $company->id, (int) $user->id);
             if ($existing !== null) {
                 return $this->payload($existing, created: false);
             }
-            throw $e;
+            if ($clientTripId !== null) {
+                $replayed = FieldActivitySession::query()
+                    ->where('company_id', $company->id)
+                    ->where('client_trip_id', $clientTripId)
+                    ->first();
+                if ($replayed !== null && (int) $replayed->user_id === (int) $user->id) {
+                    return $this->payload($replayed, created: false);
+                }
+            }
+            if (! $this->isUniqueViolation($e)) {
+                throw $e;
+            }
+
+            Log::warning('field_trip.start_conflict', [
+                'company_id' => $company->id,
+                'user_id' => $user->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            throw new ConflictHttpException('Another field trip is already running for your account. End it before starting a new one.', $e);
         }
 
         $session = $session->fresh() ?? $session;
@@ -158,7 +181,7 @@ class FieldTripService
                         'accuracy_meters' => $data['accuracy_meters'] ?? null,
                         'recorded_at' => $data['recorded_at'] ?? null,
                     ]],
-                ]);
+                ], FieldActivitySessionService::ENDPOINT_FIELD_TRIP);
             } catch (Throwable $e) {
                 Log::debug('field_trip.end_point_skipped', ['session_id' => $trip->id, 'message' => $e->getMessage()]);
             }
@@ -176,7 +199,7 @@ class FieldTripService
             $trip->forceFill(['meta' => $meta])->save();
         }
 
-        $this->sessionService->completeSession(
+        $ended = $this->sessionService->completeSessionIfActive(
             $trip,
             $endedAt,
             autoClosed: false,
@@ -185,7 +208,11 @@ class FieldTripService
         );
 
         $trip = $trip->fresh() ?? $trip;
-        $this->realtimeService->publishTripLifecycle($trip, 'trip_ended');
+        // Only the request that actually ended it announces it (double taps,
+        // a concurrent auto-end).
+        if ($ended !== null) {
+            $this->realtimeService->publishTripLifecycle($trip, 'trip_ended');
+        }
 
         return $this->payload($trip, created: false);
     }
@@ -199,11 +226,12 @@ class FieldTripService
         $company = $context->company;
         $active = $this->activeFor((int) $company->id, (int) $user->id);
 
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds($company);
         $today = FieldActivitySession::query()
             ->where('company_id', $company->id)
             ->where('user_id', $user->id)
             ->where('source', FieldActivitySession::SOURCE_FIELD_TRIP)
-            ->where('started_at', '>=', now()->startOfDay())
+            ->whereBetween('started_at', [$dayStart, $dayEnd])
             ->selectRaw('COUNT(*) as trips, COALESCE(SUM(distance_meters),0) as distance_meters, COALESCE(SUM(stop_count),0) as stop_count')
             ->first();
 
@@ -261,23 +289,38 @@ class FieldTripService
     private function monitorTrip(FieldActivitySession $trip, Carbon $now): ?string
     {
         $company = $trip->company;
-        $lastSignal = $trip->last_recorded_at ?? $trip->started_at ?? $now;
+        // Server receive time, not the device's recorded_at: a phone with a wrong
+        // clock must not look silent (or alive) because of it.
+        $lastSignal = $trip->last_received_at ?? $trip->last_recorded_at ?? $trip->started_at ?? $now;
         $silentFor = $lastSignal->diffInSeconds($now, false);
 
         // (c) Auto-end after the company's no-location limit (default 2 h).
         if ($silentFor >= $this->settingService->tripAutoEndSeconds($company)) {
-            $this->sessionService->completeSession(
+            // Ends at the last known position time (device clock, not after now).
+            $endedAt = ($trip->last_recorded_at ?? $lastSignal)->copy();
+            if ($endedAt->gt($now)) {
+                $endedAt = $now->copy();
+            }
+            $ended = $this->sessionService->completeSessionIfActive(
                 $trip,
-                $lastSignal->copy(),
+                $endedAt,
                 autoClosed: true,
                 withNarrative: false,
                 endReason: FieldActivitySession::END_REASON_AUTO_NO_SIGNAL,
             );
+            if ($ended === null) {
+                return null; // ended concurrently (user tapped End)
+            }
             $trip = $trip->fresh() ?? $trip;
             $this->realtimeService->publishTripLifecycle($trip, 'trip_ended');
+            $limit = $this->humanDuration($this->settingService->tripAutoEndSeconds($company));
             $this->notify($trip, 'field_trip.auto_ended', 'Field trip ended',
-                sprintf('We ended your field trip because we had no location for %s. It is saved in your Journey History.', $this->humanDuration($this->settingService->tripAutoEndSeconds($company))),
+                sprintf('We ended your field trip because we had no location for %s. It is saved in your Journey History.', $limit),
                 'field-trip-auto-ended:'.$trip->id, NotificationPriority::NORMAL);
+            $this->notifyManagers($trip, 'field_trip.auto_ended', 'Field trip auto-ended',
+                sprintf('%s\'s field trip ended automatically after %s without a location.', $this->personName($trip), $limit),
+                'field-trip-auto-ended:'.$trip->id, NotificationPriority::NORMAL,
+                '/field-activity/journeys/'.$trip->id);
 
             return 'auto_ended';
         }
@@ -286,9 +329,13 @@ class FieldTripService
         if ($silentFor >= self::SIGNAL_LOST_AFTER_SECONDS
             && ($trip->signal_lost_notified_at === null || $trip->signal_lost_notified_at->lt($lastSignal))) {
             $trip->forceFill(['signal_lost_notified_at' => $now])->save();
+            $dedupe = 'field-trip-signal-lost:'.$trip->id.':'.$lastSignal->getTimestamp();
             $this->notify($trip, 'field_trip.signal_lost', 'We lost your location',
                 'Your field trip is still running but we have not received your location for a while. Open Factory23 to keep tracking.',
-                'field-trip-signal-lost:'.$trip->id.':'.$lastSignal->getTimestamp(), NotificationPriority::HIGH);
+                $dedupe, NotificationPriority::HIGH);
+            $this->notifyManagers($trip, 'field_trip.signal_lost', 'Location lost on a field trip',
+                sprintf('We have not received %s\'s location for %s. Their field trip is still running.', $this->personName($trip), $this->humanDuration((int) $silentFor)),
+                $dedupe, NotificationPriority::NORMAL, '/map');
 
             return 'signal_lost';
         }
@@ -336,6 +383,40 @@ class FieldTripService
             'trip' => $this->serializeTrip($trip->fresh() ?? $trip),
             'created' => $created,
         ];
+    }
+
+    /**
+     * Field Activity was turned off: end every running trip of the company
+     * cleanly (stops finalized, summary built, "trip ended" published).
+     */
+    public function endAllForCompany(Company $company, string $endReason = FieldActivitySession::END_REASON_DISABLED): int
+    {
+        $ended = 0;
+
+        FieldActivitySession::query()
+            ->where('company_id', $company->id)
+            ->where('status', FieldActivitySessionStatus::ACTIVE)
+            ->orderBy('id')
+            ->get()
+            ->each(function (FieldActivitySession $trip) use ($endReason, &$ended): void {
+                try {
+                    $summary = $this->sessionService->completeSessionIfActive(
+                        $trip,
+                        $trip->last_recorded_at ?? now(),
+                        autoClosed: true,
+                        withNarrative: false,
+                        endReason: $endReason,
+                    );
+                    if ($summary !== null) {
+                        $ended++;
+                        $this->realtimeService->publishTripLifecycle($trip->fresh() ?? $trip, 'trip_ended');
+                    }
+                } catch (Throwable $e) {
+                    report($e);
+                }
+            });
+
+        return $ended;
     }
 
     private function activeFor(int $companyId, int $userId): ?FieldActivitySession
@@ -389,6 +470,81 @@ class FieldTripService
         } catch (Throwable $e) {
             Log::warning('field_trip.notify_failed', ['session_id' => $trip->id, 'type' => $type, 'message' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * The person's own supervisor plus the company's owners and admins (never
+     * the person themself). Each copy gets its own dedupe key: notifications
+     * dedupe globally on the key.
+     */
+    private function notifyManagers(FieldActivitySession $trip, string $type, string $title, string $message, string $dedupeKey, NotificationPriority $priority, string $actionUrl): void
+    {
+        foreach ($this->managerIdsFor($trip) as $managerId) {
+            try {
+                $this->notificationService->notifyUser($managerId, [
+                    'company_id' => (int) $trip->company_id,
+                    'type' => $type,
+                    'category' => NotificationCategory::TRACKING->value,
+                    'title' => $title,
+                    'message' => $message,
+                    'reference_type' => FieldActivitySession::class,
+                    'reference_id' => (int) $trip->id,
+                    'action_url' => $actionUrl,
+                    'action_route' => $actionUrl === '/map' ? 'map' : 'field-activity.journeys.show',
+                    'priority' => $priority->value,
+                    'created_by_user_id' => null,
+                    'metadata' => [
+                        'field_activity_session_id' => (int) $trip->id,
+                        'agent_user_id' => (int) $trip->user_id,
+                    ],
+                    'dedupe_key' => $dedupeKey.':u'.$managerId,
+                ]);
+            } catch (Throwable $e) {
+                Log::warning('field_trip.notify_manager_failed', ['session_id' => $trip->id, 'type' => $type, 'message' => $e->getMessage()]);
+            }
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function managerIdsFor(FieldActivitySession $trip): array
+    {
+        $ids = DB::table('company_users')
+            ->where('company_id', $trip->company_id)
+            ->whereIn('role', ['owner', 'admin'])
+            ->pluck('user_id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        $supervisorId = $trip->user?->supervisor_user_id;
+        if ($supervisorId !== null) {
+            $isMember = DB::table('company_users')
+                ->where('company_id', $trip->company_id)
+                ->where('user_id', $supervisorId)
+                ->exists();
+            if ($isMember) {
+                $ids[] = (int) $supervisorId;
+            }
+        }
+
+        return array_values(array_diff(array_unique($ids), [(int) $trip->user_id]));
+    }
+
+    private function personName(FieldActivitySession $trip): string
+    {
+        $name = trim((string) ($trip->user?->name ?? ''));
+
+        return $name !== '' ? $name : 'A team member';
+    }
+
+    private function isUniqueViolation(QueryException $e): bool
+    {
+        $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+        $message = strtolower($e->getMessage());
+
+        return $sqlState === '23000' || $sqlState === '23505'
+            || str_contains($message, 'unique') || str_contains($message, 'duplicate');
     }
 
     private function humanDuration(int $seconds): string

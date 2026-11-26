@@ -1676,23 +1676,41 @@ class ReadToolRegistry
             ]);
         }
 
-        $dateStr = isset($args['date']) ? (string) $args['date'] : 'today';
-        try {
-            $date = \Carbon\Carbon::parse($dateStr);
-        } catch (\Throwable $e) {
-            $date = now();
+        // Supervisors: their own team (users.supervisor_user_id) and themselves.
+        if (! app(\App\Services\FieldActivity\FieldActivityVisibility::class)->canView($user, $resolvedCompanyId, $role, (int) $agentId)) {
+            return [
+                'tool' => 'tracking.agent_history',
+                'summary' => 'You can only view tracking for yourself and the people on your team.',
+                'payload' => [
+                    'agent_id' => $agentId,
+                    'authorized' => false,
+                    'timeline' => [],
+                ],
+                'sources' => ['tracking.agent_history'],
+            ];
         }
-        $dateKey = $date->toDateString();
+
+        // Dates are the company's own days.
+        $companyToday = \App\Support\CompanyClock::today($resolvedCompanyId);
+        $dateStr = isset($args['date']) ? (string) $args['date'] : $companyToday;
+        try {
+            $dateKey = strtolower(trim($dateStr)) === 'today' ? $companyToday : \Carbon\Carbon::parse($dateStr)->toDateString();
+        } catch (\Throwable $e) {
+            $dateKey = $companyToday;
+        }
+        [$dayStart, $dayEnd] = \App\Support\CompanyClock::dayBounds($resolvedCompanyId, $dateKey);
 
         $targetUser = User::find($agentId);
         $targetName = $targetUser ? (string) $targetUser->name : 'Agent';
 
-        $session = \App\Models\FieldActivitySession::query()
+        // Every trip of the day (several field trips per day are normal).
+        $daySessions = \App\Models\FieldActivitySession::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('user_id', $agentId)
-            ->whereDate('started_at', $dateKey)
-            ->orderByDesc('id')
-            ->first();
+            ->whereBetween('started_at', [$dayStart, $dayEnd])
+            ->orderBy('started_at')
+            ->get();
+        $session = $daySessions->first(fn ($s) => $s->isActive()) ?? $daySessions->last();
 
         $summaryRow = \App\Models\FieldDailySummary::query()
             ->where('company_id', $resolvedCompanyId)
@@ -1700,9 +1718,9 @@ class ReadToolRegistry
             ->whereDate('summary_date', $dateKey)
             ->first();
 
-        $stops = $session
+        $stops = $daySessions->isNotEmpty()
             ? \App\Models\FieldStop::query()
-                ->where('field_activity_session_id', $session->id)
+                ->whereIn('field_activity_session_id', $daySessions->pluck('id')->all())
                 ->orderBy('arrived_at')
                 ->get()
             : collect();
@@ -1718,8 +1736,8 @@ class ReadToolRegistry
                 'source' => 'field_stop',
                 'location' => $label,
                 'classification' => $stop->classification?->value,
-                'arrival' => $arrived?->format('g:i A'),
-                'departure' => $departed?->format('g:i A'),
+                'arrival' => $arrived?->copy()->setTimezone(\App\Support\CompanyClock::timezone($resolvedCompanyId))->format('g:i A'),
+                'departure' => $departed?->copy()->setTimezone(\App\Support\CompanyClock::timezone($resolvedCompanyId))->format('g:i A'),
                 'duration' => $durationMins > 0 ? "{$durationMins}m" : 'briefly',
                 'latitude' => $stop->latitude,
                 'longitude' => $stop->longitude,
@@ -1729,7 +1747,7 @@ class ReadToolRegistry
         $taskPoints = \App\Models\TaskLocationPoint::query()
             ->where('company_id', $resolvedCompanyId)
             ->where('user_id', $agentId)
-            ->whereDate('recorded_at', $dateKey)
+            ->whereBetween('recorded_at', [$dayStart, $dayEnd])
             ->orderBy('recorded_at')
             ->with('task:id,title,location_text')
             ->get();
@@ -1763,12 +1781,13 @@ class ReadToolRegistry
             ];
         }
 
-        $distance = (int) ($summaryRow?->distance_meters ?? $session?->distance_meters ?? 0);
-        $visits = (int) ($summaryRow?->visit_count ?? $session?->visit_count ?? 0);
-        $stopCount = (int) ($summaryRow?->stop_count ?? $session?->stop_count ?? count($stops));
-        $pointCount = $session
+        $hasTrips = $daySessions->isNotEmpty();
+        $distance = (int) ($hasTrips ? $daySessions->sum('distance_meters') : ($summaryRow?->distance_meters ?? 0));
+        $visits = (int) ($hasTrips ? $daySessions->sum('visit_count') : ($summaryRow?->visit_count ?? 0));
+        $stopCount = (int) ($hasTrips ? $daySessions->sum('stop_count') : ($summaryRow?->stop_count ?? count($stops)));
+        $pointCount = $hasTrips
             ? (int) \App\Models\FieldLocationPoint::query()
-                ->where('field_activity_session_id', $session->id)
+                ->whereIn('field_activity_session_id', $daySessions->pluck('id')->all())
                 ->count()
             : 0;
 
@@ -1783,12 +1802,17 @@ class ReadToolRegistry
                 $stopCount,
                 $session?->status?->value ? ' (session ' . $session->status->value . ')' : '',
             );
-            if ($session?->started_at) {
-                $summary .= ' Tracking started ' . $session->started_at->format('g:i A');
-                if ($session->ended_at) {
-                    $summary .= ', ended ' . $session->ended_at->format('g:i A');
-                } else {
+            $tz = \App\Support\CompanyClock::timezone($resolvedCompanyId);
+            if ($daySessions->count() > 1) {
+                $summary .= sprintf(' %d field trips that day.', $daySessions->count());
+            }
+            $first = $daySessions->first();
+            if ($first?->started_at) {
+                $summary .= ' Tracking started ' . $first->started_at->copy()->setTimezone($tz)->format('g:i A');
+                if ($session?->isActive()) {
                     $summary .= ' and is still active';
+                } elseif ($session?->ended_at) {
+                    $summary .= ', ended ' . $session->ended_at->copy()->setTimezone($tz)->format('g:i A');
                 }
                 $summary .= '.';
             }
@@ -1820,6 +1844,7 @@ class ReadToolRegistry
                     'visit_count' => (int) $session->visit_count,
                     'stop_count' => (int) $session->stop_count,
                 ] : null,
+                'trip_count' => $daySessions->count(),
                 'summary' => $summaryRow ? [
                     'distance_meters' => (int) $summaryRow->distance_meters,
                     'visit_count' => (int) $summaryRow->visit_count,

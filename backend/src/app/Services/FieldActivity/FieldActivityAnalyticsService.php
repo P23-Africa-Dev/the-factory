@@ -10,10 +10,17 @@ use App\Models\FieldActivitySession;
 use App\Models\FieldDailySummary;
 use App\Models\FieldStop;
 use App\Models\User;
+use App\Support\CompanyClock;
 use Carbon\Carbon;
 
 class FieldActivityAnalyticsService
 {
+    /** Longest window one request may aggregate. */
+    public const MAX_RANGE_DAYS = 92;
+
+    /** Stops drawn on the heatmap (most recent first). */
+    public const MAX_HEATMAP_POINTS = 2000;
+
     /**
      * @return array<string, mixed>
      */
@@ -24,13 +31,23 @@ class FieldActivityAnalyticsService
         ?int $userId = null,
         ?array $visibleUserIds = null,
     ): array {
-        $fromDate = $from ? Carbon::parse($from)->startOfDay() : now()->subDays(7)->startOfDay();
-        $toDate = $to ? Carbon::parse($to)->endOfDay() : now()->endOfDay();
+        // Company-local dates; the window is capped so one request cannot
+        // aggregate years of trips.
+        $today = CompanyClock::today($company);
+        $toDay = $to ? Carbon::parse($to)->toDateString() : $today;
+        $fromDay = $from ? Carbon::parse($from)->toDateString() : Carbon::parse($toDay)->subDays(7)->toDateString();
+        if ($fromDay > $toDay) {
+            [$fromDay, $toDay] = [$toDay, $fromDay];
+        }
+        if (Carbon::parse($fromDay)->diffInDays(Carbon::parse($toDay)) > self::MAX_RANGE_DAYS) {
+            $fromDay = Carbon::parse($toDay)->subDays(self::MAX_RANGE_DAYS)->toDateString();
+        }
+        [$fromDate, $toDate] = CompanyClock::rangeBounds($company, $fromDay, $toDay);
 
         $summaries = FieldDailySummary::query()
             ->where('company_id', $company->id)
             ->when($visibleUserIds !== null, fn ($q) => $q->whereIn('user_id', $visibleUserIds))
-            ->whereBetween('summary_date', [$fromDate->toDateString(), $toDate->toDateString()])
+            ->whereBetween('summary_date', [$fromDay, $toDay])
             ->when($userId !== null, fn ($q) => $q->where('user_id', $userId))
             ->get();
 
@@ -55,23 +72,33 @@ class FieldActivityAnalyticsService
             ->filter(static fn (FieldStop $s): bool => $s->isVisit())
             ->sum('duration_seconds');
 
-        $byAgent = $sessions->groupBy('user_id')->map(function ($rows, $uid) use ($summaries) {
-            $user = User::query()->find($uid);
-            $summaryRows = $summaries->where('user_id', (int) $uid);
+        $names = User::query()
+            ->whereIn('id', $sessions->pluck('user_id')->unique()->values()->all())
+            ->pluck('name', 'id');
+        $timezone = CompanyClock::timezone($company);
+
+        $byAgent = $sessions->groupBy('user_id')->map(function ($rows, $uid) use ($names, $timezone) {
+            // Days worked = distinct company-local dates with a trip (several
+            // trips on one day count once).
+            $days = $rows
+                ->map(static fn (FieldActivitySession $s): ?string => $s->started_at?->copy()->setTimezone($timezone)->toDateString())
+                ->filter()
+                ->unique()
+                ->count();
 
             return [
                 'user_id' => (int) $uid,
-                'name' => $user?->name,
+                'name' => $names->get((int) $uid),
                 'distance_meters' => (int) $rows->sum('distance_meters'),
                 'travel_seconds' => (int) $rows->sum('travel_seconds'),
                 'visit_count' => (int) $rows->sum('visit_count'),
                 'stop_count' => (int) $rows->sum('stop_count'),
                 'unknown_stop_count' => (int) $rows->sum('unknown_stop_count'),
-                'days' => max($rows->count(), $summaryRows->count()),
+                'days' => $days,
             ];
         })->values()->all();
 
-        $heatmap = $stops->map(static fn (FieldStop $s): array => [
+        $heatmap = $stops->sortByDesc('arrived_at')->take(self::MAX_HEATMAP_POINTS)->values()->map(static fn (FieldStop $s): array => [
             'latitude' => $s->latitude,
             'longitude' => $s->longitude,
             'classification' => $s->classification?->value,
@@ -84,8 +111,9 @@ class FieldActivityAnalyticsService
         $totalVisits = (int) $sessions->sum('visit_count');
 
         return [
-            'from' => $fromDate->toDateString(),
-            'to' => $toDate->toDateString(),
+            'from' => $fromDay,
+            'to' => $toDay,
+            'heatmap_truncated' => $stops->count() > self::MAX_HEATMAP_POINTS,
             'totals' => [
                 'active_sessions' => $sessions->count(),
                 'distance_meters' => $totalDistance,

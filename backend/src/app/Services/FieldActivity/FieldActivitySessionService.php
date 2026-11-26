@@ -10,6 +10,8 @@ use App\Enums\FieldStopClassification;
 use App\Enums\FieldStopClassifiedBy;
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Jobs\EnrichFieldStopsJob;
+use App\Jobs\ProcessFieldStopsJob;
 use App\Models\AttendanceRecord;
 use App\Models\Company;
 use App\Models\FieldActivitySession;
@@ -23,6 +25,7 @@ use App\Services\Attendance\AttendanceAccessService;
 use App\Services\Notification\NotificationService;
 use App\Services\Tracking\AgentLocationSnapshotService;
 use App\Support\ClientTime;
+use App\Support\CompanyClock;
 use App\Support\GeoDistance;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +35,21 @@ use Throwable;
 
 class FieldActivitySessionService
 {
+    /** Points for a field trip arrive through /field-trips/{id}/points. */
+    public const ENDPOINT_FIELD_TRIP = 'field_trip';
+
+    /** Legacy /agent/field-activity/sessions/{id}/points (clock-in sessions only). */
+    public const ENDPOINT_LEGACY = 'legacy';
+
+    /** Fixes worse than this are noise (cell/Wi-Fi guesses): dropped server-side. */
+    public const MAX_ACCURACY_METERS = 250.0;
+
+    /** Faster than this (≈250 km/h) from the last accepted fix is a GPS jump. */
+    public const MAX_IMPLIED_SPEED_MPS = 70.0;
+
+    /** Late points for an auto-ended trip are accepted up to this long after its end. */
+    public const LATE_POINT_GRACE_SECONDS = 600;
+
     public function __construct(
         private readonly AttendanceAccessService $attendanceAccessService,
         private readonly FieldActivitySettingService $settingService,
@@ -94,6 +112,7 @@ class FieldActivitySessionService
             'last_longitude' => isset($meta['clock_in_longitude']) ? (float) $meta['clock_in_longitude'] : null,
             'last_accuracy_meters' => isset($meta['clock_in_accuracy_m']) ? (float) $meta['clock_in_accuracy_m'] : null,
             'last_recorded_at' => $record->clock_in_at ?? now(),
+            'last_received_at' => now(),
             'last_movement_state' => FieldMovementState::STOPPED,
         ]);
 
@@ -141,6 +160,9 @@ class FieldActivitySessionService
         );
     }
 
+    /**
+     * Ends the session if it is still active; otherwise just (re)builds its summary.
+     */
     public function completeSession(
         FieldActivitySession $session,
         Carbon|string|null $endedAt = null,
@@ -148,35 +170,84 @@ class FieldActivitySessionService
         bool $withNarrative = false,
         ?string $endReason = null,
     ): FieldDailySummary {
-        $ended = $endedAt instanceof Carbon ? $endedAt : ClientTime::parse($endedAt);
-        if ($session->started_at !== null && $ended->lt($session->started_at)) {
-            $ended = $session->started_at->copy();
+        return $this->completeSessionIfActive($session, $endedAt, $autoClosed, $withNarrative, $endReason)
+            ?? $this->dailySummaryService->buildForSession($session->fresh() ?? $session, $withNarrative);
+    }
+
+    /**
+     * Ends the session under a row lock. Returns null when it was no longer
+     * active (ended concurrently by the user, the monitor or another request),
+     * so callers publish "trip ended" / notify exactly once.
+     */
+    public function completeSessionIfActive(
+        FieldActivitySession $session,
+        Carbon|string|null $endedAt = null,
+        bool $autoClosed = false,
+        bool $withNarrative = false,
+        ?string $endReason = null,
+    ): ?FieldDailySummary {
+        $ended = $endedAt instanceof Carbon ? $endedAt->copy() : ClientTime::parse($endedAt);
+        $reason = $endReason ?? ($autoClosed ? FieldActivitySession::END_REASON_AUTO_LEGACY : FieldActivitySession::END_REASON_USER);
+        $affected = [];
+
+        $closed = DB::transaction(function () use ($session, &$ended, $autoClosed, $reason, &$affected): ?FieldActivitySession {
+            $locked = FieldActivitySession::query()->lockForUpdate()->find($session->id);
+            if ($locked === null || ! $locked->isActive()) {
+                return null;
+            }
+
+            if ($locked->started_at !== null && $ended->lt($locked->started_at)) {
+                $ended = $locked->started_at->copy();
+            }
+
+            $affected = $this->stopDetectionService->finalizeOpenStops($locked, $ended);
+
+            $meta = is_array($locked->meta) ? $locked->meta : [];
+            if ($reason === FieldActivitySession::END_REASON_AUTO_NO_SIGNAL) {
+                // Late points are accepted relative to the original auto-end.
+                $meta['auto_ended_at'] = $ended->toIso8601String();
+            }
+
+            $updated = FieldActivitySession::query()
+                ->whereKey($locked->id)
+                ->where('status', FieldActivitySessionStatus::ACTIVE->value)
+                ->update([
+                    'status' => ($autoClosed ? FieldActivitySessionStatus::AUTO_CLOSED : FieldActivitySessionStatus::COMPLETED)->value,
+                    'ended_at' => $ended->copy()->setTimezone((string) config('app.timezone'))->format('Y-m-d H:i:s'),
+                    'end_reason' => $reason,
+                    'meta' => json_encode($meta, JSON_THROW_ON_ERROR),
+                    'updated_at' => now()->format('Y-m-d H:i:s'),
+                ]);
+
+            return $updated === 1 ? $locked : null;
+        });
+
+        $session->refresh();
+
+        if ($closed === null) {
+            return null;
         }
 
-        $this->stopDetectionService->finalizeOpenStops($session, $ended);
+        if ($affected !== []) {
+            EnrichFieldStopsJob::dispatch($affected);
+        }
 
-        $session->update([
-            'status' => $autoClosed
-                ? FieldActivitySessionStatus::AUTO_CLOSED
-                : FieldActivitySessionStatus::COMPLETED,
-            'ended_at' => $ended,
-            'end_reason' => $endReason ?? ($autoClosed ? FieldActivitySession::END_REASON_AUTO_LEGACY : FieldActivitySession::END_REASON_USER),
-        ]);
+        $session->refresh();
+        $summary = $this->dailySummaryService->buildForSession($session, $withNarrative);
 
-        $summary = $this->dailySummaryService->buildForSession($session->fresh() ?? $session, $withNarrative);
-
-        $this->notifyEndOfDayReview($session->fresh() ?? $session, $summary);
+        $this->notifyEndOfDayReview($session, $summary);
 
         Log::info('field_activity.lifecycle.session_completed', [
             'session_id' => $session->id,
             'company_id' => $session->company_id,
             'user_id' => $session->user_id,
             'auto_closed' => $autoClosed,
+            'end_reason' => $reason,
             'ended_at' => $ended->toIso8601String(),
-            'distance_meters' => (int) $summary->distance_meters,
-            'stop_count' => (int) $summary->stop_count,
-            'visit_count' => (int) $summary->visit_count,
-            'unknown_stop_count' => (int) $summary->unknown_stop_count,
+            'distance_meters' => (int) $session->distance_meters,
+            'stop_count' => (int) $session->stop_count,
+            'visit_count' => (int) $session->visit_count,
+            'unknown_stop_count' => (int) $session->unknown_stop_count,
         ]);
 
         return $summary;
@@ -184,9 +255,10 @@ class FieldActivitySessionService
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  string  $endpoint  ENDPOINT_FIELD_TRIP or ENDPOINT_LEGACY
      * @return array<string, mixed>
      */
-    public function recordPoints(User $user, FieldActivitySession $session, array $data): array
+    public function recordPoints(User $user, FieldActivitySession $session, array $data, string $endpoint = self::ENDPOINT_LEGACY): array
     {
         // Any role may record points for their OWN session (field trips are for
         // agents and managers alike); ownership is the access rule.
@@ -199,13 +271,21 @@ class FieldActivitySessionService
             ]);
         }
 
+        // Field trips only take positions from the phone, through the trip
+        // endpoint. The desktop web reporter must not mix laptop positions in.
+        if ($endpoint !== self::ENDPOINT_FIELD_TRIP && $session->isFieldTrip()) {
+            throw ValidationException::withMessages([
+                'session' => ['Field trip locations are only accepted from the mobile app.'],
+            ]);
+        }
+
         if (! $this->settingService->isEnabledForCompany($context->company)) {
             throw ValidationException::withMessages([
                 'field_activity' => ['Field Activity Intelligence is not enabled for this organization.'],
             ]);
         }
 
-        if (! $session->isActive()) {
+        if (! $session->isActive() && ! $this->acceptsLatePoints($session)) {
             throw ValidationException::withMessages([
                 'session' => ['Field activity session is not active.'],
             ]);
@@ -221,7 +301,6 @@ class FieldActivitySessionService
                 'speed_mps' => $data['speed_mps'] ?? null,
                 'heading_degrees' => $data['heading_degrees'] ?? null,
                 'recorded_at' => $data['recorded_at'] ?? null,
-                'task_id' => $data['task_id'] ?? null,
                 'task_tracking_session_id' => $data['task_tracking_session_id'] ?? null,
                 'client_point_id' => $data['client_point_id'] ?? null,
             ]];
@@ -268,31 +347,78 @@ class FieldActivitySessionService
             ->orderByDesc('id')
             ->first();
 
-        $persisted = collect();
+        $counts = ['persisted' => 0, 'trail' => 0, 'gated' => 0, 'rejected' => 0];
+        $latest = null;
+        $late = false;
+        $affectedStops = [];
 
-        DB::transaction(function () use ($session, $user, $rawPoints, $activeTaskSession, &$persisted): void {
-            $session = FieldActivitySession::query()->lockForUpdate()->findOrFail($session->id);
+        DB::transaction(function () use ($session, $user, $rawPoints, $activeTaskSession, &$counts, &$latest, &$late, &$affectedStops): void {
+            // Re-check under the lock: End / auto-end may have won the race.
+            $locked = FieldActivitySession::query()->lockForUpdate()->findOrFail($session->id);
+            $late = ! $locked->isActive();
+            if ($late && ! $this->acceptsLatePoints($locked)) {
+                throw ValidationException::withMessages([
+                    'session' => ['Field activity session is not active.'],
+                ]);
+            }
+
+            // Server receive time: drives signal-lost / auto-end, immune to device clocks.
+            $locked->last_received_at = now();
+            $originalEnd = $locked->ended_at?->copy();
+            $lateLimit = $late ? $this->latePointLimit($locked) : null;
 
             foreach ($rawPoints as $raw) {
-                $point = $this->persistPoint($session, $user, $raw, $activeTaskSession);
-                if ($point !== null) {
-                    $persisted->push($point);
+                $outcome = $this->ingestPoint($locked, $user, $raw, $activeTaskSession, $lateLimit);
+                $counts[$outcome['status']]++;
+                if (in_array($outcome['status'], ['persisted', 'gated'], true)) {
+                    $latest = $outcome['raw'];
                 }
+            }
+
+            if ($late && $counts['persisted'] + $counts['trail'] > 0) {
+                // Points recorded offline before the auto-end: extend the trip to
+                // its last known position and rebuild its stops.
+                if ($locked->last_recorded_at !== null && $locked->ended_at !== null
+                    && $locked->last_recorded_at->gt($locked->ended_at)) {
+                    $locked->ended_at = $locked->last_recorded_at->copy();
+                }
+                $locked->save();
+
+                // Stops closed only because the trip was auto-ended reopen, so the
+                // late trail can extend or close them at their real departure.
+                FieldStop::query()
+                    ->where('field_activity_session_id', $locked->id)
+                    ->whereNotNull('departed_at')
+                    ->where('departed_at', '>=', $originalEnd)
+                    ->update(['departed_at' => null]);
+                $this->stopDetectionService->resetScanCursor($locked);
+                $affectedStops = $this->stopDetectionService->finalizeOpenStops($locked, $locked->ended_at);
+            } else {
+                $locked->save();
             }
         });
 
         $session = $session->fresh() ?? $session;
+        $stored = $counts['persisted'] + $counts['trail'];
 
-        if ($persisted->isNotEmpty()) {
-            $this->stopDetectionService->processSession($session, $persisted);
-            $last = $persisted->last();
-            $this->upsertLiveSnapshot($session, $last);
-            $this->publishRealtime($session, $last);
-            $this->maybeSendStopReminder($session);
-        } elseif ($rawPoints !== []) {
-            // Samples were gated out of trail persistence but still moved the
-            // last-known position — publish it so the live map stays smooth.
-            $this->realtimeService->publishLastKnownLocation($session);
+        if ($late) {
+            if ($stored > 0) {
+                $this->dailySummaryService->buildForSession($session);
+                if ($affectedStops !== []) {
+                    EnrichFieldStopsJob::dispatch($affectedStops);
+                }
+            }
+        } else {
+            if ($stored > 0) {
+                ProcessFieldStopsJob::dispatch((int) $session->id);
+            }
+            if ($latest !== null) {
+                // A task in progress keeps its own live snapshot (task tracking).
+                if ($activeTaskSession === null) {
+                    $this->upsertLiveSnapshot($session, $latest);
+                }
+                $this->realtimeService->publishLastKnownLocation($session);
+            }
         }
 
         Log::debug('field_activity.lifecycle.points_ingested', [
@@ -300,86 +426,223 @@ class FieldActivitySessionService
             'company_id' => $session->company_id,
             'user_id' => $session->user_id,
             'received_count' => count($rawPoints),
-            'persisted_count' => $persisted->count(),
-            'stop_count' => (int) $session->stop_count,
-            'unknown_stop_count' => (int) $session->unknown_stop_count,
+            'persisted_count' => $stored,
+            'rejected_count' => $counts['rejected'],
+            'late' => $late,
         ]);
 
+        $session = $session->fresh() ?? $session;
+
         return [
-            'session' => $this->serializeSession($session->fresh() ?? $session),
-            'persisted_count' => $persisted->count(),
+            'session' => $this->serializeSession($session),
+            'persisted_count' => $stored,
+            'rejected_count' => $counts['rejected'],
             'stops_created' => FieldStop::query()
                 ->where('field_activity_session_id', $session->id)
                 ->count(),
         ];
     }
 
+    /** Auto-ended (no signal) trips still take the points the phone buffered offline. */
+    public function acceptsLatePoints(FieldActivitySession $session): bool
+    {
+        return ! $session->isActive()
+            && $session->end_reason === FieldActivitySession::END_REASON_AUTO_NO_SIGNAL
+            && $session->ended_at !== null;
+    }
+
+    private function latePointLimit(FieldActivitySession $session): Carbon
+    {
+        $meta = is_array($session->meta) ? $session->meta : [];
+        $endedAt = isset($meta['auto_ended_at']) && is_string($meta['auto_ended_at'])
+            ? ClientTime::parse($meta['auto_ended_at'])
+            : ($session->ended_at ?? now());
+
+        return $endedAt->copy()->addSeconds(self::LATE_POINT_GRACE_SECONDS);
+    }
+
     /**
+     * Applies one sample to the (locked) session. The session is saved by the caller.
+     *
+     * - rejected: invalid, too inaccurate, before the trip, past the late window, or an impossible jump;
+     * - trail:    older than the session's time cursor (out of order): stored for the route only;
+     * - persisted / gated: in order; advances the live position, time and distance,
+     *   and is stored on the trail unless the persist gate thins it out.
+     *
      * @param  array<string, mixed>  $raw
+     * @return array{status: 'persisted'|'trail'|'gated'|'rejected', raw: array<string, mixed>|null}
      */
-    private function persistPoint(
+    private function ingestPoint(
         FieldActivitySession $session,
         User $user,
         array $raw,
         ?TaskTrackingSession $activeTaskSession,
-    ): ?FieldLocationPoint {
+        ?Carbon $lateLimit,
+    ): array {
+        $rejected = ['status' => 'rejected', 'raw' => null];
+
         if (! isset($raw['latitude'], $raw['longitude'])) {
-            return null;
+            return $rejected;
         }
 
         $lat = (float) $raw['latitude'];
         $lng = (float) $raw['longitude'];
         if (! GeoDistance::isValidCoordinate($lat, $lng)) {
-            return null;
+            return $rejected;
         }
+
+        $accuracy = isset($raw['accuracy_meters']) && is_numeric($raw['accuracy_meters']) ? (float) $raw['accuracy_meters'] : null;
+        if ($accuracy !== null && $accuracy > self::MAX_ACCURACY_METERS) {
+            return $rejected;
+        }
+
+        $speed = isset($raw['speed_mps']) && is_numeric($raw['speed_mps']) && (float) $raw['speed_mps'] >= 0
+            ? (float) $raw['speed_mps']
+            : null;
 
         // Clamp device clocks: never in the future, never before the session.
         $recordedAt = ClientTime::parse($raw['recorded_at'] ?? null);
-        $latest = now()->addSeconds(120);
-        if ($recordedAt->gt($latest)) {
+        if ($recordedAt->gt(now()->addSeconds(120))) {
             $recordedAt = now();
         }
         if ($session->started_at !== null && $recordedAt->lt($session->started_at->copy()->subMinutes(5))) {
-            return null;
+            return $rejected;
+        }
+        if ($lateLimit !== null && $recordedAt->gt($lateLimit)) {
+            return $rejected;
         }
 
-        // Never rewind the session's time cursor: an out-of-order or
-        // clock-skewed point must not move last_recorded_at into the past,
-        // otherwise later points accrue phantom active time.
-        $cursorAt = $session->last_recorded_at !== null && $recordedAt->lt($session->last_recorded_at)
-            ? $session->last_recorded_at->copy()
-            : $recordedAt;
+        $cursor = $session->last_recorded_at;
 
-        $previous = null;
-        if ($session->last_latitude !== null && $session->last_longitude !== null) {
-            $previous = [
+        // Out of order (older than what we already applied): keep it on the
+        // trail, but never rewind position, time, distance or the live map.
+        if ($cursor !== null && $recordedAt->lt($cursor)) {
+            $this->createPoint($session, $user, $raw, $lat, $lng, $accuracy, $speed, $recordedAt, 0.0,
+                $this->movementEngine->classifyMovement($speed !== null ? $speed * 3.6 : null, 0.0),
+                null, $activeTaskSession);
+
+            return ['status' => 'trail', 'raw' => null];
+        }
+
+        // Impossible jump from the last accepted fix. The start fix is exempt
+        // (phones often hand a stale cached position on "Start"): a jump from
+        // it re-anchors the trip without crediting distance.
+        $hasPrevious = $session->last_latitude !== null && $session->last_longitude !== null;
+        $reanchor = false;
+        if ($hasPrevious && $cursor !== null) {
+            $step = GeoDistance::haversineMeters((float) $session->last_latitude, (float) $session->last_longitude, $lat, $lng);
+            $dt = max(1.0, (float) $cursor->diffInSeconds($recordedAt));
+            if ($step / $dt > self::MAX_IMPLIED_SPEED_MPS) {
+                $fromStartFix = $session->started_at !== null && $cursor->lte($session->started_at);
+                if (! $fromStartFix) {
+                    return $rejected;
+                }
+                $reanchor = true;
+            }
+        }
+
+        $interpreted = $this->movementEngine->interpret(
+            $hasPrevious ? [
                 'latitude' => (float) $session->last_latitude,
                 'longitude' => (float) $session->last_longitude,
-                'recorded_at' => $session->last_recorded_at?->toIso8601String(),
+                'recorded_at' => $cursor?->toIso8601String(),
                 'speed_mps' => null,
-            ];
+            ] : null,
+            [
+                'latitude' => $lat,
+                'longitude' => $lng,
+                'speed_mps' => $speed,
+                'recorded_at' => $recordedAt->toIso8601String(),
+            ],
+        );
+        $state = $interpreted['movement_state'];
+
+        // Time: credit the interval since the last applied sample (gated ones
+        // included), capped so offline gaps are not counted as activity.
+        $intervalSeconds = 0;
+        if ($cursor !== null) {
+            $maxInterval = max(60, (int) config('field_activity.max_active_interval_seconds', 900));
+            $intervalSeconds = (int) min($maxInterval, max(0, $cursor->diffInSeconds($recordedAt)));
         }
 
-        $interpreted = $this->movementEngine->interpret($previous, [
-            'latitude' => $lat,
-            'longitude' => $lng,
-            'speed_mps' => $raw['speed_mps'] ?? null,
-            'recorded_at' => $recordedAt->toIso8601String(),
+        // Distance: measured from the last credited position (the anchor), so
+        // GPS jitter while standing still adds nothing and slow movement made
+        // of many short steps is not lost. Nothing is added while stopped or
+        // for moves within the fix's accuracy / the stop radius.
+        $credited = 0.0;
+        $anchorLat = $session->distance_anchor_latitude ?? $session->last_persisted_latitude;
+        $anchorLng = $session->distance_anchor_longitude ?? $session->last_persisted_longitude;
+        if ($anchorLat === null || $anchorLng === null || $reanchor) {
+            $anchorLat = $lat;
+            $anchorLng = $lng;
+        } else {
+            $fromAnchor = GeoDistance::haversineMeters((float) $anchorLat, (float) $anchorLng, $lat, $lng);
+            $threshold = max($accuracy ?? 0.0, (float) config('field_activity.stop_radius_meters', 50));
+            // A device that reports speed 0 while clearly far away still moved.
+            $moved = $state !== FieldMovementState::STOPPED || $fromAnchor >= 2 * $threshold;
+            if ($moved && $fromAnchor >= $threshold) {
+                $credited = $fromAnchor;
+                $anchorLat = $lat;
+                $anchorLng = $lng;
+            }
+        }
+
+        $persist = $this->shouldPersist($session, $lat, $lng, $recordedAt, $state);
+        if ($persist) {
+            $this->createPoint($session, $user, $raw, $lat, $lng, $accuracy, $speed, $recordedAt, $credited, $state,
+                $interpreted['heading_degrees'], $activeTaskSession);
+        }
+
+        $session->forceFill([
+            'distance_meters' => (int) $session->distance_meters + (int) round($credited),
+            'travel_seconds' => (int) $session->travel_seconds + ($state === FieldMovementState::STOPPED ? 0 : $intervalSeconds),
+            'stationary_seconds' => (int) $session->stationary_seconds + ($state === FieldMovementState::STOPPED ? $intervalSeconds : 0),
+            'last_latitude' => $lat,
+            'last_longitude' => $lng,
+            'last_accuracy_meters' => $accuracy,
+            'last_recorded_at' => $recordedAt,
+            'last_movement_state' => $state,
+            'distance_anchor_latitude' => (float) $anchorLat,
+            'distance_anchor_longitude' => (float) $anchorLng,
         ]);
-
-        if (! $this->shouldPersist($session, $lat, $lng, $recordedAt, $interpreted['movement_state'])) {
-            // Still update last-known for live map even if we skip trail persistence.
+        if ($persist) {
             $session->forceFill([
-                'last_latitude' => $lat,
-                'last_longitude' => $lng,
-                'last_accuracy_meters' => isset($raw['accuracy_meters']) ? (float) $raw['accuracy_meters'] : null,
-                'last_recorded_at' => $cursorAt,
-                'last_movement_state' => $interpreted['movement_state'],
-            ])->save();
-
-            return null;
+                'last_persisted_latitude' => $lat,
+                'last_persisted_longitude' => $lng,
+                'last_persisted_recorded_at' => $recordedAt,
+            ]);
         }
 
+        return [
+            'status' => $persist ? 'persisted' : 'gated',
+            'raw' => [
+                'latitude' => $lat,
+                'longitude' => $lng,
+                'accuracy_meters' => $accuracy,
+                'speed_mps' => $speed,
+                'heading_degrees' => isset($raw['heading_degrees']) ? (float) $raw['heading_degrees'] : $interpreted['heading_degrees'],
+                'recorded_at' => $recordedAt->toIso8601String(),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $raw
+     */
+    private function createPoint(
+        FieldActivitySession $session,
+        User $user,
+        array $raw,
+        float $lat,
+        float $lng,
+        ?float $accuracy,
+        ?float $speed,
+        Carbon $recordedAt,
+        float $distance,
+        FieldMovementState $state,
+        ?float $heading,
+        ?TaskTrackingSession $activeTaskSession,
+    ): FieldLocationPoint {
         // Only trust task links that belong to this user's open task session;
         // client-sent ids are otherwise ignored.
         $taskId = $activeTaskSession?->task_id;
@@ -393,7 +656,7 @@ class FieldActivitySessionService
             ? substr($raw['client_point_id'], 0, 36)
             : null;
 
-        $point = FieldLocationPoint::query()->create([
+        return FieldLocationPoint::query()->create([
             'field_activity_session_id' => $session->id,
             'company_id' => $session->company_id,
             'user_id' => $user->id,
@@ -402,49 +665,13 @@ class FieldActivitySessionService
             'task_tracking_session_id' => $taskSessionId,
             'latitude' => $lat,
             'longitude' => $lng,
-            'accuracy_meters' => isset($raw['accuracy_meters']) ? (float) $raw['accuracy_meters'] : null,
-            'speed_mps' => isset($raw['speed_mps']) ? (float) $raw['speed_mps'] : null,
-            'heading_degrees' => isset($raw['heading_degrees'])
-                ? (float) $raw['heading_degrees']
-                : $interpreted['heading_degrees'],
-            'distance_from_previous_meters' => $interpreted['distance_meters'],
-            'movement_state' => $interpreted['movement_state'],
+            'accuracy_meters' => $accuracy,
+            'speed_mps' => $speed,
+            'heading_degrees' => isset($raw['heading_degrees']) ? (float) $raw['heading_degrees'] : $heading,
+            'distance_from_previous_meters' => round($distance, 2),
+            'movement_state' => $state,
             'recorded_at' => $recordedAt,
         ]);
-
-        $intervalSeconds = 0;
-        if ($session->last_recorded_at !== null) {
-            $intervalSeconds = (int) max(0, $session->last_recorded_at->diffInSeconds($recordedAt));
-        }
-
-        // Cap the interval so offline gaps (app killed, no GPS for hours)
-        // are not credited as travel/stationary time.
-        $maxInterval = max(60, (int) config('field_activity.max_active_interval_seconds', 900));
-        $intervalSeconds = min($intervalSeconds, $maxInterval);
-
-        $travelAdd = 0;
-        $stationaryAdd = 0;
-        if ($interpreted['movement_state'] === FieldMovementState::STOPPED) {
-            $stationaryAdd = $intervalSeconds;
-        } else {
-            $travelAdd = $intervalSeconds;
-        }
-
-        $session->forceFill([
-            'distance_meters' => (int) $session->distance_meters + (int) round($interpreted['distance_meters']),
-            'travel_seconds' => (int) $session->travel_seconds + $travelAdd,
-            'stationary_seconds' => (int) $session->stationary_seconds + $stationaryAdd,
-            'last_latitude' => $lat,
-            'last_longitude' => $lng,
-            'last_accuracy_meters' => isset($raw['accuracy_meters']) ? (float) $raw['accuracy_meters'] : null,
-            'last_recorded_at' => $cursorAt,
-            'last_movement_state' => $interpreted['movement_state'],
-            'last_persisted_latitude' => $lat,
-            'last_persisted_longitude' => $lng,
-            'last_persisted_recorded_at' => $cursorAt,
-        ])->save();
-
-        return $point;
     }
 
     private function shouldPersist(
@@ -484,35 +711,34 @@ class FieldActivitySessionService
         return true;
     }
 
-    private function upsertLiveSnapshot(FieldActivitySession $session, FieldLocationPoint $point): void
+    /**
+     * @param  array<string, mixed>  $latest
+     */
+    private function upsertLiveSnapshot(FieldActivitySession $session, array $latest): void
     {
         try {
             $this->snapshotService->upsertFromTrackingEvent([
                 'company_id' => $session->company_id,
                 'user_id' => $session->user_id,
-                'task_id' => $point->task_id,
-                'tracking_session_id' => $point->task_tracking_session_id,
-                'latitude' => $point->latitude,
-                'longitude' => $point->longitude,
-                'accuracy_meters' => $point->accuracy_meters,
-                'speed_mps' => $point->speed_mps,
-                'heading_degrees' => $point->heading_degrees,
+                'task_id' => null,
+                'tracking_session_id' => null,
+                'latitude' => $latest['latitude'],
+                'longitude' => $latest['longitude'],
+                'accuracy_meters' => $latest['accuracy_meters'],
+                'speed_mps' => $latest['speed_mps'],
+                'heading_degrees' => $latest['heading_degrees'],
                 'event_type' => 'field_activity',
                 'task_status' => null,
                 'arrived' => false,
-                'recorded_at' => $point->recorded_at?->toIso8601String(),
+                'recorded_at' => $latest['recorded_at'],
             ]);
         } catch (Throwable $e) {
             Log::debug('field_activity.snapshot_failed', ['message' => $e->getMessage()]);
         }
     }
 
-    private function publishRealtime(FieldActivitySession $session, FieldLocationPoint $point): void
-    {
-        $this->realtimeService->publishLocation($session, $point);
-    }
-
-    private function maybeSendStopReminder(FieldActivitySession $session): void
+    /** "Still at this stop?" push for long pending stops (run after stop detection). */
+    public function sendStopReminders(FieldActivitySession $session): void
     {
         $reminderAfter = (int) config('field_activity.stop_reminder_seconds', 1800);
         $open = FieldStop::query()
@@ -582,49 +808,64 @@ class FieldActivitySessionService
     }
 
     /**
+     * The caller's own field activity for today (company time zone): every
+     * trip of the day, not just the last one. Any member (agents and managers).
+     *
      * @return array<string, mixed>
      */
     public function todayForAgent(User $user, ?int $companyId = null): array
     {
         $context = $this->attendanceAccessService->resolve($user, $companyId);
-        $this->attendanceAccessService->ensureAgent($context);
+        $company = $context->company;
 
-        $enabled = $this->settingService->isEnabledForCompany($context->company);
-        $session = FieldActivitySession::query()
-            ->where('company_id', $context->company->id)
+        $enabled = $this->settingService->isEnabledForCompany($company);
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds($company);
+        $today = CompanyClock::today($company);
+
+        $sessions = FieldActivitySession::query()
+            ->where('company_id', $company->id)
             ->where('user_id', $user->id)
-            ->whereDate('started_at', now()->toDateString())
-            ->orderByDesc('id')
-            ->first();
+            ->where(function ($q) use ($dayStart, $dayEnd): void {
+                $q->whereBetween('started_at', [$dayStart, $dayEnd])
+                    // A trip started before midnight that is still running.
+                    ->orWhere('status', FieldActivitySessionStatus::ACTIVE->value);
+            })
+            ->orderBy('started_at')
+            ->orderBy('id')
+            ->get();
+
+        $session = $sessions->firstWhere(fn (FieldActivitySession $s): bool => $s->isActive()) ?? $sessions->last();
 
         $summary = FieldDailySummary::query()
-            ->where('company_id', $context->company->id)
+            ->where('company_id', $company->id)
             ->where('user_id', $user->id)
-            ->whereDate('summary_date', now()->toDateString())
+            ->whereDate('summary_date', $today)
             ->first();
 
-        $stops = $session
-            ? FieldStop::query()
-                ->where('field_activity_session_id', $session->id)
+        $stops = $sessions->isEmpty()
+            ? []
+            : FieldStop::query()
+                ->whereIn('field_activity_session_id', $sessions->pluck('id')->all())
                 ->orderBy('arrived_at')
                 ->get()
                 ->map(fn (FieldStop $s): array => $this->serializeStop($s))
-                ->all()
-            : [];
+                ->all();
 
         return [
             'enabled' => $enabled,
+            'date' => $today,
             'session' => $session ? $this->serializeSession($session) : null,
+            'sessions' => $sessions->map(fn (FieldActivitySession $s): array => $this->serializeSession($s))->values()->all(),
             'summary' => $summary ? $this->serializeSummary($summary) : null,
             'stops' => $stops,
             'pending_review' => $this->pendingReviewSnapshot(
-                (int) $context->company->id,
+                (int) $company->id,
                 (int) $user->id,
             ),
             'config' => [
                 'moving_interval_seconds' => (int) config('field_activity.moving_interval_seconds', 60),
                 'stationary_interval_seconds' => (int) config('field_activity.stationary_interval_seconds', 60),
-                'stop_dwell_seconds' => (int) config('field_activity.stop_dwell_seconds', 300),
+                'stop_dwell_seconds' => $this->settingService->stopDwellSeconds($company),
             ],
         ];
     }
@@ -634,8 +875,8 @@ class FieldActivitySessionService
      */
     public function pendingReviewForAgent(User $user, ?int $companyId = null): array
     {
+        // Any member reviews their own stops (field trips are for managers too).
         $context = $this->attendanceAccessService->resolve($user, $companyId);
-        $this->attendanceAccessService->ensureAgent($context);
 
         return $this->pendingReviewSnapshot((int) $context->company->id, (int) $user->id);
     }
@@ -646,12 +887,11 @@ class FieldActivitySessionService
     public function listStops(User $user, FieldActivitySession $session): array
     {
         $context = $this->attendanceAccessService->resolve($user, $session->company_id);
-        $this->attendanceAccessService->ensureAgent($context);
 
         if ((int) $session->user_id !== (int) $user->id
             || (int) $session->company_id !== (int) $context->company->id) {
             throw ValidationException::withMessages([
-                'session' => ['Field activity session not found for this agent.'],
+                'session' => ['Field activity session not found for this user.'],
             ]);
         }
 
@@ -670,12 +910,11 @@ class FieldActivitySessionService
     public function classifyStop(User $user, FieldStop $stop, array $data): array
     {
         $context = $this->attendanceAccessService->resolve($user, $data['company_id'] ?? $stop->company_id);
-        $this->attendanceAccessService->ensureAgent($context);
 
         if ((int) $stop->user_id !== (int) $user->id
             || (int) $stop->company_id !== (int) $context->company->id) {
             throw ValidationException::withMessages([
-                'stop' => ['Stop not found for this agent.'],
+                'stop' => ['Stop not found for this user.'],
             ]);
         }
 
@@ -737,6 +976,7 @@ class FieldActivitySessionService
             if (! $session->isActive()) {
                 $this->dailySummaryService->buildForSession($session);
             }
+            $this->realtimeService->publishStopUpdated($session, $stop);
         }
 
         return $this->serializeStop($stop->fresh() ?? $stop);
@@ -791,10 +1031,13 @@ class FieldActivitySessionService
             'last_longitude' => $lng,
             'last_accuracy_meters' => $accuracy,
             'last_recorded_at' => $recordedAt,
+            'last_received_at' => now(),
             'last_movement_state' => FieldMovementState::STOPPED,
             'last_persisted_latitude' => $lat,
             'last_persisted_longitude' => $lng,
             'last_persisted_recorded_at' => $recordedAt,
+            'distance_anchor_latitude' => $lat,
+            'distance_anchor_longitude' => $lng,
         ])->save();
 
         return true;
@@ -851,6 +1094,8 @@ class FieldActivitySessionService
             'last_persisted_latitude' => $lat,
             'last_persisted_longitude' => $lng,
             'last_persisted_recorded_at' => $recordedAt,
+            'distance_anchor_latitude' => $lat,
+            'distance_anchor_longitude' => $lng,
         ])->save();
 
         Log::debug('field_activity.lifecycle.seed_clock_in_point', [
@@ -947,6 +1192,7 @@ class FieldActivitySessionService
             'last_longitude' => $session->last_longitude,
             'last_movement_state' => $session->last_movement_state?->value,
             'last_recorded_at' => $session->last_recorded_at?->toIso8601String(),
+            'last_received_at' => $session->last_received_at?->toIso8601String(),
         ];
     }
 
@@ -985,10 +1231,11 @@ class FieldActivitySessionService
     {
         // Live totals across every session of the day (several field trips),
         // so an in-progress trip is reflected before its summary is rebuilt.
+        [$dayStart, $dayEnd] = CompanyClock::dayBounds((int) $summary->company_id, $summary->summary_date?->toDateString());
         $day = FieldActivitySession::query()
             ->where('company_id', $summary->company_id)
             ->where('user_id', $summary->user_id)
-            ->whereDate('started_at', $summary->summary_date?->toDateString())
+            ->whereBetween('started_at', [$dayStart, $dayEnd])
             ->selectRaw('COUNT(*) as sessions, COALESCE(SUM(distance_meters),0) as distance_meters, COALESCE(SUM(travel_seconds),0) as travel_seconds, COALESCE(SUM(stationary_seconds),0) as stationary_seconds, COALESCE(SUM(stop_count),0) as stop_count, COALESCE(SUM(visit_count),0) as visit_count, COALESCE(SUM(unknown_stop_count),0) as unknown_stop_count')
             ->first();
         $hasDay = (int) ($day->sessions ?? 0) > 0;
