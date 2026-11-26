@@ -3,8 +3,8 @@
  * `AGENT_APK_VERSION_CODE` is appended as `?v=` on QR / download URLs so phones
  * and CDNs do not keep an old package. Keep in sync with android versionCode.
  */
-export const AGENT_APK_VERSION_CODE = '5';
-export const AGENT_APK_VERSION_NAME = '1.0.4';
+export const AGENT_APK_VERSION_CODE = '6';
+export const AGENT_APK_VERSION_NAME = '1.0.5';
 
 /** Canonical public download — always what homepage QR codes should encode. */
 export const CANONICAL_AGENT_APK_URL =

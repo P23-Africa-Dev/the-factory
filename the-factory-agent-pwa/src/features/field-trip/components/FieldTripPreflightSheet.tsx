@@ -107,16 +107,35 @@ export function FieldTripPreflightSheet({
     return () => clearTimeout(t);
   }, [open, check]);
 
-  // Back from the app settings: check again on its own.
+  // Back from the app settings / a system dialog: check again on its own.
+  // A system dialog floats over the app without hiding the page, so the app's
+  // native "resume" event is used as well as page visibility.
   useEffect(() => {
     if (!awaitingSettings) return undefined;
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
+    let done = false;
+    const again = () => {
+      if (done) return;
+      done = true;
       setAwaitingSettings(false);
       run();
     };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') again();
+    };
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    let removeResume: (() => void) | null = null;
+    void import('@capacitor/app')
+      .then(({ App }) => App.addListener('resume', again))
+      .then((handle) => {
+        removeResume = () => void handle.remove();
+        if (done) removeResume();
+      })
+      .catch(() => {});
+    return () => {
+      done = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      removeResume?.();
+    };
   }, [awaitingSettings, run]);
 
   if (!open) return null;

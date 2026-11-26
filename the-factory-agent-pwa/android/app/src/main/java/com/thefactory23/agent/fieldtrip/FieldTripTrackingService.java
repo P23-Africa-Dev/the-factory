@@ -162,6 +162,9 @@ public class FieldTripTrackingService extends Service {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            // Own group: Android would otherwise bundle it with the app's task
+            // alerts and hide the End trip button behind two taps.
+            .setGroup("factory23_field_trip")
             .setContentIntent(pi)
             .addAction(0, config.endRequestedAtMillis > 0 ? "Ending…" : "End trip", endIntent())
             .build();

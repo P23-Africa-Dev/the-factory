@@ -33,6 +33,7 @@ import {
 import { TaskComments } from '@/manager/features/tasks/components/TaskComments';
 import { AssigneeList, ObserverList } from '@/components/shared/Observers';
 import { toast } from '@/lib/toast';
+import { useAuth } from '@/features/auth';
 
 function getStatusBadge(status: string): { bg: string; text: string; label: string } {
   switch (status) {
@@ -56,6 +57,7 @@ export default function ManagerTaskDetailScreen() {
   const id = (params?.id as string) || '';
 
   const { data: task, isLoading } = useTask(id);
+  const { user } = useAuth();
   const { items: checklistTasks } = useChecklistTasks(task ? [task] : []);
   const checklistTask = checklistTasks[0];
   const { data: assignees = [] } = useTaskAssignees();
@@ -139,6 +141,13 @@ export default function ManagerTaskDetailScreen() {
   const badge = getStatusBadge(checklistTask.status);
   const hasLocation = taskHasMapLocation(task);
   const proofs = task.proofs ?? [];
+  // A task assigned to the manager themself: they track and complete it like an agent.
+  const myId = user?.id != null ? Number(user.id) : null;
+  const assignedToMe =
+    myId != null &&
+    (Number(task.assignedAgentId) === myId ||
+      (task.assignees ?? []).some((a: { id?: number | string }) => Number(a.id) === myId));
+  const myTaskStatus = checklistTask.status;
   const routePointsCount = Array.isArray((routeData as { points?: unknown[] })?.points)
     ? ((routeData as { points: unknown[] }).points.length)
     : 0;
@@ -255,6 +264,27 @@ export default function ManagerTaskDetailScreen() {
               <Navigation size={15} />
               <span>Track Agent &amp; Destination on Fleet Map</span>
             </button>
+          )}
+
+          {assignedToMe && hasLocation && (myTaskStatus === 'pending' || myTaskStatus === 'in_progress') && (
+            <div className="mt-3 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => router.push(`/manager/task/${task.id}/tracking`)}
+                className="w-full h-12 rounded-2xl bg-[#44AFCD] text-[#0A1D25] font-extrabold text-sm active:scale-95 transition-all"
+              >
+                {myTaskStatus === 'pending' ? 'Start Tracking (my task)' : 'Continue Tracking'}
+              </button>
+              {myTaskStatus === 'in_progress' && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/manager/task/${task.id}/complete`)}
+                  className="w-full h-11 rounded-2xl border border-white/15 text-white/80 font-semibold text-xs active:scale-95 transition-all"
+                >
+                  Complete Task
+                </button>
+              )}
+            </div>
           )}
         </div>
 
