@@ -1,5 +1,7 @@
 "use client";
 
+import type { TrackingHealth } from "@/lib/tracking/tracking-health";
+
 import { apiRequest } from "./onboarding";
 
 export type FieldActivitySettings = {
@@ -85,6 +87,8 @@ export type JourneyCard = {
   ended_at?: string | null;
   /** "user", "auto_no_signal" (no location for the company's limit) or "auto_legacy". */
   end_reason?: string | null;
+  /** The phone's last tracking report (field trips only). */
+  tracking_health?: TrackingHealth | null;
 };
 
 export type JourneySource = "field_trip" | "attendance";

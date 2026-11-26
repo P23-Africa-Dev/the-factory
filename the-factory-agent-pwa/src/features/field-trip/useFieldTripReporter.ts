@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getDb } from '@/lib/db/client';
 import { requestBackgroundSync } from '@/lib/offline/queue';
 import { getActiveCompanyId } from '@/lib/storage/stores';
@@ -27,6 +27,9 @@ import { maybePromptBatteryOptimizationOnTrackingStart } from '@/lib/tracking/ba
 import { fieldTripApi } from './api';
 import { newClientId, useFieldTripStore } from './store';
 import { isTripNotActiveError, notifyFieldTripServerEnded } from './serverEnded';
+import { FieldTripTracker, isNativeTrackerAvailable, type NativeTrackerState } from './nativeTracker';
+import { env } from '@/constants/env';
+import { appStore } from '@/lib/storage/stores';
 
 const MAX_BATCH = 50;
 const FLUSH_EVERY_MS = 30_000;
@@ -63,15 +66,22 @@ export function useFieldTripReporter(options: {
   serverId: number | null;
   movingIntervalSeconds?: number;
   stationaryIntervalSeconds?: number;
-}): { flush: () => Promise<boolean> } {
+  /** When the trip started (ISO), for the native notification's timer. */
+  startedAt?: string | null;
+  /** The server confirmed there is no trip running: stop any native recording. */
+  idleConfirmed?: boolean;
+}): { flush: () => Promise<boolean>; native: boolean } {
   const { active, clientTripId, serverId } = options;
   const { startWatching, stopWatching } = useGeolocation();
+  /** APK 1.0.4+: the native service records and uploads (screen off, swiped away, reboot). */
+  const [native] = useState(isNativeTrackerAvailable);
   const refs = useRef({
     clientTripId,
     serverId,
     active,
     moving: options.movingIntervalSeconds ?? 30,
     stationary: Math.min(options.stationaryIntervalSeconds ?? 60, 60),
+    startedAt: options.startedAt ?? null,
   });
   const lastSampleAt = useRef(0);
   const lastToastAt = useRef(0);
@@ -84,8 +94,9 @@ export function useFieldTripReporter(options: {
       active,
       moving: options.movingIntervalSeconds ?? 30,
       stationary: Math.min(options.stationaryIntervalSeconds ?? 60, 60),
+      startedAt: options.startedAt ?? null,
     };
-  }, [active, clientTripId, serverId, options.movingIntervalSeconds, options.stationaryIntervalSeconds]);
+  }, [active, clientTripId, serverId, options.movingIntervalSeconds, options.stationaryIntervalSeconds, options.startedAt]);
 
   const enqueue = useCallback(async (loc: LocationObject) => {
     const { clientTripId: tripId, serverId: sid, active: isActive, moving, stationary } = refs.current;
@@ -131,7 +142,7 @@ export function useFieldTripReporter(options: {
    * Upload this trip's queued points (back-filling the server id first).
    * Resolves true once nothing of this trip is left waiting on this phone.
    */
-  const flush = useCallback(async (): Promise<boolean> => {
+  const flushWeb = useCallback(async (): Promise<boolean> => {
     const { clientTripId: tripId, serverId: sid } = refs.current;
     if (!tripId || !sid) return false;
 
@@ -185,6 +196,19 @@ export function useFieldTripReporter(options: {
     });
   }, []);
 
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (!native) return flushWeb();
+    const { serverId: sid } = refs.current;
+    if (!sid) return false;
+    try {
+      const state = await FieldTripTracker.flush();
+      if (state.endedByServer) notifyFieldTripServerEnded(sid);
+      return state.pending === 0 || state.endedByServer;
+    } catch {
+      return false;
+    }
+  }, [flushWeb, native]);
+
   /**
    * Same proven path as task tracking: the shared geolocation watch, which on
    * the APK runs the native background watcher (foreground service) and in a
@@ -214,7 +238,7 @@ export function useFieldTripReporter(options: {
   // Collect GPS while the trip is active (including while "ending", until the
   // final flush has been attempted by the provider).
   useEffect(() => {
-    if (!active || !clientTripId) return undefined;
+    if (native || !active || !clientTripId) return undefined;
 
     void acquireTrackingWakeLock();
     maybePromptBatteryOptimizationOnTrackingStart();
@@ -279,7 +303,129 @@ export function useFieldTripReporter(options: {
       void releaseTrackingWakeLock();
       stopWatching();
     };
-  }, [active, clientTripId, flush, restartWatch, startWatch, stopWatching]);
+  }, [native, active, clientTripId, flush, restartWatch, startWatch, stopWatching]);
+
+  // ── Native tracker (APK 1.0.4+) ───────────────────────────────────────────
+  const nativeStartedRef = useRef<string | null>(null);
+
+  const nativeStart = useCallback((tripId: string) => {
+    const startedAtMillis = refs.current.startedAt ? Date.parse(refs.current.startedAt) : NaN;
+    return FieldTripTracker.start({
+      clientTripId: tripId,
+      serverId: refs.current.serverId ?? undefined,
+      apiBaseUrl: env.API_BASE_URL,
+      token: appStore.getString('auth_token') ?? undefined,
+      companyId: getActiveCompanyId() ?? undefined,
+      movingIntervalSeconds: refs.current.moving,
+      stationaryIntervalSeconds: refs.current.stationary,
+      startedAtMillis: Number.isFinite(startedAtMillis) ? startedAtMillis : undefined,
+    });
+  }, []);
+
+  // Start / pause recording. The service keeps going on its own; this only
+  // (re)hands it the trip, the sign-in token and the settings.
+  useEffect(() => {
+    if (!native || !clientTripId) return;
+    if (!active) {
+      // End tapped: stop recording, keep uploading until the provider ends it.
+      void FieldTripTracker.update({ recording: false }).catch(() => {});
+      return;
+    }
+    nativeStartedRef.current = clientTripId;
+    maybePromptBatteryOptimizationOnTrackingStart();
+    void nativeStart(clientTripId).catch((error: unknown) => {
+      toast.warning(
+        'Field trip: location problem',
+        error instanceof Error ? error.message : 'Could not start location tracking.',
+      );
+    });
+  }, [native, active, clientTripId, nativeStart]);
+
+  // The trip is over (ended here, or the server says none is running): stop the
+  // service and drop its points (they are on the server).
+  useEffect(() => {
+    if (!native || clientTripId) return;
+    if (nativeStartedRef.current == null && !options.idleConfirmed) return;
+    nativeStartedRef.current = null;
+    void FieldTripTracker.getState()
+      .then((state) => (state.active ? FieldTripTracker.stop() : state))
+      .catch(() => {});
+  }, [native, clientTripId, options.idleConfirmed]);
+
+  // Server id known (offline start synced): uploads can begin.
+  useEffect(() => {
+    if (native && clientTripId && serverId) {
+      void FieldTripTracker.update({ serverId, token: appStore.getString('auth_token') ?? undefined }).catch(() => {});
+    }
+  }, [native, clientTripId, serverId]);
+
+  // Mirror native fixes into the live trail / GPS status while the app is open,
+  // and react when the server has already ended the trip.
+  useEffect(() => {
+    if (!native || !clientTripId) return undefined;
+    const handles = [
+      FieldTripTracker.addListener('fix', (fix) => {
+        recordBackgroundLocationFix();
+        useFieldTripStore.getState().recordFix(fix.accuracy ?? null, [fix.longitude, fix.latitude]);
+      }),
+      FieldTripTracker.addListener('endedByServer', (state: NativeTrackerState) => {
+        if (state.serverId) notifyFieldTripServerEnded(state.serverId);
+      }),
+    ];
+    const check = () => {
+      if (document.visibilityState !== 'visible') return;
+      void FieldTripTracker.getState()
+        .then((state) => {
+          if (state.endedByServer && state.serverId) {
+            notifyFieldTripServerEnded(state.serverId);
+          } else if (!state.running && refs.current.active) {
+            // The system killed the service: start it again.
+            void nativeStart(clientTripId).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
+    document.addEventListener('visibilitychange', check);
+    const gpsTimer = setInterval(() => {
+      const { lastFixAt } = useFieldTripStore.getState();
+      if (lastFixAt != null && Date.now() - lastFixAt > 120_000) useFieldTripStore.getState().setGps('lost');
+    }, 15_000);
+    return () => {
+      document.removeEventListener('visibilitychange', check);
+      clearInterval(gpsTimer);
+      handles.forEach((h) => void h.then((x) => x.remove()).catch(() => {}));
+    };
+  }, [native, clientTripId, nativeStart]);
+
+  // Browser / older APKs: tell the server how tracking is doing (managers see it).
+  useEffect(() => {
+    if (native || !active || !serverId) return undefined;
+    const report = async () => {
+      try {
+        const db = await getDb();
+        const queued = (await db.getAllFromIndex('locationQueue', 'by-synced', 0)).filter(
+          (r) => r.fieldActivitySessionId === serverId || r.fieldTripClientId === refs.current.clientTripId,
+        ).length;
+        const { lastFixAt, gps } = useFieldTripStore.getState();
+        await fieldTripApi.health(serverId, {
+          source: 'web',
+          app_state: document.visibilityState === 'visible' ? 'foreground' : 'background',
+          last_fix_at: lastFixAt ? new Date(lastFixAt).toISOString() : undefined,
+          queued,
+          last_error: gps === 'lost' ? 'No GPS fix for over 2 minutes' : undefined,
+          reported_at: new Date().toISOString(),
+        });
+      } catch {
+        // Diagnostics only.
+      }
+    };
+    const first = setTimeout(() => void report(), 10_000);
+    const timer = setInterval(() => void report(), 60_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [native, active, serverId]);
 
   // After a reload the in-memory trail is empty: rebuild it from this trip's
   // points saved on the device (synced or not).
@@ -289,6 +435,13 @@ export function useFieldTripReporter(options: {
     let cancelled = false;
     void (async () => {
       try {
+        if (native) {
+          const { points } = await FieldTripTracker.getTrail();
+          if (!cancelled && points.length > 0 && useFieldTripStore.getState().trail.length === 0) {
+            useFieldTripStore.getState().setTrail(points);
+          }
+          return;
+        }
         const db = await getDb();
         const rows = (await db.getAll('locationQueue'))
           .filter((r) => r.fieldTripClientId === clientTripId)
@@ -303,12 +456,12 @@ export function useFieldTripReporter(options: {
     return () => {
       cancelled = true;
     };
-  }, [active, clientTripId]);
+  }, [native, active, clientTripId]);
 
   // Upload straight away once the server id becomes known (offline start synced).
   useEffect(() => {
-    if (active && serverId) void flush();
-  }, [active, serverId, flush]);
+    if (!native && active && serverId) void flush();
+  }, [native, active, serverId, flush]);
 
-  return { flush };
+  return { flush, native };
 }

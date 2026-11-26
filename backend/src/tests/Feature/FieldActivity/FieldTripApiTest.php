@@ -250,6 +250,43 @@ class FieldTripApiTest extends TestCase
     /**
      * @param  array<string, mixed>  $extra
      */
+    public function test_phone_reports_tracking_health_and_managers_see_it_on_the_journey(): void
+    {
+        $f = $this->seedCompany();
+        $tripId = $this->startTrip($f['agent'], $f['company'])->assertCreated()->json('data.trip.id');
+
+        $this->actingAs($f['agent'], 'sanctum')
+            ->postJson("/api/v1/field-trips/{$tripId}/health", [
+                'company_id' => $f['company']->id,
+                'source' => 'native',
+                'app_version' => '1.0.4',
+                'app_state' => 'background',
+                'permission' => 'always',
+                'precise' => true,
+                'fixes' => 42,
+                'queued' => 3,
+                'uploaded' => 39,
+                'last_error' => 'timeout',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.health.source', 'native')
+            ->assertJsonPath('data.health.queued', 3);
+
+        $health = FieldActivitySession::find($tripId)->meta['health'];
+        $this->assertSame(42, $health['fixes']);
+        $this->assertArrayHasKey('received_at', $health);
+
+        // Someone else cannot write health onto this trip.
+        $this->actingAs($f['otherAgent'], 'sanctum')
+            ->postJson("/api/v1/field-trips/{$tripId}/health", ['company_id' => $f['company']->id, 'fixes' => 1])
+            ->assertStatus(422);
+
+        $this->actingAs($f['owner'], 'sanctum')
+            ->getJson("/api/v1/admin/field-activity/journeys/{$tripId}?company_id={$f['company']->id}")
+            ->assertOk()
+            ->assertJsonPath('data.journey.tracking_health.app_state', 'background');
+    }
+
     private function startTrip(User $user, Company $company, array $extra = []): \Illuminate\Testing\TestResponse
     {
         return $this->actingAs($user, 'sanctum')->postJson('/api/v1/field-trips', [

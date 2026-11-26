@@ -241,6 +241,10 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->whereNumber('trip')
             ->middleware('throttle:api-heavy')
             ->name('points');
+        Route::post('/{trip}/health', [FieldTripController::class, 'health'])
+            ->whereNumber('trip')
+            ->middleware('throttle:api')
+            ->name('health');
         // Stops and the day view for every member (managers take trips too);
         // the service checks the caller owns the trip / stop.
         Route::get('/today', [FieldTripController::class, 'today'])->name('today');

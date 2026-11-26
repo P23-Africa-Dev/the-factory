@@ -66,4 +66,11 @@ export const fieldTripApi = {
       })),
     });
   },
+
+  /** Tracking health report (shown to managers on the journey). */
+  health: async (tripId: number, report: Record<string, unknown>): Promise<void> => {
+    await client.post(`/field-trips/${tripId}/health`, { company_id: getActiveCompanyId() ?? undefined, ...report }, {
+      suppressErrorToast: true,
+    });
+  },
 };

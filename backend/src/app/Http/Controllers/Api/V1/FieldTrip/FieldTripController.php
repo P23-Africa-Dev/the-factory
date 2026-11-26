@@ -65,6 +65,34 @@ class FieldTripController extends Controller
         );
     }
 
+    /** The phone's tracking health report for its own trip (shown to managers). */
+    public function health(Request $request, FieldActivitySession $trip): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['nullable', 'integer'],
+            'source' => ['nullable', 'string', 'in:native,web'],
+            'app_version' => ['nullable', 'string', 'max:20'],
+            'app_state' => ['nullable', 'string', 'max:20'],
+            'permission' => ['nullable', 'string', 'max:20'],
+            'precise' => ['nullable', 'boolean'],
+            'location_services_on' => ['nullable', 'boolean'],
+            'battery_optimized' => ['nullable', 'boolean'],
+            'fixes' => ['nullable', 'integer', 'min:0'],
+            'last_fix_at' => ['nullable', 'date'],
+            'last_accuracy_m' => ['nullable', 'numeric', 'min:0'],
+            'queued' => ['nullable', 'integer', 'min:0'],
+            'uploaded' => ['nullable', 'integer', 'min:0'],
+            'failed_uploads' => ['nullable', 'integer', 'min:0'],
+            'last_error' => ['nullable', 'string', 'max:1000'],
+            'reported_at' => ['nullable', 'date'],
+        ]);
+
+        return $this->success(
+            message: 'Tracking health recorded.',
+            data: $this->tripService->recordHealth($request->user(), $trip, $data),
+        );
+    }
+
     /** Today's field activity for the caller (every trip of the day). Any member. */
     public function today(Request $request): JsonResponse
     {

@@ -375,6 +375,51 @@ class FieldTripService
     }
 
     /**
+     * Store the phone's latest tracking health report on the trip (meta.health).
+     * Lets managers and support see why a route is short: GPS off, permission
+     * revoked, uploads failing, app killed… Accepted for ended trips too (the
+     * final report often arrives right after End).
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public function recordHealth(User $user, FieldActivitySession $trip, array $data): array
+    {
+        $this->assertOwnTrip($user, $trip, $data['company_id'] ?? null);
+
+        $report = array_filter([
+            'source' => $data['source'] ?? null,
+            'app_version' => $data['app_version'] ?? null,
+            'app_state' => $data['app_state'] ?? null,
+            'permission' => $data['permission'] ?? null,
+            'precise' => $data['precise'] ?? null,
+            'location_services_on' => $data['location_services_on'] ?? null,
+            'battery_optimized' => $data['battery_optimized'] ?? null,
+            'fixes' => $data['fixes'] ?? null,
+            'last_fix_at' => $data['last_fix_at'] ?? null,
+            'last_accuracy_m' => $data['last_accuracy_m'] ?? null,
+            'queued' => $data['queued'] ?? null,
+            'uploaded' => $data['uploaded'] ?? null,
+            'failed_uploads' => $data['failed_uploads'] ?? null,
+            'last_error' => isset($data['last_error']) ? mb_substr((string) $data['last_error'], 0, 300) : null,
+            'reported_at' => $data['reported_at'] ?? null,
+        ], static fn ($v) => $v !== null);
+        $report['received_at'] = now()->toIso8601String();
+
+        // Merge into meta without a lost-update race against point ingest.
+        DB::transaction(function () use ($trip, $report): void {
+            /** @var FieldActivitySession $locked */
+            $locked = FieldActivitySession::query()->whereKey($trip->id)->lockForUpdate()->firstOrFail();
+            $meta = is_array($locked->meta) ? $locked->meta : [];
+            $meta['health'] = $report;
+            $locked->meta = $meta;
+            $locked->save();
+        });
+
+        return ['health' => $report];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function payload(FieldActivitySession $trip, bool $created): array

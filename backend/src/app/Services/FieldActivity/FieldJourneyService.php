@@ -644,6 +644,8 @@ class FieldJourneyService
             'started_at' => $session->started_at?->toIso8601String(),
             'ended_at' => $session->ended_at?->toIso8601String(),
             'end_reason' => $session->end_reason,
+            // Last report from the phone's tracker (support / "why is the route short?").
+            'tracking_health' => is_array($session->meta['health'] ?? null) ? $session->meta['health'] : null,
         ];
     }
 

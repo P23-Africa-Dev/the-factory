@@ -121,6 +121,8 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
     serverId: local?.serverId ?? null,
     movingIntervalSeconds: current?.settings.moving_interval_seconds,
     stationaryIntervalSeconds: current?.settings.stationary_interval_seconds,
+    startedAt: local?.startedAt ?? null,
+    idleConfirmed: current != null && current.trip == null && local == null,
   });
 
   // An upload was refused because the server already ended this trip (auto-ended

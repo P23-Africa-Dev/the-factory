@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { describeTrackingHealth, type TrackingHealth } from "@/lib/tracking/tracking-health";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format, parse, parseISO } from "date-fns";
@@ -49,6 +50,40 @@ type JourneyViewProps = {
   backHref?: string;
   journeyBasePath?: string;
 };
+
+function TrackingHealthCard({ health }: { health: TrackingHealth }) {
+  const summary = describeTrackingHealth(health);
+  const good = summary.status === "good";
+  return (
+    <div
+      className={`rounded-xl border px-3 py-3 space-y-2 ${
+        good ? "border-emerald-100 bg-emerald-50/60" : "border-amber-200 bg-amber-50"
+      }`}
+    >
+      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Tracking health</p>
+      <p className={`text-[12px] font-bold ${good ? "text-emerald-700" : "text-amber-800"}`}>
+        {good ? "Recorded normally" : "Tracking problems on the phone"}
+      </p>
+      {summary.issues.length > 0 && (
+        <ul className="list-disc pl-4 space-y-1">
+          {summary.issues.map((issue) => (
+            <li key={issue} className="text-[11px] text-amber-900 leading-snug">
+              {issue}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="space-y-1">
+        {summary.facts.map((f) => (
+          <div key={f.label} className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-gray-500">{f.label}</span>
+            <span className="text-[11px] font-bold text-[#0B1215]">{f.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function JourneyView({
   sessionId,
@@ -498,6 +533,10 @@ export function JourneyView({
                   {stats.narrative}
                 </p>
               )}
+
+              {isTrip && journey?.tracking_health ? (
+                <TrackingHealthCard health={journey.tracking_health} />
+              ) : null}
             </div>
           </aside>
         </div>

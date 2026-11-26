@@ -221,6 +221,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .catch(() => {});
       }
 
+      // Best-effort: a native field-trip recorder must not keep running (and
+      // posting with this sign-in) after logout.
+      void import('@/features/field-trip/nativeTracker')
+        .then((m) => (m.isNativeTrackerAvailable() ? m.FieldTripTracker.stop() : null))
+        .catch(() => {});
+
       // 1. Clear PWA appStore and trackingStore
       appStore.clearAll();
       trackingStore.clearAll();
