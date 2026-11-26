@@ -207,6 +207,8 @@ export type FieldActivitySessionDto = {
   company_id: number;
   user_id: number;
   attendance_record_id: number | null;
+  /** "field_trip" (phone Start Field Trip) or "attendance" (clock-in tracking). */
+  source?: JourneySource | string | null;
   status: string;
   started_at: string | null;
   ended_at: string | null;
@@ -413,7 +415,14 @@ export type FieldActivityLiveAgentDto = {
   session: {
     id: number;
     status: string;
+    /** "field_trip" (Start Field Trip) or "attendance" (legacy clock-in tracking). */
+    source?: JourneySource | string | null;
     started_at: string | null;
+    distance_meters?: number | null;
+    /** Optional extras; `meta.start` is the trip's start point when the API sends it. */
+    meta?: {
+      start?: { latitude: number | string; longitude: number | string } | null;
+    } | null;
     last_latitude: number | null;
     last_longitude: number | null;
     last_movement_state: string | null;

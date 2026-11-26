@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import mapboxgl from "mapbox-gl";
 import { format, parse, parseISO } from "date-fns";
 import {
   ChevronLeft,
@@ -12,450 +11,37 @@ import {
   Download,
   Loader2,
   MapPin,
+  RefreshCw,
   Route,
   Users,
 } from "lucide-react";
 import { useJourneyDetail } from "@/hooks/use-field-journeys";
-import { useEffectiveMapProvider } from "@/hooks/use-effective-map-provider";
-import {
-  createMapboxTransformRequest,
-  getGoogleMapsPublicApiKey,
-  getMapboxPublicToken,
-} from "@/lib/config/public-env";
-import { getCountryFallbackViewport } from "@/lib/map/default-viewport";
-import { loadGoogleMapsApi } from "@/lib/map/google-loader";
-import type { FieldStopDto, JourneyTimelineEvent } from "@/lib/api/field-activity";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useAuthStore } from "@/store/auth";
 import { RoutePlaybackControls } from "@/components/operations/route-playback-controls";
 import {
+  EVENT_COLORS,
+  formatJourneyDuration as formatDuration,
+  formatStopWindow,
+  JourneyMap,
+  stopMarkerColor,
+} from "@/components/operations/journey-map";
+import {
   buildJourneysCsv,
+  buildStopsCsv,
   downloadTextFile,
+  fileSlug,
 } from "@/lib/tracking/export-journeys-csv";
 
-const EVENT_COLORS: Record<string, string> = {
-  green: "#22C55E",
-  blue: "#3B82F6",
-  orange: "#F97316",
-  purple: "#A855F7",
-  gray: "#9CA3AF",
-  red: "#EF4444",
-  teal: "#14B8A6",
-};
-
 function formatKm(meters: number): string {
-  if (meters < 1000) return `${meters} m`;
+  if (meters < 1000) return `${Math.round(meters)} m`;
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
-function formatDuration(seconds: number): string {
-  if (seconds <= 0) return "—";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours <= 0) return `${minutes}m`;
-  return `${hours}h ${minutes}m`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function stopPopupHtml(args: {
-  title: string;
-  address: string | null;
-  when: string | null;
-  duration: string | null;
-}): string {
-  return `<div style="max-width:240px;padding:2px 0;font-family:system-ui,sans-serif">
-    <div style="font-size:12px;font-weight:700;color:#0B1215">${escapeHtml(args.title)}</div>
-    ${args.when ? `<div style="font-size:11px;color:#6B7280;margin-top:2px">${escapeHtml(args.when)}</div>` : ""}
-    ${args.duration ? `<div style="font-size:11px;color:#6B7280">${escapeHtml(args.duration)}</div>` : ""}
-    <div style="font-size:11px;color:#0B1215;margin-top:4px">${escapeHtml(args.address || "Address unavailable")}</div>
-  </div>`;
-}
-
-function stopMarkerColor(classification: string | null | undefined): string {
-  if (classification === "customer_visit" || classification === "lead_visit") return "#F97316";
-  if (classification === "org_visit" || classification === "task") return "#3B82F6";
-  if (classification === "meeting") return "#A855F7";
-  if (classification === "personal") return "#14B8A6";
-  if (classification === "ignore") return "#9CA3AF";
-  return "#F97316";
-}
-
-function formatStopWindow(arrivedAt: string | null, departedAt: string | null): string | null {
-  if (!arrivedAt) return null;
-  const start = format(parseISO(arrivedAt), "h:mm a");
-  if (!departedAt) return `Arrived ${start}`;
-  return `${start} – ${format(parseISO(departedAt), "h:mm a")}`;
-}
-
-function createNumberedStopElement(index: number, color: string, selected: boolean): HTMLDivElement {
-  const el = document.createElement("div");
-  const size = selected ? 28 : 24;
-  el.style.cssText = [
-    `width:${size}px`,
-    `height:${size}px`,
-    "border-radius:9999px",
-    `background:${color}`,
-    "color:white",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-    "font-size:11px",
-    "font-weight:800",
-    "border:2px solid white",
-    "box-shadow:0 2px 8px rgba(15,23,42,0.28)",
-    "cursor:pointer",
-  ].join(";");
-  el.textContent = String(index);
-  return el;
-}
-
-function JourneyMap({
-  coordinates,
-  timeline,
-  stops,
-  selectedId,
-  clockIn,
-  clockOut,
-  bounds,
-  playbackIndex = null,
-}: {
-  coordinates: [number, number][];
-  timeline: JourneyTimelineEvent[];
-  stops: FieldStopDto[];
-  selectedId: string | null;
-  clockIn: { latitude: number; longitude: number } | null;
-  clockOut: { latitude: number; longitude: number } | null;
-  bounds: {
-    min_lng: number;
-    min_lat: number;
-    max_lng: number;
-    max_lat: number;
-  } | null;
-  playbackIndex?: number | null;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
-  const playbackMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  const mapboxToken = useMemo(() => getMapboxPublicToken(), []);
-  const googleApiKey = useMemo(() => getGoogleMapsPublicApiKey(), []);
-  const { effectiveProvider } = useEffectiveMapProvider();
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    let cancelled = false;
-
-    const clearMarkers = () => {
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
-    };
-
-    const dispose = () => {
-      clearMarkers();
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-    };
-
-    if (effectiveProvider === "google" && googleApiKey) {
-      dispose();
-      containerRef.current.innerHTML = "";
-      loadGoogleMapsApi(googleApiKey).then((raw) => {
-        if (cancelled || !containerRef.current || !raw) return;
-        const google = raw as {
-          maps: {
-            Map: new (el: HTMLElement, opts: Record<string, unknown>) => {
-              fitBounds: (b: unknown, padding?: unknown) => void;
-            };
-            Polyline: new (opts: Record<string, unknown>) => { setMap: (m: unknown) => void };
-            Marker: new (opts: Record<string, unknown>) => { setMap: (m: unknown) => void };
-            LatLngBounds: new () => { extend: (pt: unknown) => void };
-            SymbolPath: { CIRCLE: number };
-          };
-        };
-
-        const center =
-          coordinates.length > 0
-            ? {
-                lat: coordinates[Math.floor(coordinates.length / 2)][1],
-                lng: coordinates[Math.floor(coordinates.length / 2)][0],
-              }
-            : {
-                lat: getCountryFallbackViewport().center[1],
-                lng: getCountryFallbackViewport().center[0],
-              };
-
-        const map = new google.maps.Map(containerRef.current, {
-          center,
-          zoom: 12,
-          disableDefaultUI: true,
-          gestureHandling: "greedy",
-        });
-
-        if (coordinates.length > 1) {
-          new google.maps.Polyline({
-            path: coordinates.map(([lng, lat]) => ({ lat, lng })),
-            strokeColor: "#3B82F6",
-            strokeOpacity: 0.85,
-            strokeWeight: 4,
-            map,
-          });
-        }
-
-        const gBounds = new google.maps.LatLngBounds();
-        const InfoWindow = (google.maps as unknown as { InfoWindow: new (opts: Record<string, unknown>) => { setContent: (html: string) => void; open: (opts: unknown) => void; close: () => void } }).InfoWindow;
-        const addDot = (
-          lat: number,
-          lng: number,
-          color: string,
-          selected: boolean,
-          popupHtml?: string,
-        ) => {
-          const marker = new google.maps.Marker({
-            position: { lat, lng },
-            map,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: selected ? 9 : 6,
-              fillColor: color,
-              fillOpacity: 1,
-              strokeColor: "#fff",
-              strokeWeight: 2,
-            },
-          });
-          if (popupHtml) {
-            const info = new InfoWindow({ content: popupHtml });
-            (marker as unknown as { addListener: (ev: string, fn: () => void) => void }).addListener("mouseover", () => {
-              info.open({ map, anchor: marker });
-            });
-            (marker as unknown as { addListener: (ev: string, fn: () => void) => void }).addListener("mouseout", () => {
-              info.close();
-            });
-          }
-          gBounds.extend({ lat, lng });
-        };
-
-        if (clockIn) addDot(clockIn.latitude, clockIn.longitude, "#22C55E", false);
-        if (clockOut) addDot(clockOut.latitude, clockOut.longitude, "#EF4444", false);
-
-        timeline.forEach((event) => {
-          if (event.latitude == null || event.longitude == null) return;
-          if (event.type === "travel" || event.stop_id != null) return;
-          addDot(
-            event.latitude,
-            event.longitude,
-            EVENT_COLORS[event.color] ?? "#9CA3AF",
-            event.id === selectedId,
-          );
-        });
-
-        stops.forEach((stop, index) => {
-          addDot(
-            stop.latitude,
-            stop.longitude,
-            stopMarkerColor(stop.classification),
-            selectedId === `stop_${stop.id}`,
-            stopPopupHtml({
-              title: `Stop ${index + 1}`,
-              address: stop.address,
-              when: formatStopWindow(stop.arrived_at, stop.departed_at),
-              duration: stop.duration_seconds > 0 ? formatDuration(stop.duration_seconds) : null,
-            }),
-          );
-        });
-
-        coordinates.forEach(([lng, lat]) => gBounds.extend({ lat, lng }));
-        if (bounds) {
-          gBounds.extend({ lat: bounds.min_lat, lng: bounds.min_lng });
-          gBounds.extend({ lat: bounds.max_lat, lng: bounds.max_lng });
-        }
-        map.fitBounds(gBounds, 48);
-      });
-
-      return () => {
-        cancelled = true;
-        dispose();
-      };
-    }
-
-    if (!mapboxToken) return;
-    dispose();
-    mapboxgl.accessToken = mapboxToken;
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/light-v11",
-      center: getCountryFallbackViewport().center,
-      zoom: 11,
-      transformRequest: createMapboxTransformRequest(),
-    });
-    mapRef.current = map;
-
-    map.on("load", () => {
-      if (coordinates.length > 1) {
-        map.addSource("journey-route", {
-          type: "geojson",
-          data: {
-            type: "Feature",
-            properties: {},
-            geometry: { type: "LineString", coordinates },
-          },
-        });
-        map.addLayer({
-          id: "journey-route-line",
-          type: "line",
-          source: "journey-route",
-          paint: {
-            "line-color": "#3B82F6",
-            "line-width": 4,
-            "line-opacity": 0.85,
-          },
-        });
-      }
-
-      const addMarker = (
-        lng: number,
-        lat: number,
-        color: string,
-        selected: boolean,
-        popupHtml?: string,
-        element?: HTMLElement,
-      ) => {
-        const el = element ?? document.createElement("div");
-        if (!element) {
-          el.style.width = selected ? "16px" : "12px";
-          el.style.height = selected ? "16px" : "12px";
-          el.style.borderRadius = "9999px";
-          el.style.background = color;
-          el.style.border = "2px solid white";
-          el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.25)";
-        }
-        const marker = new mapboxgl.Marker({ element: el })
-          .setLngLat([lng, lat])
-          .addTo(map);
-        if (popupHtml) {
-          const popup = new mapboxgl.Popup({
-            offset: 14,
-            closeButton: false,
-            closeOnClick: false,
-          }).setHTML(popupHtml);
-          marker.setPopup(popup);
-          el.addEventListener("mouseenter", () => marker.togglePopup());
-          el.addEventListener("mouseleave", () => {
-            if (marker.getPopup()?.isOpen()) marker.togglePopup();
-          });
-        }
-        markersRef.current.push(marker);
-      };
-
-      if (clockIn) addMarker(clockIn.longitude, clockIn.latitude, "#22C55E", false);
-      if (clockOut) addMarker(clockOut.longitude, clockOut.latitude, "#EF4444", false);
-
-      timeline.forEach((event) => {
-        if (event.latitude == null || event.longitude == null) return;
-        if (event.type === "travel" || event.stop_id != null) return;
-        addMarker(
-          event.longitude,
-          event.latitude,
-          EVENT_COLORS[event.color] ?? "#9CA3AF",
-          event.id === selectedId,
-        );
-      });
-
-      stops.forEach((stop, index) => {
-        const color = stopMarkerColor(stop.classification);
-        addMarker(
-          stop.longitude,
-          stop.latitude,
-          color,
-          selectedId === `stop_${stop.id}`,
-          stopPopupHtml({
-            title: `Stop ${index + 1}`,
-            address: stop.address,
-            when: formatStopWindow(stop.arrived_at, stop.departed_at),
-            duration: stop.duration_seconds > 0 ? formatDuration(stop.duration_seconds) : null,
-          }),
-          createNumberedStopElement(index + 1, color, selectedId === `stop_${stop.id}`),
-        );
-      });
-
-      if (bounds) {
-        map.fitBounds(
-          [
-            [bounds.min_lng, bounds.min_lat],
-            [bounds.max_lng, bounds.max_lat],
-          ],
-          { padding: 56, maxZoom: 15 },
-        );
-      } else if (coordinates.length > 0) {
-        const lngs = coordinates.map((c) => c[0]);
-        const lats = coordinates.map((c) => c[1]);
-        map.fitBounds(
-          [
-            [Math.min(...lngs), Math.min(...lats)],
-            [Math.max(...lngs), Math.max(...lats)],
-          ],
-          { padding: 56, maxZoom: 15 },
-        );
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      dispose();
-    };
-  }, [
-    bounds,
-    clockIn,
-    clockOut,
-    coordinates,
-    effectiveProvider,
-    googleApiKey,
-    mapboxToken,
-    selectedId,
-    stops,
-    timeline,
-  ]);
-
-  // Keep playback marker in sync without remounting the map.
-  useEffect(() => {
-    if (playbackIndex == null || coordinates.length === 0) {
-      playbackMarkerRef.current?.remove();
-      playbackMarkerRef.current = null;
-      return;
-    }
-
-    const idx = Math.min(Math.max(playbackIndex, 0), coordinates.length - 1);
-    const [lng, lat] = coordinates[idx];
-
-    if (effectiveProvider === "google") {
-      return;
-    }
-
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (!playbackMarkerRef.current) {
-      const el = document.createElement("div");
-      el.style.cssText =
-        "width:18px;height:18px;border-radius:9999px;background:#0EA5E9;border:3px solid white;box-shadow:0 2px 8px rgba(14,165,233,0.55);";
-      playbackMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
-        .setLngLat([lng, lat])
-        .addTo(map);
-    } else {
-      playbackMarkerRef.current.setLngLat([lng, lat]);
-    }
-  }, [coordinates, effectiveProvider, playbackIndex]);
-
-  return <div ref={containerRef} className="h-full w-full rounded-2xl overflow-hidden bg-[#e8ecef]" />;
-}
+// Stable empties so memoised map data doesn't change identity every render.
+const EMPTY_TIMELINE: never[] = [];
+const EMPTY_STOPS: never[] = [];
+const EMPTY_COORDS: [number, number][] = [];
 
 type JourneyViewProps = {
   sessionId: string;
@@ -467,7 +53,7 @@ type JourneyViewProps = {
 export function JourneyView({
   sessionId,
   asAgent = false,
-  backHref = "/operations",
+  backHref = "/operations/journey_history",
   journeyBasePath = "/operations/journeys",
 }: JourneyViewProps) {
   const router = useRouter();
@@ -476,32 +62,54 @@ export function JourneyView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [playbackIndex, setPlaybackIndex] = useState(0);
 
-  const { data, isLoading, isError } = useJourneyDetail(sessionId, {
+  const { data, isLoading, isError, refetch, isFetching } = useJourneyDetail(sessionId, {
     company_id: companyId,
     asAgent,
   });
 
   const journey = data?.journey;
   const stats = data?.stats;
-  const timeline = data?.timeline ?? [];
-  const stops = data?.stops ?? [];
+  const timeline = data?.timeline ?? EMPTY_TIMELINE;
+  const stops = data?.stops ?? EMPTY_STOPS;
   const route = data?.route;
   const navigation = data?.navigation;
-  const coordinates = (route?.coordinates ?? []) as [number, number][];
+  const coordinates = (route?.coordinates ?? EMPTY_COORDS) as [number, number][];
+  const isTrip = journey?.source === "field_trip";
+  const isLive = journey?.status === "active";
 
-  const [prevJourneyKey, setPrevJourneyKey] = useState(`${sessionId}:${coordinates.length}`);
-  const journeyKey = `${sessionId}:${coordinates.length}`;
-  if (journeyKey !== prevJourneyKey) {
-    setPrevJourneyKey(journeyKey);
+  // Reset playback and selection when moving to another trip — not when a
+  // live trip's refetch adds points.
+  const [prevSessionId, setPrevSessionId] = useState(sessionId);
+  if (sessionId !== prevSessionId) {
+    setPrevSessionId(sessionId);
     setPlaybackIndex(0);
+    setSelectedId(null);
   }
 
   const selectedEvent = timeline.find((e) => e.id === selectedId) ?? null;
+  const selectedStop = stops.find((s) => `stop_${s.id}` === selectedId) ?? null;
+  const handleSelect = useCallback((id: string) => setSelectedId(id), []);
 
-  const handleExportDay = () => {
+  // Manager view: go back to this person's history, not an empty page.
+  const resolvedBackHref =
+    !asAgent && data?.agent?.id && backHref.endsWith("/journey_history")
+      ? `${backHref}?user=${data.agent.id}`
+      : backHref;
+  const backLabel = backHref.includes("journey_history") ? "Back to Journey History" : "Back";
+  const csvBase = journey
+    ? `${isTrip ? "trip" : "journey"}-${journey.id}-${fileSlug(data?.agent?.name ?? "person")}`
+    : "trip";
+
+  const handleExportTrip = () => {
     if (!journey) return;
     const csv = buildJourneysCsv([journey], data?.agent?.name ?? undefined);
-    downloadTextFile(`journey-${journey.id}-${journey.date ?? "day"}.csv`, csv);
+    downloadTextFile(`${csvBase}.csv`, csv);
+  };
+
+  const handleExportStops = () => {
+    if (!journey) return;
+    const csv = buildStopsCsv([{ journey, stops }], data?.agent?.name ?? undefined);
+    downloadTextFile(`${csvBase}-stops.csv`, csv);
   };
 
   return (
@@ -510,20 +118,23 @@ export function JourneyView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <Link
-              href={backHref}
+              href={resolvedBackHref}
+              aria-label={backLabel}
+              title={backLabel}
               className="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
             >
               <ChevronLeft size={18} className="text-[#0B1215]" />
             </Link>
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                {journey?.source === "field_trip"
-                  ? journey.end_reason === "auto_no_signal"
+                {isTrip
+                  ? journey?.end_reason === "auto_no_signal"
                     ? "Field Trip · Auto-ended (no location)"
-                    : journey.status === "active"
+                    : isLive
                       ? "Field Trip · Live"
                       : "Field Trip"
-                  : "Daily Journey"}
+                  : "Clock-in day"}
+                {isLive && isFetching ? " · updating…" : ""}
               </p>
               <h1 className="text-[18px] font-black text-[#0B1215] truncate">
                 {data?.agent?.name ?? "Agent"}
@@ -540,12 +151,21 @@ export function JourneyView({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleExportDay}
+              onClick={handleExportTrip}
               disabled={!journey}
               className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-[11px] font-bold text-[#0B1215] disabled:opacity-40"
             >
               <Download size={14} />
-              Export CSV
+              {isTrip ? "Export trip" : "Export day"}
+            </button>
+            <button
+              type="button"
+              onClick={handleExportStops}
+              disabled={!journey || stops.length === 0}
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-[11px] font-bold text-[#0B1215] disabled:opacity-40"
+            >
+              <Download size={14} />
+              Export stops
             </button>
             <button
               type="button"
@@ -582,10 +202,21 @@ export function JourneyView({
       ) : isError || !data ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8">
           <Route className="text-gray-300" size={32} />
-          <p className="text-sm text-gray-500 font-medium">Unable to load this journey.</p>
-          <Link href={backHref} className="text-[12px] font-bold text-[#2F5E71]">
-            Back to Workforce
-          </Link>
+          <p className="text-sm text-gray-500 font-medium" role="alert">
+            Unable to load this {isTrip ? "trip" : "journey"}.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B1215] px-3 py-1.5 text-[11px] font-bold text-white"
+            >
+              <RefreshCw size={12} /> Try again
+            </button>
+            <Link href={resolvedBackHref} className="text-[12px] font-bold text-[#2F5E71]">
+              {backLabel}
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="flex-1 grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_260px] gap-3 p-3 sm:p-4 min-h-0">
@@ -610,6 +241,7 @@ export function JourneyView({
                     key={event.id}
                     type="button"
                     onClick={() => setSelectedId(event.id)}
+                    aria-pressed={active}
                     className={`w-full text-left rounded-xl px-3 py-2.5 transition-colors ${
                       active ? "bg-[#EEF4F4]" : "hover:bg-gray-50"
                     }`}
@@ -655,13 +287,16 @@ export function JourneyView({
                   {formatKm(stats?.distance_meters ?? 0)} travelled
                 </p>
               </div>
-              {selectedEvent && (
+              {(selectedEvent || selectedStop) && (
                 <div className="text-right max-w-[50%]">
                   <p className="text-[10px] font-bold text-gray-400 truncate">
                     Selected
                   </p>
                   <p className="text-[12px] font-bold text-[#0B1215] truncate">
-                    {selectedEvent.label}
+                    {selectedEvent?.label ??
+                      (selectedStop
+                        ? selectedStop.address || `Stop ${stops.indexOf(selectedStop) + 1}`
+                        : "")}
                   </p>
                 </div>
               )}
@@ -671,10 +306,18 @@ export function JourneyView({
                 <div className="h-full w-full rounded-2xl border border-dashed border-gray-200 bg-[#F8F9FA] flex flex-col items-center justify-center gap-2">
                   <Route className="text-gray-300" size={26} />
                   <p className="text-[12px] font-semibold text-gray-500">
-                    Session was recorded, but no route points were captured.
+                    {isLive
+                      ? "Waiting for the first location from the phone…"
+                      : isTrip
+                        ? "This trip was recorded, but no route points were captured."
+                        : "Session was recorded, but no route points were captured."}
                   </p>
                   <p className="text-[11px] text-gray-400 text-center max-w-[320px]">
-                    This usually means background location collection was interrupted for that day.
+                    {isLive
+                      ? "The route appears here as soon as the phone sends its location."
+                      : isTrip
+                        ? "This usually means location was switched off or the app was stopped during the trip."
+                        : "This usually means background location collection was interrupted for that day."}
                   </p>
                 </div>
               ) : (
@@ -685,10 +328,13 @@ export function JourneyView({
                       timeline={timeline}
                       stops={stops}
                       selectedId={selectedId}
+                      onSelect={handleSelect}
                       clockIn={route?.clock_in ?? null}
                       clockOut={route?.clock_out ?? null}
                       bounds={route?.bounds ?? null}
                       playbackIndex={playbackIndex}
+                      isTrip={isTrip}
+                      fitKey={sessionId}
                     />
                   </div>
                   <RoutePlaybackControls
@@ -705,10 +351,10 @@ export function JourneyView({
           <aside className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-gray-100">
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                Journey Stats
+                {isTrip ? "Trip Stats" : "Journey Stats"}
               </p>
               <p className="text-[13px] font-bold text-[#0B1215] mt-0.5">
-                Day summary
+                {isTrip ? "Trip summary" : "Day summary"}
               </p>
             </div>
             <div className="p-4 space-y-3 overflow-y-auto">
@@ -724,6 +370,7 @@ export function JourneyView({
                         key={stop.id}
                         type="button"
                         onClick={() => setSelectedId(`stop_${stop.id}`)}
+                        aria-pressed={active}
                         className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors ${
                           active
                             ? "border-[#F97316]/40 bg-orange-50"

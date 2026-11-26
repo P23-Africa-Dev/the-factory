@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useMemo, useState, Suspense } from "react";
 import Link from "next/link";
-import { format, parseISO, subDays, startOfWeek, endOfWeek } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
+  AlertTriangle,
   CalendarDays,
   Clock,
   Loader2,
   MapPin,
   Navigation,
+  RefreshCw,
   Route,
   Users,
   ChevronLeft,
@@ -20,10 +22,19 @@ import {
 import { useMyJourneys } from "@/hooks/use-field-journeys";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
+import {
+  getPresetRange,
+  JOURNEY_PRESET_LABELS,
+  sortTripsNewestFirst,
+  tripCountLabel,
+  tripEndIso,
+  tripStartIso,
+  windowedPages,
+} from "@/lib/tracking/journey-history";
 
 // Helper functions for formatters
 function formatKm(meters: number): string {
-  if (meters < 1000) return `${meters} m`;
+  if (meters < 1000) return `${Math.round(meters)} m`;
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
@@ -36,41 +47,7 @@ function formatDuration(seconds: number): string {
 }
 
 type PresetType = "today" | "this_week" | "last_week" | "last_30_days" | "last_90_days";
-
-function getPresetDates(preset: PresetType): { from: string; to: string } {
-  const now = new Date();
-  let fromDate = now;
-  let toDate = now;
-
-  switch (preset) {
-    case "today":
-      fromDate = now;
-      toDate = now;
-      break;
-    case "this_week":
-      fromDate = startOfWeek(now, { weekStartsOn: 1 });
-      toDate = now;
-      break;
-    case "last_week":
-      const prevWeek = subDays(now, 7);
-      fromDate = startOfWeek(prevWeek, { weekStartsOn: 1 });
-      toDate = endOfWeek(prevWeek, { weekStartsOn: 1 });
-      break;
-    case "last_30_days":
-      fromDate = subDays(now, 29);
-      toDate = now;
-      break;
-    case "last_90_days":
-      fromDate = subDays(now, 89);
-      toDate = now;
-      break;
-  }
-
-  return {
-    from: format(fromDate, "yyyy-MM-dd"),
-    to: format(toDate, "yyyy-MM-dd"),
-  };
-}
+const PRESETS: PresetType[] = ["today", "this_week", "last_week", "last_30_days", "last_90_days"];
 
 function JourneyHistoryContent() {
   const user = useAuthStore((s) => s.user);
@@ -80,9 +57,9 @@ function JourneyHistoryContent() {
   const [page, setPage] = useState(1);
   const perPage = 10;
 
-  const { from, to } = getPresetDates(preset);
+  const { from, to } = getPresetRange(preset);
 
-  const { data, isLoading } = useMyJourneys({
+  const { data, isLoading, isError, refetch } = useMyJourneys({
     company_id: apiCompanyId ?? undefined,
     from,
     to,
@@ -91,7 +68,7 @@ function JourneyHistoryContent() {
     per_page: perPage,
   });
 
-  const journeys = data?.items ?? [];
+  const journeys = useMemo(() => sortTripsNewestFirst(data?.items ?? []), [data]);
   const summary = data?.summary;
   const pagination = data?.pagination;
   const totalPages = pagination?.last_page ?? 1;
@@ -101,13 +78,7 @@ function JourneyHistoryContent() {
     setPage(1);
   };
 
-  const presetLabels: Record<PresetType, string> = {
-    today: "Today",
-    this_week: "This Week",
-    last_week: "Last Week",
-    last_30_days: "Last 30 Days",
-    last_90_days: "Last 90 Days",
-  };
+  const presetLabels = JOURNEY_PRESET_LABELS;
 
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-6">
@@ -124,15 +95,21 @@ function JourneyHistoryContent() {
             Journey History
           </h1>
           <p className="text-sm text-gray-500 font-medium">
-            Review your field movements, visits, and tracking metrics.
+            Review your field trips: routes, stops, visits and distance.
           </p>
         </div>
 
         {/* Date Filters */}
-        <div className="flex flex-wrap gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200/50 self-start md:self-auto">
-          {(Object.keys(presetLabels) as PresetType[]).map((p) => (
+        <div
+          className="flex flex-wrap gap-1.5 bg-gray-100 p-1.5 rounded-2xl border border-gray-200/50 self-start md:self-auto"
+          role="group"
+          aria-label="Date range"
+        >
+          {PRESETS.map((p) => (
             <button
               key={p}
+              type="button"
+              aria-pressed={preset === p}
               onClick={() => handlePresetChange(p)}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                 preset === p
@@ -150,16 +127,16 @@ function JourneyHistoryContent() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col justify-between min-h-32 transition-all hover:shadow-md">
           <div className="flex justify-between items-start">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Days Tracked</span>
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Trips</span>
             <div className="p-2 bg-sky-50 rounded-xl text-sky-600">
               <Route size={18} />
             </div>
           </div>
           <div>
             <h2 className="text-2xl font-black text-[#0B1215]">
-              {summary?.journey_count ?? 0} {summary?.journey_count === 1 ? "Day" : "Days"}
+              {tripCountLabel(summary?.journey_count ?? 0)}
             </h2>
-            <p className="text-[11px] text-gray-400 mt-1 font-medium">Days with active field paths</p>
+            <p className="text-[11px] text-gray-400 mt-1 font-medium">Field trips in this period</p>
           </div>
         </div>
 
@@ -216,7 +193,7 @@ function JourneyHistoryContent() {
           <div className="bg-white border border-gray-100 rounded-3xl p-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)] flex flex-col min-h-96">
             <div className="flex justify-between items-center border-b border-gray-100 pb-4 mb-6">
               <div>
-                <h3 className="text-base font-bold text-[#0B1215]">Journeys Log</h3>
+                <h3 className="text-base font-bold text-[#0B1215]">Your Trips</h3>
                 <p className="text-xs text-gray-400 mt-0.5 font-medium">
                   Showing records for {presetLabels[preset]}
                 </p>
@@ -232,32 +209,45 @@ function JourneyHistoryContent() {
             {isLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center py-20 gap-3">
                 <Loader2 size={32} className="animate-spin text-gray-300" />
-                <p className="text-sm font-semibold text-gray-400">Loading journeys...</p>
+                <p className="text-sm font-semibold text-gray-400">Loading trips...</p>
+              </div>
+            ) : isError ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 gap-3 text-center px-4" role="alert">
+                <AlertTriangle size={28} className="text-amber-500" />
+                <p className="text-sm font-semibold text-gray-500">We couldn&apos;t load your trips.</p>
+                <button
+                  type="button"
+                  onClick={() => void refetch()}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#09232D] px-4 py-2 text-xs font-bold text-white"
+                >
+                  <RefreshCw size={13} /> Try again
+                </button>
               </div>
             ) : journeys.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center py-20 gap-3 text-center px-4">
                 <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center text-gray-300">
                   <Route size={32} />
                 </div>
-                <h4 className="text-sm font-bold text-[#0B1215] mt-2">No journey logs found</h4>
+                <h4 className="text-sm font-bold text-[#0B1215] mt-2">No trips in this period</h4>
                 <p className="text-xs text-gray-400 max-w-sm">
-                  Active journey history is recorded when you clock in on working days with location access enabled.
+                  Trips are recorded when you tap Start Field Trip in the mobile app, and end when you tap End Field Trip.
                 </p>
               </div>
             ) : (
               <div className="flex-1 flex flex-col gap-6">
                 {journeys.map((journey) => {
-                  const date = journey.date ? parseISO(journey.date) : null;
+                  const startIso = tripStartIso(journey);
+                  const endIso = tripEndIso(journey);
+                  const dayIso = startIso ?? journey.date;
+                  const date = dayIso ? parseISO(dayIso) : null;
                   const dayLabel = date ? format(date, "EEE") : "—";
                   const dayNum = date ? format(date, "d") : "—";
                   const monthLabel = date ? format(date, "MMM") : "";
-                  const clockIn = journey.clock_in_at
-                    ? format(parseISO(journey.clock_in_at), "h:mma")
-                    : null;
-                  const clockOut = journey.clock_out_at
-                    ? format(parseISO(journey.clock_out_at), "h:mma")
-                    : null;
+                  const clockIn = startIso ? format(parseISO(startIso), "h:mma") : null;
+                  const clockOut = endIso ? format(parseISO(endIso), "h:mma") : null;
                   const isActive = journey.status === "active";
+                  const isTrip = journey.source === "field_trip";
+                  const autoEnded = journey.end_reason === "auto_no_signal";
 
                   return (
                     <div key={journey.id} className="flex items-stretch gap-4 group">
@@ -287,7 +277,14 @@ function JourneyHistoryContent() {
                         <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-[0_1px_4px_rgba(0,0,0,0.02)] group-hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-all duration-300">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                             {/* Clock Times */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                  isTrip ? "bg-[#FFF1EE] text-[#C2412B]" : "bg-gray-100 text-gray-500"
+                                }`}
+                              >
+                                {isTrip ? "Field Trip" : "Clock-in day"}
+                              </span>
                               {clockIn ? (
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="flex items-center gap-1.5">
@@ -311,7 +308,7 @@ function JourneyHistoryContent() {
                                   )}
                                 </div>
                               ) : (
-                                <span className="text-xs text-gray-400 italic">No check in record</span>
+                                <span className="text-xs text-gray-400 italic">No start time recorded</span>
                               )}
                             </div>
 
@@ -320,10 +317,12 @@ function JourneyHistoryContent() {
                               className={`self-start sm:self-auto px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
                                 isActive
                                   ? "bg-sky-50 text-sky-700"
-                                  : "bg-[#EEF4F4] text-[#094B5C]"
+                                  : autoEnded
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-[#EEF4F4] text-[#094B5C]"
                               }`}
                             >
-                              {isActive ? "Active" : "Completed"}
+                              {isActive ? "Active" : autoEnded ? "Auto-ended" : "Completed"}
                             </span>
                           </div>
 
@@ -373,7 +372,7 @@ function JourneyHistoryContent() {
                               href={`/agent/operations/journeys/${journey.id}`}
                               className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-[#09232D] text-white text-xs font-bold hover:bg-[#123e4f] transition-all shadow-sm"
                             >
-                              View Journey Map
+                              {isTrip ? "View Trip Map" : "View Journey Map"}
                             </Link>
                           </div>
                         </div>
@@ -385,33 +384,43 @@ function JourneyHistoryContent() {
             )}
 
             {/* Pagination controls */}
-            {!isLoading && totalPages > 1 && (
+            {!isLoading && !isError && totalPages > 1 && (
               <div className="flex items-center justify-between pt-6 border-t border-gray-100 mt-6">
                 <p className="text-xs text-gray-400">
-                  Showing Page {page} of {totalPages} ({pagination?.total ?? 0} total records)
+                  Page {page} of {totalPages} ({pagination?.total ?? 0} trips)
                 </p>
                 <div className="flex items-center gap-1.5">
                   <button
+                    type="button"
+                    aria-label="Previous page"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
                     className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                   >
                     <ChevronLeft size={14} />
                   </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPage(p)}
-                      className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${
-                        p === page
-                          ? "bg-[#09232D] text-white shadow-sm"
-                          : "text-gray-400 hover:bg-gray-100"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  {windowedPages(page, totalPages).map((p, index) =>
+                    p === "gap" ? (
+                      <span key={`gap-${index}`} className="w-8 text-center text-xs text-gray-300">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        type="button"
+                        aria-current={p === page ? "page" : undefined}
+                        onClick={() => setPage(p)}
+                        className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${
+                          p === page
+                            ? "bg-[#09232D] text-white shadow-sm"
+                            : "text-gray-400 hover:bg-gray-100"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ),
+                  )}
                   <button
+                    type="button"
+                    aria-label="Next page"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
                     className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
@@ -434,7 +443,7 @@ function JourneyHistoryContent() {
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-2xl">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Avg Daily Distance</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Avg Distance per Trip</p>
                   <p className="text-sm font-black text-[#0B1215] mt-0.5">
                     {summary?.journey_count && summary.journey_count > 0
                       ? formatKm(summary.distance_meters / summary.journey_count)
@@ -448,7 +457,7 @@ function JourneyHistoryContent() {
 
               <div className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-2xl">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Avg Daily Stops</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Avg Stops per Trip</p>
                   <p className="text-sm font-black text-[#0B1215] mt-0.5">
                     {summary?.journey_count && summary.journey_count > 0
                       ? (summary.stop_count / summary.journey_count).toFixed(1)
@@ -462,7 +471,7 @@ function JourneyHistoryContent() {
 
               <div className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-2xl">
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Avg Daily Travel Time</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Avg Travel Time per Trip</p>
                   <p className="text-sm font-black text-[#0B1215] mt-0.5">
                     {summary?.journey_count && summary.journey_count > 0
                       ? formatDuration(summary.travel_seconds / summary.journey_count)
@@ -480,14 +489,14 @@ function JourneyHistoryContent() {
           <div className="bg-[#09232D] text-white border border-[#0d2d3a] rounded-3xl p-6 shadow-[0_4px_14px_rgba(9,35,45,0.1)]">
             <div className="flex items-center gap-2 border-b border-white/10 pb-3 mb-4">
               <Info size={16} className="text-sky-400" />
-              <h3 className="text-sm font-bold tracking-tight">How Journeys are Tracked</h3>
+              <h3 className="text-sm font-bold tracking-tight">How Trips are Tracked</h3>
             </div>
             <ul className="space-y-4 text-xs font-medium text-white/70">
               <li className="flex items-start gap-2.5">
                 <span className="w-1.5 h-1.5 bg-sky-400 rounded-full mt-1.5 shrink-0" />
                 <span>
-                  <strong className="text-white block font-bold mb-0.5">Clock In To Start</strong>
-                  Journeys record automatically once you clock in from the Attendance tab.
+                  <strong className="text-white block font-bold mb-0.5">Start a Field Trip</strong>
+                  Tap Start Field Trip in the mobile app when you head out. Clocking in does not start a trip.
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
@@ -500,8 +509,8 @@ function JourneyHistoryContent() {
               <li className="flex items-start gap-2.5">
                 <span className="w-1.5 h-1.5 bg-sky-400 rounded-full mt-1.5 shrink-0" />
                 <span>
-                  <strong className="text-white block font-bold mb-0.5">Auto-Pause</strong>
-                  Tracking pauses automatically when you stop or clock out to save device battery.
+                  <strong className="text-white block font-bold mb-0.5">End the Trip</strong>
+                  Tap End Field Trip when you are done. A trip with no location for a long time ends on its own.
                 </span>
               </li>
             </ul>
