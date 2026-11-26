@@ -74,6 +74,8 @@ export function useJourneyDetail(sessionId: number | string | undefined, enabled
     queryFn: () => fieldActivityApi.journeyDetail(Number(sessionId)),
     enabled: enabled && !!sessionId,
     staleTime: 60_000,
+    // A trip still running keeps drawing its route.
+    refetchInterval: (query) => (query.state.data?.journey?.status === 'active' ? 30_000 : false),
   });
 }
 

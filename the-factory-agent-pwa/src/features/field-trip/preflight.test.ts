@@ -25,6 +25,11 @@ function deps(over: Partial<PreflightDeps> = {}): PreflightDeps {
 }
 
 describe('runFieldTripPreflight', () => {
+  it('warns when only approximate location is allowed (routes would be off by hundreds of metres)', async () => {
+    const res = await runFieldTripPreflight(() => {}, deps({ getPermissionStatus: async () => status({ precise: false, background: 'denied' }) }));
+    expect(res).toMatchObject({ ok: true, issue: null, warning: 'precise_off' });
+  });
+
   it('passes with a first fix when everything is in place', async () => {
     const steps: string[] = [];
     const res = await runFieldTripPreflight((s) => steps.push(s), deps());

@@ -1,3 +1,4 @@
+import type { JourneyDetailDto } from '@/features/field-trip/journeyDetail';
 import { client } from '@/lib/api/client';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { queueOfflineAction } from '@/lib/offline/queue';
@@ -133,45 +134,16 @@ export const fieldActivityApi = {
     return unwrapData(res.data) as JourneyHistoryResponse;
   },
 
-  journeyDetail: async (sessionId: number): Promise<{
-    journey: { id: number; date: string | null; distance_meters: number };
-    stats: Record<string, unknown>;
-    timeline: Array<{
-      id: string;
-      type: string;
-      label: string;
-      occurred_at: string | null;
-      duration_seconds?: number;
-      color: string;
-    }>;
-    navigation: {
-      previous_id: number | null;
-      next_id: number | null;
-    };
-  }> => {
+  journeyDetail: async (sessionId: number): Promise<JourneyDetailDto> => {
     const companyId = getActiveCompanyId();
     const res = await client.get(`/agent/field-activity/journeys/${sessionId}`, {
       params: {
         company_id: companyId ?? undefined,
-        include_route: false,
+        // The trip page draws the route (downsampled by the server).
+        include_route: true,
         include_timeline: true,
       },
     });
-    return unwrapData(res.data) as {
-      journey: { id: number; date: string | null; distance_meters: number };
-      stats: Record<string, unknown>;
-      timeline: Array<{
-        id: string;
-        type: string;
-        label: string;
-        occurred_at: string | null;
-        duration_seconds?: number;
-        color: string;
-      }>;
-      navigation: {
-        previous_id: number | null;
-        next_id: number | null;
-      };
-    };
+    return unwrapData(res.data) as JourneyDetailDto;
   },
 };

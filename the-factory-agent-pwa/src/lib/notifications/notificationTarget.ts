@@ -103,7 +103,9 @@ function sourcePath(source: NotificationTargetSource, mode: AppMode): string | n
   if (actionPath === '/map' || actionPath.startsWith('/map/')) return actionUrl;
 
   // The notification type names its domain; ids only decide which record to open.
-  const domain = type.startsWith('meeting.')
+  const domain = type.startsWith('field_trip.')
+    ? 'field_trip'
+    : type.startsWith('meeting.')
     ? 'meeting'
     : type.startsWith('crm.')
       ? 'crm'
@@ -145,6 +147,13 @@ function sourcePath(source: NotificationTargetSource, mode: AppMode): string | n
       }
       if (taskId) return isDeleted ? '/tasks' : `/tasks/${taskId}`;
       return actionUrl ?? '/tasks';
+
+    case 'field_trip':
+      // Auto-ended: open that trip (own, or a team member's for managers).
+      if (type === 'field_trip.auto_ended' && refId) return `/field-activity/journeys/${refId}`;
+      if (actionPath.startsWith('/field-activity/journeys/')) return actionUrl;
+      // Reminder / signal lost on your own trip: the trip card on the home screen.
+      return '/';
 
     case 'field':
       if (taskId) return `/tasks/${taskId}`;

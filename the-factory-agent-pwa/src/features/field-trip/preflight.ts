@@ -16,6 +16,7 @@ export type PreflightIssue =
   | 'permission_denied' // user/OS refused location access
   | 'gps_off' // device location switched off (APK: user declined the system dialog)
   | 'background_missing' // APK: only "while using the app" — tracking stops when minimised
+  | 'precise_off' // approximate location only: routes and stops are off by hundreds of metres
   | 'unsupported'; // no geolocation at all (very old browser)
 
 export type PreflightStep = 'permission' | 'gps' | 'background' | 'position';
@@ -99,7 +100,13 @@ export async function runFieldTripPreflight(
   }
 
   onStep('background');
-  const warning: PreflightIssue | null = native && status.background !== 'granted' ? 'background_missing' : null;
+  // Soft warnings (start allowed): the most important one is shown.
+  const warning: PreflightIssue | null =
+    native && status.precise === false
+      ? 'precise_off'
+      : native && status.background !== 'granted'
+        ? 'background_missing'
+        : null;
 
   onStep('position');
   try {

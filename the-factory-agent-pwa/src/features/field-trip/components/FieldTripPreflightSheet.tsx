@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Loader2, MapPinOff, ShieldAlert, X } from 'lucide-react';
 import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
 import {
@@ -30,7 +30,11 @@ const ISSUE_COPY: Record<PreflightIssue, { title: string; body: string }> = {
   },
   background_missing: {
     title: 'Allow location "All the time"',
-    body: 'Without it, tracking pauses when the app is minimised or the screen is locked.',
+    body: 'Without it, Android may pause tracking when the app is closed, the screen is locked or the phone restarts.',
+  },
+  precise_off: {
+    title: 'Turn on "Precise location"',
+    body: 'Factory 23 only gets your approximate location, so your route and stops can be off by hundreds of metres. In the app settings, open Location and switch on Use precise location.',
   },
   unsupported: {
     title: 'Location is not available',
@@ -67,14 +71,22 @@ export function FieldTripPreflightSheet({
   const [result, setResult] = useState<PreflightResult | null>(null);
   // Mounted only while open (see FieldTripCard): it starts out checking.
   const [running, setRunning] = useState(true);
+  /** Sent to the app settings: check again when the user comes back. */
+  const [awaitingSettings, setAwaitingSettings] = useState(false);
   const native = isNativeAndroid();
+  // Kept in a ref: the parent's callback changes on every trip update and must
+  // not re-run the checks (they run once per open, and after each fix).
+  const onReadyRef = useRef(onReady);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   const check = useCallback(async () => {
     const res = await runFieldTripPreflight((s) => setStep(s));
     setRunning(false);
     setResult(res);
-    if (res.ok && !res.warning) onReady(res.position);
-  }, [onReady]);
+    if (res.ok && !res.warning) onReadyRef.current(res.position);
+  }, []);
 
   /** Re-run after the user fixed something (event handler, not an effect). */
   const run = useCallback(() => {
@@ -89,6 +101,18 @@ export function FieldTripPreflightSheet({
     const t = setTimeout(() => void check(), 0);
     return () => clearTimeout(t);
   }, [open, check]);
+
+  // Back from the app settings: check again on its own.
+  useEffect(() => {
+    if (!awaitingSettings) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      setAwaitingSettings(false);
+      run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [awaitingSettings, run]);
 
   if (!open) return null;
 
@@ -108,7 +132,8 @@ export function FieldTripPreflightSheet({
       void run();
       return;
     }
-    if (issue === 'permission_denied' && native) {
+    if ((issue === 'permission_denied' || issue === 'precise_off') && native) {
+      setAwaitingSettings(true);
       await openAppSettings();
       return;
     }
@@ -122,6 +147,8 @@ export function FieldTripPreflightSheet({
         : 'Try again'
       : issue === 'background_missing'
         ? 'Allow all the time'
+        : issue === 'precise_off'
+          ? 'Open app settings'
         : issue === 'permission_denied'
           ? native
             ? 'Open app settings'
@@ -141,7 +168,12 @@ export function FieldTripPreflightSheet({
       <div className="w-full max-w-md rounded-t-[28px] bg-[#0E2A36] px-5 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-5 text-white shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-[16px] font-semibold">{issue ? ISSUE_COPY[issue].title : 'Getting ready…'}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-1.5 text-white/70 active:bg-white/10">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-white/70 active:bg-white/10"
+          >
             <X size={18} />
           </button>
         </div>
@@ -198,9 +230,16 @@ export function FieldTripPreflightSheet({
                 onClick={() => onReady(result.position)}
                 className="h-11 w-full rounded-2xl border border-white/15 text-[13px] text-white/80 active:bg-white/5"
               >
-                Start anyway (tracking may pause when minimised)
+                Start anyway{result.warning === 'precise_off' ? ' (route may be inaccurate)' : ' (tracking may pause)'}
               </button>
             )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 w-full rounded-2xl text-[13px] text-white/60 active:bg-white/5"
+            >
+              Cancel
+            </button>
           </div>
         )}
 
