@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/features/auth';
+import { ApkUpdateBanner } from '@/components/shared/ApkUpdateBanner';
 import { FieldTripProvider, FieldTripStatusPill } from '@/features/field-trip';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
 import { usePushSubscription } from '@/manager/features/notifications/hooks/usePushSubscription';
@@ -137,6 +138,7 @@ export default function ManagerLayout({
         {/* Managers take field trips too; same feature as agents. */}
         <FieldTripProvider>
           <FieldTripStatusPill homePath="/manager" />
+          <ApkUpdateBanner />
           <ManagerShell>{children}</ManagerShell>
         </FieldTripProvider>
       </ActiveTrackingProvider>

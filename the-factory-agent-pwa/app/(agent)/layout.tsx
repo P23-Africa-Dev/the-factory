@@ -7,6 +7,7 @@ import { useAuth } from '@/features/auth';
 import { usePushSubscription } from '@/features/notifications/hooks/usePushSubscription';
 import { useDeviceNotificationBridge } from '@/features/notifications/hooks/useDeviceNotificationBridge';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
+import { ApkUpdateBanner } from '@/components/shared/ApkUpdateBanner';
 import { FieldTripProvider, FieldTripStatusPill } from '@/features/field-trip';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
 import { syncEngine } from '@/lib/sync/syncEngine';
@@ -136,6 +137,7 @@ export default function AgentLayout({
         {/* Field tracking is driven by "Start Field Trip", not by clock-in. */}
         <FieldTripProvider>
           <FieldTripStatusPill homePath="/" />
+          <ApkUpdateBanner />
           <AgentShell>{children}</AgentShell>
         </FieldTripProvider>
       </ActiveTrackingProvider>
