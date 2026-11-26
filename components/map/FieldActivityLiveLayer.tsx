@@ -160,6 +160,8 @@ export function FieldActivityLiveLayer({
       classification: stop?.classification ?? null,
       arrivedAt: kind === "start" ? agent?.startedAt ?? null : stop?.arrived_at ?? null,
       durationSeconds: stop?.duration_seconds ?? null,
+      recordStatus: stop?.record_status ?? null,
+      outcome: stop?.outcome ?? null,
     });
   };
 

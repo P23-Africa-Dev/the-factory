@@ -53,6 +53,27 @@ export interface ProofQueueEntry {
   lastError?: string | null;
 }
 
+/** A photo/document for a field-trip stop, waiting to upload (works offline). */
+export interface StopAttachmentQueueEntry {
+  id?: number;
+  companyId: number | null;
+  tripId: number;
+  /** Server id of the stop, or null for a stop added offline (see clientStopId). */
+  stopId: number | null;
+  clientStopId: string | null;
+  clientAttachmentId: string;
+  fileBlob: Blob;
+  fileName: string;
+  mimeType: string;
+  caption: string | null;
+  capturedAt: string;
+  uploaded: 0 | 1;
+  createdAt: string;
+  attempts: number;
+  nextAttemptAt: string | null;
+  lastError: string | null;
+}
+
 export interface TaskDestinationCacheEntry {
   id?: number;
   taskId: number;
@@ -93,6 +114,9 @@ export type OfflineActionType =
   | 'attendance.clock_in'
   | 'attendance.clock_out'
   | 'field_activity.classify_stop'
+  | 'field_trip.record_stop'
+  | 'field_trip.add_stop'
+  | 'field_trip.delete_stop'
   | 'location.create'
   | 'location.update'
   | 'location.delete'

@@ -28,6 +28,12 @@ import {
   stopMarkerColor,
 } from "@/components/operations/journey-map";
 import {
+  ACTIVITY_LABELS,
+  ReportStatusBadge,
+  StopRecordPanel,
+  TripSummaryPanel,
+} from "@/components/operations/stop-record-panel";
+import {
   buildJourneysCsv,
   buildStopsCsv,
   downloadTextFile,
@@ -170,6 +176,11 @@ export function JourneyView({
                       : "Field Trip"
                   : "Clock-in day"}
                 {isLive && isFetching ? " · updating…" : ""}
+                {isTrip && journey ? (
+                  <span className="ml-2 normal-case tracking-normal align-middle">
+                    <ReportStatusBadge journey={journey} />
+                  </span>
+                ) : null}
               </p>
               <h1 className="text-[18px] font-black text-[#0B1215] truncate">
                 {data?.agent?.name ?? "Agent"}
@@ -393,6 +404,10 @@ export function JourneyView({
               </p>
             </div>
             <div className="p-4 space-y-3 overflow-y-auto">
+              {isTrip && journey?.ai_summary ? <TripSummaryPanel summary={journey.ai_summary} /> : null}
+              {isTrip && selectedStop ? (
+                <StopRecordPanel stop={selectedStop} index={stops.indexOf(selectedStop)} companyId={companyId} />
+              ) : null}
               {stops.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
@@ -429,8 +444,14 @@ export function JourneyView({
                                 ? ` · ${formatDuration(stop.duration_seconds)}`
                                 : ""}
                             </p>
-                            <p className="text-[10px] text-gray-400 capitalize mt-0.5">
-                              {(stop.classification ?? "pending").replaceAll("_", " ")}
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              {isTrip
+                                ? stop.record_status === "recorded"
+                                  ? (ACTIVITY_LABELS[stop.classification ?? ""] ?? "Recorded") +
+                                    (stop.attachments?.length ? ` · ${stop.attachments.length} file${stop.attachments.length > 1 ? "s" : ""}` : "")
+                                  : "Not recorded"
+                                : (stop.classification ?? "pending").replaceAll("_", " ")}
+                              {stop.source === "manual" ? " · added by agent" : ""}
                             </p>
                           </div>
                         </div>

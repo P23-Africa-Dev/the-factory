@@ -18,6 +18,10 @@ export type FieldActivityLiveStop = {
   classification?: string | null;
   arrived_at?: string | null;
   departed_at?: string | null;
+  /** Trip report: what the person recorded here. */
+  record_status?: "pending" | "recorded";
+  outcome?: string | null;
+  source?: "detected" | "manual";
 };
 
 export type FieldActivityLiveAgent = {
@@ -332,13 +336,15 @@ export const useFieldActivityLiveStore = create<FieldActivityLiveStore>((set, ge
     set((state) => {
       const existing = state.agents[userId];
       if (!existing) return state;
+      const previous = existing.stops.find((s) => s.id === stop.id);
       const without = existing.stops.filter((s) => s.id !== stop.id);
       return {
         agents: {
           ...state.agents,
           [userId]: {
             ...existing,
-            stops: [...without, stop],
+            // An update may carry only part of the stop: keep what we knew.
+            stops: [...without, previous ? { ...previous, ...stop } : stop],
             updatedAtMs: Date.now(),
           },
         },

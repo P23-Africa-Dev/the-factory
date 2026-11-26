@@ -18,6 +18,15 @@ export interface FieldTripDto {
   elapsed_seconds: number;
   last_recorded_at: string | null;
   open_stop?: boolean;
+  /** Trip report: 'due' after a trip with stops ends, until it is submitted. */
+  report_status?: 'none' | 'due' | 'submitted';
+}
+
+export interface FieldTripReportDue {
+  trip_id: number;
+  pending_stop_count: number;
+  due_count: number;
+  ended_at: string | null;
 }
 
 export interface FieldTripCurrent {
@@ -31,7 +40,10 @@ export interface FieldTripCurrent {
     trip_auto_end_seconds: number;
     moving_interval_seconds: number;
     stationary_interval_seconds: number;
+    trip_report_policy?: 'required' | 'optional';
   };
+  /** The newest trip whose report is still due (home banner / Start gate). */
+  report_due?: FieldTripReportDue | null;
 }
 
 export interface TripPosition {

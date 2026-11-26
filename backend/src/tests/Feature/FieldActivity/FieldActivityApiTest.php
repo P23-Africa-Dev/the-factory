@@ -657,16 +657,24 @@ class FieldActivityApiTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
 
+        $this->assertTripStopsAwaitTheTripReport($company, $agent, $session->id);
+    }
+
+    /** Field trip stops are recorded in the trip report, not the legacy clock-in review pile. */
+    private function assertTripStopsAwaitTheTripReport(Company $company, User $agent, int $tripId): void
+    {
+        $this->assertSame('due', FieldActivitySession::findOrFail($tripId)->report_status);
+
+        $this->actingAs($agent, 'sanctum')
+            ->getJson("/api/v1/field-trips/reports/due?company_id={$company->id}")
+            ->assertOk()
+            ->assertJsonPath('data.trips.0.id', $tripId)
+            ->assertJsonPath('data.trips.0.pending_stop_count', 1);
+
         $this->actingAs($agent, 'sanctum')
             ->getJson("/api/v1/agent/field-activity/pending-review?company_id={$company->id}")
             ->assertOk()
-            ->assertJsonPath('data.pending_stop_count', 1)
-            ->assertJsonPath('data.pending_session_count', 1);
-
-        $this->actingAs($agent, 'sanctum')
-            ->getJson("/api/v1/agent/field-activity/today?company_id={$company->id}")
-            ->assertOk()
-            ->assertJsonPath('data.pending_review.pending_stop_count', 1);
+            ->assertJsonPath('data.pending_stop_count', 0);
     }
 
     public function test_ended_trip_exposes_pending_review_backlog_on_next_day(): void
@@ -728,16 +736,7 @@ class FieldActivityApiTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
 
-        $this->actingAs($agent, 'sanctum')
-            ->getJson("/api/v1/agent/field-activity/pending-review?company_id={$company->id}")
-            ->assertOk()
-            ->assertJsonPath('data.pending_stop_count', 1)
-            ->assertJsonPath('data.pending_session_count', 1);
-
-        $this->actingAs($agent, 'sanctum')
-            ->getJson("/api/v1/agent/field-activity/today?company_id={$company->id}")
-            ->assertOk()
-            ->assertJsonPath('data.pending_review.pending_stop_count', 1);
+        $this->assertTripStopsAwaitTheTripReport($company, $agent, $session->id);
     }
 
     public function test_classification_clears_pending_review_queue(): void
@@ -773,9 +772,12 @@ class FieldActivityApiTest extends TestCase
             'classification' => 'pending',
         ]);
 
-        Carbon::setTestNow(Carbon::parse('2026-07-29 18:20:00', 'Africa/Lagos'));
-        // No location since 09:00: the monitor auto-ends the trip (default 2 h limit).
-        app(\App\Services\FieldActivity\FieldTripService::class)->monitor();
+        // The legacy pile serves clock-in days (field trips use the trip report).
+        $session->forceFill([
+            'source' => FieldActivitySession::SOURCE_ATTENDANCE,
+            'status' => 'completed',
+            'ended_at' => Carbon::parse('2026-07-29 17:00:00', 'Africa/Lagos'),
+        ])->save();
 
         Carbon::setTestNow(Carbon::parse('2026-07-30 09:00:00', 'Africa/Lagos'));
 

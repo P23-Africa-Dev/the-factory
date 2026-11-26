@@ -1,5 +1,6 @@
 "use client";
 
+import { ReportStatusBadge } from "@/components/operations/stop-record-panel";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { format, parseISO, subDays } from "date-fns";
@@ -160,6 +161,12 @@ function JourneyEntry({
               </span>
             </div>
           </div>
+
+          {isTrip && journey.report_status && journey.report_status !== "none" && (
+            <div className="mb-2">
+              <ReportStatusBadge journey={journey} />
+            </div>
+          )}
 
           {hasNoRoutePoints && (
             <p className="mb-2 text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1">

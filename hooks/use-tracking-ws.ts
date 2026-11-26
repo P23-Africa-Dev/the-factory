@@ -428,7 +428,7 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
         return;
       }
 
-      if (msg.type === "field_activity.stop_created") {
+      if (msg.type === "field_activity.stop_created" || msg.type === "field_activity.stop_updated") {
         const payload = msg.payload as {
           user_id?: number;
           stop?: {
@@ -441,6 +441,9 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
             classification?: string | null;
             arrived_at?: string | null;
             departed_at?: string | null;
+            record_status?: "pending" | "recorded";
+            outcome?: string | null;
+            source?: "detected" | "manual";
           };
         } | undefined;
         if (payload?.user_id != null && payload.stop?.id != null) {
@@ -459,6 +462,9 @@ export function useTrackingWebSocket(options: UseTrackingWebSocketOptions = {}) 
             classification: payload.stop.classification,
             arrived_at: payload.stop.arrived_at,
             departed_at: payload.stop.departed_at,
+            record_status: payload.stop.record_status,
+            outcome: payload.stop.outcome,
+            source: payload.stop.source,
           });
         }
       }

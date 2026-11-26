@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/features/auth';
 import { ApkUpdateBanner } from '@/components/shared/ApkUpdateBanner';
 import { FieldTripProvider, FieldTripStatusPill } from '@/features/field-trip';
+import { FieldTripStopPrompt } from '@/features/field-trip/report/FieldTripStopPrompt';
 import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
 import { usePushSubscription } from '@/manager/features/notifications/hooks/usePushSubscription';
 import { useDeviceNotificationBridge } from '@/manager/features/notifications/hooks/useDeviceNotificationBridge';
@@ -138,6 +139,7 @@ export default function ManagerLayout({
         {/* Managers take field trips too; same feature as agents. */}
         <FieldTripProvider>
           <FieldTripStatusPill homePath="/manager" />
+          <FieldTripStopPrompt />
           <ApkUpdateBanner />
           <ManagerShell>{children}</ManagerShell>
         </FieldTripProvider>

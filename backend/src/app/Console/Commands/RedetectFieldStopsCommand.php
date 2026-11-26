@@ -37,9 +37,15 @@ class RedetectFieldStopsCommand extends Command
 
         $query->chunkById(50, function ($sessions) use ($detector, &$processed): void {
             foreach ($sessions as $session) {
+                // Anything the person recorded, added or attached to is kept.
                 $hadClassified = FieldStop::query()
                     ->where('field_activity_session_id', $session->id)
-                    ->whereNotNull('classified_by')
+                    ->where(function ($q): void {
+                        $q->whereNotNull('classified_by')
+                            ->orWhere('record_status', FieldStop::RECORD_RECORDED)
+                            ->orWhere('source', FieldStop::SOURCE_MANUAL)
+                            ->orWhereHas('attachments');
+                    })
                     ->exists();
 
                 if ($hadClassified) {

@@ -50,6 +50,7 @@ class Company extends Model
         'field_stop_dwell_seconds',
         'field_trip_reminder_seconds',
         'field_trip_auto_end_seconds',
+        'field_trip_report_policy',
     ];
 
     protected function casts(): array

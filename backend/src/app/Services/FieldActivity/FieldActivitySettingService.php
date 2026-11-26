@@ -60,8 +60,16 @@ class FieldActivitySettingService
         return $value > 0 ? $this->clamp($value, self::AUTO_END_MIN, self::AUTO_END_MAX) : 7200;
     }
 
+    /** 'required': finish the last trip's report before starting a new trip; 'optional': reminders only. */
+    public function tripReportPolicy(?Company $company): string
+    {
+        $value = (string) ($company?->field_trip_report_policy ?? '');
+
+        return in_array($value, ['required', 'optional'], true) ? $value : 'required';
+    }
+
     /**
-     * @param  array<string, mixed>  $values  any of stop_dwell_seconds, trip_reminder_seconds, trip_auto_end_seconds
+     * @param  array<string, mixed>  $values  any of stop_dwell_seconds, trip_reminder_seconds, trip_auto_end_seconds, trip_report_policy
      */
     public function updateTripSettings(Company $company, array $values): void
     {
@@ -74,6 +82,9 @@ class FieldActivitySettingService
         }
         if (isset($values['trip_auto_end_seconds'])) {
             $fill['field_trip_auto_end_seconds'] = $this->clamp((int) $values['trip_auto_end_seconds'], self::AUTO_END_MIN, self::AUTO_END_MAX);
+        }
+        if (isset($values['trip_report_policy']) && in_array($values['trip_report_policy'], ['required', 'optional'], true)) {
+            $fill['field_trip_report_policy'] = $values['trip_report_policy'];
         }
 
         if ($fill !== []) {
@@ -92,6 +103,7 @@ class FieldActivitySettingService
             'stop_dwell_seconds' => $this->stopDwellSeconds($company),
             'trip_reminder_seconds' => $this->tripReminderSeconds($company),
             'trip_auto_end_seconds' => $this->tripAutoEndSeconds($company),
+            'trip_report_policy' => $this->tripReportPolicy($company),
         ];
     }
 

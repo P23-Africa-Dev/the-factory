@@ -82,6 +82,7 @@ function resolveAgentPath(pathname: string, search: string): string {
   if (pathname.startsWith('/crm/')) return '/crm';
 
   // Field activity
+  if ((m = match(pathname, `/field-trips/${ID}/review`))) return `/field-trips/${m[1]}/review${search}`;
   if ((m = match(pathname, `/field-activity/journeys/${ID}`))) return `/field-activity/journeys/${m[1]}${search}`;
   if (pathname === '/field-activity/journeys') return `/field-activity/journeys${search}`;
   if (pathname === '/field-activity') return `/field-activity${search}`;
@@ -137,6 +138,7 @@ function resolveManagerPath(pathname: string, search: string): string {
   if (pathname.startsWith('/crm/')) return '/manager/crm';
 
   // Field activity & insight
+  if ((m = match(pathname, `/field-trips/${ID}/review`))) return `/manager/field-trips/${m[1]}/review${search}`;
   if ((m = match(pathname, `/field-activity/journeys/${ID}`))) return `/manager/field-activity/journeys/${m[1]}${search}`;
   if (pathname === '/field-activity/journeys') return `/manager/field-activity/journeys${search}`;
   if (pathname === '/field-activity' || pathname.startsWith('/field-activity/') || pathname === '/insight') {

@@ -372,7 +372,7 @@ final class ElyToolCatalog
             'field.territory_coverage' => ['description' => 'How well territories are being covered.', 'label' => 'Checking territory coverage', 'scoped' => ['user_id' => 'user'], 'schema' => self::object($field)],
             'field.travel_vs_visit_time' => ['description' => 'Time spent travelling versus on visits.', 'label' => 'Comparing travel and visit time', 'scoped' => ['user_id' => 'user'], 'schema' => self::object($field)],
             'field.journey_history' => ['description' => "An agent's past field journeys.", 'label' => 'Reading journeys', 'scoped' => ['user_id' => 'user'], 'schema' => self::object($field)],
-            'field.journey_detail' => ['description' => 'Details of one field journey.', 'label' => 'Reading the journey', 'scoped' => ['user_id' => 'user'],
+            'field.journey_detail' => ['description' => 'Details of one field journey or field trip: stops with what was done (activity, outcome, notes, follow-ups) and the trip summary.', 'label' => 'Reading the journey', 'untrusted' => true, 'scoped' => ['user_id' => 'user'],
                 'schema' => self::object([...$field, 'session_id' => self::int('Journey/session id')])],
         ];
     }

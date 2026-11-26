@@ -202,6 +202,14 @@ class FieldActivitySessionService
 
             $affected = $this->stopDetectionService->finalizeOpenStops($locked, $ended);
 
+            // Field trips get a report: due when there are stops to describe,
+            // otherwise there is nothing to fill in.
+            $reportStatus = null;
+            if ($locked->isFieldTrip() && $locked->report_status !== FieldActivitySession::REPORT_SUBMITTED) {
+                $hasStops = FieldStop::query()->where('field_activity_session_id', $locked->id)->exists();
+                $reportStatus = $hasStops ? FieldActivitySession::REPORT_DUE : FieldActivitySession::REPORT_SUBMITTED;
+            }
+
             $meta = is_array($locked->meta) ? $locked->meta : [];
             if ($reason === FieldActivitySession::END_REASON_AUTO_NO_SIGNAL) {
                 // Late points are accepted relative to the original auto-end.
@@ -217,7 +225,7 @@ class FieldActivitySessionService
                     'end_reason' => $reason,
                     'meta' => json_encode($meta, JSON_THROW_ON_ERROR),
                     'updated_at' => now()->format('Y-m-d H:i:s'),
-                ]);
+                ] + ($reportStatus !== null ? ['report_status' => $reportStatus] : []));
 
             return $updated === 1 ? $locked : null;
         });
@@ -390,6 +398,9 @@ class FieldActivitySessionService
                     ->where('field_activity_session_id', $locked->id)
                     ->whereNotNull('departed_at')
                     ->where('departed_at', '>=', $originalEnd)
+                    // A stop the person already described keeps its times.
+                    ->where('record_status', FieldStop::RECORD_PENDING)
+                    ->where('source', FieldStop::SOURCE_DETECTED)
                     ->update(['departed_at' => null]);
                 $this->stopDetectionService->resetScanCursor($locked);
                 $affectedStops = $this->stopDetectionService->finalizeOpenStops($locked, $locked->ended_at);
@@ -745,6 +756,7 @@ class FieldActivitySessionService
             ->where('field_activity_session_id', $session->id)
             ->whereNull('departed_at')
             ->where('classification', FieldStopClassification::PENDING)
+            ->where('record_status', FieldStop::RECORD_PENDING)
             ->where('reminder_sent', false)
             ->get();
 
@@ -759,11 +771,13 @@ class FieldActivitySessionService
                 'type' => 'field_activity.stop_reminder',
                 'category' => NotificationCategory::TRACKING->value,
                 'title' => 'Still at this stop?',
-                'message' => 'You have been stationary for a while. Classify this stop as Customer, Lead, Personal, or Ignore.',
+                'message' => $session->isFieldTrip()
+                    ? 'Tap to record what you are doing here. It takes a few seconds.'
+                    : 'You have been stationary for a while. Classify this stop as Customer, Lead, Personal, or Ignore.',
                 'reference_type' => FieldStop::class,
                 'reference_id' => (int) $stop->id,
-                'action_url' => '/agent/field-activity',
-                'action_route' => 'field-activity.today',
+                'action_url' => $session->isFieldTrip() ? '/?stop='.$stop->id : '/agent/field-activity',
+                'action_route' => $session->isFieldTrip() ? 'field-trip.stop' : 'field-activity.today',
                 'priority' => NotificationPriority::NORMAL->value,
                 'created_by_user_id' => null,
                 'metadata' => [
@@ -780,6 +794,10 @@ class FieldActivitySessionService
 
     private function notifyEndOfDayReview(FieldActivitySession $session, FieldDailySummary $summary): void
     {
+        if ($session->isFieldTrip()) {
+            return; // the trip report review replaces this reminder
+        }
+
         if ((int) $summary->unknown_stop_count <= 0) {
             return;
         }
@@ -982,7 +1000,7 @@ class FieldActivitySessionService
         return $this->serializeStop($stop->fresh() ?? $stop);
     }
 
-    private function refreshCounts(FieldActivitySession $session): void
+    public function refreshCounts(FieldActivitySession $session): void
     {
         $stops = FieldStop::query()
             ->where('field_activity_session_id', $session->id)
@@ -1125,7 +1143,9 @@ class FieldActivitySessionService
                 $q->whereIn('status', [
                     FieldActivitySessionStatus::COMPLETED->value,
                     FieldActivitySessionStatus::AUTO_CLOSED->value,
-                ]);
+                ])
+                    // Field trips have their own trip review; this pile is for clock-in days.
+                    ->where(fn ($s) => $s->whereNull('source')->orWhere('source', '!=', FieldActivitySession::SOURCE_FIELD_TRIP));
             })
             ->with('session')
             ->orderBy('arrived_at')
@@ -1221,6 +1241,18 @@ class FieldActivitySessionService
             'task_id' => $stop->task_id,
             'reminder_sent' => (bool) $stop->reminder_sent,
             'meta' => $stop->meta,
+            // Trip report: what the person recorded here.
+            'source' => $stop->source ?? FieldStop::SOURCE_DETECTED,
+            'outcome' => $stop->outcome,
+            'notes' => $stop->notes,
+            'follow_up_at' => $stop->follow_up_at?->toDateString(),
+            'record_status' => $stop->record_status ?? FieldStop::RECORD_PENDING,
+            'recorded_at' => $stop->recorded_at?->toIso8601String(),
+            'recorded_via' => $stop->recorded_via,
+            'location_status' => $stop->location_status ?? FieldStop::LOCATION_UNCONFIRMED,
+            'original_latitude' => $stop->original_latitude,
+            'original_longitude' => $stop->original_longitude,
+            'original_address' => $stop->original_address,
         ];
     }
 

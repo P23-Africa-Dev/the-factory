@@ -33,14 +33,23 @@ class PruneFieldActivityDataCommand extends Command
                 $deletedPoints += FieldLocationPoint::query()->whereIn('id', $ids)->delete();
             });
 
+        // Trip reports are business records: stops the person described (and
+        // their trips) are kept; only the raw GPS trail above is pruned.
         $deletedStops = FieldStop::query()
             ->where('arrived_at', '<', $cutoff)
             ->whereNotNull('departed_at')
+            ->where('record_status', FieldStop::RECORD_PENDING)
+            ->where('source', FieldStop::SOURCE_DETECTED)
+            ->whereDoesntHave('attachments')
             ->delete();
 
         $deletedSessions = FieldActivitySession::query()
             ->whereNotNull('ended_at')
             ->where('ended_at', '<', $cutoff)
+            ->whereNotExists(function ($q): void {
+                $q->selectRaw('1')->from('field_stops')
+                    ->whereColumn('field_stops.field_activity_session_id', 'field_activity_sessions.id');
+            })
             ->delete();
 
         // Daily summaries are small aggregates kept longer for analytics

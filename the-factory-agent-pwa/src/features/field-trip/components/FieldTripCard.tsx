@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Loader2, Map as MapIcon, MapPin, Play, Square, Wifi, WifiOff } from 'lucide-react';
+import { ChevronRight, ClipboardList, Loader2, Map as MapIcon, MapPin, Play, Square, Wifi, WifiOff } from 'lucide-react';
 import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
 import { checkLocationSettings, getPermissionStatus, openAppSettings } from '@/features/tracking/native/locationSettings';
 import { readBrowserPosition } from '../preflight';
@@ -12,6 +12,29 @@ import { formatDistance, formatElapsed, plural, secondsSince } from '../format';
 import { FieldTripPreflightSheet } from './FieldTripPreflightSheet';
 import type { TripPosition } from '../types';
 import { OverlayPortal } from '@/components/shared/OverlayPortal';
+import { useTripReport } from '../report/queries';
+import { tripReviewPath } from '../report/paths';
+
+/** "Stops: 2 recorded · 1 to record ›" on the running trip. */
+function TripStopsStrip({ tripId, onOpen }: { tripId: number; onOpen: () => void }) {
+  const report = useTripReport(tripId, { live: true });
+  const c = report.data?.completeness;
+  if (!c || c.total === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="mt-3 flex min-h-11 w-full items-center gap-2 rounded-2xl bg-white/5 px-3 text-left text-[12px] active:bg-white/10"
+    >
+      <ClipboardList size={14} className="shrink-0 text-[#44AFCD]" />
+      <span className="flex-1">
+        Stops: {c.recorded} recorded
+        {c.pending > 0 && <span className="font-semibold text-[#F59E0B]"> · {c.pending} to record</span>}
+      </span>
+      <ChevronRight size={14} className="text-white/40" />
+    </button>
+  );
+}
 
 const GPS_LABEL = {
   waiting: 'Waiting for GPS…',
@@ -64,6 +87,31 @@ export function FieldTripCard({
   const active = trip.local != null;
   const now = useNow(active);
   const online = useOnline();
+  const reviewed = useRef<Set<number>>(new Set());
+  const [gate, setGate] = useState<number | null>(null);
+
+  // Trip just ended with stops to record: straight to "Review your trip".
+  const ended = trip.lastEnded;
+  useEffect(() => {
+    if (!ended || ended.report_status !== 'due' || reviewed.current.has(ended.id)) return;
+    reviewed.current.add(ended.id);
+    router.push(tripReviewPath(ended.id));
+  }, [ended, router]);
+
+  const gateRequired = trip.reportPolicy === 'required' && trip.reportDue != null;
+  const startPressed = () => {
+    if (gateRequired && trip.reportDue) {
+      // Same answer as the server: finish the last report first.
+      setGate(trip.reportDue.trip_id);
+      return;
+    }
+    setPreflightOpen(true);
+  };
+  const gateTrip = gate ?? trip.reportGate;
+  const closeGate = () => {
+    setGate(null);
+    trip.clearReportGate();
+  };
 
   const onReady = useCallback(
     async (position: TripPosition | null) => {
@@ -148,6 +196,9 @@ export function FieldTripCard({
                   : GPS_LABEL[trip.gps]}
             </span>
           </p>
+          {trip.local.serverId != null && !ending && (
+            <TripStopsStrip tripId={trip.local.serverId} onOpen={() => router.push(tripReviewPath(trip.local!.serverId as number))} />
+          )}
           {!ending && (trip.gps === 'lost' || (trip.gps === 'waiting' && elapsed > 120)) && (
             <div className="mt-2 rounded-xl bg-[#FBBF24]/10 px-3 py-2 text-[11px] text-[#FBBF24]">
               <p>
@@ -230,9 +281,28 @@ export function FieldTripCard({
   }
 
   // ── Idle ──────────────────────────────────────────────────────────────────
+  const due = trip.reportDue;
   return (
     <>
-      {trip.lastEnded && (
+      {due && (
+        <button
+          type="button"
+          onClick={() => router.push(tripReviewPath(due.trip_id))}
+          className="mb-3 flex min-h-14 w-full items-center gap-3 rounded-[18px] border border-[#F59E0B]/50 bg-[#F59E0B]/10 px-4 py-2.5 text-left text-white"
+        >
+          <ClipboardList size={18} className="shrink-0 text-[#F59E0B]" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-semibold">Trip report due</span>
+            <span className="block truncate text-[11px] text-white/70">
+              {due.pending_stop_count > 0 ? `${plural(due.pending_stop_count, 'stop')} to record` : 'Ready to submit'}
+              {due.due_count > 1 ? ` · ${due.due_count} trips` : ''}
+              {trip.reportPolicy === 'required' ? ' · needed before your next trip' : ''}
+            </span>
+          </span>
+          <ChevronRight size={16} className="text-white/50" />
+        </button>
+      )}
+      {trip.lastEnded && trip.lastEnded.report_status !== 'due' && (
         <div className="mb-3 flex items-center justify-between rounded-[18px] bg-white/5 px-4 py-2.5 text-white">
           <p className="text-[12px] text-white/80">
             {trip.lastEnded.end_reason === 'auto_no_signal' ? 'Trip ended automatically (no location)' : 'Trip saved'} ·{' '}
@@ -250,7 +320,7 @@ export function FieldTripCard({
       <button
         type="button"
         disabled={busy}
-        onClick={() => setPreflightOpen(true)}
+        onClick={startPressed}
         className="mb-5 flex h-[76px] w-full items-center gap-3 rounded-[20px] bg-[#44AFCD] px-4 text-left text-[#0A1D25] shadow-[0_14px_34px_rgba(68,175,205,0.35)] active:scale-[0.98] disabled:opacity-70"
       >
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0A1D25]/10">
@@ -269,6 +339,38 @@ export function FieldTripCard({
 
       {preflightOpen && (
         <FieldTripPreflightSheet open onClose={() => setPreflightOpen(false)} onReady={onReady} />
+      )}
+
+      {gateTrip != null && (
+        <OverlayPortal>
+          <div className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Finish your last trip report">
+            <div className="w-full max-w-md rounded-t-[28px] bg-[#0E2A36] px-5 pb-[calc(env(safe-area-inset-bottom)+20px)] pt-5 text-white">
+              <ClipboardList size={22} className="text-[#F59E0B]" />
+              <h2 className="mt-2 text-[16px] font-semibold">Finish your last trip report first</h2>
+              <p className="mt-1 text-[13px] text-white/70">
+                {due && due.pending_stop_count > 0
+                  ? `${plural(due.pending_stop_count, 'stop')} from your last trip still need details. It only takes a minute.`
+                  : 'Your last trip report is ready to submit.'}
+              </p>
+              <div className="mt-5 flex gap-2">
+                <button type="button" onClick={closeGate} className="h-12 flex-1 rounded-2xl border border-white/15 text-[13px] font-medium">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = gateTrip || due?.trip_id;
+                    closeGate();
+                    if (id) router.push(tripReviewPath(id));
+                  }}
+                  className="h-12 flex-[1.4] rounded-2xl bg-[#F59E0B] text-[13px] font-semibold text-[#0A1D25]"
+                >
+                  Finish report
+                </button>
+              </div>
+            </div>
+          </div>
+        </OverlayPortal>
       )}
     </>
   );

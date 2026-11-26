@@ -129,6 +129,24 @@ const cases: Array<{
     manager: '/manager',
   },
   {
+    name: 'stop detected opens the quick-record card for that stop',
+    source: { type: 'field_trip.stop_detected', actionUrl: '/?stop=77', referenceType: 'App\Models\FieldStop', referenceId: 77, metadata: { field_stop_id: 77, field_activity_session_id: 41 } },
+    agent: '/?stop=77&trip=41',
+    manager: '/manager?stop=77&trip=41',
+  },
+  {
+    name: 'trip report due opens that trip review',
+    source: { type: 'field_trip.report_due', actionUrl: '/field-trips/41/review', referenceType: 'App\Models\FieldActivitySession', referenceId: 41, metadata: { field_activity_session_id: 41 } },
+    agent: '/field-trips/41/review',
+    manager: '/manager/field-trips/41/review',
+  },
+  {
+    name: 'trip report submitted opens the team member journey',
+    source: { type: 'field_trip.report_submitted', actionUrl: '/operations/journey_history/41', referenceType: 'App\Models\FieldActivitySession', referenceId: 41 },
+    agent: '/field-activity/journeys/41',
+    manager: '/manager/field-activity/journeys/41',
+  },
+  {
     name: 'team member lost signal opens the live map',
     source: { type: 'field_trip.signal_lost', actionUrl: '/map?agent=7', referenceType: 'App\Models\FieldActivitySession', referenceId: 41 },
     agent: '/map?agent=7',

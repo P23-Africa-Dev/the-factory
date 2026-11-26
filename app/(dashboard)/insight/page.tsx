@@ -130,7 +130,9 @@ export default function InsightPage() {
   });
 
   const tripSettingMutation = useMutation({
-    mutationFn: async (patch: Partial<Record<TripSettingKey, number>>) => {
+    mutationFn: async (
+      patch: Partial<Record<TripSettingKey, number>> & { trip_report_policy?: "required" | "optional" },
+    ) => {
       const res = await updateFieldActivitySettings({ ...patch, company_id: companyId }, token);
       return res.data;
     },
@@ -300,6 +302,24 @@ export default function InsightPage() {
               );
             })}
           </div>
+          <label className="block text-sm max-w-md">
+            <span className="block font-medium text-slate-900">Trip reports</span>
+            <span className="block text-slate-500 text-xs mb-1.5">
+              After each trip, people record what they did at every stop. Choose whether the last report must be
+              submitted before a new trip can start.
+            </span>
+            <select
+              value={settingsQuery.data?.trip_report_policy ?? "required"}
+              disabled={tripSettingMutation.isPending}
+              onChange={(e) =>
+                tripSettingMutation.mutate({ trip_report_policy: e.target.value as "required" | "optional" })
+              }
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 disabled:opacity-60"
+            >
+              <option value="required">Required before the next trip</option>
+              <option value="optional">Optional (reminders only)</option>
+            </select>
+          </label>
           {tripSettingMutation.isPending && (
             <p className="flex items-center gap-1.5 text-xs text-slate-500">
               <Loader2 size={12} className="animate-spin" /> Saving…

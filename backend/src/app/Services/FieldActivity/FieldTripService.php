@@ -19,6 +19,7 @@ use App\Support\CompanyClock;
 use App\Support\GeoDistance;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -71,6 +72,9 @@ class FieldTripService
         }
 
         $active = $this->activeFor((int) $company->id, (int) $user->id);
+        if ($active === null) {
+            $this->assertNoReportDue($company, $user);
+        }
         if ($active !== null) {
             // One trip at a time: return the running one instead of failing.
             return $this->payload($active, created: false);
@@ -250,7 +254,38 @@ class FieldTripService
                 'trip_auto_end_seconds' => $this->settingService->tripAutoEndSeconds($company),
                 'moving_interval_seconds' => (int) config('field_activity.moving_interval_seconds', 30),
                 'stationary_interval_seconds' => (int) config('field_activity.stationary_interval_seconds', 60),
+                'trip_report_policy' => $this->settingService->tripReportPolicy($company),
             ],
+            // The newest trip whose report is still due (home banner / Start gate).
+            'report_due' => $this->reportDueSummary((int) $company->id, (int) $user->id),
+        ];
+    }
+
+    /**
+     * @return array{trip_id: int, pending_stop_count: int, due_count: int, ended_at: ?string}|null
+     */
+    private function reportDueSummary(int $companyId, int $userId): ?array
+    {
+        $due = FieldActivitySession::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->where('source', FieldActivitySession::SOURCE_FIELD_TRIP)
+            ->where('report_status', FieldActivitySession::REPORT_DUE)
+            ->orderByDesc('started_at')
+            ->get(['id', 'ended_at']);
+        if ($due->isEmpty()) {
+            return null;
+        }
+        $first = $due->first();
+
+        return [
+            'trip_id' => (int) $first->id,
+            'pending_stop_count' => FieldStop::query()
+                ->where('field_activity_session_id', $first->id)
+                ->where('record_status', FieldStop::RECORD_PENDING)
+                ->count(),
+            'due_count' => $due->count(),
+            'ended_at' => $first->ended_at?->toIso8601String(),
         ];
     }
 
@@ -283,7 +318,66 @@ class FieldTripService
                 }
             });
 
+        $result['report_reminded'] = $this->remindDueReports($now);
+
         return $result;
+    }
+
+    /**
+     * Trip report still due: remind 2 h after the trip ended, then once at
+     * 08:00 the next morning (company time). Never more than twice.
+     */
+    private function remindDueReports(Carbon $now): int
+    {
+        $sent = 0;
+        FieldActivitySession::query()
+            ->where('source', FieldActivitySession::SOURCE_FIELD_TRIP)
+            ->where('report_status', FieldActivitySession::REPORT_DUE)
+            ->where('report_reminders_sent', '<', 2)
+            ->whereNotNull('ended_at')
+            ->where('ended_at', '<=', $now->copy()->subHours(2))
+            ->orderBy('id')
+            ->chunkById(200, function ($trips) use ($now, &$sent): void {
+                foreach ($trips as $trip) {
+                    $nth = (int) $trip->report_reminders_sent;
+                    if ($nth === 1) {
+                        $tz = CompanyClock::timezone((int) $trip->company_id);
+                        $morning = $trip->ended_at->copy()->setTimezone($tz)->addDay()->setTime(8, 0);
+                        if ($now->copy()->setTimezone($tz)->lt($morning)) {
+                            continue;
+                        }
+                    }
+                    $pending = FieldStop::query()
+                        ->where('field_activity_session_id', $trip->id)
+                        ->where('record_status', FieldStop::RECORD_PENDING)
+                        ->count();
+                    try {
+                        $this->notificationService->notifyUser((int) $trip->user_id, [
+                            'company_id' => (int) $trip->company_id,
+                            'type' => 'field_trip.report_due',
+                            'category' => NotificationCategory::TRACKING->value,
+                            'title' => 'Finish your trip report',
+                            'message' => $pending > 0
+                                ? sprintf('%d %s from your last field trip still %s details.', $pending, $pending === 1 ? 'stop' : 'stops', $pending === 1 ? 'needs' : 'need')
+                                : 'Your last field trip is ready to submit.',
+                            'reference_type' => FieldActivitySession::class,
+                            'reference_id' => (int) $trip->id,
+                            'action_url' => '/field-trips/'.$trip->id.'/review',
+                            'action_route' => 'field-trip.review',
+                            'priority' => NotificationPriority::NORMAL->value,
+                            'created_by_user_id' => null,
+                            'metadata' => ['field_activity_session_id' => (int) $trip->id],
+                            'dedupe_key' => 'field-trip-report-due:'.$trip->id.':'.($nth + 1),
+                        ]);
+                    } catch (Throwable $e) {
+                        Log::warning('field_trip.report_reminder_failed', ['session_id' => $trip->id, 'message' => $e->getMessage()]);
+                    }
+                    $trip->forceFill(['report_reminders_sent' => $nth + 1, 'report_last_reminded_at' => $now])->save();
+                    $sent++;
+                }
+            });
+
+        return $sent;
     }
 
     private function monitorTrip(FieldActivitySession $trip, Carbon $now): ?string
@@ -367,6 +461,7 @@ class FieldTripService
         return [
             ...$base,
             'elapsed_seconds' => $trip->started_at ? (int) $trip->started_at->diffInSeconds($end) : 0,
+            'report_status' => (string) ($trip->report_status ?? FieldActivitySession::REPORT_NONE),
             'open_stop' => (bool) FieldStop::query()
                 ->where('field_activity_session_id', $trip->id)
                 ->whereNull('departed_at')
@@ -515,6 +610,41 @@ class FieldTripService
         } catch (Throwable $e) {
             Log::warning('field_trip.notify_failed', ['session_id' => $trip->id, 'type' => $type, 'message' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * The company requires the last trip's report before a new trip: refuse with
+     * 409 report_due and the trip to finish (the app opens its review).
+     */
+    private function assertNoReportDue(Company $company, User $user): void
+    {
+        if ($this->settingService->tripReportPolicy($company) !== 'required') {
+            return;
+        }
+        $due = FieldActivitySession::query()
+            ->where('company_id', $company->id)
+            ->where('user_id', $user->id)
+            ->where('source', FieldActivitySession::SOURCE_FIELD_TRIP)
+            ->where('report_status', FieldActivitySession::REPORT_DUE)
+            ->orderByDesc('started_at')
+            ->first(['id']);
+        if ($due === null) {
+            return;
+        }
+
+        throw new HttpResponseException(response()->json([
+            'success' => false,
+            'message' => 'Finish your last trip report before starting a new trip.',
+            'code' => 'report_due',
+            'data' => ['trip_id' => (int) $due->id],
+            'errors' => ['trip' => ['Finish your last trip report before starting a new trip.']],
+        ], 409));
+    }
+
+    /** Tell the person's supervisor, owners and admins (used by trip reports). */
+    public function notifyManagersAbout(FieldActivitySession $trip, string $type, string $title, string $message, string $dedupeKey, NotificationPriority $priority, string $actionUrl): void
+    {
+        $this->notifyManagers($trip, $type, $title, $message, $dedupeKey, $priority, $actionUrl);
     }
 
     /**

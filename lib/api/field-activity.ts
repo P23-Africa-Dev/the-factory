@@ -2,7 +2,8 @@
 
 import type { TrackingHealth } from "@/lib/tracking/tracking-health";
 
-import { apiRequest } from "./onboarding";
+import { apiRequest, ApiEnvelope, ApiRequestError } from "./onboarding";
+import { getSupportAwareApiTransport } from "@/lib/auth/support-session";
 
 export type FieldActivitySettings = {
   enabled: boolean;
@@ -13,6 +14,8 @@ export type FieldActivitySettings = {
   trip_reminder_seconds?: number;
   /** Auto-end a trip after this long with no location (default 7200 = 2 h). */
   trip_auto_end_seconds?: number;
+  /** "required": finish the last trip report before starting a new trip (default); "optional": reminders only. */
+  trip_report_policy?: "required" | "optional";
 };
 
 export type FieldActivityAnalytics = {
@@ -63,7 +66,50 @@ export type FieldStopDto = {
   classified_by: string | null;
   classified_at: string | null;
   lead_id: number | null;
+  /** Trip report: what the person recorded at this stop (field trips). */
+  source?: "detected" | "manual";
+  outcome?: StopOutcome | null;
+  notes?: string | null;
+  follow_up_at?: string | null;
+  record_status?: "pending" | "recorded";
+  recorded_at?: string | null;
+  recorded_via?: "live" | "review" | "web" | null;
+  location_status?: "unconfirmed" | "confirmed" | "corrected";
+  original_latitude?: number | null;
+  original_longitude?: number | null;
+  original_address?: string | null;
+  lead_name?: string | null;
+  location_name?: string | null;
+  added_by_user?: boolean;
+  off_route?: boolean;
+  attachments?: FieldStopAttachment[];
 };
+
+export type StopOutcome = "successful" | "follow_up" | "nobody_available" | "not_interested" | "other";
+
+export type FieldStopAttachment = {
+  id: number;
+  client_attachment_id: string | null;
+  field_stop_id: number;
+  mime_type: string | null;
+  size_bytes: number;
+  original_name: string | null;
+  caption: string | null;
+  is_image: boolean;
+  captured_at: string | null;
+  url: string;
+};
+
+export type TripAiSummary = {
+  summary: string;
+  highlights?: string[];
+  follow_ups?: Array<{ who: string; what: string; when: string | null }>;
+  concerns?: string[];
+  source: "ai" | "fallback";
+  generated_at?: string;
+};
+
+export type TripReportStatus = "none" | "due" | "submitted";
 
 export type JourneyCard = {
   id: number;
@@ -89,6 +135,11 @@ export type JourneyCard = {
   end_reason?: string | null;
   /** The phone's last tracking report (field trips only). */
   tracking_health?: TrackingHealth | null;
+  /** Field trips: the trip report and ELY's summary. */
+  report_status?: TripReportStatus | null;
+  report_submitted_at?: string | null;
+  ai_summary?: TripAiSummary | null;
+  records?: { total: number; recorded: number; pending: number; pending_ids: number[] } | null;
 };
 
 export type JourneySource = "field_trip" | "attendance";
@@ -314,6 +365,7 @@ export function updateFieldActivitySettings(
     stop_dwell_seconds?: number;
     trip_reminder_seconds?: number;
     trip_auto_end_seconds?: number;
+    trip_report_policy?: "required" | "optional";
   },
   token: string,
 ) {
@@ -521,4 +573,31 @@ export function classifyAgentFieldStop(
     body: payload,
     token,
   });
+}
+
+/** Stop photo / document (private: fetched with the session, never a public URL). */
+export async function downloadStopAttachment(
+  attachmentId: number,
+  params: { company_id?: number | string },
+  token: string,
+): Promise<Blob> {
+  const qs = new URLSearchParams();
+  if (params.company_id != null) qs.set("company_id", String(params.company_id));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  const transport = getSupportAwareApiTransport(`/field-trips/attachments/${attachmentId}${query}`, token);
+  const response = await fetch(transport.url, {
+    method: "GET",
+    headers: { Accept: "*/*", ...transport.authorizationHeaders },
+  });
+  if (!response.ok) {
+    let message = "Failed to load the file.";
+    try {
+      const payload = (await response.json()) as ApiEnvelope<unknown>;
+      if (payload?.message) message = payload.message;
+    } catch {
+      // binary / gateway error body
+    }
+    throw new ApiRequestError(message, response.status, null);
+  }
+  return response.blob();
 }
