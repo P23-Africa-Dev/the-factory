@@ -11,14 +11,14 @@ import {
   useLeadFields,
 } from '@/manager/features/crm';
 import { PwaFieldRequestsBanner } from '@/manager/features/crm/components/PwaFieldRequests';
-import { NotificationPanel, useUnreadCount } from '@/manager/features/notifications';
+import { NotificationPanel, useNotificationDrawerState, useUnreadCount } from '@/manager/features/notifications';
 
 export default function AllLeadsPage() {
   const { goBack, goToLeadDetail } = useCrmNavigation();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const { isOpen: isNotificationOpen, openDrawer: openNotifications, closeDrawer: closeNotifications } = useNotificationDrawerState();
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<number | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
@@ -83,7 +83,7 @@ export default function AllLeadsPage() {
 
             {/* Notification Bell */}
             <button
-              onClick={() => setIsNotificationOpen(true)}
+              onClick={openNotifications}
               className="relative w-11 h-11 flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.12] rounded-full active:scale-95 transition-all focus:outline-none"
             >
               <img
@@ -173,7 +173,7 @@ export default function AllLeadsPage() {
       {/* Notification Drawer */}
       <NotificationPanel
         open={isNotificationOpen}
-        onClose={() => setIsNotificationOpen(false)}
+        onClose={closeNotifications}
       />
     </ScreenErrorBoundary>
   );

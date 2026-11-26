@@ -11,7 +11,7 @@ import {
   useCrmNavigation,
 } from '@/features/crm';
 import { useAuth, useAgentIdentity } from '@/features/auth';
-import { NotificationPanel, useUnreadCount } from '@/features/notifications';
+import { NotificationPanel, useNotificationDrawerState, useUnreadCount } from '@/features/notifications';
 
 const PREVIEW_COUNT = 5;
 
@@ -20,7 +20,7 @@ export default function CrmDashboardPage() {
   const { avatarSrc } = useAgentIdentity();
   const { goToAllLeads, goToLeadDetail } = useCrmNavigation();
 
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const { isOpen: isNotificationOpen, openDrawer: openNotifications, closeDrawer: closeNotifications } = useNotificationDrawerState();
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -73,7 +73,7 @@ export default function CrmDashboardPage() {
 
             {/* Notification Bell */}
             <button
-              onClick={() => setIsNotificationOpen(true)}
+              onClick={openNotifications}
               className="relative w-12 h-12 flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.12] rounded-full active:scale-95 transition-all focus:outline-none"
             >
               <img
@@ -176,7 +176,7 @@ export default function CrmDashboardPage() {
       {/* Notification Drawer */}
       <NotificationPanel
         open={isNotificationOpen}
-        onClose={() => setIsNotificationOpen(false)}
+        onClose={closeNotifications}
       />
 
       {/* Add Lead dialog */}

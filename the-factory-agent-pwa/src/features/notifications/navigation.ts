@@ -6,6 +6,7 @@ import {
   markNotificationNavigation,
   resolveNotificationTarget,
 } from '@/lib/notifications/notificationTarget';
+import { saveNotificationReturn } from './notificationReturnStore';
 
 /** Resolve the screen an in-app notification opens (agent or manager, per session). */
 export function resolveInAppNotificationTarget(notification: AppNotification): string {
@@ -25,10 +26,11 @@ export function useNotificationNavigation() {
   const navigateToNotification = (notification: AppNotification): void => {
     markNotificationNavigation();
     const target = resolveInAppNotificationTarget(notification);
-    router.push(target);
     if (typeof window !== 'undefined') {
+      saveNotificationReturn(window.location.pathname, target);
       window.dispatchEvent(new CustomEvent('f23:notification-navigate', { detail: { target } }));
     }
+    router.push(target);
   };
 
   return { navigateToNotification };

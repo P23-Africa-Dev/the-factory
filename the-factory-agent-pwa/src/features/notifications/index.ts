@@ -11,5 +11,6 @@ export {
   useUpdatePreferences,
 } from './queries';
 export { useNotificationNavigation } from './navigation';
+export { useNotificationDrawerState } from './useNotificationDrawerState';
 export { NotificationPanel } from './components/NotificationPanel';
 export { NotificationItem } from './components/NotificationItem';
