@@ -84,7 +84,7 @@ export default function ManagerFieldActivityPage(): React.ReactElement {
                 Automatic Journey Tracking
               </h3>
               <p className="text-[11px] text-white/60 mt-0.5">
-                Record agent breadcrumb trails and stop clusters when clocked in.
+                Record routes and stops for every field trip your team takes (Start Field Trip on the phone).
               </p>
             </div>
             <button

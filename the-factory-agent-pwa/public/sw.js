@@ -353,7 +353,7 @@ async function uploadQueuedLocationsFromIdb() {
         const res = await postLocationBatch(
           credentials.apiBaseUrl,
           credentials.token,
-          `/agent/tasks/${taskIdRaw}/location`,
+          `/tasks/${taskIdRaw}/location`,
           companyId,
           batch,
         );

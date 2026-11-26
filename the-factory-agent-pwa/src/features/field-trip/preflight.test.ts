@@ -25,6 +25,16 @@ function deps(over: Partial<PreflightDeps> = {}): PreflightDeps {
 }
 
 describe('runFieldTripPreflight', () => {
+  it('asks to be left out of battery optimisation last, after the location problems', async () => {
+    const res = await runFieldTripPreflight(() => {}, deps({ getBatteryOptimized: async () => true }));
+    expect(res).toMatchObject({ ok: true, warning: 'battery_optimized' });
+    const both = await runFieldTripPreflight(
+      () => {},
+      deps({ getPermissionStatus: async () => status({ background: 'denied' }), getBatteryOptimized: async () => true }),
+    );
+    expect(both.warning).toBe('background_missing');
+  });
+
   it('warns when only approximate location is allowed (routes would be off by hundreds of metres)', async () => {
     const res = await runFieldTripPreflight(() => {}, deps({ getPermissionStatus: async () => status({ precise: false, background: 'denied' }) }));
     expect(res).toMatchObject({ ok: true, issue: null, warning: 'precise_off' });

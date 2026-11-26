@@ -207,7 +207,7 @@ async function syncLocationQueue(): Promise<void> {
 
       try {
         const res = await client.post(
-          `/agent/tasks/${taskId}/location`,
+          `/tasks/${taskId}/location`,
           {
             company_id: companyId,
             points: batch.map((r) => ({
@@ -291,7 +291,7 @@ async function syncProofQueue(): Promise<void> {
         new File([proof.fileBlob], proof.fileName, { type: proof.mimeType }),
       );
 
-      await client.post(`/agent/tasks/${proof.taskId}/proofs`, formData, {
+      await client.post(`/tasks/${proof.taskId}/proofs`, formData, {
         ...BACKGROUND_REQUEST,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -389,7 +389,7 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
           recordedAt: payload.recorded_at,
         },
       });
-      await client.post(`/agent/tasks/${payload.taskId}/complete`, formData, {
+      await client.post(`/tasks/${payload.taskId}/complete`, formData, {
         ...BACKGROUND_REQUEST,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -608,16 +608,19 @@ async function scheduleNextSyncIfNeeded(): Promise<void> {
   }
 }
 
-async function hasRunnableSyncWork(): Promise<boolean> {
+/**
+ * True when queued actions or proofs (things that change lists on screen) are
+ * waiting. GPS points alone do not count: refetching every list after each
+ * location upload (every 30 s while tracking) only costs battery and data.
+ */
+async function hasRunnableListChangingWork(): Promise<boolean> {
   const db = await getDb();
-  const [actions, proofs, locations] = await Promise.all([
+  const [actions, proofs] = await Promise.all([
     getRunnableOfflineActions(),
     db.getAllFromIndex('proofQueue', 'by-uploaded', 0),
-    db.getAllFromIndex('locationQueue', 'by-synced', 0),
   ]);
   if (actions.length > 0) return true;
-  if (proofs.some((item) => canRunNow(item.nextAttemptAt))) return true;
-  return locations.some((item) => canRunNow(item.nextAttemptAt) && item.inFlight !== 1);
+  return proofs.some((item) => canRunNow(item.nextAttemptAt));
 }
 
 async function syncAll(): Promise<void> {
@@ -627,7 +630,7 @@ async function syncAll(): Promise<void> {
 
   setSyncInFlight(true);
   try {
-    const hadWork = await hasRunnableSyncWork();
+    const hadWork = await hasRunnableListChangingWork();
     await syncProofQueue();
     await syncOfflineActionQueue();
     await syncLocationQueue();

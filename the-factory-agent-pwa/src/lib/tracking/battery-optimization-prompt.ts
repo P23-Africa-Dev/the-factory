@@ -1,4 +1,5 @@
 import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
+import { isNativeTrackerAvailable } from '@/features/field-trip/nativeTracker';
 import { openNativeBatteryOptimizationSettings } from '@/features/tracking/native/nativeBackgroundGeolocation';
 
 const STORAGE_KEY = 'factory23.tracking.battery-opt-prompted-v1';
@@ -9,6 +10,8 @@ const STORAGE_KEY = 'factory23.tracking.battery-opt-prompted-v1';
  */
 export function maybePromptBatteryOptimizationOnTrackingStart(): boolean {
   if (!isNativeAndroid()) return false;
+  // APK 1.0.4+: the Start checks explain it and ask properly instead.
+  if (isNativeTrackerAvailable()) return false;
   if (typeof localStorage === 'undefined') return false;
 
   try {

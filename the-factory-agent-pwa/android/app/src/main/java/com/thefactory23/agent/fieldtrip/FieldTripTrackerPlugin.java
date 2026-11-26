@@ -88,6 +88,7 @@ public class FieldTripTrackerPlugin extends Plugin {
                 config.lastUploadAtMillis = 0;
                 config.endedByServer = false;
                 config.serverId = 0;
+                config.endRequestedAtMillis = 0;
             }
             config.active = true;
             config.recording = true;
@@ -205,6 +206,41 @@ public class FieldTripTrackerPlugin extends Plugin {
         return null;
     }
 
+    /** Is Android allowed to pause this app to save battery? (null on Android < 6) */
+    @PluginMethod
+    public void getBatteryOptimization(PluginCall call) {
+        JSObject o = new JSObject();
+        android.os.PowerManager pm = (android.os.PowerManager) getContext().getSystemService(android.content.Context.POWER_SERVICE);
+        if (android.os.Build.VERSION.SDK_INT >= 23 && pm != null) {
+            o.put("optimized", !pm.isIgnoringBatteryOptimizations(getContext().getPackageName()));
+        } else {
+            o.put("optimized", false);
+        }
+        call.resolve(o);
+    }
+
+    /** Ask Android to let the app run in the background (system dialog, else the settings list). */
+    @PluginMethod
+    public void openBatteryOptimizationSettings(PluginCall call) {
+        String pkg = getContext().getPackageName();
+        try {
+            android.content.Intent i = new android.content.Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:" + pkg));
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(i);
+        } catch (Exception e) {
+            try {
+                android.content.Intent i = new android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(i);
+            } catch (Exception ignored) {
+                // No settings screen on this phone.
+            }
+        }
+        call.resolve();
+    }
+
     private JSObject state() {
         FieldTripConfig c = FieldTripConfig.get(getContext());
         FieldTripStore store = FieldTripStore.get(getContext());
@@ -221,6 +257,7 @@ public class FieldTripTrackerPlugin extends Plugin {
         o.put("lastAccuracy", c.lastAccuracy);
         o.put("endedByServer", c.endedByServer);
         o.put("lastError", c.lastError);
+        o.put("endRequestedAt", c.endRequestedAtMillis);
         return o;
     }
 }

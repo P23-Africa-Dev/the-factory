@@ -4,11 +4,16 @@
  * Does not replace the Android foreground-service GPS path.
  */
 
+import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
+
 let sentinel: WakeLockSentinel | null = null;
 let activeSessions = 0;
 
 async function requestWakeLock(): Promise<void> {
   if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+  // APK: native foreground services record with the screen off, so keeping the
+  // display on would only drain the battery. Browsers still need it.
+  if (isNativeAndroid()) return;
   if (sentinel && !sentinel.released) return;
 
   try {

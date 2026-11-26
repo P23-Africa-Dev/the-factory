@@ -10,6 +10,7 @@ import {
 } from '@/features/tracking/native/locationSettings';
 import { runFieldTripPreflight, type PreflightIssue, type PreflightResult, type PreflightStep } from '../preflight';
 import type { TripPosition } from '../types';
+import { FieldTripTracker } from '../nativeTracker';
 import { OverlayPortal } from '@/components/shared/OverlayPortal';
 
 const STEPS: Array<{ key: PreflightStep; label: string; nativeOnly?: boolean }> = [
@@ -31,6 +32,10 @@ const ISSUE_COPY: Record<PreflightIssue, { title: string; body: string }> = {
   background_missing: {
     title: 'Allow location "All the time"',
     body: 'Without it, Android may pause tracking when the app is closed, the screen is locked or the phone restarts.',
+  },
+  battery_optimized: {
+    title: 'Let Factory 23 run in the background',
+    body: 'Android may stop field-trip tracking to save battery. On the next screen choose Allow so your route keeps recording with the screen off.',
   },
   precise_off: {
     title: 'Turn on "Precise location"',
@@ -132,6 +137,11 @@ export function FieldTripPreflightSheet({
       void run();
       return;
     }
+    if (issue === 'battery_optimized') {
+      setAwaitingSettings(true);
+      await FieldTripTracker.openBatteryOptimizationSettings().catch(() => {});
+      return;
+    }
     if ((issue === 'permission_denied' || issue === 'precise_off') && native) {
       setAwaitingSettings(true);
       await openAppSettings();
@@ -149,6 +159,8 @@ export function FieldTripPreflightSheet({
         ? 'Allow all the time'
         : issue === 'precise_off'
           ? 'Open app settings'
+          : issue === 'battery_optimized'
+            ? 'Allow background running'
         : issue === 'permission_denied'
           ? native
             ? 'Open app settings'

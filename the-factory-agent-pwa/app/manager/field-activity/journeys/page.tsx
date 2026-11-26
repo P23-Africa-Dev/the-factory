@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useMyJourneys, useAgentJourneys } from '@/manager/features/field-activity/queries';
 import { useCrmAssignees } from '@/manager/features/crm';
+import { useAuth } from '@/features/auth';
 
 type PresetType = 'today' | 'this_week' | 'last_week' | 'last_30_days' | 'last_90_days';
 
@@ -76,9 +77,13 @@ function JourneyHistoryContent(): React.ReactElement {
   const userIdParam = searchParams.get('userId');
 
   const { data: assignees = [] } = useCrmAssignees();
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(
-    userIdParam ? Number(userIdParam) : null,
+  const { user } = useAuth();
+  const myId = user?.id != null ? Number(user.id) : null;
+  /** 'me' (default: the manager's own trips), 'all' (team overview) or a person's id. */
+  const [selection, setSelection] = useState<'me' | 'all' | number>(
+    userIdParam && Number.isFinite(Number(userIdParam)) ? Number(userIdParam) : 'me',
   );
+  const selectedUserId = selection === 'me' ? myId : selection === 'all' ? null : selection;
   const [preset, setPreset] = useState<PresetType>('last_30_days');
   const [page, setPage] = useState(1);
   const perPage = 10;
@@ -87,9 +92,7 @@ function JourneyHistoryContent(): React.ReactElement {
   if (previousUserIdParam !== userIdParam) {
     setPreviousUserIdParam(userIdParam);
     const parsed = userIdParam ? Number(userIdParam) : NaN;
-    if (Number.isFinite(parsed)) setSelectedUserId(parsed);
-  } else if (!userIdParam && !selectedUserId && assignees.length > 0) {
-    setSelectedUserId(assignees[0].id);
+    if (Number.isFinite(parsed)) setSelection(parsed);
   }
 
   const { from, to } = useMemo(() => getPresetDates(preset), [preset]);
@@ -102,13 +105,11 @@ function JourneyHistoryContent(): React.ReactElement {
     per_page: perPage,
   });
 
-  const teamFallbackQuery = useMyJourneys({
-    from,
-    to,
-    preset,
-    page,
-    per_page: perPage,
-  });
+  // Team overview only when chosen (no second request on every visit).
+  const teamFallbackQuery = useMyJourneys(
+    { from, to, preset, page, per_page: perPage },
+    selection === 'all',
+  );
 
   const activeData = selectedUserId ? agentJourneysQuery.data : teamFallbackQuery.data;
   const isLoading = selectedUserId ? agentJourneysQuery.isLoading : teamFallbackQuery.isLoading;
@@ -142,28 +143,30 @@ function JourneyHistoryContent(): React.ReactElement {
           </Link>
         </div>
         <h1 className="text-2xl font-extrabold text-white tracking-tight">
-          Agent Journey History
+          Journey History
         </h1>
         <p className="text-xs text-[#8F9098] font-medium mt-1">
-          Inspect daily field routes, stops, visits, and travel efficiency by agent.
+          Your field trips and your team&apos;s routes, stops and visits.
         </p>
       </header>
 
       {/* Agent Selector */}
       <div className="px-5 mb-4">
         <label className="block text-[10px] font-bold uppercase tracking-wider text-[#75ADAF] mb-1.5">
-          Select Field Agent
+          Show trips for
         </label>
         <select
-          value={selectedUserId ?? ''}
+          value={String(selection)}
           onChange={(e) => {
-            setSelectedUserId(e.target.value ? Number(e.target.value) : null);
+            const v = e.target.value;
+            setSelection(v === 'me' || v === 'all' ? v : Number(v));
             setPage(1);
           }}
           className="w-full h-11 rounded-xl bg-[#0B3343] border border-white/15 px-3.5 text-xs font-bold text-white focus:outline-none"
         >
-          <option value="">All Team Overview</option>
-          {assignees.map((agent) => (
+          <option value="me">My trips</option>
+          <option value="all">All team overview</option>
+          {assignees.filter((agent) => Number(agent.id) !== myId).map((agent) => (
             <option key={agent.id} value={agent.id}>
               {agent.name} ({agent.email})
             </option>

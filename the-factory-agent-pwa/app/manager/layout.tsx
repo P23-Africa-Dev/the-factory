@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/features/auth';
 import { FieldTripProvider, FieldTripStatusPill } from '@/features/field-trip';
+import { ActiveTrackingProvider } from '@/features/tracking/ActiveTrackingProvider';
 import { usePushSubscription } from '@/manager/features/notifications/hooks/usePushSubscription';
 import { useDeviceNotificationBridge } from '@/manager/features/notifications/hooks/useDeviceNotificationBridge';
 import { useTrackingWebSocket } from '@/hooks/useTrackingWebSocket';
@@ -131,11 +132,14 @@ export default function ManagerLayout({
 
   return (
     <ModeGate mode="manager">
-      {/* Managers take field trips too; same feature as agents. */}
-      <FieldTripProvider>
-        <FieldTripStatusPill homePath="/manager" />
-        <ManagerShell>{children}</ManagerShell>
-      </FieldTripProvider>
+      {/* Managers track their own tasks with the same tracker as agents. */}
+      <ActiveTrackingProvider>
+        {/* Managers take field trips too; same feature as agents. */}
+        <FieldTripProvider>
+          <FieldTripStatusPill homePath="/manager" />
+          <ManagerShell>{children}</ManagerShell>
+        </FieldTripProvider>
+      </ActiveTrackingProvider>
     </ModeGate>
   );
 }

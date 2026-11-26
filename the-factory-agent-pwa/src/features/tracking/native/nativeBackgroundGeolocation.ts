@@ -132,7 +132,43 @@ export function buildLiveTrackingMessage(distanceMeters?: number | null): string
   return DEFAULT_MESSAGE;
 }
 
+/**
+ * The native watcher outlives a WebView reload, but its id (and callback) do
+ * not: without this, every reload left one more invisible watcher running GPS.
+ * The id is kept in storage and any leftover is removed before adding a new one.
+ */
+const WATCHER_KEY = 'tracking:native_watcher_id';
+let orphanCheckDone = false;
+
+function rememberWatcher(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(WATCHER_KEY, id);
+    else localStorage.removeItem(WATCHER_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+async function removeOrphanWatcher(): Promise<void> {
+  if (orphanCheckDone) return;
+  orphanCheckDone = true;
+  let orphan: string | null = null;
+  try {
+    orphan = localStorage.getItem(WATCHER_KEY);
+  } catch {
+    return;
+  }
+  if (!orphan || orphan === watcherId) return;
+  try {
+    await BackgroundGeolocation.removeWatcher({ id: orphan });
+  } catch {
+    // Already gone (app was restarted).
+  }
+  rememberWatcher(null);
+}
+
 async function addWatcherInternal(title: string, message: string): Promise<void> {
+  await removeOrphanWatcher();
   watcherId = await BackgroundGeolocation.addWatcher(
     {
       backgroundMessage: message,
@@ -154,6 +190,7 @@ async function addWatcherInternal(title: string, message: string): Promise<void>
       subscribers.forEach((sub) => sub.onUpdate(loc));
     },
   );
+  rememberWatcher(watcherId);
 }
 
 /**
@@ -209,6 +246,7 @@ export async function forceRestartNativeBackgroundWatch(): Promise<void> {
   if (watcherId) {
     const id = watcherId;
     watcherId = null;
+    rememberWatcher(null);
     try {
       await BackgroundGeolocation.removeWatcher({ id });
     } catch {
@@ -243,6 +281,7 @@ export async function stopNativeBackgroundWatch(opts?: {
   if (watcherId) {
     const id = watcherId;
     watcherId = null;
+    rememberWatcher(null);
     try {
       await BackgroundGeolocation.removeWatcher({ id });
     } catch {

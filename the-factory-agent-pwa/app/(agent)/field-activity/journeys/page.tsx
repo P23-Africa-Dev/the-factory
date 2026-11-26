@@ -223,7 +223,7 @@ export default function JourneyHistoryPage(): React.ReactElement {
             </div>
             <h4 className="text-xs font-bold text-white mt-1">No journey logs found</h4>
             <p className="text-[10px] text-[#8F9098] max-w-[240px] leading-relaxed">
-              Active journey history is recorded when you clock in on working days with location access enabled.
+              Each field trip is saved here. Tap Start Field Trip on the home screen to record your route and stops.
             </p>
           </div>
         ) : (
@@ -452,22 +452,22 @@ export default function JourneyHistoryPage(): React.ReactElement {
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 bg-sky-400 rounded-full mt-1.5 shrink-0" />
               <span>
-                <strong className="text-white block font-semibold mb-0.5">Clock In To Start</strong>
-                Journeys record automatically once you clock in from the Attendance card on the dashboard.
+                <strong className="text-white block font-semibold mb-0.5">Start Field Trip</strong>
+                Tap Start Field Trip on the home screen when you head out, and End Field Trip when you are done. You can take several trips a day.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 bg-sky-400 rounded-full mt-1.5 shrink-0" />
               <span>
                 <strong className="text-white block font-semibold mb-0.5">Location Access</strong>
-                Ensure background location permission is granted for accuracy on active routes.
+                Allow location &quot;all the time&quot; with precise location on, so the route keeps recording with the screen off.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 bg-sky-400 rounded-full mt-1.5 shrink-0" />
               <span>
-                <strong className="text-white block font-semibold mb-0.5">Auto-Pause</strong>
-                Tracking pauses automatically when you stop or clock out to save device battery.
+                <strong className="text-white block font-semibold mb-0.5">Automatic end</strong>
+                A trip ends by itself if no location arrives for a long time (set by your company), and stops are detected when you stay in one place.
               </span>
             </li>
           </ul>

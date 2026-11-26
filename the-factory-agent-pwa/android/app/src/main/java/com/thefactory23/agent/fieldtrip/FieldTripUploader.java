@@ -113,6 +113,30 @@ public final class FieldTripUploader {
         }
     }
 
+    /**
+     * End tapped in the notification: upload every point, then POST
+     * /field-trips/{id}/end. True once the server has ended the trip (or had
+     * already ended it). Blocking; call off the main thread.
+     */
+    public static boolean endTrip(Context context) {
+        FieldTripConfig config = FieldTripConfig.get(context);
+        if (config.serverId <= 0 || config.token == null || config.apiBaseUrl == null) return false;
+        Result r = uploadPending(context);
+        if (r.pending > 0 && !r.endedByServer) return false; // offline: try again later
+        try {
+            JSONObject b = new JSONObject();
+            if (config.companyId > 0) b.put("company_id", config.companyId);
+            b.put("recorded_at", iso(config.endRequestedAtMillis > 0 ? config.endRequestedAtMillis : System.currentTimeMillis()));
+            Response res = post(config, "/field-trips/" + config.serverId + "/end", b);
+            if (res.code >= 200 && res.code < 300) return true;
+            config.lastError = "End: HTTP " + res.code;
+            return res.code == 422 && res.body != null && res.body.matches("(?is).*(not active|not found).*");
+        } catch (Exception e) {
+            config.lastError = "End: " + e.getClass().getSimpleName();
+            return false;
+        }
+    }
+
     /** POST /field-trips/{id}/health (best effort). */
     public static void reportHealth(Context context) {
         FieldTripConfig config = FieldTripConfig.get(context);

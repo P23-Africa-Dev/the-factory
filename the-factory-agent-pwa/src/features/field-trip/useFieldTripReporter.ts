@@ -28,6 +28,7 @@ import { fieldTripApi } from './api';
 import { newClientId, useFieldTripStore } from './store';
 import { isTripNotActiveError, notifyFieldTripServerEnded } from './serverEnded';
 import { FieldTripTracker, isNativeTrackerAvailable, type NativeTrackerState } from './nativeTracker';
+import { fetchTripRoute, mergeTrails } from './serverRoute';
 import { env } from '@/constants/env';
 import { appStore } from '@/lib/storage/stores';
 
@@ -457,6 +458,34 @@ export function useFieldTripReporter(options: {
       cancelled = true;
     };
   }, [native, active, clientTripId]);
+
+  // The live map shows the WHOLE trip: the server's route (after a reinstall,
+  // on another phone, or once the phone only keeps recent points) with this
+  // phone's newer points on top. Refreshed when the app comes back on screen.
+  useEffect(() => {
+    if (!active || !serverId) return undefined;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const server = await fetchTripRoute(serverId);
+        if (cancelled || server.length === 0) return;
+        const store = useFieldTripStore.getState();
+        store.setTrail(mergeTrails(server, store.trail));
+      } catch {
+        // Offline: the phone's own trail is shown.
+      }
+    };
+    const first = setTimeout(() => void load(), 2_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [active, serverId]);
 
   // Upload straight away once the server id becomes known (offline start synced).
   useEffect(() => {

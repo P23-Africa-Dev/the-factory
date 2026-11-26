@@ -50,9 +50,12 @@ public class FieldTripTrackingService extends Service {
     private static final long HEALTH_EVERY_MS = 60_000;
     private static final float MAX_ACCURACY_M = 250f;
     private static final float MOVING_SPEED_MPS = 0.5f;
+    /** Notification "End trip" button. */
+    public static final String ACTION_END = "com.thefactory23.agent.fieldtrip.END";
 
     public interface FixListener {
         void onFix(Location location);
+        /** The trip is over on the server (ended there, or via the notification). */
         void onEndedByServer();
     }
 
@@ -114,6 +117,22 @@ public class FieldTripTrackingService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (intent != null && ACTION_END.equals(intent.getAction())) {
+            if (config.serverId <= 0) {
+                // Trip not on the server yet (started offline): let the app end it.
+                startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } else {
+                config.recording = false;
+                if (config.endRequestedAtMillis <= 0) config.endRequestedAtMillis = System.currentTimeMillis();
+                config.save(this);
+                try {
+                    startInForeground(config); // notification now says "Ending…"
+                } catch (Exception ignored) {
+                    // Keep the previous notification.
+                }
+                handler.post(() -> maybeUpload(true));
+            }
+        }
         running = true;
         requestUpdates(config);
         handler.removeCallbacks(tick);
@@ -144,12 +163,21 @@ public class FieldTripTrackingService extends Service {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(pi)
+            .addAction(0, config.endRequestedAtMillis > 0 ? "Ending…" : "End trip", endIntent())
             .build();
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
             startForeground(NOTIFICATION_ID, n);
         }
+    }
+
+    private PendingIntent endIntent() {
+        Intent end = new Intent(this, FieldTripTrackingService.class).setAction(ACTION_END);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0);
+        return Build.VERSION.SDK_INT >= 26
+            ? PendingIntent.getForegroundService(this, 1, end, flags)
+            : PendingIntent.getService(this, 1, end, flags);
     }
 
     @SuppressLint("MissingPermission")
@@ -246,6 +274,24 @@ public class FieldTripTrackingService extends Service {
         lastAttemptAt = now;
         if (wakeLock != null) wakeLock.acquire(60_000);
         try {
+            if (config.endRequestedAtMillis > 0) {
+                // End tapped in the notification: finish once it reaches the server.
+                if (FieldTripUploader.endTrip(this)) {
+                    FieldTripUploader.reportHealth(this);
+                    config.active = false;
+                    config.endedByServer = true;
+                    config.save(this);
+                    FieldTripStore.get(this).clear();
+                    FixListener ls = listener;
+                    if (ls != null) {
+                        try { ls.onEndedByServer(); } catch (Exception ignored) { }
+                    }
+                    stopSelf();
+                } else {
+                    config.save(this);
+                }
+                return;
+            }
             FieldTripUploader.Result r = FieldTripUploader.uploadPending(this);
             if (now - lastHealthAt >= HEALTH_EVERY_MS) {
                 lastHealthAt = now;

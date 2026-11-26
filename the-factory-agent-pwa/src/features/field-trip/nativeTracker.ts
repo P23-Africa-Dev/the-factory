@@ -54,6 +54,8 @@ interface FieldTripTrackerPlugin {
   getState(): Promise<NativeTrackerState>;
   getTrail(): Promise<{ points: [number, number][] }>;
   stop(): Promise<NativeTrackerState>;
+  getBatteryOptimization(): Promise<{ optimized: boolean }>;
+  openBatteryOptimizationSettings(): Promise<void>;
   addListener(event: 'fix', cb: (fix: NativeFix) => void): Promise<PluginListenerHandle>;
   addListener(event: 'endedByServer', cb: (state: NativeTrackerState) => void): Promise<PluginListenerHandle>;
 }

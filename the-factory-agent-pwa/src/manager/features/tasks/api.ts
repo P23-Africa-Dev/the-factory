@@ -2,6 +2,7 @@
  * Manager Tasks & Projects API (`/admin/tasks/*`, `/admin/projects/*`)
  */
 import { client } from '@/lib/api/client';
+import { taskApi as agentTasksApi } from '@/features/tasks/api';
 import { getActiveCompanyId, setActiveCompanyId } from '@/lib/storage/stores';
 import { taskSchema, taskListSchema } from './schema';
 import type {
@@ -384,9 +385,9 @@ export const taskApi = {
     });
   },
 
-  completeTask: async (taskId: number, _formData: FormData): Promise<void> => {
-    await taskApi.updateStatus({ id: String(taskId), status: 'completed' });
-  },
+  // Same completion as agents (proofs, end position, closes the tracking
+  // session) through the role-neutral /tasks/{id}/complete endpoint.
+  completeTask: (taskId: number, formData: FormData): Promise<void> => agentTasksApi.completeTask(taskId, formData),
 
   createSelf: async (payload: CreateSelfTaskPayload): Promise<Task> => {
     const companyId = getActiveCompanyId();

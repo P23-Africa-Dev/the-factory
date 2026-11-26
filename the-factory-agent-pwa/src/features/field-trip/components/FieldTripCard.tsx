@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, Map as MapIcon, MapPin, Play, Square, Wifi, WifiOff } from 'lucide-react';
 import { isNativeAndroid } from '@/features/tracking/native/capacitorPlatform';
+import { checkLocationSettings, getPermissionStatus, openAppSettings } from '@/features/tracking/native/locationSettings';
 import { readBrowserPosition } from '../preflight';
 import { useFieldTrip } from '../FieldTripProvider';
 import { formatDistance, formatElapsed, plural, secondsSince } from '../format';
@@ -87,6 +88,16 @@ export function FieldTripCard({
     setConfirmEnd(false);
   };
 
+  /** GPS off → Android's own "turn on location" dialog; permission missing → app settings. */
+  const fixLocation = async () => {
+    const settings = await checkLocationSettings({ highAccuracy: true, showDialog: true });
+    if (!settings.enabled) return;
+    const status = await getPermissionStatus();
+    if (status.foreground !== 'granted' || !status.precise || status.background !== 'granted') {
+      await openAppSettings();
+    }
+  };
+
   const browserAndroid =
     typeof navigator !== 'undefined' && !isNativeAndroid() && /Android/i.test(navigator.userAgent);
 
@@ -137,11 +148,22 @@ export function FieldTripCard({
                   : GPS_LABEL[trip.gps]}
             </span>
           </p>
-          {!ending && trip.gps === 'lost' && (
-            <p className="mt-2 rounded-xl bg-[#FBBF24]/10 px-3 py-2 text-[11px] text-[#FBBF24]">
-              No GPS for over 2 minutes. Check that Location is on and set to precise, and that the app may use
-              location all the time.
-            </p>
+          {!ending && (trip.gps === 'lost' || (trip.gps === 'waiting' && elapsed > 120)) && (
+            <div className="mt-2 rounded-xl bg-[#FBBF24]/10 px-3 py-2 text-[11px] text-[#FBBF24]">
+              <p>
+                {trip.gps === 'lost' ? 'No GPS for over 2 minutes.' : 'Still no GPS position after 2 minutes.'} Check
+                that Location is on and set to precise, and that the app may use location all the time.
+              </p>
+              {isNativeAndroid() && (
+                <button
+                  type="button"
+                  onClick={() => void fixLocation()}
+                  className="mt-2 min-h-11 rounded-full bg-[#FBBF24] px-4 text-[12px] font-semibold text-[#0A1D25]"
+                >
+                  Fix location
+                </button>
+              )}
+            </div>
           )}
           {browserAndroid && (
             <p className="mt-2 rounded-xl bg-white/5 px-3 py-2 text-[11px] text-white/75">

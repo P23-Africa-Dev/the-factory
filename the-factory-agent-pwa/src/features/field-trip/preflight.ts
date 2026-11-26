@@ -5,6 +5,7 @@ import {
   type LocationPermissionStatus,
 } from '@/features/tracking/native/locationSettings';
 import type { TripPosition } from './types';
+import { FieldTripTracker, isNativeTrackerAvailable } from './nativeTracker';
 
 /**
  * Checks run when the user presses "Start Field Trip", in order:
@@ -17,6 +18,7 @@ export type PreflightIssue =
   | 'gps_off' // device location switched off (APK: user declined the system dialog)
   | 'background_missing' // APK: only "while using the app" — tracking stops when minimised
   | 'precise_off' // approximate location only: routes and stops are off by hundreds of metres
+  | 'battery_optimized' // APK 1.0.4+: Android may pause the app to save battery
   | 'unsupported'; // no geolocation at all (very old browser)
 
 export type PreflightStep = 'permission' | 'gps' | 'background' | 'position';
@@ -36,6 +38,8 @@ export interface PreflightDeps {
   requestForegroundPermission: () => Promise<LocationPermissionStatus>;
   checkLocationSettings: (opts: { highAccuracy?: boolean; showDialog?: boolean }) => Promise<{ enabled: boolean; resolution: string }>;
   readPosition: (timeoutMs: number) => Promise<TripPosition>;
+  /** APK 1.0.4+: is Android allowed to pause the app for battery? null = unknown. */
+  getBatteryOptimized?: () => Promise<boolean | null>;
 }
 
 /** Wait this long for a first fix; after that the trip starts and waits for GPS. */
@@ -66,6 +70,14 @@ export const defaultPreflightDeps: PreflightDeps = {
   requestForegroundPermission,
   checkLocationSettings,
   readPosition: readBrowserPosition,
+  getBatteryOptimized: async () => {
+    if (!isNativeTrackerAvailable()) return null;
+    try {
+      return (await FieldTripTracker.getBatteryOptimization()).optimized;
+    } catch {
+      return null;
+    }
+  },
 };
 
 /** GeolocationPositionError codes: 1 denied, 2 unavailable (GPS off / no signal), 3 timeout. */
@@ -101,12 +113,15 @@ export async function runFieldTripPreflight(
 
   onStep('background');
   // Soft warnings (start allowed): the most important one is shown.
+  const batteryOptimized = native && deps.getBatteryOptimized ? await deps.getBatteryOptimized() : null;
   const warning: PreflightIssue | null =
     native && status.precise === false
       ? 'precise_off'
       : native && status.background !== 'granted'
         ? 'background_missing'
-        : null;
+        : batteryOptimized === true
+          ? 'battery_optimized'
+          : null;
 
   onStep('position');
   try {

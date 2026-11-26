@@ -28,6 +28,8 @@ public final class FieldTripConfig {
     public int fixes;
     public long lastFixAtMillis;
     public float lastAccuracy = -1f;
+    /** End tapped in the notification; retried until the server has it. */
+    public long endRequestedAtMillis;
 
     private static FieldTripConfig shared;
 
@@ -58,6 +60,7 @@ public final class FieldTripConfig {
         c.fixes = p.getInt("fixes", 0);
         c.lastFixAtMillis = p.getLong("lastFixAt", 0);
         c.lastAccuracy = p.getFloat("lastAccuracy", -1f);
+        c.endRequestedAtMillis = p.getLong("endRequestedAt", 0);
         return c;
     }
 
@@ -81,6 +84,7 @@ public final class FieldTripConfig {
             .putInt("fixes", fixes)
             .putLong("lastFixAt", lastFixAtMillis)
             .putFloat("lastAccuracy", lastAccuracy)
+            .putLong("endRequestedAt", endRequestedAtMillis)
             .apply();
     }
 
