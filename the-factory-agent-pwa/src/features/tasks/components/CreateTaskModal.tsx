@@ -262,9 +262,10 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             </label>
             <input
               type="text"
+              placeholder="Enter task title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#75ADAF]/60 transition-colors"
             />
           </div>
 
@@ -295,6 +296,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
               Description
             </label>
             <textarea
+              placeholder="Enter task description"
               value={description}
               onChange={(e) => {
                 setDescription(e.target.value);
@@ -304,7 +306,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
               aria-invalid={!!descriptionError}
               aria-describedby={descriptionError ? 'create-task-description-error' : undefined}
               maxLength={TASK_DESCRIPTION_MAX_LENGTH}
-              className={`bg-white/5 border rounded-xl px-4 py-2.5 text-sm text-white outline-none transition-colors resize-none ${
+              className={`bg-white/5 border rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none transition-colors resize-none ${
                 descriptionError ? 'border-[#FD6046]/60' : 'border-white/10 focus:border-[#75ADAF]/60'
               }`}
             />
@@ -355,9 +357,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                   setCoords(null);
                 }}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder=""
+                placeholder="Enter location"
                 variant="dark"
-                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
+                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#75ADAF]/60 transition-colors"
               />
             </div>
 
@@ -387,9 +389,9 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                   setCoords(null);
                 }}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder=""
+                placeholder="Enter address"
                 variant="dark"
-                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#75ADAF]/60 transition-colors"
+                inputClassName="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#75ADAF]/60 transition-colors"
               />
               {coords ? (
                 <p className="text-[9px] text-green-400 mt-1 font-semibold flex items-center gap-1 font-sans">
@@ -426,6 +428,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
             <div className="flex gap-2">
               <input
                 type="text"
+                placeholder="Add a checklist item"
                 value={actionInput}
                 onChange={(e) => setActionInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -434,7 +437,7 @@ export function CreateTaskModal({ isOpen, onClose }: CreateTaskModalProps) {
                     handleAddAction();
                   }
                 }}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-[#75ADAF]/60"
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#75ADAF]/60"
               />
               <button
                 type="button"
