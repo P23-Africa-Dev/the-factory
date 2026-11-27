@@ -352,10 +352,11 @@ export function formatLeadBudgetDisplay(
 ): string {
     const amount = resolveLeadBudgetAmount(lead);
     if (amount <= 0) {
-        return "$ 0";
+        return "£ 0";
     }
     const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "GBP";
-    return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    const prefix = currency.trim().toUpperCase() === "GBP" ? "£" : currency;
+    return `${prefix} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
 export type FailedImportRow = {
