@@ -347,16 +347,51 @@ export function resolveLeadBudgetAmount(lead: Pick<LeadApiItem, "budget_amount" 
     return 0;
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+    GBP: "£",
+    USD: "$",
+    EUR: "€",
+    NGN: "₦",
+    JPY: "¥",
+    CNY: "¥",
+    INR: "₹",
+    CAD: "$",
+    AUD: "$",
+    ZAR: "R",
+    GHS: "₵",
+    KES: "KSh",
+    CHF: "CHF",
+};
+
+/** Resolve an ISO currency code (e.g. "GBP", "USD", "EUR") to its currency symbol. */
+export function getCurrencySymbol(currencyCode?: string | null): string {
+    const normalized = (currencyCode ?? "").trim().toUpperCase();
+    if (!normalized) return "£";
+    if (CURRENCY_SYMBOLS[normalized]) return CURRENCY_SYMBOLS[normalized];
+    try {
+        const parts = new Intl.NumberFormat("en", {
+            style: "currency",
+            currency: normalized,
+            currencyDisplay: "narrowSymbol",
+        }).formatToParts(0);
+        const symbol = parts.find((part) => part.type === "currency")?.value;
+        if (symbol) return symbol;
+    } catch {
+        // Fallback to raw code if not a valid ISO 4217 currency code.
+    }
+    return normalized;
+}
+
 export function formatLeadBudgetDisplay(
     lead: Pick<LeadApiItem, "budget_amount" | "budget_currency" | "meta" | "pipeline">,
 ): string {
     const amount = resolveLeadBudgetAmount(lead);
-    if (amount <= 0) {
-        return "£ 0";
-    }
     const currency = lead.budget_currency ?? lead.pipeline?.currency_code ?? "GBP";
-    const prefix = currency.trim().toUpperCase() === "GBP" ? "£" : currency;
-    return `${prefix} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    const symbol = getCurrencySymbol(currency);
+    if (amount <= 0) {
+        return `${symbol} 0`;
+    }
+    return `${symbol} ${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
 export type FailedImportRow = {

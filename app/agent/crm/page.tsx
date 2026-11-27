@@ -2,7 +2,7 @@
 
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
-import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
+import { formatLeadBudgetDisplay, getCurrencySymbol, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
 import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
 import { getApiErrorMessage } from "@/lib/api/errors";
@@ -285,6 +285,7 @@ function LeadColumn({
   hasMore,
   isFetchingMore,
   onLoadMore,
+  currencySymbol = "£",
 }: {
   id: string;
   title: string;
@@ -301,6 +302,7 @@ function LeadColumn({
   hasMore?: boolean;
   isFetchingMore?: boolean;
   onLoadMore?: () => void;
+  currencySymbol?: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id, disabled: id === UNCATEGORIZED_STAGE_ID });
 
@@ -323,7 +325,7 @@ function LeadColumn({
             {(total ?? items.length).toLocaleString()}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">£ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
+        <span className="text-white text-[12px] font-medium">{currencySymbol} {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
       </div>
 
       {/* Cards */}
@@ -388,11 +390,13 @@ function LeadListView({
   basePath = "/agent/crm",
   stageMeta,
   budgetTotal,
+  currencySymbol = "£",
 }: {
   containers: DndContainer[];
   basePath?: string;
   stageMeta?: Record<string, { total: number; hasMore?: boolean }>;
   budgetTotal?: number;
+  currencySymbol?: string;
 }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -482,7 +486,7 @@ function LeadListView({
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        {item.value || "£ 0"}
+                        {item.value || `${currencySymbol} 0`}
                       </span>
 
                       {/* Priority badge */}
@@ -527,7 +531,7 @@ function LeadListView({
           ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          £ {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
+          {currencySymbol} {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
             maximumFractionDigits: 2,
           })}{" "}
           pipeline value
@@ -537,7 +541,7 @@ function LeadListView({
   );
 }
 
-function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, onEditLeadClick, onDeleteLeadClick, isLoading, stageMeta, onLoadMore, budgetTotal }: {
+function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialContainers, onStatusChange, onAddClick, onEditLeadClick, onDeleteLeadClick, isLoading, stageMeta, onLoadMore, budgetTotal, currencySymbol = "£" }: {
   basePath?: string;
   leadListUrl?: string;
   boardKey: string;
@@ -550,6 +554,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
   stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
   onLoadMore?: (stageId: string) => void;
   budgetTotal?: number;
+  currencySymbol?: string;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -740,7 +745,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
 
       {viewMode === "list" ? (
         <div className="flex-1 overflow-y-auto">
-          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} budgetTotal={budgetTotal} />
+          <LeadListView containers={containers} basePath={basePath} stageMeta={stageMeta} budgetTotal={budgetTotal} currencySymbol={currencySymbol} />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto overflow-y-auto pb-6">
@@ -790,6 +795,7 @@ function LeadBoard({ basePath = "/agent/crm", leadListUrl, boardKey, initialCont
                   hasMore={stageMeta?.[container.id]?.hasMore}
                   isFetchingMore={stageMeta?.[container.id]?.isFetchingMore}
                   onLoadMore={() => onLoadMore?.(container.id)}
+                  currencySymbol={currencySymbol}
                 />
               ))}
             </div>
@@ -1266,6 +1272,7 @@ export default function CRMPage() {
           stageMeta={stageMeta}
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
           budgetTotal={leadsAnalytics?.budget_total}
+          currencySymbol={getCurrencySymbol(pipelines.find((p) => p.id === selectedPipelineId)?.currency_code ?? "GBP")}
         />
       </div>
 

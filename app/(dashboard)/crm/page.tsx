@@ -4,7 +4,7 @@ import "@/components/sales-engine/sales-engine-workspace.css";
 
 import type { DndContainer, DndItem } from "@/types/operations";
 import type { ApiLeadStatus, LeadApiItem } from "@/lib/api/crm";
-import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
+import { formatLeadBudgetDisplay, getCurrencySymbol, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { useAuthStore } from "@/store/auth";
 import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
 import { getApiErrorMessage } from "@/lib/api/errors";
@@ -291,6 +291,7 @@ function LeadColumn({
   hasMore,
   isFetchingMore,
   onLoadMore,
+  currencySymbol = "£",
 }: {
   id: string;
   title: string;
@@ -307,6 +308,7 @@ function LeadColumn({
   hasMore?: boolean;
   isFetchingMore?: boolean;
   onLoadMore?: () => void;
+  currencySymbol?: string;
 }) {
   // "Uncategorized" holds leads whose stage was deleted; it isn't a real stage,
   // so cards can be dragged out of it but not into it.
@@ -331,7 +333,7 @@ function LeadColumn({
             {(total ?? items.length).toLocaleString()}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">£ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
+        <span className="text-white text-[12px] font-medium">{currencySymbol} {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
       </div>
 
       {/* Cards */}
@@ -396,6 +398,7 @@ function LeadListView({
   basePath = "/crm",
   stageMeta,
   budgetTotal,
+  currencySymbol = "£",
   onAddClick,
   onEditLeadClick,
 }: {
@@ -403,6 +406,7 @@ function LeadListView({
   basePath?: string;
   stageMeta?: Record<string, { total: number; hasMore?: boolean }>;
   budgetTotal?: number;
+  currencySymbol?: string;
   onAddClick?: (status: ApiLeadStatus) => void;
   onEditLeadClick?: (leadId: string) => void;
 }) {
@@ -494,7 +498,7 @@ function LeadListView({
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        {item.value || "£ 0"}
+                        {item.value || `${currencySymbol} 0`}
                       </span>
 
                       {/* Priority badge */}
@@ -556,7 +560,7 @@ function LeadListView({
           ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          £ {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
+          {currencySymbol} {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
             maximumFractionDigits: 2,
           })}{" "}
           pipeline value
@@ -579,6 +583,7 @@ function LeadBoard({
   stageMeta,
   onLoadMore,
   budgetTotal,
+  currencySymbol = "£",
 }: {
   basePath?: string;
   leadListUrl?: string;
@@ -592,6 +597,7 @@ function LeadBoard({
   stageMeta?: Record<string, { total: number; hasMore: boolean; isFetchingMore: boolean }>;
   onLoadMore?: (stageId: string) => void;
   budgetTotal?: number;
+  currencySymbol?: string;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -788,6 +794,7 @@ function LeadBoard({
             basePath={basePath}
             stageMeta={stageMeta}
             budgetTotal={budgetTotal}
+            currencySymbol={currencySymbol}
             onAddClick={onAddClick}
             onEditLeadClick={onEditLeadClick}
           />
@@ -840,6 +847,7 @@ function LeadBoard({
                   hasMore={stageMeta?.[container.id]?.hasMore}
                   isFetchingMore={stageMeta?.[container.id]?.isFetchingMore}
                   onLoadMore={() => onLoadMore?.(container.id)}
+                  currencySymbol={currencySymbol}
                 />
               ))}
             </div>
@@ -1389,6 +1397,7 @@ export default function CRMPage() {
           stageMeta={stageMeta}
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
           budgetTotal={leadsAnalytics?.budget_total}
+          currencySymbol={getCurrencySymbol(pipelines.find((p) => p.id === selectedPipelineId)?.currency_code ?? "GBP")}
         />
       </div>
 
