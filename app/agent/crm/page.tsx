@@ -168,7 +168,7 @@ function LeadCardView({
   const listeners = dnd?.listeners ?? {};
   const isDragging = dnd?.isDragging ?? false;
 
-  const amount = item.value || "$ 0";
+  const amount = item.value || "£ 0";
 
   return (
     <div
@@ -323,7 +323,7 @@ function LeadColumn({
             {(total ?? items.length).toLocaleString()}
           </div>
         </div>
-        <span className="text-white text-[12px] font-medium">$ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
+        <span className="text-white text-[12px] font-medium">£ {items.reduce((sum, item) => sum + (item.rawValue ?? 0), 0).toLocaleString()}</span>
       </div>
 
       {/* Cards */}
@@ -482,7 +482,7 @@ function LeadListView({
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
-                        {item.value || "$ 0"}
+                        {item.value || "£ 0"}
                       </span>
 
                       {/* Priority badge */}
@@ -527,7 +527,7 @@ function LeadListView({
           ).toLocaleString()} total leads
         </span>
         <span className="text-[13px] font-bold text-[#0B1215]">
-          {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
+          £ {(budgetTotal ?? allLeads.reduce((sum, lead) => sum + (lead.rawValue ?? 0), 0)).toLocaleString(undefined, {
             maximumFractionDigits: 2,
           })}{" "}
           pipeline value
