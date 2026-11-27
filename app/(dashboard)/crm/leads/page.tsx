@@ -30,7 +30,7 @@ import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
 import { LeadPagination } from "@/components/crm/lead-pagination";
 import type { ApiLeadStatus, LeadApiItem, LeadCustomFields } from "@/lib/api/crm";
-import { resolveLeadBudgetAmount } from "@/lib/api/crm";
+import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
 import { readCustomFields } from "@/lib/crm/custom-fields";
 import { LeadColumnMenu, LeadCustomColumnCells, LeadCustomColumnHeaders, leadListGridTemplate, leadListMinWidth, useHiddenLeadColumns } from "@/components/crm/lead-list-columns";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
@@ -44,6 +44,7 @@ interface Lead {
   status: ApiLeadStatus;
   statusColor: string;
   value: number;
+  valueDisplay: string;
   assignedTo: string;
   source: string;
   customFields: LeadCustomFields;
@@ -287,6 +288,7 @@ export default function AllLeadsPage() {
     status: (l.status ?? "newly_lead") as ApiLeadStatus,
     statusColor: getStatusColor(l.status, labels),
     value: resolveLeadBudgetAmount(l),
+    valueDisplay: formatLeadBudgetDisplay(l),
     assignedTo: l.assignee?.name ?? "Unassigned",
     source: l.source ?? "—",
     customFields: readCustomFields(l.custom_fields),
@@ -782,7 +784,7 @@ export default function AllLeadsPage() {
                     className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"
                       }`}
                   >
-                    £ {lead.value.toLocaleString()}
+                    {lead.valueDisplay}
                   </span>
                   )}
 
