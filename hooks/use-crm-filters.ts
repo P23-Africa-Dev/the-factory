@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { isLeadListSort, type LeadListSort } from "@/lib/api/crm";
 
 /**
  * CRM filters live in the URL so they survive reloads, can be shared as links,
@@ -15,6 +16,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
  *   ?from=2026-11-01&to=2026-11-19 (local calendar days)
  *   ?source=agent_upload
  *   ?industry=Fintech%20%26%20Payments
+ *   ?sort=recent_activity (absent = newest first)
  */
 export const CRM_FILTER_KEYS = [
   "pipeline",
@@ -26,6 +28,7 @@ export const CRM_FILTER_KEYS = [
   "to",
   "source",
   "industry",
+  "sort",
 ] as const;
 
 export type CrmFilterKey = (typeof CRM_FILTER_KEYS)[number];
@@ -59,6 +62,11 @@ export function countActiveCrmFilters(filters: CrmFilters): number {
     if (key === "from") return Boolean(filters.from || filters.to);
     return Boolean(filters[key]);
   }).length;
+}
+
+/** The lead order chosen in the URL, defaulting to newest first. */
+export function crmSortFromFilters(filters: CrmFilters): LeadListSort {
+  return isLeadListSort(filters.sort) ? filters.sort : "newest";
 }
 
 export function useCrmFilters() {
@@ -99,10 +107,13 @@ export function useCrmFilters() {
     [setFilters],
   );
 
-  /** Clear everything except the pipeline selection. */
+  /** Clear everything except the pipeline selection and the sort order. */
   const clearFilters = useCallback(() => {
-    replaceQuery(filters.pipeline ? { pipeline: filters.pipeline } : {});
-  }, [filters.pipeline, replaceQuery]);
+    replaceQuery({
+      ...(filters.pipeline ? { pipeline: filters.pipeline } : {}),
+      ...(filters.sort ? { sort: filters.sort } : {}),
+    });
+  }, [filters.pipeline, filters.sort, replaceQuery]);
 
   return {
     filters,

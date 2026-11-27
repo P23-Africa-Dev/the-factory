@@ -6,6 +6,7 @@ namespace App\Services\Crm;
 
 use App\Enums\NotificationCategory;
 use App\Enums\NotificationPriority;
+use App\Models\CompanyLocation;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\LeadFieldDefinition;
@@ -80,7 +81,47 @@ class LeadService
 
         $perPage = max(1, min((int) ($filters['per_page'] ?? 20), 100));
 
-        return $query->latest('id')->paginate($perPage)->withQueryString();
+        $this->applyLeadListSort($query, (string) ($filters['sort'] ?? ''));
+
+        return $query->paginate($perPage)->withQueryString();
+    }
+
+    /** Sort keys the lead list accepts; the first is the default. */
+    public const LEAD_LIST_SORTS = [
+        'newest',
+        'oldest',
+        'recent_activity',
+        'budget_desc',
+        'budget_asc',
+        'name_asc',
+        'name_desc',
+        'priority',
+    ];
+
+    /**
+     * Order the lead list. Every option ends on id so pages never shuffle.
+     * Budgets sort by raw amount (no currency conversion), empty budgets last.
+     */
+    private function applyLeadListSort(Builder $query, string $sort): void
+    {
+        $budgetMissingLast = 'CASE WHEN leads.budget_amount IS NULL THEN 1 ELSE 0 END';
+
+        match ($sort) {
+            'oldest' => $query->orderBy('leads.created_at')->orderBy('leads.id'),
+            'recent_activity' => $query->orderByDesc('leads.updated_at')->orderByDesc('leads.id'),
+            'budget_desc' => $query->orderByRaw($budgetMissingLast)
+                ->orderByDesc('leads.budget_amount')
+                ->orderByDesc('leads.id'),
+            'budget_asc' => $query->orderByRaw($budgetMissingLast)
+                ->orderBy('leads.budget_amount')
+                ->orderByDesc('leads.id'),
+            'name_asc' => $query->orderBy('leads.name')->orderByDesc('leads.id'),
+            'name_desc' => $query->orderByDesc('leads.name')->orderByDesc('leads.id'),
+            'priority' => $query->orderByRaw(
+                "CASE leads.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END"
+            )->orderByDesc('leads.id'),
+            default => $query->orderByDesc('leads.created_at')->orderByDesc('leads.id'),
+        };
     }
 
     /**
@@ -292,7 +333,7 @@ class LeadService
 
         $leads = Lead::query()
             ->where('company_id', $companyId)
-            ->with(['contacts:id,lead_id,name,email,phone,location,sort_order'])
+            ->with(['contacts:id,lead_id,name,email,phone,location,position,profile_urls,sort_order'])
             ->where(function (Builder $query) use ($field, $like, $phoneDigits, $strippedLeadPhoneSql, $strippedContactPhoneSql): void {
                 if ($field === 'name') {
                     $query->whereRaw('LOWER(leads.name) LIKE ?', [$like])
@@ -620,7 +661,26 @@ class LeadService
         $contacts = array_key_exists('contacts', $data) ? $this->contactPayloads($data) : null;
         $primaryContact = $contacts[0] ?? null;
 
-        $lead = DB::transaction(function () use ($lead, $data, $customFields, $contacts, $primaryContact): Lead {
+        // Map link: only act when the requested location differs from the current one.
+        $requestedLocationId = array_key_exists('company_location_id', $data) && $data['company_location_id'] !== null
+            ? (int) $data['company_location_id']
+            : null;
+        $currentLocationId = $lead->company_location_id !== null ? (int) $lead->company_location_id : null;
+        $relinksLocation = array_key_exists('company_location_id', $data) && $requestedLocationId !== $currentLocationId;
+        $newLocation = null;
+        if ($relinksLocation && $requestedLocationId !== null) {
+            $newLocation = CompanyLocation::query()
+                ->where('company_id', $companyId)
+                ->whereKey($requestedLocationId)
+                ->first();
+            if ($newLocation === null) {
+                throw ValidationException::withMessages([
+                    'company_location_id' => ['That map location is not in your organization.'],
+                ]);
+            }
+        }
+
+        $lead = DB::transaction(function () use ($lead, $data, $customFields, $contacts, $primaryContact, $relinksLocation, $newLocation): Lead {
             $position = array_key_exists('position', $data)
                 ? $this->nullableTrimmed($data['position'])
                 : ($contacts !== null ? ($primaryContact['position'] ?? null) : $lead->position);
@@ -666,10 +726,15 @@ class LeadService
                 $this->syncPrimaryContactFromLead($lead->fresh());
             }
 
+            if ($relinksLocation) {
+                $this->relinkLeadLocation($lead, $newLocation);
+            }
+
             return $lead->fresh();
         });
 
-        if ($lead->company_location_id !== null) {
+        // A fresh link keeps the pin's own details; later edits sync lead -> pin as before.
+        if (! $relinksLocation && $lead->company_location_id !== null) {
             $this->mapSavedLeadBridgeService->syncLeadToLocation($lead);
         }
 
@@ -683,6 +748,43 @@ class LeadService
         );
 
         return $this->findForUser($user, $lead->fresh(), $companyId);
+    }
+
+    /**
+     * Point a lead at a different saved map location (or none), keeping both sides of the link in step.
+     */
+    private function relinkLeadLocation(Lead $lead, ?CompanyLocation $location): void
+    {
+        $this->mapSavedLeadBridgeService->unlinkLeadFromLocation($lead);
+
+        $meta = is_array($lead->meta) ? $lead->meta : [];
+        unset($meta['map']);
+
+        if ($location === null) {
+            $lead->update([
+                'company_location_id' => null,
+                'meta' => $meta === [] ? null : $meta,
+            ]);
+
+            return;
+        }
+
+        if ($location->crm_lead_id !== null && (int) $location->crm_lead_id !== (int) $lead->id) {
+            Lead::query()->whereKey($location->crm_lead_id)->update(['company_location_id' => null]);
+        }
+
+        $meta['map'] = [
+            'company_location_id' => $location->id,
+            'latitude' => $location->latitude,
+            'longitude' => $location->longitude,
+            'location_type' => $location->type,
+        ];
+
+        $lead->update([
+            'company_location_id' => $location->id,
+            'meta' => $meta,
+        ]);
+        $location->update(['crm_lead_id' => $lead->id]);
     }
 
     public function delete(User $user, Lead $lead, ?int $companyId = null): void
@@ -763,6 +865,9 @@ class LeadService
             'note' => $note,
         ]);
 
+        // A new note counts as activity for "recent activity" sorting.
+        $lead->touch();
+
         $this->notifyLeadRecipients(
             lead: $lead,
             actor: $user,
@@ -797,6 +902,9 @@ class LeadService
             'happened_at' => $payload['happened_at'] ?? null,
             'meta' => $payload['meta'] ?? null,
         ]);
+
+        // A logged activity counts as activity for "recent activity" sorting.
+        $lead->touch();
 
         $this->notifyLeadRecipients(
             lead: $lead,
@@ -1653,8 +1761,13 @@ class LeadService
                         continue;
                     }
 
-                    DB::transaction(function () use ($duplicate, $row, $data, $pipelineId): void {
-                        $duplicate->update($this->buildDuplicateUpdatePayload($duplicate, $row, $data, $pipelineId));
+                    DB::transaction(function () use ($duplicate, $row, $data, $pipelineId, $user): void {
+                        $payload = $this->buildDuplicateUpdatePayload($duplicate, $row, $data, $pipelineId);
+                        // A lead with nobody on it falls to whoever imported it, as new leads do.
+                        if ($duplicate->assigned_to_user_id === null) {
+                            $payload['assigned_to_user_id'] = (int) $user->id;
+                        }
+                        $duplicate->update($payload);
                         $this->syncPrimaryContactFromLead($duplicate->fresh());
                     });
                     $updatedCount++;
@@ -2045,7 +2158,7 @@ class LeadService
                 'pipeline:id,name,currency_code',
                 'creator:id,name,email',
                 'assignee:id,name,email',
-                'contacts:id,lead_id,name,email,phone,location,sort_order',
+                'contacts:id,lead_id,name,email,phone,location,position,profile_urls,sort_order',
                 'notes' => fn($query) => $query->latest('id')->limit(10),
                 'notes.creator:id,name,email',
                 'activities' => fn($query) => $query->latest('id')->limit(20),
@@ -2993,7 +3106,7 @@ class LeadService
                 $this->applyAgentLeadScope($query, (int) $user->id);
             }
             $candidates = $candidates->merge(
-                $query->with(['contacts:id,lead_id,name,email,phone,sort_order'])
+                $query->with(['contacts:id,lead_id,name,email,phone,position,profile_urls,sort_order'])
                     ->get(['id', 'name', 'email', 'phone', 'company_name', 'status', 'created_at', 'created_by_user_id', 'assigned_to_user_id'])
             );
         }

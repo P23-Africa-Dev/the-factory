@@ -22,7 +22,8 @@ import { AddLeadModal } from "@/components/crm/add-lead-modal";
 import { CrmImportExportButton } from "@/components/crm/crm-import-export-button";
 import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
-import { useCrmFilters } from "@/hooks/use-crm-filters";
+import { crmSortFromFilters, useCrmFilters } from "@/hooks/use-crm-filters";
+import { LeadSortSelect } from "@/components/crm/lead-sort-select";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
@@ -138,6 +139,7 @@ export default function AllLeadsPage() {
   const user = useAuthStore((s) => s.user);
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
+  const leadSort = crmSortFromFilters(filters);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState(() => filters.q ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(() => (filters.q ?? "").trim());
@@ -234,6 +236,7 @@ export default function AllLeadsPage() {
     company_id: companyId ?? undefined,
     page,
     search: debouncedSearch || undefined,
+    sort: leadSort,
     pipeline_id: selectedPipelineId ?? undefined,
     status: selectedLabel === "all" ? undefined : selectedLabel,
     source: agentUploadScope ? "agent_upload" : undefined,
@@ -395,6 +398,10 @@ export default function AllLeadsPage() {
               <Tag size={13} />
               {selectedStageName ? `Stage: ${selectedStageName}` : "Stage"}
             </button>
+            <LeadSortSelect
+              value={leadSort}
+              onChange={(next) => setFilter("sort", next === "newest" ? null : next)}
+            />
             <button
               type="button"
               aria-expanded={showFilter}

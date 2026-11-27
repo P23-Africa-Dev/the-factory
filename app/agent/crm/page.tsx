@@ -6,7 +6,8 @@ import { formatLeadBudgetDisplay, getCurrencySymbol, resolveLeadBudgetAmount } f
 import { useAuthStore } from "@/store/auth";
 import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import { useCrmFilters } from "@/hooks/use-crm-filters";
+import { crmSortFromFilters, useCrmFilters } from "@/hooks/use-crm-filters";
+import { LeadSortSelect } from "@/components/crm/lead-sort-select";
 import "@/components/sales-engine/sales-engine-workspace.css";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { resolveAvatarSrc } from "@/lib/avatar";
@@ -899,6 +900,7 @@ export default function CRMPage() {
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   // Filters live in the URL: kept on reload and when switching to the list view.
   const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
+  const leadSort = crmSortFromFilters(filters);
 
   const sourceParam = (filters.source ?? "").trim().toLowerCase();
   const agentUploadScope = [
@@ -1004,6 +1006,7 @@ export default function CRMPage() {
     boardStageDefinitions,
     {
       company_id: companyId ?? undefined,
+      sort: leadSort,
       search: debouncedSearch || undefined,
       pipeline_id: selectedPipelineId ?? undefined,
       source: agentUploadScope ? AGENT_UPLOAD_SOURCE_FILTER : undefined,
@@ -1159,6 +1162,10 @@ export default function CRMPage() {
               <Tag size={13} />
               {selectedStageName ? `Stage: ${selectedStageName}` : "Stage"}
             </button>
+            <LeadSortSelect
+              value={leadSort}
+              onChange={(next) => setFilter("sort", next === "newest" ? null : next)}
+            />
             <button
               type="button"
               aria-expanded={showFilter}

@@ -30,6 +30,8 @@ import { IndustryCombobox } from "@/components/crm/industry-combobox";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
+import { LEAD_BUDGET_CURRENCIES } from "@/lib/crm/lead-budget";
+import { useSavedLocations } from "@/hooks/use-saved-locations";
 import { FieldError } from "@/components/ui/field-error";
 import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
 
@@ -189,18 +191,7 @@ const PRIORITY_OPTIONS = [
   { label: "Low", value: "low" },
 ] as const;
 
-const CURRENCIES = [
-  { code: "GBP", label: "GBP (£)" },
-  { code: "USD", label: "USD ($)" },
-  { code: "EUR", label: "EUR (€)" },
-  { code: "NGN", label: "NGN (₦)" },
-  { code: "KES", label: "KES (KSh)" },
-  { code: "GHS", label: "GHS (GH₵)" },
-  { code: "ZAR", label: "ZAR (R)" },
-  { code: "JPY", label: "JPY (¥)" },
-  { code: "CAD", label: "CAD (C$)" },
-  { code: "AUD", label: "AUD (A$)" },
-] as const;
+const CURRENCIES = LEAD_BUDGET_CURRENCIES;
 
 
 export function AddLeadModal({
@@ -293,6 +284,22 @@ export function AddLeadModal({
     if (lead?.budget_amount != null) return String(lead.budget_amount);
     return lead?.budget?.replace(/^[A-Z]{3}\s?/, "") ?? "";
   });
+  // Map link (edit only): which saved map pin this lead is linked to.
+  const [companyLocationId, setCompanyLocationId] = useState(
+    lead?.company_location_id != null ? String(lead.company_location_id) : "",
+  );
+  const { data: savedLocations = [] } = useSavedLocations({ per_page: 100 });
+  const mapLocationOptions = useMemo(() => [
+    { value: "", label: "Not linked" },
+    ...savedLocations.map((location) => ({
+      value: String(location.id),
+      label: location.address ? `${location.name} · ${location.address}` : location.name,
+    })),
+    ...(lead?.company_location_id != null
+      && !savedLocations.some((location) => location.id === lead.company_location_id)
+      ? [{ value: String(lead.company_location_id), label: `Linked location #${lead.company_location_id}` }]
+      : []),
+  ], [savedLocations, lead?.company_location_id]);
   const [nextAction, setNextAction] = useState(lead?.next_action ?? "");
   const [lastInteraction, setLastInteraction] = useState(lead?.last_interaction ?? "");
 
@@ -643,7 +650,10 @@ export function AddLeadModal({
               ["company_id", "pipeline_id", "status", "contacts", "name", "email", "phone", "location", "industry", "custom_fields"].includes(key),
             ),
           ) as typeof payload)
-        : payload;
+        : {
+            ...payload,
+            company_location_id: companyLocationId ? Number(companyLocationId) : null,
+          };
       updateMutation.mutate({
         leadId: lead.id,
         payload: updatePayload,
@@ -893,6 +903,19 @@ export function AddLeadModal({
                 />
               </FormRow>
               <FieldError message={errors.assignedToUserId} />
+            </div>
+            )}
+
+            {lead && canManageLeads && !isAgentContext && (
+            <div>
+              <FormRow label="Map Link" labelClassName="w-28">
+                <InlineSelect
+                  value={companyLocationId}
+                  onChange={setCompanyLocationId}
+                  options={mapLocationOptions}
+                  className="col-span-2"
+                />
+              </FormRow>
             </div>
             )}
           </div>

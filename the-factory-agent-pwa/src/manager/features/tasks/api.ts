@@ -33,6 +33,8 @@ const isDev = process.env.NODE_ENV !== 'production';
 export type TaskObserverCandidate = {
   id: string;
   name: string;
+  /** Shown under the name so people with the same name can be told apart. */
+  email?: string | null;
   avatarUrl: string | null;
 };
 
@@ -134,10 +136,16 @@ export const taskApi = {
     const items = (response.data?.data?.items ?? response.data?.items ?? []) as Array<{
       id: number | string;
       name: string;
+      email?: string | null;
       avatar_url?: string | null;
     }>;
     return Array.isArray(items)
-      ? items.map((item) => ({ id: String(item.id), name: item.name, avatarUrl: item.avatar_url ?? null }))
+      ? items.map((item) => ({
+          id: String(item.id),
+          name: item.name,
+          email: item.email ?? null,
+          avatarUrl: item.avatar_url ?? null,
+        }))
       : [];
   },
 
@@ -303,7 +311,9 @@ export const taskApi = {
     const raw = unwrap<unknown>(data);
     if (Array.isArray(raw)) return raw as TaskAssigneeOption[];
     const obj = (raw ?? {}) as Record<string, unknown>;
-    const list = (obj.assignees ?? obj.users ?? obj.agents ?? obj.data ?? []) as TaskAssigneeOption[];
+    // The API returns { data: { items: [...] } }; `items` was never read, so every
+    // assignee picker (tasks and KPIs) came back empty.
+    const list = (obj.items ?? obj.assignees ?? obj.users ?? obj.agents ?? obj.data ?? []) as TaskAssigneeOption[];
     return Array.isArray(list) ? list : [];
   },
 

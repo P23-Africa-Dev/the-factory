@@ -128,7 +128,26 @@ export type ListLeadsParams = {
     per_page?: number;
     page?: number;
     uncategorized?: boolean;
+    /** List order; the backend defaults to newest first. */
+    sort?: LeadListSort;
 };
+
+export const LEAD_LIST_SORTS = [
+    { value: "newest", label: "Newest first" },
+    { value: "oldest", label: "Oldest first" },
+    { value: "recent_activity", label: "Recent activity" },
+    { value: "budget_desc", label: "Budget: high to low" },
+    { value: "budget_asc", label: "Budget: low to high" },
+    { value: "name_asc", label: "Name: A to Z" },
+    { value: "name_desc", label: "Name: Z to A" },
+    { value: "priority", label: "Priority: urgent first" },
+] as const;
+
+export type LeadListSort = (typeof LEAD_LIST_SORTS)[number]["value"];
+
+export function isLeadListSort(value: string | null | undefined): value is LeadListSort {
+    return LEAD_LIST_SORTS.some((option) => option.value === value);
+}
 
 export type LeadsListData = {
     items: LeadApiItem[];
@@ -204,6 +223,8 @@ export type UpdateLeadPayload = {
     last_interaction?: string | null;
     last_interaction_at?: string | null;
     assigned_to_user_id?: number | null;
+    /** Saved map location this lead is linked to; null unlinks it. */
+    company_location_id?: number | null;
     converted_at?: string | null;
     meta?: Record<string, unknown> | null;
     custom_fields?: LeadCustomFields | null;
@@ -596,6 +617,7 @@ export function listLeads(
         per_page: params.per_page,
         page: params.page,
         uncategorized: params.uncategorized ? 1 : undefined,
+        sort: params.sort,
     });
 
     return apiRequest<LeadsListData>({

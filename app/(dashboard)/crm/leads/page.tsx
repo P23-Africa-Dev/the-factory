@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { useBulkDeleteLeads, useCrmAssignees, useCrmLabels, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadFields, useLeads, useUpdateLead } from "@/hooks/use-crm";
-import { useCrmFilters } from "@/hooks/use-crm-filters";
+import { crmSortFromFilters, useCrmFilters } from "@/hooks/use-crm-filters";
+import { LeadSortSelect } from "@/components/crm/lead-sort-select";
 import { getApiErrorMessage } from "@/lib/api/errors";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { AddLeadModal } from "@/components/crm/add-lead-modal";
@@ -140,6 +141,7 @@ export default function AllLeadsPage() {
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   // Filters live in the URL (shared with the board, survive reloads, linkable).
   const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
+  const leadSort = crmSortFromFilters(filters);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState(() => filters.q ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(() => (filters.q ?? "").trim());
@@ -261,6 +263,7 @@ export default function AllLeadsPage() {
     company_id: companyId ?? undefined,
     page,
     search: debouncedSearch || undefined,
+    sort: leadSort,
     pipeline_id: selectedPipelineId ?? undefined,
     status: selectedLabel === "all" ? undefined : selectedLabel,
     source: effectiveSourceFilter,
@@ -428,6 +431,10 @@ export default function AllLeadsPage() {
               <Tag size={13} />
               Label
             </button>
+            <LeadSortSelect
+              value={leadSort}
+              onChange={(next) => setFilter("sort", next === "newest" ? null : next)}
+            />
             <button
               type="button"
               aria-expanded={showFilter}

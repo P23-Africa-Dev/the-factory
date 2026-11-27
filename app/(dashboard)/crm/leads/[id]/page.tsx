@@ -52,6 +52,8 @@ import {
   visibleLeadFieldsForDetail,
 } from "@/lib/crm/custom-fields";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
+import { LEAD_BUDGET_CURRENCIES, fromDateTimeLocalValue, toDateTimeLocalValue } from "@/lib/crm/lead-budget";
+import { useSavedLocations } from "@/hooks/use-saved-locations";
 import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
@@ -491,18 +493,27 @@ function MapPreview({ name, location }: { name: string; location: string }) {
 type EditLeadForm = {
   contacts: LeadContact[];
   companyName: string;
+  companyEmail: string;
   website: string;
-  position: string;
   industry: string;
-  profileUrls: string[];
   status: ApiLeadStatus;
   pipeline_id: string;
   source: string;
   priority: ApiLeadPriority;
   assigned_to_user_id: string;
   next_action: string;
+  lastInteraction: string;
+  /** `datetime-local` value. */
+  lastInteractionAt: string;
+  budgetAmount: string;
+  budgetCurrency: string;
+  /** Linked saved map location id, "" when not linked. */
+  companyLocationId: string;
   customFields: LeadCustomFields;
 };
+
+const detailInputClass =
+  "bg-white border border-gray-100 rounded-xl px-4 py-1.5 text-[#0B1215] text-[14px] font-medium w-full outline-none focus:border-blue-500 shadow-sm";
 
 /* --- Page Component -------------------------------------- */
 
@@ -540,6 +551,8 @@ export default function LeadDetailsPage() {
   // Assignees list
   const { data: usersData } = useCrmAssignees(companyId, "/admin");
   const internalUsers = usersData || [];
+  // Saved map pins a lead can be linked to.
+  const { data: savedLocations = [] } = useSavedLocations({ company_id: companyId, per_page: 100 });
   const pipelineOptions = [
     { value: "", label: "Select Pipeline" },
     ...pipelines.map((pipeline) => ({ value: String(pipeline.id), label: pipeline.name })),
@@ -549,16 +562,20 @@ export default function LeadDetailsPage() {
   const [editForm, setEditForm] = useState<EditLeadForm>({
     contacts: [{ name: "", email: "", phone: "", location: "", sort_order: 0 }],
     companyName: "",
+    companyEmail: "",
     website: "",
-    position: "",
     industry: "",
-    profileUrls: [""],
     status: "new",
     pipeline_id: "",
     source: "",
     priority: "medium",
     assigned_to_user_id: "",
     next_action: "",
+    lastInteraction: "",
+    lastInteractionAt: "",
+    budgetAmount: "",
+    budgetCurrency: "GBP",
+    companyLocationId: "",
     customFields: {},
   });
   const [activeContactIndex, setActiveContactIndex] = useState(0);
@@ -566,25 +583,41 @@ export default function LeadDetailsPage() {
 
   const buildEditForm = (lead: LeadApiItem): EditLeadForm => ({
     contacts: lead.contacts?.length
-      ? lead.contacts.map((contact, index) => ({ ...contact, sort_order: index }))
+      ? lead.contacts.map((contact, index) => ({
+          ...contact,
+          // Older leads kept position/URLs only on the lead: seed contact 1 from it.
+          position: contact.position ?? (index === 0 ? lead.position ?? "" : ""),
+          profile_urls: contact.profile_urls?.length
+            ? contact.profile_urls
+            : index === 0 && lead.profile_urls?.length
+              ? lead.profile_urls
+              : [""],
+          sort_order: index,
+        }))
       : [{
           name: lead.name || "",
           email: lead.email || "",
           phone: lead.phone || "",
           location: lead.location || "",
+          position: lead.position || "",
+          profile_urls: lead.profile_urls?.length ? lead.profile_urls : [""],
           sort_order: 0,
         }],
     companyName: lead.company_name || "",
+    companyEmail: lead.company_email || "",
     website: lead.website || "",
-    position: lead.position || "",
     industry: lead.industry || "",
-    profileUrls: lead.profile_urls?.length ? lead.profile_urls : [""],
     status: lead.status || "new",
     pipeline_id: lead.pipeline_id != null ? String(lead.pipeline_id) : "",
     source: lead.source || "",
     priority: lead.priority || "medium",
     assigned_to_user_id: lead.assigned_to_user_id ? String(lead.assigned_to_user_id) : "",
     next_action: lead.next_action || "",
+    lastInteraction: lead.last_interaction || "",
+    lastInteractionAt: toDateTimeLocalValue(lead.last_interaction_at),
+    budgetAmount: lead.budget_amount != null ? String(lead.budget_amount) : "",
+    budgetCurrency: lead.budget_currency || "GBP",
+    companyLocationId: lead.company_location_id != null ? String(lead.company_location_id) : "",
     customFields: formValuesFromLead(leadFields, lead.custom_fields),
   });
 
@@ -647,13 +680,26 @@ export default function LeadDetailsPage() {
       return;
     }
 
-    const cleanedProfileUrls = parseProfileUrls(editForm.profileUrls);
     if (editForm.website.trim() && !isValidUrl(editForm.website)) {
       toast.error("Enter a valid website URL.");
       return;
     }
-    if (cleanedProfileUrls.some((url) => !isValidUrl(url))) {
-      toast.error("One or more profile URLs are invalid.");
+    const badUrlContact = editForm.contacts.findIndex((contact) =>
+      parseProfileUrls(contact.profile_urls ?? []).some((url) => !isValidUrl(url)),
+    );
+    if (badUrlContact >= 0) {
+      setActiveContactIndex(badUrlContact);
+      toast.error(`Contact ${badUrlContact + 1} has an invalid profile URL.`);
+      return;
+    }
+    if (editForm.companyEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.companyEmail.trim())) {
+      toast.error("Enter a valid company email address.");
+      return;
+    }
+    const budgetText = editForm.budgetAmount.replace(/,/g, "").trim();
+    const budgetAmount = budgetText ? Number(budgetText) : null;
+    if (budgetAmount !== null && (Number.isNaN(budgetAmount) || budgetAmount < 0)) {
+      toast.error("Enter a valid budget amount.");
       return;
     }
     const customErrors = validateCustomFieldValues(visibleCustomFields, editForm.customFields);
@@ -662,35 +708,52 @@ export default function LeadDetailsPage() {
       return;
     }
 
-    const contacts = editForm.contacts.map((contact, index) => ({
-      name: contact.name.trim(),
-      email: contact.email?.trim() || null,
-      phone: contact.phone?.trim() || null,
-      location: contact.location?.trim() || null,
-      sort_order: index,
-    }));
+    // Every contact keeps its own position and profile URLs: the backend replaces
+    // all contact rows on save, so leaving them out used to wipe them.
+    const contacts = editForm.contacts.map((contact, index) => {
+      const profileUrls = parseProfileUrls(contact.profile_urls ?? []);
+      return {
+        name: contact.name.trim(),
+        email: contact.email?.trim() || null,
+        phone: contact.phone?.trim() || null,
+        location: contact.location?.trim() || null,
+        position: contact.position?.trim() || null,
+        profile_urls: profileUrls.length > 0 ? profileUrls : null,
+        sort_order: index,
+      };
+    });
     const primaryContact = contacts[0];
     if (!editForm.pipeline_id) {
       toast.error("Pipeline is required.");
       return;
     }
+    const companyName = editForm.companyName.trim();
 
     const payload: UpdateLeadPayload = {
-      name: primaryContact.name,
+      company_id: companyId,
+      // Same rule as the add/edit modal: a company lead is named after the company.
+      name: companyName || primaryContact.name,
       email: primaryContact.email,
       phone: primaryContact.phone,
       location: primaryContact.location,
       contacts,
-      company_name: editForm.companyName.trim() || null,
+      company_name: companyName || null,
+      company_email: editForm.companyEmail.trim() || null,
       website: editForm.website.trim() ? normalizeWebsite(editForm.website) : null,
-      position: editForm.position.trim() || null,
+      // The lead-level copies mirror the primary contact.
+      position: primaryContact.position,
+      profile_urls: primaryContact.profile_urls,
       industry: editForm.industry.trim() || null,
-      profile_urls: cleanedProfileUrls.length > 0 ? cleanedProfileUrls : null,
       status: editForm.status,
       pipeline_id: Number(editForm.pipeline_id),
-      source: editForm.source,
+      source: editForm.source.trim() || null,
       priority: editForm.priority,
-      next_action: editForm.next_action,
+      next_action: editForm.next_action.trim() || null,
+      last_interaction: editForm.lastInteraction.trim() || null,
+      last_interaction_at: fromDateTimeLocalValue(editForm.lastInteractionAt),
+      budget_amount: budgetAmount,
+      budget_currency: budgetAmount !== null ? editForm.budgetCurrency : null,
+      company_location_id: editForm.companyLocationId ? Number(editForm.companyLocationId) : null,
       assigned_to_user_id: editForm.assigned_to_user_id
         ? Number(editForm.assigned_to_user_id)
         : null,
@@ -721,6 +784,22 @@ export default function LeadDetailsPage() {
     ...internalUsers.map(u => ({ label: u.name, color: "#3B82F6", value: String(u.id) }))
   ];
 
+  const mapLocationOptions = [
+    { value: "", label: "Not linked" },
+    ...savedLocations.map((location) => ({
+      value: String(location.id),
+      label: location.address ? `${location.name} · ${location.address}` : location.name,
+    })),
+    // Keep the current link selectable even if it's beyond the first page of pins.
+    ...(leadData.company_location_id != null
+      && !savedLocations.some((location) => location.id === leadData.company_location_id)
+      ? [{ value: String(leadData.company_location_id), label: `Linked location #${leadData.company_location_id}` }]
+      : []),
+  ];
+  const budgetCurrencyOptions = LEAD_BUDGET_CURRENCIES.some((c) => c.code === editForm.budgetCurrency)
+    ? LEAD_BUDGET_CURRENCIES
+    : [...LEAD_BUDGET_CURRENCIES, { code: editForm.budgetCurrency, label: editForm.budgetCurrency }];
+
   const currentAssignee = internalUsers.find(u => u.id === leadData.assigned_to_user_id);
   const currentAssigneeLabel = currentAssignee ? currentAssignee.name : "Unassigned";
   const leadDisplay = getLeadDetailDisplay(leadData);
@@ -731,6 +810,8 @@ export default function LeadDetailsPage() {
         email: leadData.email,
         phone: leadData.phone,
         location: leadData.location,
+        position: leadData.position,
+        profile_urls: leadData.profile_urls,
         sort_order: 0,
       }];
 
@@ -916,19 +997,24 @@ export default function LeadDetailsPage() {
 
                   <div className="flex flex-col">
                     <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Position
+                      Company Email
                     </label>
                     {isEditing ? (
                       <input
-                        type="text"
-                        value={editForm.position}
-                        onChange={(e) => updateField("position", e.target.value)}
+                        type="email"
+                        value={editForm.companyEmail}
+                        onChange={(e) => updateField("companyEmail", e.target.value)}
                         className="bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
                       />
+                    ) : leadData.company_email ? (
+                      <a
+                        href={`mailto:${leadData.company_email}`}
+                        className="text-[#7DD3FC] text-[16px] font-semibold truncate hover:underline"
+                      >
+                        {leadData.company_email}
+                      </a>
                     ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">
-                        {leadData.position || "N/A"}
-                      </p>
+                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
                     )}
                   </div>
 
@@ -951,53 +1037,6 @@ export default function LeadDetailsPage() {
                     )}
                   </div>
 
-                  <div className="flex flex-col">
-                    <label className="text-gray-400 text-[11px] font-medium mb-1">
-                      Profile URLs
-                    </label>
-                    {isEditing ? (
-                      <div className="space-y-2">
-                        {(editForm.profileUrls.length ? editForm.profileUrls : [""]).map((url, index) => (
-                          <div key={index} className="flex gap-2">
-                            <input
-                              type="url"
-                              value={url}
-                              onChange={(e) => {
-                                const next = [...(editForm.profileUrls.length ? editForm.profileUrls : [""])];
-                                next[index] = e.target.value;
-                                updateField("profileUrls", next);
-                              }}
-                              className="flex-1 bg-[#1A2E33] border border-[#2D454B] rounded-xl px-4 py-2 text-white text-[14px] font-semibold w-full outline-none focus:border-blue-500"
-                              placeholder="https://linkedin.com/in/username"
-                            />
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => updateField("profileUrls", [...editForm.profileUrls, ""])}
-                          className="text-[11px] font-semibold text-[#7DD3FC] hover:text-white"
-                        >
-                          + Add another URL
-                        </button>
-                      </div>
-                    ) : (leadData.profile_urls?.length ?? 0) > 0 ? (
-                      <div className="flex flex-col gap-1">
-                        {leadData.profile_urls?.map((url) => (
-                          <a
-                            key={url}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[#7DD3FC] text-[14px] font-semibold truncate hover:underline"
-                          >
-                            {url}
-                          </a>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-white text-[16px] font-semibold truncate">N/A</p>
-                    )}
-                  </div>
                 </div>
                 {/* Map */}
                 <div className="w-full h-[160px] sm:flex-1 rounded-[24px] overflow-hidden border border-white/10 shadow-[0_4px_14px_rgba(0,0,0,0.45)]">
@@ -1065,17 +1104,37 @@ export default function LeadDetailsPage() {
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Last Interaction
                   </label>
-                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadDisplay.lastInteraction}
-                  </p>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editForm.lastInteraction}
+                      maxLength={255}
+                      onChange={(e) => updateField("lastInteraction", e.target.value)}
+                      placeholder="E.g Sent invoice"
+                      className={detailInputClass}
+                    />
+                  ) : (
+                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                      {leadDisplay.lastInteraction}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Interaction Date
                   </label>
-                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadDisplay.lastInteractionAt}
-                  </p>
+                  {isEditing ? (
+                    <input
+                      type="datetime-local"
+                      value={editForm.lastInteractionAt}
+                      onChange={(e) => updateField("lastInteractionAt", e.target.value)}
+                      className={detailInputClass}
+                    />
+                  ) : (
+                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                      {leadDisplay.lastInteractionAt}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
@@ -1146,17 +1205,52 @@ export default function LeadDetailsPage() {
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Budget
                   </label>
-                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadDisplay.budget}
-                  </p>
+                  {isEditing ? (
+                    <div className="flex gap-2">
+                      <select
+                        aria-label="Budget currency"
+                        value={editForm.budgetCurrency}
+                        onChange={(e) => updateField("budgetCurrency", e.target.value)}
+                        className="bg-white border border-gray-100 rounded-xl px-2 py-1.5 text-[#0B1215] text-[14px] font-medium outline-none focus:border-blue-500 shadow-sm"
+                      >
+                        {budgetCurrencyOptions.map((currency) => (
+                          <option key={currency.code} value={currency.code}>{currency.code}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        aria-label="Budget amount"
+                        value={editForm.budgetAmount}
+                        onChange={(e) => updateField("budgetAmount", e.target.value)}
+                        placeholder="E.g 10000"
+                        className={`${detailInputClass} min-w-0`}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                      {leadDisplay.budget}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
                     Map Link
                   </label>
-                  <p className="text-[#0B1215] text-[16px] font-semibold truncate">
-                    {leadDisplay.mapLinkState}
-                  </p>
+                  {isEditing ? (
+                    <SearchableSelect
+                      value={editForm.companyLocationId}
+                      onChange={(v) => updateField("companyLocationId", v)}
+                      options={mapLocationOptions}
+                      className="bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-[14px] min-w-40"
+                    />
+                  ) : (
+                    <p className="text-[#0B1215] text-[16px] font-semibold truncate">
+                      {leadDisplay.mapLinkState}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-gray-400 text-[12px] font-medium uppercase tracking-widest">
