@@ -266,16 +266,18 @@ final class ElyAgentEngineTest extends TestCase
     {
         [$company, $admin, , $agent] = $this->seedCompany();
         $lead = $this->lead($company, $agent, 'Agent Lead');
+        $originalAssignee = $lead->assigned_to_user_id;
 
+        // Agents edit their own leads in full, but reassigning stays a manager action.
         $this->model
-            ->callsTools([['crm.update_lead', ['lead_id' => $lead->id, 'priority' => 'urgent']]])
-            ->answers('Agents cannot change the priority.');
+            ->callsTools([['crm.update_lead', ['lead_id' => $lead->id, 'assigned_to_user_id' => $admin->id]]])
+            ->answers('Agents cannot reassign leads.');
 
-        $this->chat($agent, $company, 'Make Agent Lead urgent')->assertOk();
+        $this->chat($agent, $company, 'Give Agent Lead to the admin')->assertOk();
 
         $toolMessage = collect($this->model->requests[1]->messages)->firstWhere('role', 'tool');
         $this->assertTrue($toolMessage->isError);
-        $this->assertNotSame('urgent', $lead->fresh()->priority?->value);
+        $this->assertSame($originalAssignee, $lead->fresh()->assigned_to_user_id);
         $this->assertDatabaseHas('ely_action_audits', ['tool' => 'crm.update_lead', 'outcome' => 'denied']);
     }
 
