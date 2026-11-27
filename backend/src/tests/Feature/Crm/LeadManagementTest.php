@@ -378,14 +378,14 @@ class LeadManagementTest extends TestCase
         $updateStatusResponse->assertOk()
             ->assertJsonPath('data.lead.status', 'qualified');
 
-        $forbiddenUpdateResponse = $this->withToken($agent->createToken('agent-update-forbidden', ['*'])->plainTextToken)
+        // Agents fully edit leads they can access (renaming included).
+        $this->withToken($agent->createToken('agent-update-rename', ['*'])->plainTextToken)
             ->patchJson('/api/v1/crm/leads/' . $agentCreatedLeadId, [
                 'company_id' => $company->id,
-                'name' => 'Attempted Rename',
-            ]);
-
-        $forbiddenUpdateResponse->assertUnprocessable()
-            ->assertJsonValidationErrors(['authorization']);
+                'name' => 'Agent Rename',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.lead.name', 'Agent Rename');
     }
 
     public function test_agent_can_replace_contacts_on_leads_they_created(): void
@@ -435,18 +435,18 @@ class LeadManagementTest extends TestCase
             'sort_order' => 1,
         ]);
 
-        $forbiddenResponse = $this->actingAs($agent, 'sanctum')
+        // Company fields are editable by the agent too.
+        $this->actingAs($agent, 'sanctum')
             ->patchJson('/api/v1/crm/leads/' . $lead->id, [
                 'company_id' => $company->id,
                 'contacts' => [['name' => 'Still Primary']],
-                'company_name' => 'Agent Should Not Set This',
-            ]);
-
-        $forbiddenResponse->assertUnprocessable()
-            ->assertJsonValidationErrors(['authorization']);
+                'company_name' => 'Agent Set This',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.lead.company_name', 'Agent Set This');
     }
 
-    public function test_agent_cannot_edit_contacts_on_assigned_lead_they_did_not_create(): void
+    public function test_agent_can_fully_edit_assigned_lead_but_not_reassign_it(): void
     {
         [$company, $admin, $agent, $pipelineId] = $this->seedCompanyUsers();
 
@@ -461,28 +461,48 @@ class LeadManagementTest extends TestCase
             'priority' => 'medium',
         ]);
 
+        // Every editable field, on a lead a manager uploaded and assigned to the agent.
         $this->actingAs($agent, 'sanctum')
             ->patchJson('/api/v1/crm/leads/' . $lead->id, [
                 'company_id' => $company->id,
+                'name' => 'Assigned Co',
+                'company_name' => 'Assigned Co',
+                'company_email' => 'hello@assigned.example',
                 'contacts' => [
-                    [
-                        'name' => 'Hijacked Contact',
-                        'email' => 'hijacked@example.com',
-                    ],
+                    ['name' => 'Ada Contact', 'email' => 'ada@example.com', 'position' => 'CTO'],
+                    ['name' => 'Ben Contact', 'position' => 'Buyer'],
                 ],
+                'status' => 'qualified',
+                'priority' => 'high',
+                'source' => 'referral',
+                'next_action' => 'Send proposal',
+                'last_interaction' => 'Called',
+                'last_interaction_at' => '2026-11-20T10:00:00Z',
+                'budget_amount' => 1200,
+                'budget_currency' => 'USD',
+                // Sending the current assignee unchanged is fine (forms send the whole lead).
+                'assigned_to_user_id' => $agent->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.lead.name', 'Assigned Co')
+            ->assertJsonPath('data.lead.company_email', 'hello@assigned.example')
+            ->assertJsonPath('data.lead.status', 'qualified')
+            ->assertJsonPath('data.lead.priority', 'high')
+            ->assertJsonPath('data.lead.next_action', 'Send proposal')
+            ->assertJsonPath('data.lead.budget_currency', 'USD')
+            ->assertJsonPath('data.lead.assigned_to_user_id', $agent->id)
+            ->assertJsonPath('data.lead.contacts.1.position', 'Buyer');
+
+        // Reassigning stays a manager action.
+        $this->actingAs($agent, 'sanctum')
+            ->patchJson('/api/v1/crm/leads/' . $lead->id, [
+                'company_id' => $company->id,
+                'assigned_to_user_id' => $admin->id,
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['authorization']);
 
-        $this->actingAs($agent, 'sanctum')
-            ->patchJson('/api/v1/crm/leads/' . $lead->id, [
-                'company_id' => $company->id,
-                'status' => 'qualified',
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.lead.status', 'qualified');
-
-        $this->assertDatabaseMissing('lead_contacts', ['name' => 'Hijacked Contact']);
+        $this->assertSame($agent->id, (int) $lead->fresh()->assigned_to_user_id);
     }
 
     public function test_agent_cannot_edit_contacts_on_inaccessible_lead(): void

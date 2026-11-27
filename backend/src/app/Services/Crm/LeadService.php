@@ -573,71 +573,27 @@ class LeadService
         $this->assertLeadInCompany($lead, $companyId);
 
         if ($role === 'agent') {
+            // Agents fully edit leads they uploaded or are assigned to, the same
+            // fields as managers, except reassigning the lead.
             $this->assertAgentCanAccessLead($lead, (int) $user->id);
 
-            $editsContacts = array_key_exists('contacts', $data);
-            if ($editsContacts && (int) $lead->created_by_user_id !== (int) $user->id) {
-                throw ValidationException::withMessages([
-                    'authorization' => ['Agents can only edit contact details on leads they created.'],
-                ]);
+            $forbiddenFields = array_values(array_intersect(array_keys($data), ['meta', 'converted_at']));
+            if (array_key_exists('assigned_to_user_id', $data)
+                && (int) ($data['assigned_to_user_id'] ?? 0) !== (int) ($lead->assigned_to_user_id ?? 0)) {
+                $forbiddenFields[] = 'assigned_to_user_id';
             }
-
-            $allowedFields = $editsContacts
-                ? ['company_id', 'pipeline_id', 'status', 'contacts', 'name', 'email', 'phone', 'location', 'industry', 'custom_fields']
-                : ['company_id', 'pipeline_id', 'status', 'custom_fields'];
-            $forbiddenFields = collect(array_keys($data))
-                ->reject(static fn(string $field): bool => in_array($field, $allowedFields, true))
-                ->values()
-                ->all();
 
             if ($forbiddenFields !== []) {
                 throw ValidationException::withMessages([
-                    'authorization' => ['Agents can only update lead status, pipeline, and contact details on leads they created.'],
+                    'authorization' => ['Agents cannot reassign leads or change system fields.'],
                     'forbidden_fields' => $forbiddenFields,
                 ]);
             }
 
-            if (array_key_exists('pipeline_id', $data)) {
-                $this->assertPipelineInCompany($companyId, (int) $data['pipeline_id']);
-            }
-
-            if (array_key_exists('status', $data) && $data['status'] !== null) {
-                $this->assertLabelExists($companyId, (string) $data['status']);
-            }
-
-            $customFields = $this->resolvedCustomFields(
-                $companyId,
-                $data,
-                is_array($lead->custom_fields) ? $lead->custom_fields : [],
-                'update',
-            );
-
-            $lead = DB::transaction(function () use ($lead, $data, $editsContacts, $customFields): Lead {
-                $lead->update([
-                    'pipeline_id' => array_key_exists('pipeline_id', $data) ? (int) $data['pipeline_id'] : $lead->pipeline_id,
-                    'status' => array_key_exists('status', $data) ? (string) $data['status'] : $lead->status,
-                    'name' => $data['name'] ?? $lead->name,
-                    'email' => array_key_exists('email', $data) ? $data['email'] : $lead->email,
-                    'phone' => array_key_exists('phone', $data) ? $data['phone'] : $lead->phone,
-                    'location' => array_key_exists('location', $data) ? $data['location'] : $lead->location,
-                    'custom_fields' => $customFields ?? $lead->custom_fields,
-                ]);
-
-                if ($editsContacts) {
-                    $this->replaceContacts($lead, $this->contactPayloads($data));
-                }
-
-                return $lead->fresh();
-            });
-
-            if ($editsContacts && $lead->company_location_id !== null) {
-                $this->mapSavedLeadBridgeService->syncLeadToLocation($lead);
-            }
-
-            return $this->findForUser($user, $lead->fresh(), $companyId);
+            unset($data['assigned_to_user_id']);
+        } else {
+            $this->ensureCanManage($role);
         }
-
-        $this->ensureCanManage($role);
 
         if (array_key_exists('assigned_to_user_id', $data) && $data['assigned_to_user_id'] !== null) {
             $this->assertMemberInCompany($companyId, (int) $data['assigned_to_user_id'], 'assigned_to_user_id');

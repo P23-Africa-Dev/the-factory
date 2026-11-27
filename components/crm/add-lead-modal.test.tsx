@@ -73,6 +73,11 @@ vi.mock("@/hooks/use-crm", () => ({
   useLeadFields: () => ({ data: mocks.leadFields }),
 }));
 
+// The edit form lists saved map pins for the "Map Link" field.
+vi.mock("@/hooks/use-saved-locations", () => ({
+  useSavedLocations: () => ({ data: [], isLoading: false }),
+}));
+
 vi.mock("@/components/payroll/payroll/inline-select", () => ({
   InlineSelect: ({
     value,

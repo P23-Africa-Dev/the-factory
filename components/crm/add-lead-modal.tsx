@@ -642,18 +642,14 @@ export function AddLeadModal({
     if (!payload) return;
 
     if (lead) {
-      // Agents may only edit stage, pipeline, contact details, industry and
-      // custom fields; sending other keys makes the API reject the update.
-      const updatePayload = isAgentContext
-        ? (Object.fromEntries(
-            Object.entries(payload).filter(([key]) =>
-              ["company_id", "pipeline_id", "status", "contacts", "name", "email", "phone", "location", "industry", "custom_fields"].includes(key),
-            ),
-          ) as typeof payload)
-        : {
-            ...payload,
-            company_location_id: companyLocationId ? Number(companyLocationId) : null,
-          };
+      // Agents edit every field managers can except the assignee (the API
+      // rejects an agent reassigning a lead), so leave it out for them.
+      const { assigned_to_user_id: assignee, ...rest } = payload;
+      const updatePayload = {
+        ...rest,
+        ...(isAgentContext ? {} : { assigned_to_user_id: assignee }),
+        company_location_id: companyLocationId ? Number(companyLocationId) : null,
+      };
       updateMutation.mutate({
         leadId: lead.id,
         payload: updatePayload,
@@ -906,7 +902,7 @@ export function AddLeadModal({
             </div>
             )}
 
-            {lead && canManageLeads && !isAgentContext && (
+            {lead && (canManageLeads || isAgentContext) && (
             <div>
               <FormRow label="Map Link" labelClassName="w-28">
                 <InlineSelect
