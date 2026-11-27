@@ -1,11 +1,21 @@
 "use client";
 
 import { Loader2, Mic, Square, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { downsample, encodeWav, mergeSamples } from "@/lib/ely/wav";
 
 const MAX_SECONDS = 120;
+const emptySubscribe = () => () => {};
+
+function isVoiceRecordingSupported(): boolean {
+    return (
+        typeof window !== "undefined" &&
+        (typeof window.AudioContext !== "undefined" ||
+            typeof (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext !== "undefined") &&
+        !!navigator.mediaDevices?.getUserMedia
+    );
+}
 
 type Props = {
     disabled?: boolean;
@@ -47,11 +57,7 @@ export function InlineVoiceRecorder({ disabled = false, onTranscribe, onTranscri
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    const supported =
-        typeof window !== "undefined" &&
-        (typeof window.AudioContext !== "undefined" ||
-            typeof (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext !== "undefined") &&
-        !!navigator.mediaDevices?.getUserMedia;
+    const supported = useSyncExternalStore(emptySubscribe, isVoiceRecordingSupported, () => false);
 
     const teardown = () => {
         recordingRef.current = false;
