@@ -93,6 +93,7 @@ export function TaskCardView({
   dnd,
 }: TaskCardProps & { dnd?: CardDnd }) {
   const [isChecklistOpen, setIsChecklistOpen] = useState(true);
+  const [showAllSubtasks, setShowAllSubtasks] = useState(false);
   const [isAddingSubtask, setIsAddingSubtask] = useState(false);
   const [subtaskDraft, setSubtaskDraft] = useState('');
   const subtaskInputRef = useRef<HTMLInputElement | null>(null);
@@ -144,6 +145,11 @@ export function TaskCardView({
   const cancelled = item.statusLabel === "Cancelled";
   const completedSubtasks = checklist ? checklist.subtasks.filter((subtask) => subtask.isCompleted).length : 0;
   const totalSubtasks = checklist ? checklist.subtasks.length : 0;
+  const hiddenSubtaskCount = Math.max(0, totalSubtasks - 1);
+  const visibleSubtasks =
+    checklist && !showAllSubtasks && totalSubtasks > 1
+      ? checklist.subtasks.slice(0, 1)
+      : checklist?.subtasks ?? [];
   const progressPct = totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
   const allSubtasksDone = totalSubtasks > 0 && completedSubtasks === totalSubtasks;
   const canManageSubtasks =
@@ -319,7 +325,7 @@ export function TaskCardView({
                 <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-[#F4F7F9]">
                   {totalSubtasks > 0 && (
                     <ChecklistRows
-                      subtasks={checklist.subtasks}
+                      subtasks={visibleSubtasks}
                       userId={checklistUserId ?? ""}
                       creatorId={checklist.creatorId}
                       locked={cancelled}
@@ -327,11 +333,21 @@ export function TaskCardView({
                         onToggleSubtask ? (id) => onToggleSubtask(item.id, id) : undefined
                       }
                       onReorder={
-                        onReorderSubtasks && canManageSubtasks
+                        onReorderSubtasks && canManageSubtasks && (showAllSubtasks || totalSubtasks <= 1)
                           ? (nextSubtasks) => onReorderSubtasks(item.id, nextSubtasks)
                           : undefined
                       }
                     />
+                  )}
+
+                  {totalSubtasks > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSubtasks((prev) => !prev)}
+                      className="flex w-full items-center justify-center gap-1.5 border-t border-gray-200/80 bg-white/60 px-3 py-2 text-[11.5px] font-semibold text-[#094B5C] transition-colors hover:bg-[#E2ECF1] cursor-pointer"
+                    >
+                      <span>{showAllSubtasks ? "Show less" : `Show ${hiddenSubtaskCount} more`}</span>
+                    </button>
                   )}
 
                   {onAddSubtask && canManageSubtasks && (
@@ -342,6 +358,7 @@ export function TaskCardView({
                           const trimmed = subtaskDraft.trim();
                           if (!trimmed) return;
                           onAddSubtask(item.id, trimmed);
+                          setShowAllSubtasks(true);
                           setSubtaskDraft("");
                           subtaskInputRef.current?.focus();
                         }}
