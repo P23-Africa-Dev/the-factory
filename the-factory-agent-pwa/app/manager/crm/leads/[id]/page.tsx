@@ -391,6 +391,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                         label: location.address ? `${location.name} · ${location.address}` : location.name,
                       }))}
                       assigneeOptions={assignees.map((rep) => ({ value: String(rep.id), label: `${rep.name} (${rep.email})` }))}
+                      assigneeName={lead.assignee?.name}
                     />
 
                     <button

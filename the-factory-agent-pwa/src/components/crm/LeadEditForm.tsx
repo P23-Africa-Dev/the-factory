@@ -353,6 +353,9 @@ export function LeadEditFields({
     : [...BUDGET_CURRENCIES, form.budgetCurrency];
   const linkedLocationMissing = Boolean(form.companyLocationId)
     && !locationOptions.some((option) => option.value === form.companyLocationId);
+  // Never let a missing people list turn a save into an accidental "unassign".
+  const currentAssigneeMissing = Boolean(form.assignedToUserId)
+    && !(assigneeOptions ?? []).some((option) => option.value === form.assignedToUserId);
 
   return (
     <div className="flex flex-col gap-4">
@@ -460,6 +463,9 @@ export function LeadEditFields({
             {assigneeOptions.map((option) => (
               <option key={option.value} value={option.value} style={optionStyle}>{option.label}</option>
             ))}
+            {currentAssigneeMissing && (
+              <option value={form.assignedToUserId} style={optionStyle}>{assigneeName ?? 'Current assignee'}</option>
+            )}
           </select>
         </Field>
       )}

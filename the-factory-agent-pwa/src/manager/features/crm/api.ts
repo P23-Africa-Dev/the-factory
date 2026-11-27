@@ -286,7 +286,9 @@ export const crmApi = {
     const raw = (data && typeof data === 'object' && 'data' in data ? (data as { data: unknown }).data : data) as unknown;
     if (Array.isArray(raw)) return raw as CrmAssigneeOption[];
     const obj = (raw ?? {}) as Record<string, unknown>;
-    const list = (obj.assignees ?? obj.users ?? obj.agents ?? obj.data ?? []) as CrmAssigneeOption[];
+    // The API returns { data: { items: [...] } }; `items` was never read, so the
+    // manager's reassign pickers were always empty.
+    const list = (obj.items ?? obj.assignees ?? obj.users ?? obj.agents ?? obj.data ?? []) as CrmAssigneeOption[];
     return Array.isArray(list) ? list : [];
   },
 
