@@ -12,6 +12,7 @@ import {
   useAddLeadNote,
   useAddLeadActivity,
   useCrmAssignees,
+  useCrmPipelines,
   useCrmNavigation,
   type CrmLabel,
   LeadContactsStack,
@@ -25,38 +26,20 @@ import {
   visibleLeadFieldsForDetail,
 } from '@/manager/features/crm/customFields';
 import { PwaAddLeadFieldSheet, PwaCustomFields } from '@/manager/features/crm/components/PwaCustomFields';
+import { useSavedLocations } from '@/manager/features/locations/queries';
+import {
+  LeadEditFields,
+  buildLeadEditForm,
+  leadDetailRows,
+  leadEditPayload,
+  type LeadEditFormState,
+} from '@/components/crm/LeadEditForm';
 import { getActiveCompanyId } from '@/lib/storage/stores';
 import { toast } from '@/lib/toast';
 import { showApiErrorToast } from '@/lib/api/errors';
-import { formatPhoneNumber } from '@/lib/phone';
 
 interface LeadDetailPageProps {
   params: Promise<{ id: string }>;
-}
-
-const COUNTRY_CODES = [
-  { code: '+44', label: 'GB (+44)' },
-  { code: '+234', label: 'NG (+234)' },
-  { code: '+254', label: 'KE (+254)' },
-  { code: '+233', label: 'GH (+233)' },
-  { code: '+27', label: 'ZA (+27)' },
-  { code: '+1', label: 'US (+1)' },
-] as const;
-
-function parsePhoneNumber(fullPhone: string | null | undefined): { countryCode: string; phonePart: string } {
-  if (!fullPhone) {
-    return { countryCode: '+44', phonePart: '' };
-  }
-  const sortedCodes = [...COUNTRY_CODES].map((c) => c.code).sort((a, b) => b.length - a.length);
-  for (const code of sortedCodes) {
-    if (fullPhone.startsWith(code)) {
-      return {
-        countryCode: code,
-        phonePart: fullPhone.slice(code.length).trim(),
-      };
-    }
-  }
-  return { countryCode: '+44', phonePart: fullPhone };
 }
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
@@ -116,6 +99,8 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   const { data: labels = [] } = useCrmLabels();
   const { data: leadFields = [] } = useLeadFields();
   const { data: assignees = [] } = useCrmAssignees();
+  const { data: pipelines = [] } = useCrmPipelines();
+  const { data: savedLocations = [] } = useSavedLocations();
   const { mutate: updateLead, isPending: isUpdating } = useUpdateLead({
     onSuccess: () => {
       toast.success('Lead updated successfully');
@@ -126,11 +111,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   const addActivityMutation = useAddLeadActivity(id);
 
   const [editMode, setEditMode] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editCountryCode, setEditCountryCode] = useState('+44');
-  const [editPhonePart, setEditPhonePart] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editLocation, setEditLocation] = useState('');
+  const [form, setForm] = useState<LeadEditFormState | null>(null);
   const [editCustomFields, setEditCustomFields] = useState<LeadCustomFields>({});
   const [showFieldDialog, setShowFieldDialog] = useState(false);
   const [sessionFieldIds, setSessionFieldIds] = useState<number[]>([]);
@@ -141,19 +122,19 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   const [activityType, setActivityType] = useState('call');
   const [activityTitle, setActivityTitle] = useState('');
 
+  // Keep the custom field values in step with the loaded lead while not editing.
   useEffect(() => {
-    if (lead) {
-      setTimeout(() => {
-        setEditName(lead.name);
-        const parsed = parsePhoneNumber(lead.phone);
-        setEditCountryCode(parsed.countryCode);
-        setEditPhonePart(parsed.phonePart);
-        setEditEmail(lead.email ?? '');
-        setEditLocation(lead.location ?? '');
-        setEditCustomFields(formValuesFromLead(leadFields, lead.customFields));
-      }, 0);
+    if (lead && !editMode) {
+      setTimeout(() => setEditCustomFields(formValuesFromLead(leadFields, lead.customFields)), 0);
     }
-  }, [lead, leadFields]);
+  }, [lead, leadFields, editMode]);
+
+  const startEdit = () => {
+    if (!lead) return;
+    setForm(buildLeadEditForm(lead));
+    setEditCustomFields(formValuesFromLead(leadFields, lead.customFields));
+    setEditMode(true);
+  };
 
   const handleStatusChange = (slug: string) => {
     if (!lead) return;
@@ -226,15 +207,16 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   };
 
   const handleSaveEdit = () => {
-    if (!lead) return;
+    if (!lead || !form) return;
     const companyId = getActiveCompanyId();
     if (!companyId) {
       toast.error('No active company selected');
       return;
     }
-
-    if (!editName.trim()) {
-      toast.error('Lead name cannot be empty');
+    // Managers can also reassign the lead from the form.
+    const result = leadEditPayload(form, { includeAssignee: true });
+    if ('error' in result) {
+      toast.error(result.error);
       return;
     }
     const customErrors = validateCustomFieldValues(leadFields, editCustomFields);
@@ -244,29 +226,12 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
       return;
     }
 
-    const phone = formatPhoneNumber(editCountryCode, editPhonePart);
-    const existingContacts =
-      lead.contacts.length > 0
-        ? lead.contacts
-        : [{ name: lead.name, email: lead.email, phone: lead.phone, location: lead.location }];
-    const contacts = existingContacts.map((contact, index) => ({
-      name: index === 0 ? editName.trim() : contact.name,
-      email: index === 0 ? editEmail.trim() || null : (contact.email ?? null),
-      phone: index === 0 ? phone : (contact.phone ?? null),
-      location: index === 0 ? editLocation.trim() || null : (contact.location ?? null),
-      sort_order: index,
-    }));
-
     updateLead(
       {
         id: lead.id,
         payload: {
           company_id: companyId,
-          name: editName.trim(),
-          phone,
-          email: editEmail.trim() || null,
-          location: editLocation.trim() || null,
-          contacts,
+          ...result.payload,
           custom_fields: serializeCustomFields(visibleFields, editCustomFields),
         },
       },
@@ -278,15 +243,8 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
   };
 
   const handleCancelEdit = () => {
-    if (lead) {
-      setEditName(lead.name);
-      const parsed = parsePhoneNumber(lead.phone);
-      setEditCountryCode(parsed.countryCode);
-      setEditPhonePart(parsed.phonePart);
-      setEditEmail(lead.email ?? '');
-      setEditLocation(lead.location ?? '');
-      setEditCustomFields(formValuesFromLead(leadFields, lead.customFields));
-    }
+    if (lead) setEditCustomFields(formValuesFromLead(leadFields, lead.customFields));
+    setForm(null);
     setEditMode(false);
   };
 
@@ -313,7 +271,7 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
           {!isLoading && lead && (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => (editMode ? handleCancelEdit() : setEditMode(true))}
+                onClick={() => (editMode ? handleCancelEdit() : startEdit())}
                 disabled={isUpdating}
                 className="px-4 py-2 bg-white/[0.08] hover:bg-white/[0.12] disabled:opacity-50 text-[#44AFCD] font-semibold text-xs rounded-full border border-white/[0.15] transition-all active:scale-95"
               >
@@ -421,73 +379,19 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
               <div className="bg-white/[0.06] border border-white/10 rounded-2xl p-5 shadow-lg flex flex-col">
                 <h4 className="font-bold text-sm text-white mb-4">Lead Information</h4>
 
-                {editMode ? (
+                {editMode && form ? (
                   <div className="flex flex-col gap-4">
-                    <div className="flex flex-col">
-                      <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5">
-                        Full Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        placeholder="Full name"
-                        className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
-                      />
-                    </div>
-
-                    <div className="flex flex-col">
-                      <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5">
-                        Email
-                      </label>
-                      <input
-                        type="email"
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        placeholder="Email address"
-                        className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
-                      />
-                    </div>
-
-                    <div className="flex flex-col">
-                      <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5 font-sans">
-                        Phone
-                      </label>
-                      <div className="flex gap-2 w-full">
-                        <select
-                          value={editCountryCode}
-                          onChange={(e) => setEditCountryCode(e.target.value)}
-                          className="shrink-0 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-3 py-2.5 focus:outline-none transition-all"
-                          style={{ backgroundColor: '#0A1D25' }}
-                        >
-                          {COUNTRY_CODES.map((c) => (
-                            <option key={c.code} value={c.code} style={{ backgroundColor: '#0A1D25' }}>
-                              {c.code}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="tel"
-                          value={editPhonePart}
-                          onChange={(e) => setEditPhonePart(e.target.value)}
-                          placeholder="Phone number"
-                          className="min-w-0 flex-1 bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col">
-                      <label className="text-[10px] font-bold text-white/50 uppercase tracking-wide mb-1.5">
-                        Location
-                      </label>
-                      <input
-                        type="text"
-                        value={editLocation}
-                        onChange={(e) => setEditLocation(e.target.value)}
-                        placeholder="Location"
-                        className="bg-white/[0.08] text-white text-sm border border-white/15 focus:border-[#44AFCD]/50 rounded-xl px-4 py-2.5 focus:outline-none transition-all placeholder-white/30"
-                      />
-                    </div>
+                    <LeadEditFields
+                      form={form}
+                      onChange={(update) => setForm((current) => (current ? update(current) : current))}
+                      statusOptions={labels.map((label) => ({ value: label.slug, label: label.name }))}
+                      pipelineOptions={pipelines.map((pipeline) => ({ value: String(pipeline.id), label: pipeline.name }))}
+                      locationOptions={savedLocations.map((location) => ({
+                        value: String(location.id),
+                        label: location.address ? `${location.name} · ${location.address}` : location.name,
+                      }))}
+                      assigneeOptions={assignees.map((rep) => ({ value: String(rep.id), label: `${rep.name} (${rep.email})` }))}
+                    />
 
                     <button
                       onClick={handleSaveEdit}
@@ -506,16 +410,15 @@ export default function LeadDetailPage({ params }: LeadDetailPageProps) {
                     const displayContacts: LeadContact[] =
                       lead.contacts && lead.contacts.length > 0
                         ? lead.contacts
-                        : [{ name: lead.name, email: lead.email, phone: lead.phone, location: lead.location }];
+                        : [{ name: lead.name, email: lead.email, phone: lead.phone, location: lead.location, position: lead.position, profile_urls: lead.profileUrls }];
 
                     return (
                       <div className="flex flex-col gap-4">
                         <LeadContactsStack contacts={displayContacts} />
                         <div className="flex flex-col border-t border-white/5 pt-3">
-                          <InfoRow label="Source" value={lead.source} />
-                          <InfoRow label="Priority" value={lead.priority} />
-                          <InfoRow label="Next Action" value={lead.nextAction} />
-                          <InfoRow label="Last Interaction" value={lead.lastInteraction} />
+                          {leadDetailRows(lead).map((row) => (
+                            <InfoRow key={row.label} label={row.label} value={row.value} />
+                          ))}
                         </div>
                       </div>
                     );
