@@ -30,7 +30,7 @@ import { IndustryCombobox } from "@/components/crm/industry-combobox";
 import { ModalPortal } from "@/components/ui/modal-portal";
 import { resolveCrmPipelineId } from "@/lib/crm/resolve-pipeline";
 import { LEAD_INDUSTRY_MAX_LENGTH } from "@/lib/crm/industries";
-import { LEAD_BUDGET_CURRENCIES } from "@/lib/crm/lead-budget";
+import { LEAD_BUDGET_CURRENCIES, fromDateTimeLocalValue, toDateTimeLocalValue } from "@/lib/crm/lead-budget";
 import { useSavedLocations } from "@/hooks/use-saved-locations";
 import { FieldError } from "@/components/ui/field-error";
 import { scrollToFirstError } from "@/lib/forms/scroll-to-first-error";
@@ -303,9 +303,8 @@ export function AddLeadModal({
   const [nextAction, setNextAction] = useState(lead?.next_action ?? "");
   const [lastInteraction, setLastInteraction] = useState(lead?.last_interaction ?? "");
 
-  // Format lead?.last_interaction_at as YYYY-MM-DD for the HTML date input
-  const initialDate = lead?.last_interaction_at ? lead.last_interaction_at.split("T")[0] : "";
-  const [lastInteractionAt, setLastInteractionAt] = useState(initialDate);
+  // Date and time (local) so saving the form never drops the interaction time.
+  const [lastInteractionAt, setLastInteractionAt] = useState(() => toDateTimeLocalValue(lead?.last_interaction_at));
   const [customFields, setCustomFields] = useState<LeadCustomFields>({});
   const [customFieldErrors, setCustomFieldErrors] = useState<Record<string, string>>({});
   const [showFieldDialog, setShowFieldDialog] = useState(false);
@@ -596,7 +595,7 @@ export function AddLeadModal({
         : (assignedToUserId ? Number(assignedToUserId) : (lead ? null : (user?.id ?? null))),
       next_action: nextAction.trim() || null,
       last_interaction: lastInteraction.trim() || null,
-      last_interaction_at: lastInteractionAt || null,
+      last_interaction_at: fromDateTimeLocalValue(lastInteractionAt),
       custom_fields: serializeCustomFields(visibleCustomFields, customFields),
     };
   };
@@ -946,7 +945,7 @@ export function AddLeadModal({
             <div>
               <FormRow label="Interaction Date" labelClassName="w-28">
                 <InlineInput
-                  type="date"
+                  type="datetime-local"
                   value={lastInteractionAt}
                   onChange={(e) => { setLastInteractionAt(e.target.value); clearError("lastInteractionAt"); }}
                   className="col-span-2 text-[11px]"
