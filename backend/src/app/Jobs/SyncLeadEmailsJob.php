@@ -32,7 +32,8 @@ class SyncLeadEmailsJob implements ShouldQueue
     public function handle(CrmEmailService $crmEmailService): void
     {
         try {
-            $crmEmailService->syncLead($this->companyId, $this->leadId, $this->userId);
+            // Live sync from the open lead page: new replies are on the newest page.
+            $crmEmailService->syncLead($this->companyId, $this->leadId, $this->userId, maxPages: 1);
         } catch (\Throwable $exception) {
             Log::warning('Lead email sync failed.', [
                 'company_id' => $this->companyId,

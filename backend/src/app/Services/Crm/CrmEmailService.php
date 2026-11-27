@@ -36,6 +36,9 @@ use Illuminate\Validation\ValidationException;
 
 class CrmEmailService
 {
+    /** Minimum gap between live lead syncs for one user and lead. */
+    public const LIVE_LEAD_SYNC_SECONDS = 15;
+
     public function __construct(
         private readonly CompanyContextService $companyContextService,
         private readonly EmailAccountService $emailAccountService,
@@ -50,13 +53,20 @@ class CrmEmailService
         $context = $this->authorizeLeadAccess($user, $lead, $filters['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
 
-        // The lead page polls with sync=1 every 15s. Only queue a lead sync when
-        // the user has a mailbox connected, and at most once a minute per
-        // user and lead, so open tabs don't flood the queue or provider quotas.
+        // The open lead page polls with sync=1 every few seconds so replies show
+        // up without a reload. The sync runs right after this response is sent
+        // (not on the shared queue, where whole-mailbox backfills can delay it
+        // by minutes), so the next poll returns the new messages. Only for users
+        // with a mailbox, and at most once per LIVE_LEAD_SYNC_SECONDS per user
+        // and lead, to protect provider quotas when several tabs are open.
         if (! empty($filters['sync'])
             && $this->userHasActiveEmailAccount($companyId, (int) $user->id)
-            && Cache::add('crm_email:lead_sync:' . $companyId . ':' . $lead->id . ':' . $user->id, true, now()->addSeconds(60))) {
-            SyncLeadEmailsJob::dispatch($companyId, (int) $lead->id, (int) $user->id);
+            && Cache::add(
+                'crm_email:lead_sync:' . $companyId . ':' . $lead->id . ':' . $user->id,
+                true,
+                now()->addSeconds(self::LIVE_LEAD_SYNC_SECONDS),
+            )) {
+            SyncLeadEmailsJob::dispatchAfterResponse($companyId, (int) $lead->id, (int) $user->id);
         }
 
         $perPage = max(1, min(50, (int) ($filters['per_page'] ?? 20)));
@@ -347,9 +357,12 @@ class CrmEmailService
     }
 
     /**
-     * Sync emails for a specific lead using the user's connected email account.
+     * Sync a lead's emails from the user's mailboxes: the default account plus
+     * any account already used in this lead's conversation (a reply lands in
+     * the mailbox the email was sent from). $maxPages caps how far back each
+     * account is listed; the live poll only needs the newest page.
      */
-    public function syncLead(int $companyId, int $leadId, ?int $userId = null): void
+    public function syncLead(int $companyId, int $leadId, ?int $userId = null, ?int $maxPages = null): void
     {
         if ($userId === null || $userId <= 0) {
             throw ValidationException::withMessages([
@@ -364,70 +377,120 @@ class CrmEmailService
             return;
         }
 
-        $emailAccount = $this->requireUserEmailAccount($companyId, $userId);
+        $accounts = $this->leadSyncAccounts($companyId, $userId, (int) $lead->id);
+        $firstFailure = null;
+
+        foreach ($accounts as $emailAccount) {
+            try {
+                $this->syncLeadWithAccount($emailAccount, $companyId, $lead, $email, $userId, $maxPages);
+            } catch (\Throwable $exception) {
+                $firstFailure ??= $exception;
+            }
+        }
+
+        $this->invalidateLeadCache($companyId, $leadId);
+
+        if ($firstFailure !== null) {
+            throw $firstFailure;
+        }
+    }
+
+    /**
+     * @return list<EmailAccount>
+     */
+    private function leadSyncAccounts(int $companyId, int $userId, int $leadId): array
+    {
+        $default = $this->requireUserEmailAccount($companyId, $userId);
+
+        $usedEmails = CrmEmailMessage::query()
+            ->where('company_id', $companyId)
+            ->where('lead_id', $leadId)
+            ->whereNotNull('gmail_account_email')
+            ->distinct()
+            ->pluck('gmail_account_email')
+            ->map(static fn (mixed $value): string => strtolower(trim((string) $value)))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($usedEmails === []) {
+            return [$default];
+        }
+
+        $others = EmailAccount::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->where('id', '!=', $default->id)
+            ->whereIn(DB::raw('LOWER(email)'), $usedEmails)
+            ->get()
+            ->all();
+
+        return array_values([$default, ...$others]);
+    }
+
+    private function syncLeadWithAccount(
+        EmailAccount $emailAccount,
+        int $companyId,
+        Lead $lead,
+        string $email,
+        int $userId,
+        ?int $maxPages,
+    ): void {
         $provider = $this->emailAccountService->resolveProvider($emailAccount);
         $accountDTO = $emailAccount->toDTO();
-
-        Log::info('CRM lead email sync started.', [
-            'company_id' => $companyId,
-            'lead_id' => $leadId,
-            'lead_email' => $email,
-            'user_id' => $userId,
-            'email_account_id' => $emailAccount->id,
-            'provider' => $emailAccount->provider,
-        ]);
-
-        $this->logActivity($companyId, $userId, 'sync_started', [
-            'lead_id' => $leadId,
-            'lead_email' => $email,
-            'email_account_id' => $emailAccount->id,
-            'provider' => $emailAccount->provider,
-        ], null, null, $leadId);
+        $leadId = (int) $lead->id;
 
         $query = $this->buildLeadSyncQuery($emailAccount->provider, $email);
         $pageToken = null;
-        $syncedCount = 0;
+        $pages = 0;
+        $importedCount = 0;
 
         try {
-        do {
+            do {
                 $listing = $provider->listMessages($accountDTO, $query, $pageToken, 50);
-            $messages = $listing['messages'];
+                $messages = is_array($listing['messages'] ?? null) ? $listing['messages'] : [];
 
-            foreach ($messages as $item) {
+                foreach ($messages as $item) {
                     $providerMessageId = (string) ($item['id'] ?? '');
 
                     if ($providerMessageId === '') {
-                    continue;
+                        continue;
+                    }
+
+                    if ($this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId, $leadId)) {
+                        $importedCount++;
+                    }
                 }
 
-                    $this->upsertEmailMessage($provider, $accountDTO, $emailAccount, $companyId, $providerMessageId, (int) $lead->id);
-                    $syncedCount++;
+                $pageToken = $listing['nextPageToken'] ?? null;
+                $pages++;
+            } while ($pageToken !== null && $pageToken !== '' && ($maxPages === null || $pages < $maxPages));
+
+            // Only record syncs that brought something in: the open lead page
+            // syncs every few seconds and would otherwise flood the activity log.
+            if ($importedCount > 0) {
+                Log::info('CRM lead email sync imported messages.', [
+                    'company_id' => $companyId,
+                    'lead_id' => $leadId,
+                    'imported_count' => $importedCount,
+                    'email_account_id' => $emailAccount->id,
+                    'provider' => $emailAccount->provider,
+                ]);
+
+                $this->logActivity($companyId, $userId, 'sync_completed', [
+                    'lead_id' => $leadId,
+                    'lead_email' => $email,
+                    'synced_count' => $importedCount,
+                    'email_account_id' => $emailAccount->id,
+                    'provider' => $emailAccount->provider,
+                ], null, null, $leadId);
             }
-
-            $pageToken = $listing['nextPageToken'];
-        } while ($pageToken !== null && $pageToken !== '');
-
-            Log::info('CRM lead email sync completed.', [
-                'company_id' => $companyId,
-                'lead_id' => $leadId,
-                'synced_count' => $syncedCount,
-                'email_account_id' => $emailAccount->id,
-                'provider' => $emailAccount->provider,
-            ]);
-
-            $this->logActivity($companyId, $userId, 'sync_completed', [
-                'lead_id' => $leadId,
-                'lead_email' => $email,
-                'synced_count' => $syncedCount,
-                'email_account_id' => $emailAccount->id,
-                'provider' => $emailAccount->provider,
-            ], null, null, $leadId);
         } catch (\Throwable $exception) {
             Log::error('CRM lead email sync failed.', [
                 'company_id' => $companyId,
                 'lead_id' => $leadId,
-                'lead_email' => $email,
-                'synced_count' => $syncedCount,
+                'imported_count' => $importedCount,
                 'email_account_id' => $emailAccount->id,
                 'provider' => $emailAccount->provider,
                 'error' => $exception->getMessage(),
@@ -436,7 +499,7 @@ class CrmEmailService
             $this->logActivity($companyId, $userId, 'sync_failed', [
                 'lead_id' => $leadId,
                 'lead_email' => $email,
-                'synced_count' => $syncedCount,
+                'synced_count' => $importedCount,
                 'error' => $exception->getMessage(),
                 'email_account_id' => $emailAccount->id,
                 'provider' => $emailAccount->provider,
@@ -444,8 +507,6 @@ class CrmEmailService
 
             throw $exception;
         }
-
-        $this->invalidateLeadCache($companyId, $leadId);
     }
 
     /**
@@ -1011,7 +1072,7 @@ class CrmEmailService
         int $companyId,
         string $providerMessageId,
         ?int $forcedLeadId = null,
-    ): void {
+    ): bool {
         $existing = CrmEmailMessage::withTrashed()
             ->where('company_id', $companyId)
             ->where('gmail_message_id', $providerMessageId)
@@ -1019,7 +1080,7 @@ class CrmEmailService
 
         // Intentionally deleted in CRM — never re-import.
         if ($existing !== null) {
-            return;
+            return false;
         }
 
         $raw = $provider->getMessage($accountDTO, $providerMessageId);
@@ -1029,7 +1090,7 @@ class CrmEmailService
         // we check the raw payload for known trash/spam indicators).
         $labelIds = is_array($raw['labelIds'] ?? null) ? $raw['labelIds'] : [];
         if (in_array('TRASH', $labelIds, true) || in_array('SPAM', $labelIds, true)) {
-            return;
+            return false;
         }
 
         $leadId = $forcedLeadId ?? $this->resolveLeadIdFromParticipants($companyId, $parsed);
@@ -1126,6 +1187,8 @@ class CrmEmailService
             'email_account_id' => $emailAccount->id,
             'provider' => $emailAccount->provider,
         ], $message->id, $thread->id, $leadId);
+
+        return true;
     }
 
     /**

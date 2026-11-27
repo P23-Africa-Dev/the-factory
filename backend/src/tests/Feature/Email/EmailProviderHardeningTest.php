@@ -15,6 +15,8 @@ use App\Models\Lead;
 use App\Models\LeadPipeline;
 use App\Models\User;
 use App\Services\Crm\CrmEmailService;
+use App\Services\Email\ParsedEmailDTO;
+use App\Services\Email\Providers\GoogleProvider;
 use App\Services\Email\Providers\ImapSmtpProvider;
 use App\Services\Email\Providers\ZohoProvider;
 use App\Services\Google\EmailAccountGmailConnection;
@@ -128,7 +130,7 @@ class EmailProviderHardeningTest extends TestCase
         $this->assertSame(CrmEmailStatus::Sent, $message->fresh()->status);
     }
 
-    public function test_lead_email_polling_only_queues_a_sync_for_connected_users_once_a_minute(): void
+    public function test_lead_email_polling_syncs_after_the_response_for_connected_users_with_a_short_throttle(): void
     {
         Bus::fake();
 
@@ -142,13 +144,91 @@ class EmailProviderHardeningTest extends TestCase
 
         $this->seedAccount($company, $user, 'google', 'g@example.com');
 
+        // Runs right after the response, not on the shared email-sync queue.
         $service->listThreadsForLead($user, $lead, ['company_id' => $company->id, 'sync' => true]);
         $service->listThreadsForLead($user, $lead, ['company_id' => $company->id, 'sync' => true]);
-        Bus::assertDispatchedTimes(SyncLeadEmailsJob::class, 1);
+        Bus::assertDispatchedAfterResponseTimes(SyncLeadEmailsJob::class, 1);
 
-        $this->travel(61)->seconds();
+        $this->travel(CrmEmailService::LIVE_LEAD_SYNC_SECONDS + 1)->seconds();
         $service->listThreadsForLead($user, $lead, ['company_id' => $company->id, 'sync' => true]);
-        Bus::assertDispatchedTimes(SyncLeadEmailsJob::class, 2);
+        Bus::assertDispatchedAfterResponseTimes(SyncLeadEmailsJob::class, 2);
+    }
+
+    public function test_live_lead_sync_imports_a_reply_from_a_non_default_mailbox_used_in_the_conversation(): void
+    {
+        [$company, $user] = $this->seedCompanyWithUser();
+        $lead = $this->seedLead($company, $user);
+        $this->seedAccount($company, $user, 'google', 'g@example.com');
+        $imap = EmailAccount::query()->create([
+            'company_id' => $company->id,
+            'user_id' => $user->id,
+            'provider' => 'imap_smtp',
+            'email' => 'sales@example.com',
+            'smtp_host' => 'mail.example.com',
+            'smtp_port' => 2525,
+            'imap_host' => 'mail.example.com',
+            'imap_port' => 993,
+            'is_default' => false,
+            'status' => 'active',
+            'connected_at' => now(),
+        ]);
+
+        // The user emailed this lead from the (non-default) IMAP mailbox.
+        $thread = CrmEmailThread::query()->create([
+            'company_id' => $company->id,
+            'lead_id' => $lead->id,
+            'gmail_thread_id' => 'imap-thread-1',
+            'subject' => 'Quote',
+            'last_message_at' => now(),
+            'unread_count' => 0,
+            'message_count' => 1,
+        ]);
+        CrmEmailMessage::query()->create([
+            'company_id' => $company->id,
+            'thread_id' => $thread->id,
+            'lead_id' => $lead->id,
+            'gmail_message_id' => 'imap-sent-1',
+            'gmail_thread_id' => 'imap-thread-1',
+            'direction' => CrmEmailDirection::Sent,
+            'status' => CrmEmailStatus::Sent,
+            'from_email' => 'sales@example.com',
+            'to_recipients' => [['email' => 'lead@example.com']],
+            'subject' => 'Quote',
+            'body_text' => 'Hi',
+            'is_read' => true,
+            'sent_by_user_id' => $user->id,
+            'gmail_account_email' => 'sales@example.com',
+            'sent_at' => now(),
+        ]);
+
+        $google = \Mockery::mock(GoogleProvider::class);
+        $google->shouldReceive('listMessages')->once()->andReturn(['messages' => [], 'nextPageToken' => 'page-2']);
+        $this->app->instance(GoogleProvider::class, $google);
+
+        $imapProvider = \Mockery::mock(ImapSmtpProvider::class);
+        $imapProvider->shouldReceive('listMessages')->once()->andReturn([
+            'messages' => [['id' => 'imap-sent-1'], ['id' => 'imap-reply-1']],
+            'nextPageToken' => 'page-2',
+        ]);
+        $imapProvider->shouldReceive('getMessage')->once()->with(\Mockery::any(), 'imap-reply-1')->andReturn(['id' => 'imap-reply-1']);
+        $imapProvider->shouldReceive('parseMessage')->once()->andReturn(new ParsedEmailDTO(
+            messageId: 'imap-reply-1',
+            threadId: 'imap-thread-1',
+            subject: 'Re: Quote',
+            fromEmail: 'lead@example.com',
+            toRecipients: [['email' => 'sales@example.com']],
+            bodyText: 'Got it, thanks',
+            sentAt: now()->toIso8601String(),
+        ));
+        $this->app->instance(ImapSmtpProvider::class, $imapProvider);
+
+        (new SyncLeadEmailsJob($company->id, $lead->id, $user->id))->handle(app(CrmEmailService::class));
+
+        $reply = CrmEmailMessage::query()->where('gmail_message_id', 'imap-reply-1')->first();
+        $this->assertNotNull($reply);
+        $this->assertSame($lead->id, (int) $reply->lead_id);
+        $this->assertSame(CrmEmailDirection::Received, $reply->direction);
+        $this->assertSame($imap->id, EmailAccount::query()->whereRaw('LOWER(email) = ?', ['sales@example.com'])->value('id'));
     }
 
     public function test_imap_connection_errors_are_humanized(): void
