@@ -392,25 +392,61 @@ export default function AllLeadsPage() {
     <div className="se-workspace min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-5">
         {/* Top bar */}
-        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-          <div className="relative w-full max-w-110 group">
-            <Search
-              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
-              size={18}
-            />
-            <input
-              type="search"
-              aria-label="Search leads"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") e.preventDefault();
-              }}
-              placeholder="Search for Leads"
-              className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
-            />
+        <div className="flex flex-col gap-3">
+          {/* Row 1: Search + Primary Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative w-full sm:max-w-md group">
+              <Search
+                className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
+                size={18}
+              />
+              <input
+                type="search"
+                aria-label="Search leads"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.preventDefault();
+                }}
+                placeholder="Search for Leads"
+                className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-6 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <CrmImportExportButton
+                companyId={companyId}
+                apiBasePath="/admin"
+                pipelines={pipelines}
+                labels={labels}
+                defaultPipelineId={selectedPipelineId}
+                activeFilters={{
+                  search: debouncedSearch || undefined,
+                  pipeline_id: selectedPipelineId ?? undefined,
+                  status: selectedLabel === "all" ? undefined : selectedLabel,
+                  source: effectiveSourceFilter,
+                  ...extraFilters,
+                }}
+                selectedLeadIds={Array.from(selected)}
+                onViewImportedPipeline={(pipelineId) => {
+                  setSearch("");
+                  setDebouncedSearch("");
+                  setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
+                }}
+                onViewAllLeads={() => {
+                  setSearch("");
+                  setDebouncedSearch("");
+                  setFilters(() => ({ pipeline: "all" }));
+                }}
+              />
+              <button onClick={() => setShowAddModal(true)} className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all whitespace-nowrap cursor-pointer">
+                Add New Leads
+                <BookmarkPlus size={15} />
+              </button>
+            </div>
           </div>
 
+          {/* Row 2: Pipeline, Sort & Filter Controls */}
           <div className="flex items-center gap-2 flex-wrap">
             <PipelineSwitcher
               pipelines={pipelines}
@@ -427,6 +463,7 @@ export default function AllLeadsPage() {
               fallbackPipelineId={defaultPipelineId}
               onPipelineChange={setSelectedPipelineId}
             />
+            <span className="hidden sm:inline-block h-5 w-px bg-white/15 mx-1" aria-hidden="true" />
             <button onClick={() => setShowLabelModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
@@ -449,35 +486,6 @@ export default function AllLeadsPage() {
                   {activeFilterCount}
                 </span>
               )}
-            </button>
-            <CrmImportExportButton
-              companyId={companyId}
-              apiBasePath="/admin"
-              pipelines={pipelines}
-              labels={labels}
-              defaultPipelineId={selectedPipelineId}
-              activeFilters={{
-                search: debouncedSearch || undefined,
-                pipeline_id: selectedPipelineId ?? undefined,
-                status: selectedLabel === "all" ? undefined : selectedLabel,
-                source: effectiveSourceFilter,
-                ...extraFilters,
-              }}
-              selectedLeadIds={Array.from(selected)}
-              onViewImportedPipeline={(pipelineId) => {
-                setSearch("");
-                setDebouncedSearch("");
-                setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
-              }}
-              onViewAllLeads={() => {
-                setSearch("");
-                setDebouncedSearch("");
-                setFilters(() => ({ pipeline: "all" }));
-              }}
-            />
-            <button onClick={() => setShowAddModal(true)} className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all">
-              Add New Leads
-              <BookmarkPlus size={15} />
             </button>
           </div>
         </div>
