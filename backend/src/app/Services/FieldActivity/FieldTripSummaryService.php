@@ -68,6 +68,15 @@ class FieldTripSummaryService
             $parsed = $this->parse((string) ($result?->text ?? ''));
             if ($parsed !== null) {
                 $summary = $parsed + ['source' => 'ai'];
+            } else {
+                // Provider down, out of credit, or an unreadable answer: say why in the logs.
+                Log::warning('field_trip.summary_fallback', [
+                    'trip_id' => $trip->id,
+                    'provider' => $result?->provider,
+                    'error_class' => $result?->errorClass,
+                    'error' => $result?->errorMessage,
+                    'http_status' => $result?->httpStatus,
+                ]);
             }
         } catch (Throwable $e) {
             Log::warning('field_trip.summary_failed', ['trip_id' => $trip->id, 'message' => $e->getMessage()]);

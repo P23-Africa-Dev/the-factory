@@ -220,7 +220,7 @@ export function AttachmentPicker({
           <div className="fixed inset-0 z-[10080] flex items-center justify-center bg-black/95" onClick={() => setViewer(null)} role="dialog" aria-modal="true">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={viewer} alt="" className="max-h-full max-w-full object-contain" />
-            <button type="button" aria-label="Close" className="absolute right-4 top-[calc(env(safe-area-inset-top)+12px)] flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white">
+            <button type="button" aria-label="Close" className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+24px)] flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white">
               <X size={20} />
             </button>
           </div>

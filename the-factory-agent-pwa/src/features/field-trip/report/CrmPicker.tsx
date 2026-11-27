@@ -78,7 +78,7 @@ export function CrmPicker({
   return (
     <OverlayPortal>
       <div className="fixed inset-0 z-[10060] flex flex-col bg-[#0A1D25] text-white" role="dialog" aria-modal="true">
-        <div className="flex items-center gap-2 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+10px)]">
+        <div className="flex items-center gap-2 px-3 pb-2 pt-[calc(env(safe-area-inset-top,0px)+24px)]">
           <button type="button" onClick={onClose} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full active:bg-white/10">
             <ArrowLeft size={20} />
           </button>

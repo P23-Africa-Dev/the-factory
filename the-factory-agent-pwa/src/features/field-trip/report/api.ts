@@ -148,10 +148,14 @@ export async function retryAttachmentsFor(clientStopId: string): Promise<void> {
 
 const RETRY_MS = [0, 30_000, 120_000, 600_000, 1_800_000];
 let uploading = false;
+let rerunRequested = false;
 
 /** Upload everything queued (called after saving, on reconnect and by the sync engine). */
 export async function uploadQueuedStopAttachments(): Promise<number> {
-  if (uploading) return 0;
+  if (uploading) {
+    rerunRequested = true;
+    return 0;
+  }
   if (typeof navigator !== 'undefined' && !navigator.onLine) return 0;
   uploading = true;
   let done = 0;
@@ -207,6 +211,11 @@ export async function uploadQueuedStopAttachments(): Promise<number> {
     }
   } finally {
     uploading = false;
+  }
+  // Files added while this run was uploading: send them now, not at the next sync.
+  if (rerunRequested) {
+    rerunRequested = false;
+    done += await uploadQueuedStopAttachments();
   }
   return done;
 }

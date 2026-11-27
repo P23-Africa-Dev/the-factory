@@ -123,7 +123,7 @@ export function AddStopSheet({
   return (
     <OverlayPortal>
       <div className="fixed inset-0 z-[10050] flex flex-col bg-[#0A1D25] text-white" role="dialog" aria-modal="true" aria-label="Add a stop">
-        <header className="flex items-center gap-2 border-b border-white/8 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+10px)]">
+        <header className="flex items-center gap-2 border-b border-white/8 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0px)+24px)]">
           <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full active:bg-white/10">
             <X size={20} />
           </button>

@@ -92,6 +92,10 @@ function attachListeners(): void {
         : `fcm-${Date.now()}`;
 
     const payload = clickPayloadFrom(data);
+    // App on screen: the "You've stopped" card asks in the app instead.
+    if (payload.type === 'field_trip.stop_detected' && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      return;
+    }
     void notifyNative({
       title,
       body,

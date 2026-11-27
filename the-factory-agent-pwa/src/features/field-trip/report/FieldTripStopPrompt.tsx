@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Check, ChevronRight, Loader2, MapPin, X } from 'lucide-react';
 import { OverlayPortal } from '@/components/shared/OverlayPortal';
 import { useNotificationStore } from '@/store/notifications';
@@ -42,27 +42,37 @@ function positive(v: string | null): number | null {
  * push), so the stop is recorded on the spot in two taps.
  * Mounted once per app shell (agents and managers).
  */
-export function FieldTripStopPrompt() {
-  const fieldTrip = useOptionalFieldTrip();
+/**
+ * Push tapped → "/?stop=12&trip=3" (also when the app was closed, or already
+ * open on the home screen: only the query changes then).
+ */
+function StopDeepLink({ activeTripId, open }: { activeTripId: number | null; open: (tripId: number, stopId: number) => void }) {
   const pathname = usePathname();
-  const { stopId, tripId, later, open, dismiss } = useStopPrompt();
-  const activeTripId = fieldTrip?.local?.phase === 'active' ? fieldTrip.local.serverId : null;
+  const search = useSearchParams();
+  const stopParam = search.get('stop');
+  const tripParam = search.get('trip');
 
-  // 1. Push tapped → "/?stop=12&trip=3" (also when the app was closed).
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const stop = positive(params.get('stop'));
+    const stop = positive(stopParam);
     if (!stop) return;
-    const trip = positive(params.get('trip')) ?? activeTripId;
+    const trip = positive(tripParam) ?? activeTripId;
     if (!trip) return; // wait until the running trip is known
     markPrompted(stop);
     open(trip, stop);
+    const params = new URLSearchParams(window.location.search);
     params.delete('stop');
     params.delete('trip');
     const rest = params.toString();
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
-  }, [pathname, activeTripId, open]);
+    window.history.replaceState(window.history.state, '', `${pathname}${rest ? `?${rest}` : ''}`);
+  }, [stopParam, tripParam, pathname, activeTripId, open]);
+
+  return null;
+}
+
+export function FieldTripStopPrompt() {
+  const fieldTrip = useOptionalFieldTrip();
+  const { stopId, tripId, later, open, dismiss } = useStopPrompt();
+  const activeTripId = fieldTrip?.local?.phase === 'active' ? fieldTrip.local.serverId : null;
 
   // 2. App open: the in-app notification for a new stop.
   useEffect(
@@ -99,8 +109,14 @@ export function FieldTripStopPrompt() {
     }
   }, [activeTripId, live.data, stopId, later, open]);
 
-  if (!stopId || !tripId) return null;
-  return <QuickRecordCard key={stopId} tripId={tripId} stopId={stopId} onDismiss={dismiss} />;
+  return (
+    <>
+      <Suspense fallback={null}>
+        <StopDeepLink activeTripId={activeTripId} open={open} />
+      </Suspense>
+      {stopId && tripId ? <QuickRecordCard key={stopId} tripId={tripId} stopId={stopId} onDismiss={dismiss} /> : null}
+    </>
+  );
 }
 
 function QuickRecordCard({ tripId, stopId, onDismiss }: { tripId: number; stopId: number; onDismiss: (later?: boolean) => void }) {

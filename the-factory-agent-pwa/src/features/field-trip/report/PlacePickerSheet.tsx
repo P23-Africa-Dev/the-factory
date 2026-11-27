@@ -10,6 +10,7 @@ import { getAgentMapboxStyle } from '@/lib/map/style-mode';
 import { reverseGeocode } from '@/lib/map/reverseGeocode';
 import { OverlayPortal } from '@/components/shared/OverlayPortal';
 import { PlaceAutocompleteField } from '@/features/locations/components/PlaceAutocompleteField';
+import { metersBetween } from './rules';
 
 export interface PickedPlace {
   latitude: number;
@@ -46,6 +47,8 @@ export function PlacePickerSheet({
   const [search, setSearch] = useState('');
   const [failed, setFailed] = useState(false);
   const lookupSeq = useRef(0);
+  /** Set when a place was picked from search (its name is kept). */
+  const named = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -79,6 +82,9 @@ export function PlacePickerSheet({
     });
     map.on('moveend', () => {
       const c = map.getCenter();
+      // Flying to a searched place lands a hair off it: keep the exact place.
+      if (named.current && metersBetween([c.lng, c.lat], [named.current.lng, named.current.lat]) < 25) return;
+      named.current = null;
       setCenter({ lat: c.lat, lng: c.lng });
     });
     return () => {
@@ -93,6 +99,8 @@ export function PlacePickerSheet({
   // Address of the spot under the pin (debounced by moveend).
   useEffect(() => {
     if (center.lat === initial.latitude && center.lng === initial.longitude) return undefined;
+    // A searched place already has its name.
+    if (named.current && named.current.lat === center.lat && named.current.lng === center.lng) return undefined;
     const seq = ++lookupSeq.current;
     const t = setTimeout(() => {
       setResolving(true);
@@ -112,7 +120,7 @@ export function PlacePickerSheet({
   return (
     <OverlayPortal>
       <div className="fixed inset-0 z-[10060] flex flex-col bg-[#0A1D25] text-white" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="flex items-center gap-2 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+10px)]">
+        <div className="flex items-center gap-2 px-3 pb-2 pt-[calc(env(safe-area-inset-top,0px)+24px)]">
           <button type="button" onClick={onClose} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full active:bg-white/10">
             <ArrowLeft size={20} />
           </button>
@@ -124,9 +132,19 @@ export function PlacePickerSheet({
             onChange={setSearch}
             variant="dark"
             placeholder="Search a place or address"
+            inputClassName="h-11 w-full rounded-2xl border border-white/12 bg-[#0B3343]/60 px-4 text-[14px] text-white outline-none placeholder:text-white/40 focus:border-[#44AFCD]"
             proximity={[center.lng, center.lat]}
             onPlaceSelect={(p) => {
-              setAddress(p.address || p.name);
+              // The searched place itself is the answer, whether or not the map moves.
+              named.current = { lat: p.lat, lng: p.lng };
+              lookupSeq.current += 1; // drop any street lookup still on its way
+              setResolving(false);
+              setCenter({ lat: p.lat, lng: p.lng });
+              setAddress(
+                p.address && p.name && !p.address.startsWith(p.name)
+                  ? `${p.name}, ${p.address}`
+                  : p.address || p.name || null,
+              );
               flyTo(p.lat, p.lng);
             }}
           />
@@ -137,7 +155,11 @@ export function PlacePickerSheet({
               The map could not load. Search for the place above instead.
             </div>
           ) : (
-            <div ref={containerRef} className="absolute inset-0" />
+            // Mapbox's CSS makes the map element position:relative, so it gets
+            // a sized wrapper instead of being positioned itself.
+            <div className="absolute inset-0">
+              <div ref={containerRef} className="h-full w-full" />
+            </div>
           )}
           {/* Fixed pin: move the map under it. */}
           <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full text-[#F59E0B]">

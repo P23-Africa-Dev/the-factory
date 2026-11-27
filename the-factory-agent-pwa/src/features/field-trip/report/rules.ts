@@ -61,10 +61,15 @@ export function toRecordInput(f: FormState, via: 'live' | 'review'): StopRecordI
 }
 
 /** "11:58 – 12:16 · 18 min" */
-export function stopWindow(stop: Pick<ReportStop, 'arrived_at' | 'departed_at' | 'duration_seconds'>): string {
+export function stopWindow(
+  stop: Pick<ReportStop, 'arrived_at' | 'departed_at' | 'duration_seconds'>,
+  /** For a stop still open: count up to this moment (ms). */
+  now?: number,
+): string {
   const t = (iso: string | null) =>
     iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '…';
-  const minutes = Math.max(1, Math.round((stop.duration_seconds || 0) / 60));
+  const live = !stop.departed_at && now && stop.arrived_at ? (now - Date.parse(stop.arrived_at)) / 1000 : 0;
+  const minutes = Math.max(1, Math.round(Math.max(stop.duration_seconds || 0, live) / 60));
   return `${t(stop.arrived_at)} – ${stop.departed_at ? t(stop.departed_at) : 'now'} · ${minutes} min`;
 }
 

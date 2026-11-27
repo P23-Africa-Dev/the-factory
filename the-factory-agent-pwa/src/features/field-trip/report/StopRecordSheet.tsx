@@ -38,6 +38,7 @@ export function StopRecordSheet({
     return initialActivity ? { ...f, activity: initialActivity } : f;
   });
   const [placeOpen, setPlaceOpen] = useState(false);
+  const [openedAt] = useState(() => Date.now());
   const [tried, setTried] = useState(false);
   const record = useRecordStop(tripId);
 
@@ -58,7 +59,7 @@ export function StopRecordSheet({
   return (
     <OverlayPortal>
       <div className="fixed inset-0 z-[10050] flex flex-col bg-[#0A1D25] text-white" role="dialog" aria-modal="true" aria-label="Record this stop">
-        <header className="flex items-start gap-2 border-b border-white/8 px-3 pb-3 pt-[calc(env(safe-area-inset-top)+10px)]">
+        <header className="flex items-start gap-2 border-b border-white/8 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0px)+24px)]">
           <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full active:bg-white/10">
             <X size={20} />
           </button>
@@ -67,7 +68,7 @@ export function StopRecordSheet({
               Stop {index + 1}
               {stop.source === 'manual' && ' · added by you'}
             </p>
-            <h2 className="truncate text-[16px] font-semibold">{stopWindow(stop)}</h2>
+            <h2 className="truncate text-[16px] font-semibold">{stopWindow(stop, openedAt)}</h2>
           </div>
         </header>
 

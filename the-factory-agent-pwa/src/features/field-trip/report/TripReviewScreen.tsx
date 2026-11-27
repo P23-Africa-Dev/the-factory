@@ -157,7 +157,7 @@ export function TripReviewScreen({
 
   return (
     <main className="min-h-screen bg-[#0A1D25] pb-[calc(env(safe-area-inset-bottom)+150px)] text-white">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-[#0A1D25]/95 px-3 pb-2 pt-[calc(env(safe-area-inset-top)+10px)] backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center gap-2 bg-[#0A1D25]/95 px-3 pb-2 pt-[calc(env(safe-area-inset-top,0px)+24px)] backdrop-blur">
         <button type="button" onClick={() => router.push(homePath)} aria-label="Back" className="flex h-11 w-11 items-center justify-center rounded-full active:bg-white/10">
           <ArrowLeft size={20} />
         </button>
