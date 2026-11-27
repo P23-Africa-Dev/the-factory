@@ -35,6 +35,7 @@ interface TaskBoardProps {
   onTaskClick?: (item: DndItem, containerId: string) => void;
   onTaskEdit?: (item: DndItem, containerId: string) => void;
   onTaskDelete?: (item: DndItem, containerId: string) => void;
+  onMarkCompleted?: (item: DndItem, containerId: string) => void;
   onViewMap?: (item: DndItem) => void;
   onStatusDrop?: (activeId: string, fromContainerId: string, toContainerId: string) => void;
   onDragStateChange?: (isDragging: boolean) => void;
@@ -64,6 +65,7 @@ export function TaskBoard({
   onTaskClick,
   onTaskEdit,
   onTaskDelete,
+  onMarkCompleted,
   onViewMap,
   onStatusDrop,
   onDragStateChange,
@@ -194,6 +196,7 @@ export function TaskBoard({
             onTaskClick={(item) => onTaskClick?.(item, container.id)}
             onTaskEdit={onTaskEdit ? (item) => onTaskEdit(item, container.id) : undefined}
             onTaskDelete={onTaskDelete ? (item) => onTaskDelete(item, container.id) : undefined}
+            onMarkCompleted={onMarkCompleted ? (item) => onMarkCompleted(item, container.id) : undefined}
             onViewMap={onViewMap}
           />
         ))}

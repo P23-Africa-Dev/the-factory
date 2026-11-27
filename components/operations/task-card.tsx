@@ -10,6 +10,7 @@ import { formatChecklistDate, isOverdue, type ProjectSubtask } from '@/lib/tasks
 import { ObserverAvatars } from './observer-avatars';
 import {
   Calendar,
+  Check,
   ChevronRight,
   ChevronUp,
   Eye,
@@ -33,6 +34,7 @@ interface TaskCardProps {
   onViewMap?: (item: DndItem) => void;
   onEdit?: (item: DndItem) => void;
   onDelete?: (item: DndItem) => void;
+  onMarkCompleted?: (item: DndItem) => void;
   /** True when the viewer may not move cards between columns (agents). */
   dragDisabled?: boolean;
 }
@@ -81,6 +83,9 @@ export function TaskCardView({
   onViewMap,
   onEdit,
   onDelete,
+  onMarkCompleted,
+  dragDisabled = false,
+  observerDragAllowed = false,
   checklistUserId,
   onToggleSubtask,
   onAddSubtask,
@@ -149,6 +154,12 @@ export function TaskCardView({
   const hasChecklistBody = Boolean(checklist && (totalSubtasks > 0 || (onAddSubtask && canManageSubtasks)));
   const commentCount = item.commentCount ?? checklist?.initialComments?.length ?? 0;
   const dueOverdue = Boolean(checklist?.dueAt && item.statusLabel !== "Completed" && !cancelled && isOverdue(checklist.dueAt));
+  const canCompleteTask =
+    Boolean(onMarkCompleted) &&
+    !dragDisabled &&
+    (!item.isObserver || observerDragAllowed) &&
+    item.statusLabel !== "Completed" &&
+    !cancelled;
 
   return (
     <div
@@ -446,6 +457,35 @@ export function TaskCardView({
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {canCompleteTask && (
+        <div
+          className="border-t border-gray-100 pt-3 -mt-1"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <label className="group/complete flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-[#F4F7F9] hover:bg-[#3AB37E]/10 text-gray-500 hover:text-[#238859] transition-colors cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={false}
+              onChange={() => onMarkCompleted?.(item)}
+              className="sr-only"
+            />
+            <span
+              aria-hidden="true"
+              className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] border-gray-300 bg-white group-hover/complete:border-[#3AB37E] transition-colors"
+            >
+              <Check
+                size={11}
+                strokeWidth={3}
+                className="text-transparent group-hover/complete:text-[#3AB37E]/60 transition-colors"
+              />
+            </span>
+            <span className="text-[12px] font-semibold">Mark as completed</span>
+          </label>
         </div>
       )}
     </div>

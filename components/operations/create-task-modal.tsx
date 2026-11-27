@@ -539,7 +539,7 @@ export function CreateTaskModal({
             <InputWrap icon={<FileText size={13} />}>
               <input
                 type="text"
-                placeholder="e.g. Visit client store"
+                aria-label="Task Title"
                 value={form.title}
                 onChange={(e) => set("title", e.target.value)}
                 className={`${INPUT_CLS(errors.title)} pl-9 pr-4`}
@@ -615,7 +615,7 @@ export function CreateTaskModal({
                 onChange={(ids) => set("assigneeIds", ids)}
                 loading={loadingAssignees}
                 ariaLabel="Select assignees"
-                placeholder="Select one or more people"
+                placeholder=""
                 icon={<User size={13} className="text-gray-400 shrink-0" aria-hidden="true" />}
                 invalid={Boolean(errors.assignTo)}
               />
@@ -637,6 +637,7 @@ export function CreateTaskModal({
               onChange={(ids) => set("observerIds", ids)}
               excludeIds={observerExcludeIds}
               loading={loadingObserverCandidates}
+              placeholder=""
             />
             <p className="text-[10px] text-gray-400 mt-1">
               Observers can see this task and comment on it, but it is not assigned to them.
@@ -653,7 +654,7 @@ export function CreateTaskModal({
               value={form.taskType}
               onChange={(v) => set("taskType", v)}
               options={Object.keys(TASK_TYPES).map((t) => ({ value: t, label: t }))}
-              placeholder="Select task type"
+              placeholder=""
               className={`${INPUT_CLS(errors.taskType)} px-4 cursor-pointer`}
             />
             {errors.taskType && (
@@ -665,7 +666,7 @@ export function CreateTaskModal({
           <div>
             <FieldLabel>Description</FieldLabel>
             <textarea
-              placeholder="e.g. Check stock and speak to manager"
+              aria-label="Description"
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               rows={2}
@@ -688,7 +689,7 @@ export function CreateTaskModal({
                 value={form.location}
                 onChange={(next) => set("location", next)}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder="e.g. Downtown branch"
+                placeholder=""
                 inputClassName={`${INPUT_CLS(errors.location)} pl-9 pr-4`}
               />
             </InputWrap>
@@ -717,7 +718,7 @@ export function CreateTaskModal({
                 value={form.address}
                 onChange={(next) => set("address", next)}
                 onPlaceSelect={applyRetrievedPlace}
-                placeholder="e.g. 12 Main Street, City"
+                placeholder=""
                 inputClassName={`${INPUT_CLS()} pl-9 pr-4`}
               />
             </InputWrap>
@@ -758,7 +759,7 @@ export function CreateTaskModal({
                 value={form.priority}
                 onChange={(v) => set("priority", v as Priority)}
                 options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
-                placeholder="Select"
+                placeholder=""
                 leftIcon={
                   form.priority ? (
                     <span
@@ -783,7 +784,7 @@ export function CreateTaskModal({
           <div>
             <FieldLabel>Required Actions</FieldLabel>
             <textarea
-              placeholder="e.g. Take photos, confirm stock"
+              aria-label="Required Actions"
               value={form.requiredActions}
               onChange={(e) => set("requiredActions", e.target.value)}
               rows={2}

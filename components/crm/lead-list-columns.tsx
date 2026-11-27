@@ -83,7 +83,7 @@ export function LeadCustomColumnHeaders({
     onHide: (key: string) => void;
 }) {
     return fields.map((field) => (
-        <div key={field.key} className="flex items-center justify-center gap-1 rounded-full bg-[#0F766E] px-3 py-2 text-center text-[12px] font-semibold text-white">
+        <div key={field.key} className="flex items-center justify-start gap-1 rounded-full bg-[#0F766E] px-0 py-2 text-left text-[12px] font-semibold text-white min-w-0">
             <span className="truncate">{field.label}</span>
             {field.status === "pending" ? (
                 <span className="rounded-full bg-white/20 px-1.5 text-[9px] uppercase">Pending</span>
@@ -91,7 +91,7 @@ export function LeadCustomColumnHeaders({
             <button
                 type="button"
                 aria-label={`Hide ${field.label}`}
-                className="text-white/80"
+                className="text-current opacity-60 hover:opacity-100 shrink-0 cursor-pointer"
                 onClick={() => onHide(`custom:${field.key}`)}
             >
                 ×
@@ -112,7 +112,7 @@ export function LeadCustomColumnCells({
     return fields.map((field) => (
         <span
             key={field.key}
-            className={`truncate text-center text-[12px] ${selected ? "text-white/80" : "text-gray-500"}`}
+            className={`truncate text-left text-[12px] ${selected ? "text-white/80" : "text-gray-500"}`}
         >
             {formatCustomFieldValue(field, values[field.key])}
         </span>

@@ -86,7 +86,6 @@ export function SubtaskEditor({ assignee, agents, onSave, initial, onCancel }: {
               type="text"
               className="w-full bg-gray-50 rounded-xl py-2.5 pl-9 pr-4 text-sm text-[#0B1215] outline-none border border-gray-200 focus:border-[#094B5C] transition-colors placeholder:text-gray-300"
               aria-label="Subtask"
-              placeholder="Input your task title"
               value={title}
               onChange={(event) => {
                 setTitle(event.target.value);

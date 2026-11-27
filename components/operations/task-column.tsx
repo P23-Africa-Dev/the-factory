@@ -26,6 +26,7 @@ interface TaskColumnProps {
   onTaskClick?: (item: DndItem) => void;
   onTaskEdit?: (item: DndItem) => void;
   onTaskDelete?: (item: DndItem) => void;
+  onMarkCompleted?: (item: DndItem) => void;
   onViewMap?: (item: DndItem) => void;
 }
 
@@ -44,6 +45,7 @@ export function TaskColumn({
   onTaskClick,
   onTaskEdit,
   onTaskDelete,
+  onMarkCompleted,
   onViewMap,
 }: TaskColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -91,6 +93,7 @@ export function TaskColumn({
                 onClick={onTaskClick}
                 onEdit={onTaskEdit}
                 onDelete={onTaskDelete}
+                onMarkCompleted={onMarkCompleted}
                 onViewMap={onViewMap}
               />
             ))}
