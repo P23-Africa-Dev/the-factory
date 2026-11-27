@@ -689,7 +689,7 @@ export default function AllLeadsPage() {
                     className={`text-[13px] font-semibold ${isSelected ? "text-white" : "text-[#0B1215]"
                       }`}
                   >
-                    $ {lead.value.toLocaleString()}
+                    £ {lead.value.toLocaleString()}
                   </span>
                   )}
 
