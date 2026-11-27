@@ -263,7 +263,8 @@ class FieldTripReportTest extends TestCase
 
         // Supervisor (and owner/admin) told; the agent is not.
         $this->assertDatabaseHas('app_notifications', ['user_id' => $f['supervisor']->id, 'type' => 'field_trip.report_submitted']);
-        $this->assertDatabaseHas('app_notifications', ['user_id' => $f['owner']->id, 'type' => 'field_trip.report_submitted']);
+        // Opens the trip's page on the web dashboard.
+        $this->assertDatabaseHas('app_notifications', ['user_id' => $f['owner']->id, 'type' => 'field_trip.report_submitted', 'action_url' => "/operations/journeys/{$tripId}"]);
         $this->assertDatabaseMissing('app_notifications', ['user_id' => $f['agent']->id, 'type' => 'field_trip.report_submitted']);
 
         // Managers see the record and the summary on the journey.

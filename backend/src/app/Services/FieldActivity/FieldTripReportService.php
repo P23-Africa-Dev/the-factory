@@ -350,7 +350,8 @@ class FieldTripReportService
                 sprintf('%s submitted the report for a field trip (%d %s).', $name, $completeness['total'], $completeness['total'] === 1 ? 'stop' : 'stops'),
                 'field-trip-report-submitted:'.$trip->id,
                 NotificationPriority::NORMAL,
-                '/operations/journey_history/'.$trip->id,
+                // The web dashboard's trip page (the app routes by trip id).
+                '/operations/journeys/'.$trip->id,
             );
         }
 
