@@ -552,6 +552,35 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
     commitStatusMove(activeId, previousStatus, nextStatus, snapshot);
   }
 
+  function handleMarkCompleted(item: DndItem, fromContainerId: string) {
+    const previousStatus = item.apiStatus ?? containerToApiStatus(fromContainerId);
+    if (!previousStatus || previousStatus === "completed" || previousStatus === "cancelled") return;
+    if (!canDragTaskStatuses) return;
+    if (item.isObserver && !canManageTaskStatuses) return;
+
+    if (!companyId) {
+      toast.error("Company context is required.");
+      return;
+    }
+
+    const snapshot = boardContainers;
+    const blockers = completionBlockerLabels(item);
+
+    if (blockers.length > 0) {
+      setPendingStatusMove({
+        activeId: item.id,
+        previousStatus,
+        nextStatus: "completed",
+        blockers,
+        snapshot,
+      });
+      return;
+    }
+
+    setBoardContainers((prev) => moveCardToColumn(prev, item.id, "completed"));
+    commitStatusMove(item.id, previousStatus, "completed", snapshot);
+  }
+
   function confirmPendingStatusMove() {
     if (!pendingStatusMove) return;
     setConfirmingStatusMove(true);
@@ -768,6 +797,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
           onTaskClick={(item, containerId) => setSelectedTask({ item, containerId })}
           onTaskEdit={agentView ? undefined : setEditingTask}
           onTaskDelete={agentView ? undefined : setDeleteTaskTarget}
+          onMarkCompleted={handleMarkCompleted}
           onViewMap={(item) => {
             const url = buildTaskMapUrl(item, role);
             if (!url) {

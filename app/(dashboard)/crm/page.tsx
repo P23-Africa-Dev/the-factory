@@ -399,6 +399,8 @@ function LeadListView({
   stageMeta,
   budgetTotal,
   currencySymbol = "£",
+  stages,
+  onMoveToStage,
   onAddClick,
   onEditLeadClick,
 }: {
@@ -407,6 +409,8 @@ function LeadListView({
   stageMeta?: Record<string, { total: number; hasMore?: boolean }>;
   budgetTotal?: number;
   currencySymbol?: string;
+  stages?: Array<{ id: string; title: string; color: string }>;
+  onMoveToStage?: (leadId: string, targetStageId: string) => void;
   onAddClick?: (status: ApiLeadStatus) => void;
   onEditLeadClick?: (leadId: string) => void;
 }) {
@@ -488,13 +492,52 @@ function LeadListView({
 
                     {/* Responsive badge/amount/priority/assigned grouping */}
                     <div className="flex flex-wrap items-center gap-2 pl-3.5 md:pl-0 md:contents">
-                      {/* Stage pill */}
-                      <span
-                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit"
-                        style={{ backgroundColor: `${container.color}18`, color: container.color }}
-                      >
-                        {container.title}
-                      </span>
+                      {/* Stage select */}
+                      {onMoveToStage && stages && stages.length > 0 ? (
+                        <div
+                          className="relative inline-flex items-center w-fit"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <select
+                            aria-label={`Change stage for ${item.label}`}
+                            value={container.id}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              if (e.target.value !== container.id) {
+                                onMoveToStage(item.id, e.target.value);
+                              }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="appearance-none text-[11px] font-semibold pl-2.5 pr-6 py-1 rounded-full cursor-pointer outline-none focus:ring-2 focus:ring-[#09232D]/20 transition-opacity hover:opacity-85"
+                            style={{ backgroundColor: `${container.color}18`, color: container.color }}
+                          >
+                            {stages
+                              .filter((s) => s.id !== UNCATEGORIZED_STAGE_ID || s.id === container.id)
+                              .map((s) => (
+                                <option
+                                  key={s.id}
+                                  value={s.id}
+                                  disabled={s.id === UNCATEGORIZED_STAGE_ID}
+                                  className="bg-white text-[#0B1215]"
+                                >
+                                  {s.title}
+                                </option>
+                              ))}
+                          </select>
+                          <ChevronDown
+                            size={11}
+                            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
+                            style={{ color: container.color }}
+                          />
+                        </div>
+                      ) : (
+                        <span
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-full w-fit"
+                          style={{ backgroundColor: `${container.color}18`, color: container.color }}
+                        >
+                          {container.title}
+                        </span>
+                      )}
 
                       {/* Amount */}
                       <span className="text-[13px] font-bold text-[#0B1215]">
@@ -721,6 +764,28 @@ function LeadBoard({
     return containers.map((c) => ({ id: c.id, title: c.title, color: c.color }));
   }, [containers]);
 
+  const handleMoveToStage = async (leadId: string, targetStageId: string) => {
+    if (targetStageId === UNCATEGORIZED_STAGE_ID) return;
+    const origin = findContainerForItem(containersRef.current, leadId);
+    if (!origin || origin.id === targetStageId) return;
+    apply((prev) => {
+      const next = prev.map((c) => ({ ...c, items: [...c.items] }));
+      const from = next.find((c) => c.id === origin.id);
+      const to = next.find((c) => c.id === targetStageId);
+      if (!from || !to) return prev;
+      const item = from.items.find((i) => i.id === leadId);
+      if (!item) return prev;
+      from.items = from.items.filter((i) => i.id !== leadId);
+      to.items = [...to.items, item];
+      return next;
+    });
+    try {
+      await persistStageMove(leadId, targetStageId as ApiLeadStatus);
+    } catch {
+      // persistStageMove already reverted local state
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="se-surface bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex items-center justify-center h-[calc(100vh-360px)] min-h-[70vh]">
@@ -795,6 +860,8 @@ function LeadBoard({
             stageMeta={stageMeta}
             budgetTotal={budgetTotal}
             currencySymbol={currencySymbol}
+            stages={stagesList}
+            onMoveToStage={handleMoveToStage}
             onAddClick={onAddClick}
             onEditLeadClick={onEditLeadClick}
           />
@@ -821,26 +888,7 @@ function LeadBoard({
                   basePath={basePath}
                   activeTabId={resolvedActiveTabId}
                   stages={stagesList}
-                  onMoveToStage={async (leadId, targetStageId) => {
-                    const origin = findContainerForItem(containersRef.current, leadId);
-                    if (!origin || origin.id === targetStageId) return;
-                    apply((prev) => {
-                      const next = prev.map((c) => ({ ...c, items: [...c.items] }));
-                      const from = next.find((c) => c.id === origin.id);
-                      const to = next.find((c) => c.id === targetStageId);
-                      if (!from || !to) return prev;
-                      const item = from.items.find((i) => i.id === leadId);
-                      if (!item) return prev;
-                      from.items = from.items.filter((i) => i.id !== leadId);
-                      to.items = [...to.items, item];
-                      return next;
-                    });
-                    try {
-                      await persistStageMove(leadId, targetStageId as ApiLeadStatus);
-                    } catch {
-                      // persistStageMove already reverted local state
-                    }
-                  }}
+                  onMoveToStage={handleMoveToStage}
                   onEditLeadClick={onEditLeadClick}
                   onDeleteLeadClick={onDeleteLeadClick}
                   total={stageMeta?.[container.id]?.total}
