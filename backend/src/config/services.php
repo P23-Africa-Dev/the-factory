@@ -104,14 +104,31 @@ return [
         ))))),
     ],
 
-    // Custom IMAP/SMTP availability. Outbound SMTP is open on the production cluster
-    // (verified 2026-08-14); the live value is driven by EMAIL_IMAP_SMTP_ENABLED in the
-    // configmap. Flip that env to "false" if the hosting provider blocks SMTP again.
+    // Custom IMAP/SMTP availability (connect form + inbox sync). Inbound IMAP (993)
+    // works on the droplet; outbound SMTP is handled by the settings below.
     'email_accounts' => [
         'imap_smtp_enabled' => filter_var(
             env('EMAIL_IMAP_SMTP_ENABLED', 'true'),
             FILTER_VALIDATE_BOOL,
         ),
+
+        // Outbound SMTP ports our host blocks. DigitalOcean blocks 25, 465 and
+        // 587 and will not lift it. Sends on these ports fail at once with a
+        // clear message instead of timing out. Set to "" where SMTP is open.
+        'smtp_blocked_ports' => array_values(array_filter(array_map(
+            'intval',
+            explode(',', (string) env('EMAIL_SMTP_BLOCKED_PORTS', '25,465,587')),
+        ))),
+
+        // Temporary per-account option for IMAP/SMTP mailboxes: send CRM email
+        // through the platform mailer as "<Name> via Factory23" with Reply-To
+        // set to the user (a copy goes to their Sent folder over IMAP).
+        'platform_send' => [
+            'enabled' => filter_var(env('CRM_PLATFORM_SEND_ENABLED', 'true'), FILTER_VALIDATE_BOOL),
+            'mailer' => env('CRM_PLATFORM_SEND_MAILER', 'resend'),
+            'from_address' => env('CRM_PLATFORM_FROM_ADDRESS', 'crm@thefactory23.com'),
+            'brand' => env('CRM_PLATFORM_SENDER_BRAND', 'Factory23'),
+        ],
     ],
 
     'mapbox' => [

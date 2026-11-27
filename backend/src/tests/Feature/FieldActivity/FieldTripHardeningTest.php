@@ -470,6 +470,8 @@ class FieldTripHardeningTest extends TestCase
         $this->app->instance(MapboxGeocodingService::class, $geo);
 
         $f = $this->seedCompany();
+        // Two trips back to back with stops: no report required in between.
+        $f['company']->forceFill(['field_trip_report_policy' => 'optional'])->save();
         foreach ([['09:00', '10:00', '10:10'], ['11:00', '12:00', '12:10']] as [$start, $send, $end]) {
             Carbon::setTestNow(Carbon::parse("2026-11-25 {$start}:00"));
             $id = $this->startTrip($f['agent'], $f['company'])->json('data.trip.id');
@@ -539,6 +541,8 @@ class FieldTripHardeningTest extends TestCase
     public function test_item13_today_includes_every_trip_of_the_day(): void
     {
         $f = $this->seedCompany();
+        // Two trips back to back with stops: no report required in between.
+        $f['company']->forceFill(['field_trip_report_policy' => 'optional'])->save();
         foreach ([['09:00', '10:00', '10:10'], ['11:00', '12:00', '12:10']] as [$start, $send, $end]) {
             Carbon::setTestNow(Carbon::parse("2026-11-25 {$start}:00"));
             $id = $this->startTrip($f['agent'], $f['company'])->json('data.trip.id');

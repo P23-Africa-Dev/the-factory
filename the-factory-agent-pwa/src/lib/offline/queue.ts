@@ -286,6 +286,12 @@ export function describeOfflineAction(entry: OfflineActionQueueEntry): string {
   switch (entry.actionType) {
     case 'task.update_status':
       return 'Update task status';
+    case 'field_trip.record_stop':
+      return 'Save stop details';
+    case 'field_trip.add_stop':
+      return 'Add a stop';
+    case 'field_trip.delete_stop':
+      return 'Remove a stop';
     case 'task.complete':
       return 'Complete task';
     case 'task.create_self':

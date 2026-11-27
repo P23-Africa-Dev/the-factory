@@ -5,6 +5,14 @@ import Link from 'next/link';
 import { formatDistance, plural } from '../format';
 import { journeySubtitle, journeyTitle, type JourneyDetailDto } from '../journeyDetail';
 import { TripRouteMap } from './TripRouteMap';
+import { readSession } from '@/session/sessionStore';
+import { AttachmentPicker } from '../report/AttachmentPicker';
+import { TripSummaryCard } from '../report/TripSummaryCard';
+import { tripReviewPath } from '../report/paths';
+import { ACTIVITY_OPTIONS, OUTCOME_OPTIONS } from '../report/types';
+
+const ACTIVITY = Object.fromEntries(ACTIVITY_OPTIONS.map((o) => [o.value, o.label])) as Record<string, string>;
+const OUTCOME = Object.fromEntries(OUTCOME_OPTIONS.map((o) => [o.value, o.label])) as Record<string, string>;
 
 const COLORS: Record<string, string> = {
   green: '#22C55E',
@@ -51,6 +59,8 @@ export function JourneyDetailScreen({
   const distance = Number(stats.distance_meters ?? journey?.distance_meters ?? 0);
   const activeSeconds = Number(stats.active_seconds ?? 0);
   const unit = isTrip ? 'trip' : 'day';
+  const ownTrip = isTrip && data?.agent?.id != null && String(data.agent.id) === String(readSession()?.user?.id ?? '');
+  const reportStatus = journey?.report_status ?? null;
 
   return (
     <main className="min-h-screen bg-[#0A1D25] pb-10 pt-6">
@@ -102,6 +112,21 @@ export function JourneyDetailScreen({
         </div>
       ) : (
         <div className="space-y-5 px-5">
+          {isTrip && reportStatus === 'submitted' && <TripSummaryCard summary={journey?.ai_summary} />}
+          {isTrip && reportStatus === 'due' && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#F59E0B]/40 bg-[#F59E0B]/10 p-3">
+              <p className="text-[12px] text-white/85">
+                Trip report not submitted yet
+                {journey?.records ? ` · ${journey.records.recorded} of ${journey.records.total} stops recorded` : ''}
+              </p>
+              {ownTrip && (
+                <Link href={tripReviewPath(journey!.id)} className="shrink-0 rounded-full bg-[#F59E0B] px-3 py-2 text-[12px] font-semibold text-[#0A1D25]">
+                  Review
+                </Link>
+              )}
+            </div>
+          )}
+
           <TripRouteMap route={data.route} stops={stops} running={running} />
 
           {stops.length > 0 && (
@@ -119,8 +144,27 @@ export function JourneyDetailScreen({
                         ? new Date(stop.arrived_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
                         : '—'}
                       {stop.duration_seconds > 0 ? ` · ${formatDuration(stop.duration_seconds)}` : ''}
-                      {stop.classification ? ` · ${stop.classification.replaceAll('_', ' ')}` : ''}
+                      {stop.classification && stop.classification !== 'pending'
+                        ? ` · ${ACTIVITY[stop.classification] ?? stop.classification.replaceAll('_', ' ')}`
+                        : ''}
                     </p>
+                    {(stop.lead_name || stop.location_name) && (
+                      <p className="mt-0.5 text-[12px] text-[#44AFCD]">{stop.lead_name || stop.location_name}</p>
+                    )}
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {stop.outcome && <span className="rounded-full bg-[#44AFCD]/15 px-2 py-0.5 text-[10px] text-[#44AFCD]">{OUTCOME[stop.outcome] ?? stop.outcome}</span>}
+                      {stop.follow_up_at && <span className="rounded-full bg-[#FBBF24]/15 px-2 py-0.5 text-[10px] text-[#FBBF24]">Follow up {stop.follow_up_at}</span>}
+                      {stop.location_status === 'corrected' && <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/70">Place corrected</span>}
+                      {stop.source === 'manual' && <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/70">Added by {ownTrip ? 'you' : 'agent'}</span>}
+                      {stop.off_route && <span className="rounded-full bg-[#FD6046]/15 px-2 py-0.5 text-[10px] text-[#FD6046]">Not on recorded route</span>}
+                      {isTrip && stop.record_status === 'pending' && <span className="rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10px] text-[#F59E0B]">Not recorded</span>}
+                    </div>
+                    {stop.notes && <p className="mt-1.5 whitespace-pre-line text-[12px] text-white/75">{stop.notes}</p>}
+                    {stop.attachments && stop.attachments.length > 0 && journey && (
+                      <div className="mt-2">
+                        <AttachmentPicker tripId={journey.id} stopId={stop.id} attachments={stop.attachments} readOnly />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

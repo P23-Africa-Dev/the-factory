@@ -96,7 +96,7 @@ describe("field trip popups", () => {
       durationSeconds: 600,
     });
     expect(stop).not.toContain("<script>");
-    expect(stop).toContain("customer visit");
+    expect(stop).toContain("Customer visit");
     expect(stop).toContain("10m");
   });
 });

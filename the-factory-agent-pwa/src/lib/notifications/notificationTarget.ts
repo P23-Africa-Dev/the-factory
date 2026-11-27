@@ -151,6 +151,19 @@ function sourcePath(source: NotificationTargetSource, mode: AppMode): string | n
     case 'field_trip':
       // Auto-ended: open that trip (own, or a team member's for managers).
       if (type === 'field_trip.auto_ended' && refId) return `/field-activity/journeys/${refId}`;
+      // "You've stopped": the home screen opens the quick-record card for that stop.
+      if (type === 'field_trip.stop_detected') {
+        const stopId = positiveInt(meta.field_stop_id) ?? refId;
+        const tripId = positiveInt(meta.field_activity_session_id);
+        return stopId ? `/?stop=${stopId}${tripId ? `&trip=${tripId}` : ''}` : '/';
+      }
+      // Report still due: that trip's review.
+      if (type === 'field_trip.report_due') {
+        const tripId = positiveInt(meta.field_activity_session_id) ?? refId;
+        return tripId ? `/field-trips/${tripId}/review` : '/';
+      }
+      // A team member submitted a report (managers): their journey.
+      if (type === 'field_trip.report_submitted' && refId) return `/field-activity/journeys/${refId}`;
       if (actionPath.startsWith('/field-activity/journeys/')) return actionUrl;
       // Reminder / signal lost on your own trip: the trip card on the home screen.
       return '/';

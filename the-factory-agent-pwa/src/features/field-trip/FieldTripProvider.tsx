@@ -9,7 +9,7 @@ import { newClientId, useFieldTripStore } from './store';
 import { useFieldTripReporter } from './useFieldTripReporter';
 import { onFieldTripServerEnded } from './serverEnded';
 import { deleteTripRows } from '@/lib/sync/locationQueueMaintenance';
-import type { FieldTripCurrent, FieldTripDto, GpsHealth, LocalTrip, TripPosition } from './types';
+import type { FieldTripCurrent, FieldTripDto, FieldTripReportDue, GpsHealth, LocalTrip, TripPosition } from './types';
 
 export const fieldTripKeys = {
   current: ['field-trip', 'current'] as const,
@@ -38,6 +38,12 @@ type FieldTripContextValue = {
   endTrip: (position: TripPosition | null) => Promise<FieldTripDto | null>;
   lastEnded: FieldTripDto | null;
   clearLastEnded: () => void;
+  /** The newest trip whose report is still due (banner / Start gate). */
+  reportDue: FieldTripReportDue | null;
+  reportPolicy: 'required' | 'optional';
+  /** Start was refused because this trip's report must be finished first. */
+  reportGate: number | null;
+  clearReportGate: () => void;
 };
 
 const FieldTripContext = createContext<FieldTripContextValue | null>(null);
@@ -66,6 +72,7 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
   const setLocal = useFieldTripStore((s) => s.setLocal);
   const patchLocal = useFieldTripStore((s) => s.patchLocal);
   const [lastEnded, setLastEnded] = useState<FieldTripDto | null>(null);
+  const [reportGate, setReportGate] = useState<number | null>(null);
   /**
    * The start/end request currently in flight. Every caller (the button and the
    * background retry) awaits the SAME request, so a second caller never bails
@@ -191,7 +198,14 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
           // the points recorded for it (they can never be uploaded).
           useFieldTripStore.getState().setLocal(null);
           void deleteTripRows(trip.clientTripId).catch(() => {});
-          toast.error('Could not start field trip', (error as ApiError).message);
+          if ((error as ApiError).code === 'report_due') {
+            // The last trip's report must be finished first: the card explains.
+            const due = queryClient.getQueryData<CurrentWithStamp>(fieldTripKeys.current)?.report_due;
+            setReportGate(due?.trip_id ?? 0);
+            void queryClient.invalidateQueries({ queryKey: fieldTripKeys.current });
+          } else {
+            toast.error('Could not start field trip', (error as ApiError).message);
+          }
         }
         return null;
       } finally {
@@ -318,6 +332,10 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
         toast.error('Field trips are off', 'Ask an owner or admin to turn on Field Activity.');
         return false;
       }
+      if (current?.report_due && (current.settings.trip_report_policy ?? 'required') === 'required') {
+        setReportGate(current.report_due.trip_id);
+        return false;
+      }
       setLastEnded(null);
       setLocal({
         clientTripId: newClientId(),
@@ -380,8 +398,12 @@ export function FieldTripProvider({ children }: { children: React.ReactNode }) {
       endTrip,
       lastEnded,
       clearLastEnded: () => setLastEnded(null),
+      reportDue: current?.report_due ?? null,
+      reportPolicy: current?.settings.trip_report_policy ?? 'required',
+      reportGate,
+      clearReportGate: () => setReportGate(null),
     }),
-    [current, local, gps, startTrip, endTrip, lastEnded],
+    [current, local, gps, startTrip, endTrip, lastEnded, reportGate],
   );
 
   return <FieldTripContext.Provider value={value}>{children}</FieldTripContext.Provider>;

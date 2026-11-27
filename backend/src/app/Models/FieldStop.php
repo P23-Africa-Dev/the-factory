@@ -10,6 +10,7 @@ use App\Enums\FieldStopMatchType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FieldStop extends Model
 {
@@ -36,7 +37,32 @@ class FieldStop extends Model
         'task_id',
         'reminder_sent',
         'meta',
+        'source',
+        'client_stop_id',
+        'outcome',
+        'notes',
+        'follow_up_at',
+        'record_status',
+        'recorded_at',
+        'recorded_via',
+        'location_status',
+        'original_latitude',
+        'original_longitude',
+        'original_address',
     ];
+
+    public const SOURCE_DETECTED = 'detected';
+    public const SOURCE_MANUAL = 'manual';
+
+    public const RECORD_PENDING = 'pending';
+    public const RECORD_RECORDED = 'recorded';
+
+    public const LOCATION_UNCONFIRMED = 'unconfirmed';
+    public const LOCATION_CONFIRMED = 'confirmed';
+    public const LOCATION_CORRECTED = 'corrected';
+
+    /** What happened at a visit. */
+    public const OUTCOMES = ['successful', 'follow_up', 'nobody_available', 'not_interested', 'other'];
 
     protected function casts(): array
     {
@@ -53,7 +79,24 @@ class FieldStop extends Model
             'classified_at' => 'datetime',
             'reminder_sent' => 'boolean',
             'meta' => 'array',
+            'follow_up_at' => 'date',
+            'recorded_at' => 'datetime',
+            'original_latitude' => 'float',
+            'original_longitude' => 'float',
         ];
+    }
+
+    /** The person recorded what they did here (or attached something): never auto-delete it. */
+    public function hasUserRecord(): bool
+    {
+        return $this->record_status === self::RECORD_RECORDED
+            || $this->source === self::SOURCE_MANUAL
+            || $this->attachments()->exists();
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(FieldStopAttachment::class)->orderBy('id');
     }
 
     public function session(): BelongsTo

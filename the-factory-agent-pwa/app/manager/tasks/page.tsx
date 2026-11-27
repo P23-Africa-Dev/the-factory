@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { ChecklistDraftFields, ProjectChecklist, TaskOverview, useChecklistTasks, type ChecklistStep } from '@/features/tasks/components/ProjectChecklist';
-import React, { useState, useCallback, useEffect, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
 import {
@@ -165,6 +165,10 @@ function ManagerTasksContent() {
   const { items: allTasks, visible: tasks } = useChecklistTasks(flattenTaskPages(taskPages), taskFilter);
 
   const { data: assignees = [] } = useTaskAssignees();
+  const kpiAgents = useMemo(
+    () => assignees.filter((person) => (person.role ?? '').toLowerCase() === 'agent'),
+    [assignees],
+  );
   const { data: observerCandidates = [], isLoading: loadingObserverCandidates } = useTaskObserverCandidates();
   const { data: reassignments = [], isLoading: reassignmentsLoading } = useTaskReassignmentsInbox();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
@@ -1208,7 +1212,7 @@ function ManagerTasksContent() {
                       Assign to *
                     </label>
                     <ObserverPicker
-                      people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                      people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name, email: agent.email, avatarUrl: agent.avatar_url ?? null }))}
                       value={newAssigneeIds}
                       onChange={(ids) => {
                         setNewAssigneeIds(ids);
@@ -1423,7 +1427,7 @@ function ManagerTasksContent() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 max-h-[85dvh] flex flex-col overflow-hidden"
+              className="relative z-10 w-full max-w-md bg-[#0A1D25] rounded-t-3xl border-t border-white/10 px-5 pt-4 h-[85dvh] max-h-[85svh] flex flex-col overflow-hidden"
             >
               <div className="shrink-0">
                 <div className="w-9 h-1 rounded-full bg-white/25 mx-auto mb-4" />
@@ -1442,7 +1446,8 @@ function ManagerTasksContent() {
                       className="w-full h-11 rounded-xl bg-[#0B2330] border border-white/12 px-3.5 text-sm text-white outline-none focus:border-[#75ADAF]"
                     >
                       <option value="">Team / Unassigned</option>
-                      {assignees.map((a) => (
+                      {/* KPIs can only be assigned to field agents (the API rejects other roles). */}
+                      {kpiAgents.map((a) => (
                         <option key={a.id} value={String(a.id)}>
                           {a.name} ({a.email})
                         </option>
@@ -1699,7 +1704,7 @@ function ManagerTasksContent() {
                     Assigned to
                   </label>
                   <ObserverPicker
-                    people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name }))}
+                    people={assignees.map((agent) => ({ id: String(agent.id), name: agent.name, email: agent.email, avatarUrl: agent.avatar_url ?? null }))}
                     value={editAssigneeIds}
                     onChange={(ids) => {
                       setEditAssigneeIds(ids);

@@ -20,6 +20,7 @@ import {
   ArrowLeft
 } from "lucide-react";
 import { useMyJourneys } from "@/hooks/use-field-journeys";
+import { ReportStatusBadge } from "@/components/operations/stop-record-panel";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import {
@@ -324,6 +325,7 @@ function JourneyHistoryContent() {
                             >
                               {isActive ? "Active" : autoEnded ? "Auto-ended" : "Completed"}
                             </span>
+                            <ReportStatusBadge journey={journey} />
                           </div>
 
                           {/* Grid metrics */}

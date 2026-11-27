@@ -15,6 +15,7 @@ import type {
   OfflineActionQueueEntry,
   OfflineConflictEntry,
   ProofQueueEntry,
+  StopAttachmentQueueEntry,
   SavedLocationCacheEntry,
   SyncMetaEntry,
   TaskDetailCacheEntry,
@@ -23,7 +24,7 @@ import type {
 } from './schema';
 
 const DB_NAME = 'factory-agent-pwa';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export type FactoryDB = IDBPDatabase<{
   locationQueue: {
@@ -33,6 +34,14 @@ export type FactoryDB = IDBPDatabase<{
       'by-synced': number;
       'by-taskId': number;
       'by-nextAttemptAt': string;
+    };
+  };
+  stopAttachmentQueue: {
+    key: number;
+    value: StopAttachmentQueueEntry;
+    indexes: {
+      'by-uploaded': number;
+      'by-trip': number;
     };
   };
   proofQueue: {
@@ -255,6 +264,15 @@ export async function getDb(): Promise<FactoryDB> {
       if (oldVersion < 5) {
         if (!db.objectStoreNames.contains('syncMeta')) {
           db.createObjectStore('syncMeta', { keyPath: 'id' });
+        }
+      }
+
+      // Field-trip stop attachments queued on the phone (photos / documents).
+      if (oldVersion < 6) {
+        if (!db.objectStoreNames.contains('stopAttachmentQueue')) {
+          const store = db.createObjectStore('stopAttachmentQueue', { keyPath: 'id', autoIncrement: true });
+          store.createIndex('by-uploaded', 'uploaded');
+          store.createIndex('by-trip', 'tripId');
         }
       }
     },

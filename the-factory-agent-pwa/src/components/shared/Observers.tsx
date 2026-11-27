@@ -6,6 +6,8 @@ import { ChevronDown, Eye, Search, X } from 'lucide-react';
 export type ObserverPerson = {
   id: string;
   name: string;
+  /** Optional second line (e.g. email) to tell same-name people apart. */
+  email?: string | null;
   avatarUrl?: string | null;
 };
 
@@ -193,13 +195,23 @@ export function ObserverPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const available = useMemo(
-    () => people.filter((person) => !excludeIds.includes(person.id)),
-    [people, excludeIds],
-  );
+  // One row per person id, even if the same person reaches us twice.
+  const available = useMemo(() => {
+    const seen = new Set<string>();
+    return people.filter((person) => {
+      if (excludeIds.includes(person.id) || seen.has(person.id)) return false;
+      seen.add(person.id);
+      return true;
+    });
+  }, [people, excludeIds]);
   const selected = useMemo(() => available.filter((person) => value.includes(person.id)), [available, value]);
   const query = search.trim().toLowerCase();
-  const filtered = query ? available.filter((person) => person.name.toLowerCase().includes(query)) : available;
+  const filtered = query
+    ? available.filter(
+        (person) =>
+          person.name.toLowerCase().includes(query) || (person.email ?? '').toLowerCase().includes(query),
+      )
+    : available;
 
   const toggle = (id: string) => {
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
@@ -285,7 +297,10 @@ export function ObserverPicker({
                       className="accent-[#75ADAF] w-4 h-4"
                     />
                     <ObserverAvatar person={person} size={24} ringClassName="" />
-                    <span className="text-sm text-white">{person.name}</span>
+                    <span className="min-w-0 flex flex-col">
+                      <span className="text-sm text-white truncate">{person.name}</span>
+                      {person.email && <span className="text-[11px] text-white/45 truncate">{person.email}</span>}
+                    </span>
                   </label>
                 </li>
               ))

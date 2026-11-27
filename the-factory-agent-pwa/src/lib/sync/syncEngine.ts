@@ -28,6 +28,7 @@ import { setShowingCachedData } from '@/lib/offline/cacheIndicator';
 import { withLocationUploadLock } from '@/lib/sync/locationUploadLock';
 import { isTripNotActiveError, notifyFieldTripServerEnded } from '@/features/field-trip/serverEnded';
 import { pruneSyncedLocationRows } from '@/lib/sync/locationQueueMaintenance';
+import { uploadQueuedStopAttachments } from '@/features/field-trip/report/api';
 
 const MAX_BATCH_SIZE = 50;
 const RETRY_DELAYS_MS = [0, 30_000, 120_000, 300_000, 900_000] as const;
@@ -450,6 +451,25 @@ async function executeOfflineAction(entry: OfflineActionQueueEntry): Promise<voi
       await client.post('/agent/attendance/clock-out', payload, BACKGROUND_REQUEST);
       return;
     }
+    case 'field_trip.record_stop': {
+      const { stop_id, ...body } = parseOfflinePayload<{ stop_id: number } & Record<string, unknown>>(entry);
+      await client.put(`/field-trips/stops/${stop_id}/record`, body, BACKGROUND_REQUEST);
+      return;
+    }
+
+    case 'field_trip.add_stop': {
+      // Idempotent on client_stop_id: replaying never adds the stop twice.
+      const { trip_id, ...body } = parseOfflinePayload<{ trip_id: number } & Record<string, unknown>>(entry);
+      await client.post(`/field-trips/${trip_id}/stops`, body, BACKGROUND_REQUEST);
+      return;
+    }
+
+    case 'field_trip.delete_stop': {
+      const { stop_id, company_id } = parseOfflinePayload<{ stop_id: number; company_id?: number }>(entry);
+      await client.delete(`/field-trips/stops/${stop_id}`, { params: { company_id }, ...BACKGROUND_REQUEST });
+      return;
+    }
+
     case 'field_activity.classify_stop': {
       const payload = parseOfflinePayload<{
         stop_id: number;
@@ -633,6 +653,8 @@ async function syncAll(): Promise<void> {
     const hadWork = await hasRunnableListChangingWork();
     await syncProofQueue();
     await syncOfflineActionQueue();
+    // After queued actions, so stops added offline exist before their files upload.
+    await uploadQueuedStopAttachments().catch(() => 0);
     await syncLocationQueue();
     if (hadWork) {
       await invalidateSyncedQueries();

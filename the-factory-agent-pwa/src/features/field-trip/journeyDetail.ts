@@ -1,5 +1,7 @@
+import type { Completeness, ReportStop, TripAiSummary } from './report/types';
+
 /** Journey / trip detail as served by GET …/field-activity/journeys/{id} (agent + admin). */
-export interface JourneyStopDto {
+export interface JourneyStopDto extends Partial<Omit<ReportStop, 'id' | 'latitude' | 'longitude' | 'classification'>> {
   id: number;
   latitude: number | string;
   longitude: number | string;
@@ -30,6 +32,11 @@ export interface JourneyDetailDto {
     ended_at?: string | null;
     end_reason?: string | null;
     status?: string;
+    /** Field trips: the trip report. */
+    report_status?: 'none' | 'due' | 'submitted' | null;
+    report_submitted_at?: string | null;
+    ai_summary?: TripAiSummary | null;
+    records?: Completeness | null;
   };
   agent?: { id: number; name: string | null };
   stats: Record<string, unknown>;

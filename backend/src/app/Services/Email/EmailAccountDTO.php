@@ -13,31 +13,23 @@ namespace App\Services\Email;
 final class EmailAccountDTO
 {
     /**
-     * @param  int                 $id               Internal email account ID.
-     * @param  int                 $companyId        Tenant company ID.
-     * @param  int                 $userId           Owning user ID.
-     * @param  string              $provider         Provider slug (google, microsoft, zoho, imap_smtp).
-     * @param  string              $email            Email address of the connected account.
-     * @param  string|null         $displayName      User-facing display name for this account.
-     * @param  string|null         $accessToken      OAuth access token (encrypted at rest).
-     * @param  string|null         $refreshToken     OAuth refresh token (encrypted at rest).
-     * @param  string|null         $tokenExpiresAt   ISO 8601 timestamp.
-     * @param  array<int,string>   $scopes           Granted OAuth scopes.
-     * @param  string|null         $smtpHost
-     * @param  int|null            $smtpPort
-     * @param  string|null         $smtpEncryption   tls, ssl, or null.
-     * @param  string|null         $smtpUsername
-     * @param  string|null         $smtpPassword     (encrypted at rest).
-     * @param  string|null         $imapHost
-     * @param  int|null            $imapPort
-     * @param  string|null         $imapEncryption   tls, ssl, or null.
-     * @param  string|null         $imapUsername
-     * @param  string|null         $imapPassword     (encrypted at rest).
-     * @param  string              $status           active, error, disconnected.
-     * @param  string|null         $lastError
-     * @param  string|null         $lastSyncedAt
-     * @param  string|null         $historyId        Provider-specific sync cursor.
-     * @param  bool                $isDefault        Whether this is the user's default sending account.
+     * @param  int  $id  Internal email account ID.
+     * @param  int  $companyId  Tenant company ID.
+     * @param  int  $userId  Owning user ID.
+     * @param  string  $provider  Provider slug (google, microsoft, zoho, imap_smtp).
+     * @param  string  $email  Email address of the connected account.
+     * @param  string|null  $displayName  User-facing display name for this account.
+     * @param  string|null  $accessToken  OAuth access token (encrypted at rest).
+     * @param  string|null  $refreshToken  OAuth refresh token (encrypted at rest).
+     * @param  string|null  $tokenExpiresAt  ISO 8601 timestamp.
+     * @param  array<int,string>  $scopes  Granted OAuth scopes.
+     * @param  string|null  $smtpEncryption  tls, ssl, or null.
+     * @param  string|null  $smtpPassword  (encrypted at rest).
+     * @param  string|null  $imapEncryption  tls, ssl, or null.
+     * @param  string|null  $imapPassword  (encrypted at rest).
+     * @param  string  $status  active, error, disconnected.
+     * @param  string|null  $historyId  Provider-specific sync cursor.
+     * @param  bool  $isDefault  Whether this is the user's default sending account.
      */
     public function __construct(
         public readonly int $id,
@@ -67,6 +59,7 @@ final class EmailAccountDTO
         public readonly ?string $lastSyncedAt = null,
         public readonly ?string $historyId = null,
         public readonly bool $isDefault = false,
+        public readonly bool $sendViaPlatform = false,
     ) {}
 
     /**
@@ -103,6 +96,7 @@ final class EmailAccountDTO
             lastSyncedAt: isset($attributes['last_synced_at']) ? (string) $attributes['last_synced_at'] : null,
             historyId: isset($attributes['history_id']) ? (string) $attributes['history_id'] : null,
             isDefault: (bool) ($attributes['is_default'] ?? false),
+            sendViaPlatform: (bool) ($attributes['send_via_platform'] ?? false),
         );
     }
 }

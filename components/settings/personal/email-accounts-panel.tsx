@@ -211,11 +211,13 @@ function AccountCard({
   onTest,
   onReconnect,
   onEdit,
+  onTogglePlatformSend,
   imapSmtpAvailable,
   isSettingDefault,
   isDisconnecting,
   isTesting,
   isReconnecting,
+  isTogglingPlatformSend,
 }: {
   account: EmailAccountItem;
   onSetDefault: () => void;
@@ -223,11 +225,13 @@ function AccountCard({
   onTest: () => void;
   onReconnect: () => void;
   onEdit: () => void;
+  onTogglePlatformSend: (enabled: boolean) => void;
   imapSmtpAvailable: boolean;
   isSettingDefault: boolean;
   isDisconnecting: boolean;
   isTesting: boolean;
   isReconnecting: boolean;
+  isTogglingPlatformSend: boolean;
 }) {
   const isActive = account.status === "active";
   const isError = account.status === "error";
@@ -297,6 +301,14 @@ function AccountCard({
         <ConnectionIssueBlock title="Validation failed" message={account.last_error_message} />
       )}
 
+      {isImap && !showImapUnsupported && (
+        <PlatformSendToggle
+          account={account}
+          onToggle={onTogglePlatformSend}
+          isSaving={isTogglingPlatformSend}
+        />
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         {!account.is_default && isActive && !showImapUnsupported && (
           <button
@@ -349,6 +361,68 @@ function AccountCard({
         >
           {isDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
           Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Temporary option while our servers cannot reach outgoing SMTP ports: send
+ * CRM email through Factory23 as "Name via Factory23", replies to the user.
+ */
+function PlatformSendToggle({
+  account,
+  onToggle,
+  isSaving,
+}: {
+  account: EmailAccountItem;
+  onToggle: (enabled: boolean) => void;
+  isSaving: boolean;
+}) {
+  const enabled = Boolean(account.send_via_platform);
+  const portBlocked = Boolean(account.smtp_port_blocked);
+  const senderName = account.display_name || account.email.split("@")[0];
+
+  return (
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        !enabled && portBlocked ? "border-amber-100 bg-amber-50/60" : "border-gray-100 bg-gray-50/60"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-bold text-dash-dark">Send through Factory23 (temporary)</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+            {enabled
+              ? `CRM emails go out as "${senderName} via Factory23"${
+                  account.platform_sender ? ` from ${account.platform_sender}` : ""
+                }. Replies come to ${account.email}, and a copy is saved in your Sent folder.`
+              : portBlocked
+                ? `Our servers can't reach outgoing mail port ${account.smtp_port}, so sending from this account will fail. Turn this on to send through Factory23 instead, or use port 2525 if your email provider offers it.`
+                : "Send CRM emails through Factory23 instead of your mail server. Replies still come to your inbox."}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Send through Factory23"
+          disabled={isSaving}
+          onClick={() => onToggle(!enabled)}
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            enabled ? "bg-dash-dark" : "bg-gray-300"
+          }`}
+        >
+          {isSaving ? (
+            <Loader2 size={12} className="absolute left-1/2 -translate-x-1/2 animate-spin text-white" />
+          ) : (
+            <span
+              className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                enabled ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          )}
         </button>
       </div>
     </div>
@@ -859,6 +933,35 @@ export function EmailAccountsPanel() {
     );
   };
 
+  const handleTogglePlatformSend = (account: EmailAccountItem, enabled: boolean) => {
+    if (
+      enabled &&
+      !window.confirm(
+        `Send CRM emails from ${account.email} through Factory23?\n\nRecipients will see "${
+          account.display_name || account.email.split("@")[0]
+        } via Factory23" as the sender. Replies still come to ${account.email}.`,
+      )
+    ) {
+      return;
+    }
+
+    updateMutation.mutate(
+      {
+        accountId: account.id,
+        payload: { send_via_platform: enabled, company_id: companyId ?? undefined },
+      },
+      {
+        onSuccess: () =>
+          toast.success(
+            enabled
+              ? "Emails from this account will be sent through Factory23."
+              : "Emails from this account will be sent from your mail server.",
+          ),
+        onError: (err: Error) => toast.error(err.message || "Failed to update sending option."),
+      },
+    );
+  };
+
   const handleDisconnect = (account: EmailAccountItem) => {
     if (!window.confirm(`Remove "${account.display_name || account.email}"? This cannot be undone.`)) {
       return;
@@ -1001,6 +1104,12 @@ export function EmailAccountsPanel() {
                   onDisconnect={() => handleDisconnect(account)}
                   onTest={() => handleTest(account)}
                   onReconnect={() => handleReconnect(account)}
+                  onTogglePlatformSend={(enabled) => handleTogglePlatformSend(account, enabled)}
+                  isTogglingPlatformSend={
+                    updateMutation.isPending &&
+                    updateMutation.variables?.accountId === account.id &&
+                    updateMutation.variables?.payload.send_via_platform !== undefined
+                  }
                   onEdit={() => {
                     if (!imapSmtpAvailable) {
                       toast.error(IMAP_SMTP_UNSUPPORTED_MESSAGE);
@@ -1012,6 +1121,7 @@ export function EmailAccountsPanel() {
                   isSettingDefault={
                     updateMutation.isPending &&
                     updateMutation.variables?.accountId === account.id &&
+                    updateMutation.variables?.payload.is_default === true &&
                     !editingAccount
                   }
                   isDisconnecting={

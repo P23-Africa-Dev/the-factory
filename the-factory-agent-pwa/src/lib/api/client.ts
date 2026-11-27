@@ -11,6 +11,7 @@ import axios, { AxiosError } from 'axios';
 import type { ApiError } from '@/types';
 import { env } from '@/constants/env';
 import { appStore, getActiveCompanyId } from '@/lib/storage/stores';
+import { waitForAuthReady } from '@/lib/auth/authReady';
 import { sessionEvents } from '@/lib/auth/sessionEvents';
 import { resolveApiErrorMessage } from '@/lib/api/errors';
 import { readSession } from '@/session/sessionStore';
@@ -44,6 +45,9 @@ export const client = axios.create({
 });
 
 client.interceptors.request.use(async (config) => {
+  // Never send a request before the sign-in has been restored at start-up:
+  // a stale token would get a 401, and a 401 signs the user out.
+  await waitForAuthReady();
   try {
     const token = appStore.getString('auth_token');
     if (token) {
@@ -137,8 +141,13 @@ client.interceptors.response.use(
       return Promise.reject(apiError);
     }
 
-    // 401 Unauthenticated — show session-expired modal then auto-logout
-    if (apiError.status === 401 && !sessionExpiredPending) {
+    // 401 Unauthenticated — show session-expired modal then auto-logout.
+    // Only for the CURRENT sign-in: a 401 for a request sent with an older token
+    // (or while nobody is signed in) must not wipe the session.
+    const sentAuth = String(error.config?.headers?.Authorization ?? '');
+    const currentToken = appStore.getString('auth_token');
+    const forCurrentSession = !!currentToken && sentAuth === `Bearer ${currentToken}`;
+    if (apiError.status === 401 && forCurrentSession && !sessionExpiredPending) {
       sessionExpiredPending = true;
       // Reset flag after the modal's countdown (4s + small buffer)
       setTimeout(() => {

@@ -465,12 +465,10 @@ export function LeadContactHeroSlider({ contacts }: { contacts: LeadContact[] })
           <span className="mb-1 text-[11px] font-medium text-gray-400">Location</span>
           <p className="truncate text-[16px] font-semibold text-white">{contact.location || "N/A"}</p>
         </div>
-        {contact.position && (
-          <div className="flex min-w-0 flex-col">
-            <span className="mb-1 text-[11px] font-medium text-gray-400">Position</span>
-            <p className="truncate text-[16px] font-semibold text-white">{contact.position}</p>
-          </div>
-        )}
+        <div className="flex min-w-0 flex-col">
+          <span className="mb-1 text-[11px] font-medium text-gray-400">Position</span>
+          <p className="truncate text-[16px] font-semibold text-white">{contact.position || "N/A"}</p>
+        </div>
         {contact.profile_urls && contact.profile_urls.length > 0 && (
           <div className="flex min-w-0 flex-col min-[480px]:col-span-2">
             <span className="mb-1 text-[11px] font-medium text-gray-400">Profile URLs</span>

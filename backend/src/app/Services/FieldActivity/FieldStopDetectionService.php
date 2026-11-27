@@ -8,6 +8,7 @@ use App\Enums\FieldStopClassification;
 use App\Enums\FieldStopMatchType;
 use App\Models\FieldActivitySession;
 use App\Models\FieldLocationPoint;
+use App\Jobs\SendStopDetectedNotificationJob;
 use App\Models\FieldStop;
 use App\Support\GeoDistance;
 use Carbon\Carbon;
@@ -174,7 +175,7 @@ class FieldStopDetectionService
         foreach ($openStops as $stop) {
             $dwell = $stop->arrived_at->diffInSeconds($departure, false);
             $minDwell = $this->dwellSecondsFor($session);
-            if ($dwell < $minDwell) {
+            if ($dwell < $minDwell && ! $stop->hasUserRecord()) {
                 $affected = array_values(array_diff($affected, [(int) $stop->id]));
                 $stop->delete();
                 continue;
@@ -291,6 +292,24 @@ class FieldStopDetectionService
         ]);
 
         $this->realtimeService->publishStopCreated($session, $stop);
+
+        // Late points after End found a stop on a trip that had none: its
+        // report (auto-closed as "nothing to fill in") is due after all.
+        if ($session->isFieldTrip() && ! $session->isActive()) {
+            FieldActivitySession::query()
+                ->whereKey($session->id)
+                ->where('report_status', FieldActivitySession::REPORT_SUBMITTED)
+                ->whereNull('report_submitted_at')
+                ->update(['report_status' => FieldActivitySession::REPORT_DUE]);
+        }
+
+        // Ask the person what they are doing here (push; the app also shows a
+        // card over the websocket). Shortly after, so the address is known.
+        if ($session->isFieldTrip()) {
+            SendStopDetectedNotificationJob::dispatch((int) $stop->id)
+                ->delay(now()->addSeconds(20))
+                ->afterCommit();
+        }
 
         return $stop;
     }

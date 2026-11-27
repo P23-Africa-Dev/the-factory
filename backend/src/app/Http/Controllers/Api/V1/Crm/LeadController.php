@@ -45,6 +45,7 @@ class LeadController extends Controller
             ...$this->creatorAndDateFilters($request),
             'per_page' => $request->input('per_page'),
             'uncategorized' => $request->boolean('uncategorized'),
+            'sort' => $request->string('sort')->toString(),
         ]);
 
         return $this->success(
@@ -675,6 +676,7 @@ class LeadController extends Controller
             'created_from' => ['nullable', 'date'],
             'created_to' => ['nullable', 'date', 'after_or_equal:created_from'],
             'industry' => ['nullable', 'string', 'max:120'],
+            'sort' => ['nullable', 'string', Rule::in(LeadService::LEAD_LIST_SORTS)],
         ]);
     }
 

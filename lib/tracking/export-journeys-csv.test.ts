@@ -92,8 +92,45 @@ describe("CSV builders", () => {
     const lines = csv.split("\r\n");
     expect(lines).toHaveLength(2);
     expect(lines[1]).toBe(
-      '7,2026-07-29,Amara,70,2026-07-29T09:10:00Z,2026-07-29T09:30:00Z,1200,customer_visit,"12 Allen Ave, Ikeja",6.5,3.3',
+      '7,2026-07-29,Amara,70,2026-07-29T09:10:00Z,2026-07-29T09:30:00Z,1200,customer_visit,"12 Allen Ave, Ikeja",6.5,3.3,,,,,,,,no,no,0',
     );
+  });
+
+  it("includes what the agent recorded at each stop", () => {
+    const csv = buildStopsCsv([
+      {
+        journey: { id: 7, date: "2026-07-29" },
+        stops: [
+          {
+            id: 71,
+            field_activity_session_id: 7,
+            arrived_at: null,
+            departed_at: null,
+            latitude: 6.5,
+            longitude: 3.3,
+            address: "Shop",
+            duration_seconds: 600,
+            classification: "customer_visit",
+            classified_by: "agent",
+            classified_at: null,
+            lead_id: 5,
+            lead_name: "Mama Put Ltd",
+            record_status: "recorded",
+            outcome: "follow_up",
+            follow_up_at: "2026-08-02",
+            notes: "=call back Friday",
+            location_status: "corrected",
+            original_address: "Next door",
+            source: "manual",
+            off_route: true,
+            attachments: [{ id: 1, client_attachment_id: null, field_stop_id: 71, mime_type: "image/jpeg", size_bytes: 1, original_name: "a.jpg", caption: null, is_image: true, captured_at: null, url: "" }],
+          },
+        ],
+      },
+    ]);
+    const lines = csv.split("\r\n");
+    expect(lines[0]).toContain("record_status,customer_or_location,outcome");
+    expect(lines[1]).toContain("recorded,Mama Put Ltd,follow_up,2026-08-02,'=call back Friday,corrected,Next door,yes,yes,1");
   });
 });
 

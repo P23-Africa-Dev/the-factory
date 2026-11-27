@@ -25,6 +25,7 @@ class FieldJourneyService
     public function __construct(
         private readonly AttendanceAccessService $attendanceAccessService,
         private readonly FieldActivitySessionService $sessionService,
+        private readonly FieldTripReportService $reportService,
     ) {}
 
     /**
@@ -208,7 +209,8 @@ class FieldJourneyService
                 'name' => $agent ? $this->displayName($agent) : null,
             ],
             'stats' => $stats,
-            'stops' => $stops->map(fn (FieldStop $s): array => $this->sessionService->serializeStop($s))->all(),
+            // With the trip report: what was done, outcome, notes, attachments.
+            'stops' => $stops->map(fn (FieldStop $s): array => $this->reportService->stopPayload($s))->all(),
             'timeline' => $timeline,
             'route' => $route,
             'navigation' => $neighbors,
@@ -646,6 +648,11 @@ class FieldJourneyService
             'end_reason' => $session->end_reason,
             // Last report from the phone's tracker (support / "why is the route short?").
             'tracking_health' => is_array($session->meta['health'] ?? null) ? $session->meta['health'] : null,
+            // Trip report and ELY's summary (field trips).
+            'report_status' => $session->isFieldTrip() ? ($session->report_status ?? FieldActivitySession::REPORT_NONE) : null,
+            'report_submitted_at' => $session->report_submitted_at?->toIso8601String(),
+            'ai_summary' => $session->isFieldTrip() ? $session->ai_summary : null,
+            'records' => $session->isFieldTrip() ? $this->reportService->completeness($session) : null,
         ];
     }
 

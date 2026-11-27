@@ -24,6 +24,9 @@ import {
 } from "@/lib/api/crm-emails";
 import type { ApiRoleBasePath } from "@/lib/api/crm";
 
+/** How often an open lead email panel checks for new mail. */
+export const LIVE_EMAIL_POLL_MS = 8_000;
+
 export const CRM_EMAIL_KEYS = {
     all: ["crm-emails"] as const,
     lead: (
@@ -54,7 +57,9 @@ export function useLeadEmails(
     return useQuery({
         queryKey: [...CRM_EMAIL_KEYS.lead(leadId, companyId, basePath), options?.sync ?? false],
         enabled: Boolean(token && leadId),
-        refetchInterval: options?.sync ? 15_000 : false,
+        // Each sync poll also asks the API to pull new mail for this lead (at most
+        // every 15s server-side), so replies appear within seconds, no reload.
+        refetchInterval: options?.sync ? LIVE_EMAIL_POLL_MS : false,
         queryFn: async () => {
             const response = await listLeadEmails(
                 basePath,
@@ -78,6 +83,8 @@ export function useLeadEmailThread(
     return useQuery({
         queryKey: CRM_EMAIL_KEYS.thread(leadId, threadId ?? 0, companyId, basePath),
         enabled: Boolean(token && leadId && threadId),
+        // Keep an open conversation current as replies arrive.
+        refetchInterval: threadId ? LIVE_EMAIL_POLL_MS : false,
         queryFn: async () => {
             const response = await getLeadEmailThread(
                 basePath,

@@ -50,6 +50,7 @@ import {
   visibleLeadFieldsForDetail,
 } from "@/lib/crm/custom-fields";
 import { getLeadDetailDisplay } from "@/lib/crm/lead-details";
+import { isValidUrl, parseProfileUrls } from "@/lib/crm/lead-fields";
 import { LeadContactHeroSlider, LeadContactsSlider, type LeadContactErrors } from "@/components/crm/lead-contacts";
 import { LeadCustomFieldsEditor } from "@/components/crm/lead-custom-fields-editor";
 import { LeadFieldDialog } from "@/components/crm/lead-field-dialog";
@@ -536,12 +537,23 @@ export default function LeadDetailsPage() {
 
   const buildEditForm = (lead: LeadApiItem): EditLeadForm => ({
     contacts: lead.contacts?.length
-      ? lead.contacts.map((contact, index) => ({ ...contact, sort_order: index }))
+      ? lead.contacts.map((contact, index) => ({
+          ...contact,
+          position: contact.position ?? (index === 0 ? lead.position ?? "" : ""),
+          profile_urls: contact.profile_urls?.length
+            ? contact.profile_urls
+            : index === 0 && lead.profile_urls?.length
+              ? lead.profile_urls
+              : [""],
+          sort_order: index,
+        }))
       : [{
           name: lead.name || "",
           email: lead.email || "",
           phone: lead.phone || "",
           location: lead.location || "",
+          position: lead.position || "",
+          profile_urls: lead.profile_urls?.length ? lead.profile_urls : [""],
           sort_order: 0,
         }],
     status: lead.status || "newly_lead",
@@ -620,13 +632,29 @@ export default function LeadDetailsPage() {
       return;
     }
 
-    const contacts = editForm.contacts.map((contact, index) => ({
-      name: contact.name.trim(),
-      email: contact.email?.trim() || null,
-      phone: contact.phone?.trim() || null,
-      location: contact.location?.trim() || null,
-      sort_order: index,
-    }));
+    const badUrlContact = editForm.contacts.findIndex((contact) =>
+      parseProfileUrls(contact.profile_urls ?? []).some((url) => !isValidUrl(url)),
+    );
+    if (badUrlContact >= 0) {
+      setActiveContactIndex(badUrlContact);
+      toast.error(`Contact ${badUrlContact + 1} has an invalid profile URL.`);
+      return;
+    }
+
+    // Send each contact's position and URLs too: the backend replaces every
+    // contact row on save, so leaving them out wiped them.
+    const contacts = editForm.contacts.map((contact, index) => {
+      const profileUrls = parseProfileUrls(contact.profile_urls ?? []);
+      return {
+        name: contact.name.trim(),
+        email: contact.email?.trim() || null,
+        phone: contact.phone?.trim() || null,
+        location: contact.location?.trim() || null,
+        position: contact.position?.trim() || null,
+        profile_urls: profileUrls.length > 0 ? profileUrls : null,
+        sort_order: index,
+      };
+    });
     const payload: UpdateLeadPayload = {
       status: editForm.status,
       company_id: companyId,

@@ -460,7 +460,9 @@ class FieldLocationIntelligenceService
             }
 
             $first = $items[0];
-            $name = method_exists($first, 'name') ? (string) $first->name : 'Nearby place';
+            // PlaceResult exposes `name` as a property (method_exists() was always false,
+            // which turned every POI address into the literal "Nearby place").
+            $name = is_object($first) && isset($first->name) ? trim((string) $first->name) : '';
             $categories = property_exists($first, 'categories') && is_array($first->categories)
                 ? $first->categories
                 : [];
@@ -471,7 +473,10 @@ class FieldLocationIntelligenceService
             return [
                 'match_type' => $isResidential ? FieldStopMatchType::RESIDENTIAL : FieldStopMatchType::POI,
                 'confidence' => 0.45,
-                'address' => $name !== '' ? $name : ($stop->address ?? 'Nearby place'),
+                // "Place name, street" reads best when the person confirms the place.
+                'address' => $name !== ''
+                    ? mb_substr($name.($stop->address !== null && ! str_contains((string) $stop->address, $name) ? ', '.$stop->address : ''), 0, 255)
+                    : $stop->address,
                 'meta' => [
                     'poi_name' => $name,
                     'poi_categories' => $categories,

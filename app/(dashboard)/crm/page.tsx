@@ -8,7 +8,8 @@ import { formatLeadBudgetDisplay, getCurrencySymbol, resolveLeadBudgetAmount } f
 import { useAuthStore } from "@/store/auth";
 import { dedupeLeadsById } from "@/lib/crm/dedupe-leads";
 import { getApiErrorMessage } from "@/lib/api/errors";
-import { crmFiltersToQuery, useCrmFilters } from "@/hooks/use-crm-filters";
+import { crmFiltersToQuery, crmSortFromFilters, useCrmFilters } from "@/hooks/use-crm-filters";
+import { LeadSortSelect } from "@/components/crm/lead-sort-select";
 import { getActiveCompanyContext } from "@/lib/company-context";
 import { DEFAULT_AVATAR, resolveAvatarSrc } from "@/lib/avatar";
 import { useAgentUploadsOverview, useCrmAssignees, useCrmLabels, useCrmLeadsAnalytics, useCrmPipelines, useCrmPreferences, useDeleteLead, useLeadStagePages, useUpdateLead } from "@/hooks/use-crm";
@@ -22,6 +23,7 @@ import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
 import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
+import { CrmPipelineSlider, type PipelineSliderItem } from "@/components/crm/crm-pipeline-slider";
 import { useDroppable } from "@dnd-kit/core";
 import { useBoardCollisionDetection } from "@/lib/dnd/use-board-collision";
 import {
@@ -627,6 +629,9 @@ function LeadBoard({
   onLoadMore,
   budgetTotal,
   currencySymbol = "£",
+  pipelines = [],
+  selectedPipelineId = null,
+  onSelectPipeline,
 }: {
   basePath?: string;
   leadListUrl?: string;
@@ -641,6 +646,9 @@ function LeadBoard({
   onLoadMore?: (stageId: string) => void;
   budgetTotal?: number;
   currencySymbol?: string;
+  pipelines?: PipelineSliderItem[];
+  selectedPipelineId?: number | null;
+  onSelectPipeline?: (pipelineId: number | null) => void;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -797,28 +805,39 @@ function LeadBoard({
   return (
     <div className="se-surface bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
       {/* Board toolbar */}
-      <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
-        <button
-          onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
-          className="se-primary text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
-        >
-          View All Leads
-        </button>
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-3 px-6 pt-4 pb-2">
+        {viewMode === "list" && onSelectPipeline && pipelines.length > 0 ? (
+          <CrmPipelineSlider
+            pipelines={pipelines}
+            selectedPipelineId={selectedPipelineId}
+            onSelect={onSelectPipeline}
+          />
+        ) : (
+          <div className="hidden md:block flex-1" />
+        )}
+        <div className="flex items-center gap-3 shrink-0 ml-auto">
           <button
-            onClick={() => setViewMode("grid")}
-            className={`p-1.5 rounded-md transition-colors ${viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-              }`}
+            onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
+            className="se-primary text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all whitespace-nowrap cursor-pointer"
           >
-            <LayoutGrid size={16} />
+            View All Leads
           </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={`p-1.5 rounded-md transition-colors ${viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-              }`}
-          >
-            <List size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+                }`}
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+                }`}
+            >
+              <List size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1000,6 +1019,7 @@ export default function CRMPage() {
   const { apiCompanyId: companyId } = getActiveCompanyContext(user);
   // All filters live in the URL: they survive reloads and carry over to the list view.
   const { filters, setFilter, setFilters, query: filterQuery } = useCrmFilters();
+  const leadSort = crmSortFromFilters(filters);
 
   const sourceParam = (filters.source ?? "").trim().toLowerCase();
   const agentUploadScope = [
@@ -1129,6 +1149,7 @@ export default function CRMPage() {
     boardStageDefinitions,
     {
       company_id: companyId ?? undefined,
+      sort: leadSort,
       search: debouncedSearch || undefined,
       pipeline_id: selectedPipelineId ?? undefined,
       source: effectiveSourceFilter,
@@ -1259,43 +1280,77 @@ export default function CRMPage() {
     <div className="se-workspace min-h-screen bg-[#F4F7F9] p-4 md:p-6 lg:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-5">
         {/* Top bar */}
-        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-          <div className="relative w-full max-w-110 group">
-            <Search
-              className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
-              size={18}
-            />
-            <input
-              type="search"
-              aria-label="Search leads"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                // Searching is live; Enter must never submit or reload anything.
-                if (e.key === "Enter") e.preventDefault();
-              }}
-              placeholder="Search for Leads"
-              className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-12 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm [&::-webkit-search-cancel-button]:hidden"
-            />
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
-              {isSearchPending ? (
-                <Loader2 size={15} className="animate-spin text-gray-400" aria-label="Searching" />
-              ) : search ? (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  onClick={() => {
-                    setSearch("");
-                    setDebouncedSearch("");
-                  }}
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer"
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
+        <div className="flex flex-col gap-3">
+          {/* Row 1: Search + Primary Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative w-full sm:max-w-md group">
+              <Search
+                className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
+                size={18}
+              />
+              <input
+                type="search"
+                aria-label="Search leads"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  // Searching is live; Enter must never submit or reload anything.
+                  if (e.key === "Enter") e.preventDefault();
+                }}
+                placeholder="Search for Leads"
+                className="se-search w-full bg-white border border-gray-200 rounded-full py-3.5 pl-13 pr-12 text-[13px] outline-none focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm [&::-webkit-search-cancel-button]:hidden"
+              />
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
+                {isSearchPending ? (
+                  <Loader2 size={15} className="animate-spin text-gray-400" aria-label="Searching" />
+                ) : search ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setSearch("");
+                      setDebouncedSearch("");
+                    }}
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <CrmImportExportButton
+                companyId={companyId}
+                apiBasePath={apiBasePath}
+                pipelines={pipelines}
+                labels={labels}
+                defaultPipelineId={selectedPipelineId}
+                activeFilters={{
+                  search: debouncedSearch || undefined,
+                  pipeline_id: selectedPipelineId ?? undefined,
+                  status: selectedLabel === "all" ? undefined : selectedLabel,
+                  source: effectiveSourceFilter,
+                  ...creatorAndDateFilters,
+                }}
+                onViewImportedPipeline={(pipelineId) => {
+                  setSearch("");
+                  setDebouncedSearch("");
+                  setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
+                }}
+                onViewAllLeads={() => router.push(`${basePath}/leads`)}
+              />
+              <button
+                onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
+                className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all whitespace-nowrap cursor-pointer"
+              >
+                Add New Leads
+                <BookmarkPlus size={15} />
+              </button>
             </div>
           </div>
 
+          {/* Row 2: Pipeline, Sort & Filter Controls */}
           <div className="flex items-center gap-2 flex-wrap">
             <PipelineSwitcher
               pipelines={pipelines}
@@ -1312,10 +1367,15 @@ export default function CRMPage() {
               fallbackPipelineId={defaultPipelineId}
               onPipelineChange={setSelectedPipelineId}
             />
+            <span className="hidden sm:inline-block h-5 w-px bg-white/15 mx-1" aria-hidden="true" />
             <button onClick={() => setShowLabelModal(true)} className="se-control flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-[10px] text-[12px] font-medium text-gray-600 hover:border-gray-300 transition-all shadow-sm">
               <Tag size={13} />
               Label
             </button>
+            <LeadSortSelect
+              value={leadSort}
+              onChange={(next) => setFilter("sort", next === "newest" ? null : next)}
+            />
             <button
               type="button"
               aria-expanded={showFilter}
@@ -1330,33 +1390,6 @@ export default function CRMPage() {
                   {activeFilterCount}
                 </span>
               )}
-            </button>
-            <CrmImportExportButton
-              companyId={companyId}
-              apiBasePath={apiBasePath}
-              pipelines={pipelines}
-              labels={labels}
-              defaultPipelineId={selectedPipelineId}
-              activeFilters={{
-                search: debouncedSearch || undefined,
-                pipeline_id: selectedPipelineId ?? undefined,
-                status: selectedLabel === "all" ? undefined : selectedLabel,
-                source: effectiveSourceFilter,
-                ...creatorAndDateFilters,
-              }}
-              onViewImportedPipeline={(pipelineId) => {
-                setSearch("");
-                setDebouncedSearch("");
-                setFilters(() => ({ pipeline: pipelineId === defaultPipelineId ? undefined : String(pipelineId) }));
-              }}
-              onViewAllLeads={() => router.push(`${basePath}/leads`)}
-            />
-            <button
-              onClick={() => { setDefaultStatus("newly_lead"); setIsAddModalOpen(true); }}
-              className="se-primary flex items-center gap-2 px-5 py-2.5 bg-[#0B1215] text-white rounded-[10px] text-[12px] font-medium hover:opacity-90 transition-all"
-            >
-              Add New Leads
-              <BookmarkPlus size={15} />
             </button>
           </div>
         </div>
@@ -1446,6 +1479,9 @@ export default function CRMPage() {
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
           budgetTotal={leadsAnalytics?.budget_total}
           currencySymbol={getCurrencySymbol(pipelines.find((p) => p.id === selectedPipelineId)?.currency_code ?? "GBP")}
+          pipelines={pipelines}
+          selectedPipelineId={selectedPipelineId}
+          onSelectPipeline={setSelectedPipelineId}
         />
       </div>
 

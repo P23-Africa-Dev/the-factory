@@ -60,10 +60,9 @@ class SyncEmailAccountJob implements ShouldQueue
         }
 
         try {
-            $crmEmailService->syncUser(
-                (int) $emailAccount->company_id,
-                (int) $emailAccount->user_id,
-            );
+            // Sync this exact account. syncUser() would pick the user's default
+            // mailbox, so extra accounts (e.g. Outlook next to Gmail) never synced.
+            $crmEmailService->syncAccount($emailAccount);
 
             Log::info('Email account sync completed.', [
                 'email_account_id' => $emailAccount->id,

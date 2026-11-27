@@ -61,6 +61,21 @@ export function buildFieldTripAgentPopupHtml(params: {
   </div>`;
 }
 
+const STOP_ACTIVITY: Record<string, string> = {
+  customer_visit: "Customer visit",
+  lead_visit: "Lead / prospect visit",
+  org_visit: "Company site",
+  personal: "Personal / break",
+  ignore: "Not a stop",
+};
+const STOP_OUTCOME: Record<string, string> = {
+  successful: "Successful",
+  follow_up: "Follow-up needed",
+  nobody_available: "Nobody available",
+  not_interested: "Not interested",
+  other: "Other",
+};
+
 export function buildFieldTripStopPopupHtml(params: {
   kind: "start" | "stop";
   label?: string | null;
@@ -68,6 +83,8 @@ export function buildFieldTripStopPopupHtml(params: {
   arrivedAt?: string | null;
   durationSeconds?: number | null;
   agentName?: string | null;
+  recordStatus?: "pending" | "recorded" | null;
+  outcome?: string | null;
 }): string {
   if (params.kind === "start") {
     return `<div style="${WRAP}">
@@ -76,7 +93,12 @@ export function buildFieldTripStopPopupHtml(params: {
       ${params.arrivedAt ? `<div style="margin-top:4px;font-size:12px;color:#334155;">${escapeHtml(formatClock(params.arrivedAt))}</div>` : ""}
     </div>`;
   }
-  const classification = (params.classification ?? "pending").replace(/_/g, " ");
+  const classification =
+    params.recordStatus === "pending" || (params.classification ?? "pending") === "pending"
+      ? "Not recorded yet"
+      : `${STOP_ACTIVITY[params.classification ?? ""] ?? (params.classification ?? "").replace(/_/g, " ")}${
+          params.outcome ? ` · ${STOP_OUTCOME[params.outcome] ?? params.outcome.replace(/_/g, " ")}` : ""
+        }`;
   const duration =
     params.durationSeconds != null ? formatElapsed(params.durationSeconds * 1000) : "--";
   return `<div style="${WRAP}">
@@ -84,7 +106,7 @@ export function buildFieldTripStopPopupHtml(params: {
     ${params.agentName ? `<div style="margin-top:2px;font-size:12px;color:#475569;">${escapeHtml(params.agentName)}</div>` : ""}
     <div style="margin-top:4px;font-size:12px;line-height:1.5;color:#334155;">
       Arrived ${escapeHtml(formatClock(params.arrivedAt))} · ${escapeHtml(duration)}<br/>
-      <span style="text-transform:capitalize;">${escapeHtml(classification)}</span>
+      <span>${escapeHtml(classification)}</span>
     </div>
   </div>`;
 }

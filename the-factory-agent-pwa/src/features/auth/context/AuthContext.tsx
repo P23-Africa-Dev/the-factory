@@ -17,6 +17,8 @@ import { clearSavedRoute } from '@/lib/pwa/routeRestoration';
 import type { AppMode, ManagerRole } from '@/session/appMode';
 import { setStoredAppMode, setStoredManagerRole, getStoredAppMode, getStoredManagerRole } from '@/session/sessionStore';
 import { clearSessionCookie } from '@/session/sessionCookie';
+import { decideSession, vaultClear, vaultLoad, vaultSave } from '@/lib/auth/sessionVault';
+import { markAuthReady } from '@/lib/auth/authReady';
 import type { UserCompany } from '../types';
 
 export type AuthUser = {
@@ -110,10 +112,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const hydrate = setTimeout(() => {
+    const hydrate = setTimeout(async () => {
       try {
-        const storedToken = appStore.getString('auth_token') || null;
-        const storedUserRaw = appStore.getString('auth_user');
+        let storedToken = appStore.getString('auth_token') || null;
+        let storedUserRaw = appStore.getString('auth_user');
+        // localStorage can roll back to an OLD session after the app was killed
+        // mid-write; the native copy (APK 1.0.6+) holds the newest sign-in/out.
+        const localSavedAt = Number(appStore.getString('auth_saved_at')) || 0;
+        const vault = await vaultLoad();
+        const decision = decideSession({ token: storedToken, savedAt: localSavedAt }, vault);
+        if (decision.kind === 'vault') {
+          storedToken = decision.session.token;
+          storedUserRaw = decision.session.user ?? undefined;
+          appStore.set('auth_token', storedToken);
+          if (storedUserRaw) appStore.set('auth_user', storedUserRaw);
+          appStore.set('auth_saved_at', String(vault?.savedAt ?? Date.now()));
+        } else if (decision.kind === 'signed_out') {
+          storedToken = null;
+          storedUserRaw = undefined;
+          appStore.delete('auth_token');
+          appStore.delete('auth_user');
+        } else if (vault && storedToken && !vault.session) {
+          // First start with the native copy: back up the current sign-in.
+          const at = localSavedAt || Date.now();
+          appStore.set('auth_saved_at', String(at));
+          void vaultSave({ token: storedToken, user: storedUserRaw ?? null }, at);
+        }
         const storedUser: AuthUser | null = storedUserRaw
           ? JSON.parse(storedUserRaw)
           : null;
@@ -135,6 +159,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.error('[Auth] Hydration error:', err);
       } finally {
         setIsLoading(false);
+        markAuthReady();
       }
     }, 0);
     return () => clearTimeout(hydrate);
@@ -143,7 +168,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = useCallback((newToken: string, newUser?: AuthUser) => {
     try {
       const resolvedUser = withResolvedMode(newUser ?? null);
+      const savedAt = Date.now();
       appStore.set('auth_token', newToken);
+      appStore.set('auth_saved_at', String(savedAt));
+      void vaultSave({ token: newToken, user: resolvedUser ? JSON.stringify(resolvedUser) : null }, savedAt);
       if (resolvedUser) {
         appStore.set('auth_user', JSON.stringify(resolvedUser));
         persistSessionMode(resolvedUser);
@@ -180,6 +208,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
         const storedToken = appStore.getString('auth_token');
         if (storedToken) {
+          const savedAt = Date.now();
+          appStore.set('auth_saved_at', String(savedAt));
+          void vaultSave({ token: storedToken, user: JSON.stringify(next) }, savedAt);
+        }
+        if (storedToken) {
           void import('@/lib/offline/syncCredentials')
             .then((m) => m.writeSyncCredentials(storedToken))
             .catch(() => {});
@@ -193,6 +226,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = useCallback(async () => {
     try {
+      // Remember the sign-out natively so an older session can't come back.
+      void vaultClear(Date.now());
       // Best-effort: deactivate FCM / clear native push listeners before wiping auth.
       void import('@/features/tracking/native/nativePushNotifications')
         .then((m) => m.unregisterNativePush())

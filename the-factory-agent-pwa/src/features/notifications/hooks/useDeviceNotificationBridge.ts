@@ -63,6 +63,11 @@ export function useDeviceNotificationBridge(): void {
     };
 
     void (async () => {
+      // App open on screen: the quick-record card asks instead of a device alert.
+      if (pending.type === 'field_trip.stop_detected' && !isDocumentHidden()) {
+        setPending(null);
+        return;
+      }
       if (isNativeAndroid()) {
         await showDeviceAlert(payload);
       } else if (isDocumentHidden()) {

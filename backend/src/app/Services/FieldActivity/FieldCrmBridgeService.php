@@ -33,6 +33,9 @@ class FieldCrmBridgeService
             ->first();
 
         if ($existing !== null) {
+            // The person may have added the outcome or notes later: keep the CRM in step.
+            $existing->forceFill(['description' => $this->visitDescription($stop)])->save();
+
             return $existing;
         }
 
@@ -48,12 +51,7 @@ class FieldCrmBridgeService
             default => 'Field visit',
         };
 
-        $durationMinutes = (int) round(max(0, (int) $stop->duration_seconds) / 60);
-        $description = sprintf(
-            '%s recorded by Field Activity Intelligence (%d min).',
-            $label,
-            $durationMinutes,
-        );
+        $description = $this->visitDescription($stop);
 
         try {
             $activity = LeadActivity::query()->create([
@@ -93,5 +91,28 @@ class FieldCrmBridgeService
 
             return null;
         }
+    }
+
+    /** "Customer visit (24 min) · Outcome: Follow-up needed · Notes: …" for the lead timeline. */
+    private function visitDescription(FieldStop $stop): string
+    {
+        $label = match ($stop->classification) {
+            FieldStopClassification::CUSTOMER_VISIT => 'Customer visit',
+            FieldStopClassification::LEAD_VISIT => 'Lead visit',
+            FieldStopClassification::ORG_VISIT => 'Organization visit',
+            default => 'Field visit',
+        };
+        $parts = [sprintf('%s recorded on a field trip (%d min).', $label, (int) round(max(0, (int) $stop->duration_seconds) / 60))];
+        if ($stop->outcome) {
+            $parts[] = 'Outcome: '.ucfirst(str_replace('_', ' ', (string) $stop->outcome)).'.';
+        }
+        if ($stop->follow_up_at) {
+            $parts[] = 'Follow up on '.$stop->follow_up_at->toDateString().'.';
+        }
+        if (trim((string) $stop->notes) !== '') {
+            $parts[] = 'Notes: '.mb_substr(trim((string) $stop->notes), 0, 1500);
+        }
+
+        return implode(' ', $parts);
     }
 }

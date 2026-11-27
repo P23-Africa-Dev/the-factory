@@ -23,10 +23,11 @@ class FieldTripMonitorCommand extends Command
         $result = $trips->monitor();
 
         $this->info(sprintf(
-            'Field trips: %d reminded, %d signal-lost, %d auto-ended.',
+            'Field trips: %d reminded, %d signal-lost, %d auto-ended, %d report reminders.',
             $result['reminded'],
             $result['signal_lost'],
             $result['auto_ended'],
+            $result['report_reminded'] ?? 0,
         ));
 
         return self::SUCCESS;

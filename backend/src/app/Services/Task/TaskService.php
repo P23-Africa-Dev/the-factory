@@ -70,8 +70,9 @@ class TaskService
 
         $query = $this->queryForCompany($context->company->id)
             ->with(self::INDEX_RELATIONS)
-            ->withCount(['proofs', 'comments'])
-            ->latest('id');
+            ->withCount(['proofs', 'comments']);
+
+        $this->applyTaskListSort($query, (string) ($filters['sort'] ?? ''));
 
         if (! empty($filters['status'])) {
             $query->where('status', $filters['status']);
@@ -125,7 +126,46 @@ class TaskService
             });
         }
 
-        return $query->simplePaginate(20)->withQueryString();
+        $perPage = max(1, min((int) ($filters['per_page'] ?? 20), self::TASK_LIST_MAX_PER_PAGE));
+
+        return $query->simplePaginate($perPage)->withQueryString();
+    }
+
+    /** Largest page the task list serves (the boards ask for one full page). */
+    public const TASK_LIST_MAX_PER_PAGE = 200;
+
+    /** Sort keys the task list accepts; the first is the default. */
+    public const TASK_LIST_SORTS = [
+        'newest',
+        'oldest',
+        'recent_activity',
+        'due_soonest',
+        'due_latest',
+        'priority',
+        'title_asc',
+        'title_desc',
+    ];
+
+    /**
+     * Order the task list. Every option ends on id so pages never shuffle;
+     * tasks without a due date go last in both due-date orders.
+     */
+    private function applyTaskListSort(Builder $query, string $sort): void
+    {
+        $noDueDateLast = 'CASE WHEN tasks.due_at IS NULL THEN 1 ELSE 0 END';
+
+        match ($sort) {
+            'oldest' => $query->orderBy('tasks.created_at')->orderBy('tasks.id'),
+            'recent_activity' => $query->orderByDesc('tasks.updated_at')->orderByDesc('tasks.id'),
+            'due_soonest' => $query->orderByRaw($noDueDateLast)->orderBy('tasks.due_at')->orderByDesc('tasks.id'),
+            'due_latest' => $query->orderByRaw($noDueDateLast)->orderByDesc('tasks.due_at')->orderByDesc('tasks.id'),
+            'priority' => $query->orderByRaw(
+                "CASE tasks.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END"
+            )->orderByDesc('tasks.id'),
+            'title_asc' => $query->orderBy('tasks.title')->orderByDesc('tasks.id'),
+            'title_desc' => $query->orderByDesc('tasks.title')->orderByDesc('tasks.id'),
+            default => $query->orderByDesc('tasks.id'),
+        };
     }
 
     /**

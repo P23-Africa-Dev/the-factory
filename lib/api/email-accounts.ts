@@ -18,6 +18,12 @@ export type EmailAccountItem = {
   smtp_port: number | null;
   smtp_encryption: string | null;
   smtp_username: string | null;
+  /** IMAP/SMTP only: send CRM email through Factory23 ("Name via Factory23"). */
+  send_via_platform?: boolean;
+  /** Address platform sends go out from when send_via_platform is on. */
+  platform_sender?: string | null;
+  /** True when our servers cannot reach this account's SMTP port. */
+  smtp_port_blocked?: boolean;
   imap_host: string | null;
   imap_port: number | null;
   imap_encryption: string | null;
@@ -56,6 +62,7 @@ export type ConnectEmailAccountPayload = {
 
 export type UpdateEmailAccountPayload = {
   display_name?: string | null;
+  send_via_platform?: boolean;
   is_default?: boolean;
   company_id?: number | string;
   email?: string;

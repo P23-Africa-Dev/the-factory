@@ -59,7 +59,18 @@ class FieldActivitySession extends Model
         'last_reminded_at',
         'signal_lost_notified_at',
         'meta',
+        'report_status',
+        'report_submitted_at',
+        'report_reminders_sent',
+        'report_last_reminded_at',
+        'ai_summary',
+        'ai_summary_at',
     ];
+
+    /** Trip report: none (before reports / clock-in days), due, submitted. */
+    public const REPORT_NONE = 'none';
+    public const REPORT_DUE = 'due';
+    public const REPORT_SUBMITTED = 'submitted';
 
     protected function casts(): array
     {
@@ -88,6 +99,11 @@ class FieldActivitySession extends Model
             'last_reminded_at' => 'datetime',
             'signal_lost_notified_at' => 'datetime',
             'meta' => 'array',
+            'report_submitted_at' => 'datetime',
+            'report_reminders_sent' => 'integer',
+            'report_last_reminded_at' => 'datetime',
+            'ai_summary' => 'array',
+            'ai_summary_at' => 'datetime',
         ];
     }
 

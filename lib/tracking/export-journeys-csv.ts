@@ -49,6 +49,9 @@ export function buildJourneysCsv(journeys: JourneyCard[], agentName?: string): s
     "travel_seconds",
     "stationary_seconds",
     "travel_efficiency",
+    "report_status",
+    "stops_recorded",
+    "trip_summary",
   ];
 
   const rows = journeys.map((j) => [
@@ -68,6 +71,9 @@ export function buildJourneysCsv(journeys: JourneyCard[], agentName?: string): s
     j.travel_seconds,
     j.stationary_seconds,
     j.travel_efficiency != null ? Math.round(j.travel_efficiency * 100) / 100 : null,
+    j.report_status ?? "",
+    j.records ? `${j.records.recorded}/${j.records.total}` : "",
+    j.ai_summary?.summary ?? "",
   ]);
 
   return toCsv(header, rows);
@@ -92,6 +98,16 @@ export function buildStopsCsv(trips: TripStops[], agentName?: string): string {
     "address",
     "latitude",
     "longitude",
+    "record_status",
+    "customer_or_location",
+    "outcome",
+    "follow_up_date",
+    "notes",
+    "place",
+    "original_address",
+    "added_by_agent",
+    "off_route",
+    "attachments",
   ];
   const rows = trips.flatMap(({ journey, stops }) =>
     stops.map((stop) => [
@@ -106,6 +122,16 @@ export function buildStopsCsv(trips: TripStops[], agentName?: string): string {
       stop.address ?? "",
       stop.latitude,
       stop.longitude,
+      stop.record_status ?? "",
+      stop.lead_name ?? stop.location_name ?? "",
+      stop.outcome ?? "",
+      stop.follow_up_at ?? "",
+      stop.notes ?? "",
+      stop.location_status ?? "",
+      stop.original_address ?? "",
+      stop.source === "manual" ? "yes" : "no",
+      stop.off_route ? "yes" : "no",
+      stop.attachments?.length ?? 0,
     ]),
   );
   return toCsv(header, rows);

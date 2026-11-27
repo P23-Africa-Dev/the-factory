@@ -28,10 +28,11 @@ class UpdateFieldActivitySettingsRequest extends FormRequest
         return [
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             // Each setting can be saved on its own; at least one must be sent.
-            'enabled' => ['required_without_all:stop_dwell_seconds,trip_reminder_seconds,trip_auto_end_seconds', 'boolean'],
+            'enabled' => ['required_without_all:stop_dwell_seconds,trip_reminder_seconds,trip_auto_end_seconds,trip_report_policy', 'boolean'],
             'stop_dwell_seconds' => ['nullable', 'integer', 'min:60', 'max:3600'],
             'trip_reminder_seconds' => ['nullable', 'integer', 'min:1800', 'max:86400'],
             'trip_auto_end_seconds' => ['nullable', 'integer', 'min:1800', 'max:86400'],
+            'trip_report_policy' => ['nullable', 'string', 'in:required,optional'],
         ];
     }
 }

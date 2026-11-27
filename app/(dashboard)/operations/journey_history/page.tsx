@@ -19,6 +19,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useAgentJourneys } from "@/hooks/use-field-journeys";
+import { ReportStatusBadge } from "@/components/operations/stop-record-panel";
 import { useInternalUsers, useSupervisorCandidates } from "@/hooks/use-internal-users";
 import { useAuthStore } from "@/store/auth";
 import { getActiveCompanyContext } from "@/lib/company-context";
@@ -569,6 +570,7 @@ function SupervisorJourneyContent() {
                                 >
                                   {isActive ? "● Live" : autoEnded ? "Auto-ended" : "Completed"}
                                 </span>
+                                <ReportStatusBadge journey={journey} />
                               </div>
 
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">

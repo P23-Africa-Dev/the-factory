@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\V1\Enterprise\VerifyCompanyIdController;
 use App\Http\Controllers\Api\V1\FieldActivity\FieldActivityAgentController;
 use App\Http\Controllers\Api\V1\FieldActivity\FieldActivityManagementController;
 use App\Http\Controllers\Api\V1\FieldTrip\FieldTripController;
+use App\Http\Controllers\Api\V1\FieldTrip\FieldTripReportController;
 use App\Http\Controllers\Api\V1\GeographyController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\Internal\CompanyZoneController;
@@ -256,6 +257,39 @@ Route::middleware(['auth:sanctum', 'support.access', 'account.active', 'subscrip
             ->whereNumber('stop')
             ->middleware('throttle:api')
             ->name('stops.classify');
+        // Trip reports: record each stop, correct places, add missed stops,
+        // attachments, submit (ownership checked in FieldTripReportService).
+        Route::get('/reports/due', [FieldTripReportController::class, 'due'])->name('reports.due');
+        Route::get('/{trip}/report', [FieldTripReportController::class, 'show'])
+            ->whereNumber('trip')
+            ->name('report.show');
+        Route::post('/{trip}/report/submit', [FieldTripReportController::class, 'submit'])
+            ->whereNumber('trip')
+            ->middleware('throttle:api')
+            ->name('report.submit');
+        Route::post('/{trip}/stops', [FieldTripReportController::class, 'addStop'])
+            ->whereNumber('trip')
+            ->middleware('throttle:api')
+            ->name('stops.store');
+        Route::put('/stops/{stop}/record', [FieldTripReportController::class, 'record'])
+            ->whereNumber('stop')
+            ->middleware('throttle:api')
+            ->name('stops.record');
+        Route::delete('/stops/{stop}', [FieldTripReportController::class, 'deleteStop'])
+            ->whereNumber('stop')
+            ->middleware('throttle:api')
+            ->name('stops.destroy');
+        Route::post('/stops/{stop}/attachments', [FieldTripReportController::class, 'addAttachment'])
+            ->whereNumber('stop')
+            ->middleware('throttle:api-heavy')
+            ->name('stops.attachments.store');
+        Route::get('/attachments/{attachment}', [FieldTripReportController::class, 'showAttachment'])
+            ->whereNumber('attachment')
+            ->name('attachments.show');
+        Route::delete('/attachments/{attachment}', [FieldTripReportController::class, 'deleteAttachment'])
+            ->whereNumber('attachment')
+            ->middleware('throttle:api')
+            ->name('attachments.destroy');
     });
 
     Route::get('/support-access/status', [SupportAccessController::class, 'status'])
