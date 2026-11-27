@@ -271,6 +271,19 @@ export function ComposeEmailPanel({
                                 From {senderLabel}
                             </p>
                         )}
+                        {selectedAccount?.provider === "imap_smtp" && selectedAccount.send_via_platform && (
+                            <p className="text-[10px] text-gray-500 mt-0.5">
+                                Sending via Factory23 on behalf of {selectedAccount.email}. Replies come to your inbox.
+                            </p>
+                        )}
+                        {selectedAccount?.provider === "imap_smtp" &&
+                            !selectedAccount.send_via_platform &&
+                            selectedAccount.smtp_port_blocked && (
+                                <p className="text-[10px] text-amber-700 mt-0.5">
+                                    This account&apos;s mail server can&apos;t be reached from Factory23. Turn on
+                                    &quot;Send through Factory23&quot; in Settings → Email accounts to send from it.
+                                </p>
+                            )}
                     </div>
                 </div>
                 <button

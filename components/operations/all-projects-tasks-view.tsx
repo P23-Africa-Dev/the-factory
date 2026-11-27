@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, BookmarkPlus, User } from "lucide-react";
+import { SortMenu } from "@/components/ui/sort-menu";
+import { TASK_BOARD_PAGE_SIZE, TASK_LIST_SORTS, type TaskListSort } from "@/lib/api/tasks";
 import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import Image from "next/image";
@@ -197,6 +199,7 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
   const [taskScope, setTaskScope] = useState<"mine" | "all">("mine");
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState("All");
+  const [taskSort, setTaskSort] = useState<TaskListSort>("newest");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createStatus, setCreateStatus] = useState<CreateTaskStatus>("pending");
   const [selectedTask, setSelectedTask] = useState<{ item: DndItem; containerId: string } | null>(null);
@@ -216,6 +219,8 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
       ? {
           company_id: companyId,
           assigned_to_me: agentView || (isManagementUser && taskScope === "mine"),
+          sort: taskSort,
+          per_page: TASK_BOARD_PAGE_SIZE,
         }
       : {}
   );
@@ -715,6 +720,14 @@ export function AllProjectsTasksView({ enableProjectChecklist = false, agentView
               }}
             />
           </div>
+
+          <SortMenu
+            value={taskSort}
+            options={TASK_LIST_SORTS}
+            onChange={setTaskSort}
+            defaultValue="newest"
+            ariaLabel="Sort tasks"
+          />
 
           <button
             onClick={() => setShowFilters((v) => !v)}

@@ -3,6 +3,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, SlidersHorizontal, BookmarkPlus, Loader2 } from "lucide-react";
+import { SortMenu } from "@/components/ui/sort-menu";
+import { TASK_BOARD_PAGE_SIZE, TASK_LIST_SORTS, type TaskListSort } from "@/lib/api/tasks";
 import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
@@ -67,7 +69,12 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
   const canManageTaskStatuses = isTaskManagerRole(role);
 
   const { data: project, isPending: loadingProject } = useProject(projectId, basePath);
-  const { data: tasksData, isPending: loadingTasks } = useTasks({ project_id: projectId });
+  const [taskSort, setTaskSort] = useState<TaskListSort>("newest");
+  const { data: tasksData, isPending: loadingTasks } = useTasks({
+    project_id: projectId,
+    sort: taskSort,
+    per_page: TASK_BOARD_PAGE_SIZE,
+  });
   const statusMutation = useUpdateTaskStatusAdmin();
 
   const [showModal, setShowModal] = useState(false);
@@ -397,6 +404,13 @@ export function ProjectDetailsView({ projectId, basePath }: { projectId: string;
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3">
+                    <SortMenu
+                      value={taskSort}
+                      options={TASK_LIST_SORTS}
+                      onChange={setTaskSort}
+                      defaultValue="newest"
+                      ariaLabel="Sort tasks"
+                    />
                     <button
                       type="button"
                       onClick={() => setShowFilters((v) => !v)}

@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TaskSubtask extends Model
 {
+    /** New or changed subtasks count as task activity (the "Recent activity" sort). */
+    protected $touches = ['task'];
+
     protected $fillable = [
         'company_id',
         'task_id',

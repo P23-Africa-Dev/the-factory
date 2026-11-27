@@ -106,6 +106,7 @@ class EmailAccountService
                 'smtp_encryption' => $data['smtp_encryption'] ?? null,
                 'smtp_username' => $data['smtp_username'] ?? null,
                 'smtp_password_encrypted' => $data['smtp_password'] ?? null,
+                'send_via_platform' => $provider === 'imap_smtp' && (bool) ($data['send_via_platform'] ?? false),
                 'imap_host' => $data['imap_host'] ?? null,
                 'imap_port' => $data['imap_port'] ?? null,
                 'imap_encryption' => $data['imap_encryption'] ?? null,
@@ -305,6 +306,10 @@ class EmailAccountService
             }
             if (isset($data['imap_password']) && is_string($data['imap_password']) && $data['imap_password'] !== '') {
                 $updates['imap_password_encrypted'] = $data['imap_password'];
+            }
+
+            if (array_key_exists('send_via_platform', $data) && $data['send_via_platform'] !== null) {
+                $updates['send_via_platform'] = (bool) $data['send_via_platform'];
             }
 
             // Editing credentials means the previous error may no longer apply until re-tested.

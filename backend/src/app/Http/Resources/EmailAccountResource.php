@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources;
 
+use App\Services\Email\Providers\ImapSmtpProvider;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -26,6 +27,14 @@ class EmailAccountResource extends JsonResource
             'smtp_port' => $this->smtp_port,
             'smtp_encryption' => $this->smtp_encryption,
             'smtp_username' => $this->smtp_username,
+            // Temporary "send through Factory23" option for IMAP/SMTP accounts
+            // while our host blocks outbound SMTP ports.
+            'send_via_platform' => (bool) $this->send_via_platform,
+            'platform_sender' => $this->provider === 'imap_smtp' && $this->send_via_platform
+                ? ImapSmtpProvider::platformSendSettings()['from_address']
+                : null,
+            'smtp_port_blocked' => $this->provider === 'imap_smtp'
+                && ImapSmtpProvider::isSmtpPortBlocked($this->smtp_port !== null ? (int) $this->smtp_port : null),
             'imap_host' => $this->imap_host,
             'imap_port' => $this->imap_port,
             'imap_encryption' => $this->imap_encryption,

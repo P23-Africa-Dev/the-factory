@@ -23,13 +23,15 @@ class ImapSmtpProvider implements EmailProviderInterface
     {
         $this->assertProvider($account, 'imap_smtp');
         $this->assertActive($account);
+
+        if ($account->sendViaPlatform) {
+            return $this->sendViaPlatform($account, $message);
+        }
+
         $this->assertSmtpConfig($account);
+        $this->assertSmtpPortReachable($account);
 
         $mailerName = 'imap_smtp_' . $account->id;
-
-        // The queue worker is long-lived and Laravel caches mailers by name, so
-        // drop any instance built from this account's previous SMTP settings.
-        Mail::purge($mailerName);
 
         config([
             'mail.mailers.' . $mailerName => [
@@ -43,51 +45,29 @@ class ImapSmtpProvider implements EmailProviderInterface
             ],
         ]);
 
+        // The queue worker is long-lived and Laravel caches mailers by name, so
+        // drop any instance built from this account's previous SMTP settings.
+        Mail::purge($mailerName);
+
+        $messageId = $this->newMessageId($account->email);
+
         try {
-            $html = $message->bodyHtml ?? nl2br(e((string) ($message->bodyText ?? '')));
-            $text = $message->bodyText ?? strip_tags((string) ($message->bodyHtml ?? ''));
-
-            Mail::mailer($mailerName)->html($html, function (Message $mail) use ($account, $message, $text): void {
-                $mail->from($account->email, $account->displayName ?? $account->email)
-                    ->subject($message->subject);
-
-                foreach ($message->to as $recipient) {
-                    $mail->to($recipient['email'], $recipient['name'] ?? null);
-                }
-                foreach ($message->cc as $recipient) {
-                    $mail->cc($recipient['email'], $recipient['name'] ?? null);
-                }
-                foreach ($message->bcc as $recipient) {
-                    $mail->bcc($recipient['email'], $recipient['name'] ?? null);
-                }
-
-                $mail->text($text);
-
-                foreach ($message->attachments as $attachment) {
-                    $mail->attachData(
-                        $attachment['content'],
-                        $attachment['filename'],
-                        ['mime' => $attachment['mime_type']],
-                    );
-                }
-
-                foreach ($message->extraHeaders as $header) {
-                    if (str_contains($header, ':')) {
-                        [$name, $value] = array_map('trim', explode(':', $header, 2));
-                        if ($name !== '') {
-                            $mail->getHeaders()->addTextHeader($name, $value);
-                        }
-                    }
-                }
-            });
+            $this->deliver(
+                $mailerName,
+                $message,
+                $messageId,
+                fromEmail: $account->email,
+                fromName: $account->displayName ?? $account->email,
+                replyTo: null,
+            );
 
             return [
-                'id' => 'smtp-' . uniqid('', true),
-                'threadId' => $message->threadId ?? ('smtp-thread-' . uniqid('', true)),
+                'id' => 'smtp-' . $messageId,
+                'threadId' => $message->threadId ?? $this->threadIdFor($messageId),
             ];
         } catch (\Throwable $e) {
             Log::error('SMTP send failed.', [
-                'email' => $account->email,
+                'account_id' => $account->id,
                 'error' => $e->getMessage(),
             ]);
 
@@ -95,6 +75,241 @@ class ImapSmtpProvider implements EmailProviderInterface
                 'integration' => ['SMTP send failed. Check your SMTP settings and try again.'],
             ]);
         }
+    }
+
+    /**
+     * Temporary path while outbound SMTP ports are blocked on our host: send
+     * through the platform mailer (Resend, over HTTPS) as "<Name> via Factory23"
+     * with Reply-To set to the user's own address, then save a copy in the
+     * user's Sent folder over IMAP so their mailbox still has the conversation.
+     */
+    private function sendViaPlatform(EmailAccountDTO $account, EmailMessageDTO $message): array
+    {
+        $settings = self::platformSendSettings();
+
+        if (! $settings['enabled'] || $settings['from_address'] === '') {
+            throw ValidationException::withMessages([
+                'integration' => ['Sending through Factory23 is not available right now. Contact support.'],
+            ]);
+        }
+
+        $messageId = $this->newMessageId($settings['from_address']);
+        $senderName = trim((string) ($account->displayName ?: strstr($account->email, '@', true) ?: $account->email));
+
+        try {
+            $sent = $this->deliver(
+                $settings['mailer'],
+                $message,
+                $messageId,
+                fromEmail: $settings['from_address'],
+                fromName: $senderName . ' via ' . $settings['brand'],
+                replyTo: $account->email,
+                replyToName: $account->displayName,
+            );
+        } catch (\Throwable $e) {
+            Log::error('Platform (via Factory23) send failed.', [
+                'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw ValidationException::withMessages([
+                'integration' => ['Sending through Factory23 failed. Please try again in a moment.'],
+            ]);
+        }
+
+        $raw = $sent?->toString();
+        if (is_string($raw) && $raw !== '') {
+            $this->appendToSentFolder($account, $raw);
+        }
+
+        return [
+            'id' => 'platform-' . $messageId,
+            'threadId' => $message->threadId ?? $this->threadIdFor($messageId),
+        ];
+    }
+
+    /**
+     * @return array{enabled:bool,mailer:string,from_address:string,brand:string}
+     */
+    public static function platformSendSettings(): array
+    {
+        $config = config('services.email_accounts.platform_send', []);
+        $config = is_array($config) ? $config : [];
+
+        return [
+            'enabled' => (bool) ($config['enabled'] ?? false),
+            'mailer' => (string) ($config['mailer'] ?? 'resend'),
+            'from_address' => strtolower(trim((string) ($config['from_address'] ?? ''))),
+            'brand' => trim((string) ($config['brand'] ?? 'Factory23')) ?: 'Factory23',
+        ];
+    }
+
+    /**
+     * Outbound SMTP ports our host blocks (DigitalOcean: 25, 465, 587).
+     */
+    public static function isSmtpPortBlocked(?int $port): bool
+    {
+        if ($port === null || $port < 1) {
+            return false;
+        }
+
+        $blocked = config('services.email_accounts.smtp_blocked_ports', []);
+
+        return is_array($blocked) && in_array($port, array_map('intval', $blocked), true);
+    }
+
+    private function assertSmtpPortReachable(EmailAccountDTO $account): void
+    {
+        if (! self::isSmtpPortBlocked($account->smtpPort)) {
+            return;
+        }
+
+        // Fail at once with a clear reason instead of a 30s timeout per retry.
+        throw ValidationException::withMessages([
+            'integration' => [
+                'Our servers cannot reach outgoing mail port ' . $account->smtpPort . '. '
+                . 'Turn on "Send through Factory23" for this account, use port 2525 if your email provider offers it, '
+                . 'or connect with Google or Microsoft.',
+            ],
+        ]);
+    }
+
+    private function deliver(
+        string $mailerName,
+        EmailMessageDTO $message,
+        string $messageId,
+        string $fromEmail,
+        string $fromName,
+        ?string $replyTo,
+        ?string $replyToName = null,
+    ): ?\Illuminate\Mail\SentMessage {
+        $html = $message->bodyHtml ?? nl2br(e((string) ($message->bodyText ?? '')));
+        $text = $message->bodyText ?? strip_tags((string) ($message->bodyHtml ?? ''));
+
+        return Mail::mailer($mailerName)->html($html, function (Message $mail) use ($message, $text, $messageId, $fromEmail, $fromName, $replyTo, $replyToName): void {
+            $mail->from($fromEmail, $fromName)->subject($message->subject);
+
+            if ($replyTo !== null && $replyTo !== '') {
+                $mail->replyTo($replyTo, $replyToName);
+            }
+
+            foreach ($message->to as $recipient) {
+                $mail->to($recipient['email'], $recipient['name'] ?? null);
+            }
+            foreach ($message->cc as $recipient) {
+                $mail->cc($recipient['email'], $recipient['name'] ?? null);
+            }
+            foreach ($message->bcc as $recipient) {
+                $mail->bcc($recipient['email'], $recipient['name'] ?? null);
+            }
+
+            $mail->text($text);
+
+            foreach ($message->attachments as $attachment) {
+                $mail->attachData(
+                    $attachment['content'],
+                    $attachment['filename'],
+                    ['mime' => $attachment['mime_type']],
+                );
+            }
+
+            $headers = $mail->getSymfonyMessage()->getHeaders();
+            $headers->addIdHeader('Message-ID', $messageId);
+
+            foreach ($message->extraHeaders as $header) {
+                if (str_contains($header, ':')) {
+                    [$name, $value] = array_map('trim', explode(':', $header, 2));
+                    if ($name !== '' && $value !== '' && strtolower($name) !== 'message-id') {
+                        $headers->addTextHeader($name, $value);
+                    }
+                }
+            }
+        });
+    }
+
+    private function newMessageId(string $senderEmail): string
+    {
+        $domain = trim((string) substr((string) strrchr($senderEmail, '@'), 1)) ?: 'thefactory23.com';
+
+        return bin2hex(random_bytes(12)) . '.' . time() . '@' . $domain;
+    }
+
+    /**
+     * Thread key shared by an outgoing email and every reply to it: replies
+     * carry the original Message-ID first in References / In-Reply-To.
+     */
+    private function threadIdFor(string $rootMessageId): string
+    {
+        return 'imap-' . md5(trim($rootMessageId, " \t<>"));
+    }
+
+    /**
+     * Save a copy of a platform-sent email in the user's Sent folder. Best
+     * effort: a failure here never fails the send itself.
+     */
+    protected function appendToSentFolder(EmailAccountDTO $account, string $rawMime): void
+    {
+        if (! function_exists('imap_open') || trim((string) $account->imapHost) === '') {
+            return;
+        }
+
+        try {
+            $connection = $this->openImapConnection($account, '');
+            $root = $this->imapServerRef($account);
+            $folders = @imap_list($connection, $root, '*') ?: [];
+            $sent = $this->pickSentFolder($folders, $root);
+
+            if ($sent === null) {
+                Log::info('No Sent folder found for IMAP account; skipping sent copy.', ['account_id' => $account->id]);
+                @imap_close($connection);
+
+                return;
+            }
+
+            if (! @imap_append($connection, $sent, str_replace(["\r\n", "\n"], ["\n", "\r\n"], $rawMime), '\\Seen')) {
+                Log::warning('Could not save platform-sent email to Sent folder.', [
+                    'account_id' => $account->id,
+                    'error' => $this->collectImapErrors(),
+                ]);
+            }
+
+            @imap_close($connection);
+        } catch (\Throwable $e) {
+            Log::warning('Could not save platform-sent email to Sent folder.', [
+                'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * @param  list<string>  $folders  Full IMAP mailbox refs from imap_list().
+     */
+    public function pickSentFolder(array $folders, string $root): ?string
+    {
+        $candidates = ['sent', 'sent items', 'sent messages', 'sent mail', 'inbox.sent', 'inbox/sent', '[gmail]/sent mail'];
+        $byName = [];
+
+        foreach ($folders as $folder) {
+            $name = function_exists('imap_utf7_decode')
+                ? (string) (@imap_utf7_decode(substr($folder, strlen($root))) ?: substr($folder, strlen($root)))
+                : substr($folder, strlen($root));
+            $byName[strtolower($name)] = $folder;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (isset($byName[$candidate])) {
+                return $byName[$candidate];
+            }
+        }
+
+        foreach ($byName as $lower => $folder) {
+            if (preg_match('/(^|[.\/])sent( items| messages| mail)?$/', $lower)) {
+                return $folder;
+            }
+        }
+
+        return null;
     }
 
     public function listMessages(EmailAccountDTO $account, string $query, ?string $pageToken = null, int $maxResults = 25): array
@@ -346,12 +561,39 @@ class ImapSmtpProvider implements EmailProviderInterface
      */
     private function diagnoseSmtp(EmailAccountDTO $account): array
     {
+        if ($account->sendViaPlatform) {
+            $settings = self::platformSendSettings();
+
+            return $settings['enabled'] && $settings['from_address'] !== ''
+                ? [
+                    'ok' => true,
+                    'code' => 'platform',
+                    'message' => 'Outgoing email is sent through Factory23 on your behalf; replies go to your mailbox.',
+                    'fix' => null,
+                ]
+                : [
+                    'ok' => false,
+                    'code' => 'platform_unavailable',
+                    'message' => 'Sending through Factory23 is not available right now.',
+                    'fix' => 'Contact support, or connect with Google or Microsoft.',
+                ];
+        }
+
         if (trim((string) ($account->smtpPassword ?? '')) === '') {
             return [
                 'ok' => false,
                 'code' => 'missing_password',
                 'message' => 'SMTP password is required.',
                 'fix' => 'Enter your email password and try again. Some providers need an app password instead of your normal password.',
+            ];
+        }
+
+        if (self::isSmtpPortBlocked($account->smtpPort)) {
+            return [
+                'ok' => false,
+                'code' => 'port_blocked',
+                'message' => 'Our servers cannot reach outgoing mail port ' . $account->smtpPort . '.',
+                'fix' => 'Turn on "Send through Factory23" for this account, use port 2525 if your email provider offers it, or connect with Google or Microsoft.',
             ];
         }
 
@@ -694,8 +936,19 @@ class ImapSmtpProvider implements EmailProviderInterface
             ];
         }
 
+        // Replies list the conversation's first Message-ID first in References
+        // (or in In-Reply-To), so threading on it groups a reply with the email
+        // it answers. Fall back to the message's own id for a new conversation.
+        $rootMessageId = '';
+        if (preg_match('/^References:\s*((?:.+)(?:\r?\n[ \t].+)*)/im', $headers, $m)
+            && preg_match('/<([^>]+)>/', $m[1], $ref)) {
+            $rootMessageId = trim($ref[1]);
+        } elseif (preg_match('/^In-Reply-To:\s*<([^>]+)>/im', $headers, $m)) {
+            $rootMessageId = trim($m[1]);
+        }
+
         $id = (string) ($rawMessage['id'] ?? '');
-        $threadSeed = $messageIdHeader !== '' ? $messageIdHeader : $id;
+        $threadSeed = $rootMessageId !== '' ? $rootMessageId : ($messageIdHeader !== '' ? $messageIdHeader : $id);
 
         return new ParsedEmailDTO(
             messageId: $id,
@@ -857,6 +1110,13 @@ class ImapSmtpProvider implements EmailProviderInterface
     /**
      * @return \IMAP\Connection|resource
      */
+    private function imapServerRef(EmailAccountDTO $account): string
+    {
+        $encryption = $account->imapEncryption === 'ssl' ? '/ssl' : ($account->imapEncryption === 'tls' ? '/tls' : '/notls');
+
+        return sprintf('{%s:%d/imap%s/novalidate-cert}', $account->imapHost, $account->imapPort ?? 993, $encryption);
+    }
+
     private function openImapConnection(EmailAccountDTO $account, string $mailbox)
     {
         if (! function_exists('imap_open')) {
@@ -865,14 +1125,7 @@ class ImapSmtpProvider implements EmailProviderInterface
             ]);
         }
 
-        $encryption = $account->imapEncryption === 'ssl' ? '/ssl' : ($account->imapEncryption === 'tls' ? '/tls' : '/notls');
-        $mailboxStr = sprintf(
-            '{%s:%d/imap%s/novalidate-cert}%s',
-            $account->imapHost,
-            $account->imapPort ?? 993,
-            $encryption,
-            $mailbox,
-        );
+        $mailboxStr = $this->imapServerRef($account) . $mailbox;
 
         $connection = @imap_open(
             $mailboxStr,

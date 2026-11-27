@@ -1094,6 +1094,7 @@ class CrmEmailService
         }
 
         $leadId = $forcedLeadId ?? $this->resolveLeadIdFromParticipants($companyId, $parsed);
+        $threadKey = $this->resolveThreadKey($emailAccount, $companyId, $leadId, $parsed);
         $accountEmail = strtolower($emailAccount->email);
         $fromEmail = strtolower((string) ($parsed->fromEmail ?? ''));
         $direction = $fromEmail === $accountEmail
@@ -1103,7 +1104,7 @@ class CrmEmailService
         $thread = CrmEmailThread::query()->firstOrCreate(
             [
                 'company_id' => $companyId,
-                'gmail_thread_id' => $parsed->threadId,
+                'gmail_thread_id' => $threadKey,
             ],
             [
                 'lead_id' => $leadId,
@@ -1125,7 +1126,7 @@ class CrmEmailService
             'thread_id' => $thread->id,
             'lead_id' => $leadId ?? $thread->lead_id,
             'gmail_message_id' => $parsed->messageId,
-            'gmail_thread_id' => $parsed->threadId,
+            'gmail_thread_id' => $threadKey,
             'direction' => $direction,
             'status' => CrmEmailStatus::Delivered,
             'from_name' => $parsed->fromName,
@@ -1180,7 +1181,7 @@ class CrmEmailService
         $this->logActivity($companyId, null, $syncAction, [
             'message_id' => $message->id,
             'provider_message_id' => $parsed->messageId,
-            'provider_thread_id' => $parsed->threadId,
+            'provider_thread_id' => $threadKey,
             'subject' => $parsed->subject,
             'from_email' => $parsed->fromEmail,
             'direction' => $direction->value,
@@ -1194,6 +1195,54 @@ class CrmEmailService
     /**
      * Resolve a lead ID from the participants of a parsed email.
      */
+    /**
+     * IMAP threads on the conversation's root Message-ID. If that root is not
+     * one we know (e.g. the sending service replaced our Message-ID), group a
+     * reply ("Re: …") with this lead's recent conversation on the same subject.
+     */
+    private function resolveThreadKey(EmailAccount $emailAccount, int $companyId, ?int $leadId, ParsedEmailDTO $parsed): string
+    {
+        $threadKey = $parsed->threadId;
+
+        if ($emailAccount->provider !== 'imap_smtp' || $leadId === null) {
+            return $threadKey;
+        }
+
+        $known = CrmEmailThread::query()
+            ->where('company_id', $companyId)
+            ->where('gmail_thread_id', $threadKey)
+            ->exists();
+
+        $subject = trim((string) ($parsed->subject ?? ''));
+        $normalized = $this->normalizeThreadSubject($subject);
+
+        if ($known || $normalized === '' || $normalized === strtolower($subject)) {
+            return $threadKey;
+        }
+
+        $match = CrmEmailThread::query()
+            ->where('company_id', $companyId)
+            ->where('lead_id', $leadId)
+            ->where('last_message_at', '>=', now()->subDays(60))
+            ->orderByDesc('last_message_at')
+            ->limit(50)
+            ->get(['id', 'gmail_thread_id', 'subject'])
+            ->first(fn (CrmEmailThread $thread): bool => $this->normalizeThreadSubject((string) $thread->subject) === $normalized);
+
+        return $match !== null ? (string) $match->gmail_thread_id : $threadKey;
+    }
+
+    private function normalizeThreadSubject(string $subject): string
+    {
+        $normalized = strtolower(trim($subject));
+
+        while (preg_match('/^(re|fw|fwd|aw|sv)\s*(\[\d+\])?\s*:\s*/i', $normalized)) {
+            $normalized = trim((string) preg_replace('/^(re|fw|fwd|aw|sv)\s*(\[\d+\])?\s*:\s*/i', '', $normalized));
+        }
+
+        return $normalized;
+    }
+
     private function resolveLeadIdFromParticipants(int $companyId, ParsedEmailDTO $parsed): ?int
     {
         $emails = $this->extractParticipantEmails($parsed);
