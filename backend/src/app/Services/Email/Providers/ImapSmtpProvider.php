@@ -27,6 +27,10 @@ class ImapSmtpProvider implements EmailProviderInterface
 
         $mailerName = 'imap_smtp_' . $account->id;
 
+        // The queue worker is long-lived and Laravel caches mailers by name, so
+        // drop any instance built from this account's previous SMTP settings.
+        Mail::purge($mailerName);
+
         config([
             'mail.mailers.' . $mailerName => [
                 'transport' => 'smtp',
@@ -887,6 +891,19 @@ class ImapSmtpProvider implements EmailProviderInterface
         }
 
         return $connection;
+    }
+
+    /**
+     * Turn a raw IMAP/SMTP server error into a short, user-facing message.
+     */
+    private function humanizeMailServerError(string $raw, string $channel): string
+    {
+        $classified = $this->classifyMailFailure($raw, $channel, '', 0, '');
+        $message = $channel . ': ' . $classified['message'];
+
+        return $classified['fix'] !== null && $classified['fix'] !== ''
+            ? $message . ' ' . $classified['fix']
+            : $message;
     }
 
     private function collectImapErrors(): string

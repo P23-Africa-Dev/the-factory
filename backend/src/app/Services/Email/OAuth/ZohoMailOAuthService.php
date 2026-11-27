@@ -172,7 +172,7 @@ class ZohoMailOAuthService
             ]);
         }
 
-        $accountsResponse = Http::withToken($accessToken)
+        $accountsResponse = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(20)
             ->acceptJson()
             ->get($this->mailApiBase() . '/accounts');

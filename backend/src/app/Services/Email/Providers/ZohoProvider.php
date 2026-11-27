@@ -52,7 +52,7 @@ class ZohoProvider implements EmailProviderInterface
             );
         }
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(45)
             ->acceptJson()
             ->post($this->apiBase() . '/accounts/' . $accountId . '/messages', $payload);
@@ -90,7 +90,7 @@ class ZohoProvider implements EmailProviderInterface
             $params['start'] = (int) $pageToken;
         }
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(45)
             ->acceptJson()
             ->get($this->apiBase() . '/accounts/' . $accountId . '/messages/view', $params);
@@ -130,14 +130,14 @@ class ZohoProvider implements EmailProviderInterface
 
         $folderId = $this->metadata($account)['folder_id'] ?? '1';
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(45)
             ->acceptJson()
             ->get($this->apiBase() . '/accounts/' . $accountId . '/folders/' . $folderId . '/messages/' . urlencode($messageId) . '/details');
 
         if (! $response->successful()) {
             // Fallback without folder
-            $response = Http::withToken($accessToken)
+            $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
                 ->timeout(45)
                 ->acceptJson()
                 ->get($this->apiBase() . '/accounts/' . $accountId . '/messages/' . urlencode($messageId));
@@ -157,7 +157,7 @@ class ZohoProvider implements EmailProviderInterface
         $accessToken = $this->resolveAccessToken($account);
         $accountId = $this->resolveZohoAccountId($account, $accessToken);
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(45)
             ->acceptJson()
             ->get($this->apiBase() . '/accounts/' . $accountId . '/messages/view', [
@@ -179,7 +179,7 @@ class ZohoProvider implements EmailProviderInterface
         $accessToken = $this->resolveAccessToken($account);
         $accountId = $this->resolveZohoAccountId($account, $accessToken);
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(60)
             ->get($this->apiBase() . '/accounts/' . $accountId . '/messages/' . urlencode($messageId) . '/attachments/' . urlencode($attachmentId));
 
@@ -196,7 +196,7 @@ class ZohoProvider implements EmailProviderInterface
         $accessToken = $this->resolveAccessToken($account);
         $accountId = $this->resolveZohoAccountId($account, $accessToken);
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(30)
             ->acceptJson()
             ->put($this->apiBase() . '/accounts/' . $accountId . '/updatemessage', [
@@ -215,7 +215,7 @@ class ZohoProvider implements EmailProviderInterface
         $accessToken = $this->resolveAccessToken($account);
         $accountId = $this->resolveZohoAccountId($account, $accessToken);
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(30)
             ->acceptJson()
             ->put($this->apiBase() . '/accounts/' . $accountId . '/updatemessage', [
@@ -247,7 +247,7 @@ class ZohoProvider implements EmailProviderInterface
         $accessToken = $this->resolveAccessToken($account);
         $accountId = $this->resolveZohoAccountId($account, $accessToken);
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(30)
             ->acceptJson()
             ->get($this->apiBase() . '/accounts/' . $accountId);
@@ -459,7 +459,7 @@ class ZohoProvider implements EmailProviderInterface
             return (string) $meta['zoho_account_id'];
         }
 
-        $response = Http::withToken($accessToken)
+        $response = Http::withToken($accessToken, 'Zoho-oauthtoken')
             ->timeout(30)
             ->acceptJson()
             ->get($this->apiBase() . '/accounts');

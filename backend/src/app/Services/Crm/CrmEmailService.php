@@ -50,7 +50,12 @@ class CrmEmailService
         $context = $this->authorizeLeadAccess($user, $lead, $filters['company_id'] ?? null);
         $companyId = (int) $context['company']->id;
 
-        if (! empty($filters['sync'])) {
+        // The lead page polls with sync=1 every 15s. Only queue a lead sync when
+        // the user has a mailbox connected, and at most once a minute per
+        // user and lead, so open tabs don't flood the queue or provider quotas.
+        if (! empty($filters['sync'])
+            && $this->userHasActiveEmailAccount($companyId, (int) $user->id)
+            && Cache::add('crm_email:lead_sync:' . $companyId . ':' . $lead->id . ':' . $user->id, true, now()->addSeconds(60))) {
             SyncLeadEmailsJob::dispatch($companyId, (int) $lead->id, (int) $user->id);
         }
 
@@ -213,6 +218,13 @@ class CrmEmailService
         $companyId = (int) $message->company_id;
         $userId = (int) $message->sent_by_user_id;
 
+        // A retried job must never send the same email twice.
+        if ($message->status === CrmEmailStatus::Sent) {
+            Log::info('CRM email already sent; skipping duplicate send.', ['message_id' => $message->id]);
+
+            return;
+        }
+
         $emailAccount = $this->requireUserEmailAccount($companyId, $userId, (string) $message->gmail_account_email);
         $provider = $this->emailAccountService->resolveProvider($emailAccount);
         $accountDTO = $emailAccount->toDTO();
@@ -259,6 +271,16 @@ class CrmEmailService
             );
 
             $result = $provider->send($accountDTO, $emailMessageDTO);
+
+            // Some provider APIs (e.g. Zoho) may omit ids. Keep the unique
+            // placeholder rather than writing '' (unique per company), which
+            // would fail after the email already went out and trigger a resend.
+            $result['id'] = trim((string) ($result['id'] ?? '')) !== ''
+                ? (string) $result['id']
+                : (string) $message->gmail_message_id;
+            $result['threadId'] = trim((string) ($result['threadId'] ?? '')) !== ''
+                ? (string) $result['threadId']
+                : (string) $message->gmail_thread_id;
 
             $message->update([
                 'gmail_message_id' => $result['id'],
@@ -442,6 +464,15 @@ class CrmEmailService
     {
         $emailAccount = $this->requireUserEmailAccount($companyId, $userId);
         $this->syncAccountHistory($emailAccount, $companyId);
+    }
+
+    /**
+     * Sync one specific connected mailbox. Used by the scheduled per-account
+     * sync so every account a user connects is synced, not only their default.
+     */
+    public function syncAccount(EmailAccount $emailAccount): void
+    {
+        $this->syncAccountHistory($emailAccount, (int) $emailAccount->company_id);
     }
 
     public function markAsRead(User $user, Lead $lead, CrmEmailMessage $message, ?int $companyId = null): CrmEmailMessage
@@ -1238,6 +1269,15 @@ class CrmEmailService
                     throw ValidationException::withMessages([
             'email_account_id' => ['No active email account is connected. Connect an email account to send CRM emails.'],
         ]);
+    }
+
+    private function userHasActiveEmailAccount(int $companyId, int $userId): bool
+    {
+        return EmailAccount::query()
+            ->where('company_id', $companyId)
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->exists();
     }
 
     /**

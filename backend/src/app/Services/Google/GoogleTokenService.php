@@ -7,6 +7,7 @@ namespace App\Services\Google;
 use App\Models\CompanyCalendarConnection;
 use App\Models\UserCalendarConnection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class GoogleTokenService
@@ -55,15 +56,34 @@ class GoogleTokenService
             ]);
 
         if (! $response->successful()) {
-            $connection->update([
-                'status' => 'error',
-                'last_error_message' => 'Google token refresh failed.',
-                'last_error_at' => now(),
+            $googleError = trim((string) ($response->json('error') ?? ''));
+
+            Log::warning('Google token refresh failed.', [
+                'connection' => $connection::class,
+                'status' => $response->status(),
+                'google_error' => $googleError !== '' ? $googleError : null,
+                'google_error_description' => $response->json('error_description'),
             ]);
 
-            throw ValidationException::withMessages([
-                'integration' => ['Google token refresh failed. Owner reconnection may be required.'],
-            ]);
+            // Only a rejected grant/client needs the user to reconnect. A Google
+            // outage or timeout (5xx, 429) must not park the account in "error",
+            // because the scheduled sync never retries accounts in that state.
+            $permanent = in_array($response->status(), [400, 401], true)
+                && in_array($googleError, ['invalid_grant', 'invalid_client', 'unauthorized_client', 'invalid_scope'], true);
+
+            if ($permanent) {
+                $connection->update([
+                    'status' => 'error',
+                    'last_error_message' => 'Google token refresh failed (' . $googleError . ').',
+                    'last_error_at' => now(),
+                ]);
+
+                throw ValidationException::withMessages([
+                    'integration' => ['Google token refresh failed. Owner reconnection may be required.'],
+                ]);
+            }
+
+            throw new \RuntimeException('Google token refresh temporarily failed (HTTP ' . $response->status() . '). Will retry.');
         }
 
         /** @var array<string,mixed> $payload */
