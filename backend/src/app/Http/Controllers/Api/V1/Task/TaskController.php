@@ -16,6 +16,7 @@ use App\Services\Task\TaskService;
 use App\Support\AvatarUrlResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class TaskController extends Controller
 {
@@ -25,6 +26,11 @@ class TaskController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $request->validate([
+            'sort' => ['nullable', 'string', Rule::in(TaskService::TASK_LIST_SORTS)],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:'.TaskService::TASK_LIST_MAX_PER_PAGE],
+        ]);
+
         $tasks = $this->taskService->listForUser($request->user(), [
             'company_id' => $this->resolveCompanyContextId($request->input('company_id')),
             'project_id' => $request->string('project_id')->toString(),
@@ -32,6 +38,8 @@ class TaskController extends Controller
             'priority' => $request->string('priority')->toString(),
             'type' => $request->string('type')->toString(),
             'assigned_to_me' => $request->boolean('assigned_to_me'),
+            'sort' => $request->string('sort')->toString(),
+            'per_page' => $request->input('per_page'),
         ]);
 
         return $this->success(

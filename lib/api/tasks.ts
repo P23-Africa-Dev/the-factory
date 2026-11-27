@@ -184,7 +184,27 @@ export type ListTasksParams = {
   status?: ApiTaskStatus;
   assigned_to_me?: boolean;
   page?: number;
+  /** Page size; the API defaults to 20 and allows up to 200. */
+  per_page?: number;
+  /** List order; the API defaults to newest first. */
+  sort?: TaskListSort;
 };
+
+export const TASK_LIST_SORTS = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "recent_activity", label: "Recent activity" },
+  { value: "due_soonest", label: "Due date: soonest" },
+  { value: "due_latest", label: "Due date: latest" },
+  { value: "priority", label: "Priority: high first" },
+  { value: "title_asc", label: "Title: A to Z" },
+  { value: "title_desc", label: "Title: Z to A" },
+] as const;
+
+export type TaskListSort = (typeof TASK_LIST_SORTS)[number]["value"];
+
+/** Boards show every task in one request instead of only the 20 newest. */
+export const TASK_BOARD_PAGE_SIZE = 200;
 
 export type PaginationData = {
   next_page_url: string | null;
@@ -304,6 +324,8 @@ export function listTasks(
   if (params.status) qs.set("status", params.status);
   if (params.assigned_to_me) qs.set("assigned_to_me", "1");
   if (params.page) qs.set("page", String(params.page));
+  if (params.per_page) qs.set("per_page", String(params.per_page));
+  if (params.sort && params.sort !== "newest") qs.set("sort", params.sort);
   const query = qs.toString() ? `?${qs.toString()}` : "";
 
   return apiRequest<TasksListData>({
