@@ -84,13 +84,13 @@ function setUser(id: number, role: "owner" | "admin" | "supervisor" | "agent") {
 }
 
 function fillDescription(value: string) {
-  fireEvent.change(screen.getByPlaceholderText("e.g. Check stock and speak to manager"), {
+  fireEvent.change(screen.getByLabelText("Description"), {
     target: { value },
   });
 }
 
 function fillTitle(value: string) {
-  fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
+  fireEvent.change(screen.getByLabelText("Task Title"), {
     target: { value },
   });
 }
@@ -211,7 +211,7 @@ describe("CreateTaskModal task assignees", () => {
     setUser(7, "owner");
     render(<CreateTaskModal isOpen onClose={vi.fn()} />);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
+    fireEvent.change(screen.getByLabelText("Task Title"), {
       target: { value: "Review operations report" },
     });
     fillDescription("Check the stock and speak to the manager.");
@@ -229,7 +229,7 @@ describe("CreateTaskModal task assignees", () => {
 
     expect(screen.queryByRole("button", { name: "Select assignees" })).toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Visit client store"), {
+    fireEvent.change(screen.getByLabelText("Task Title"), {
       target: { value: "Agent field visit" },
     });
     fillDescription("Check the stock and speak to the manager.");
@@ -316,7 +316,7 @@ describe("CreateTaskModal required fields", () => {
     // Close the picker so only the subtask list shows these people.
     openAssignees();
 
-    fireEvent.change(screen.getByPlaceholderText("Input your task title"), {
+    fireEvent.change(screen.getByLabelText("Subtask"), {
       target: { value: "Confirm delivery manifest" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Multiple Tasks" }));
@@ -324,7 +324,7 @@ describe("CreateTaskModal required fields", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     const row = screen.getByText("Confirm delivery manifest").closest("li") as HTMLElement;
     expect(within(row).getByTitle("Sasha Supervisor")).not.toBeNull();
-    expect((screen.getByPlaceholderText("Input your task title") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Subtask") as HTMLInputElement).value).toBe("");
   });
 
   it("opens the edit popup with only title and assignee, and saves the changes", () => {
@@ -337,7 +337,7 @@ describe("CreateTaskModal required fields", () => {
       />,
     );
 
-    fireEvent.change(screen.getByPlaceholderText("Input your task title"), {
+    fireEvent.change(screen.getByLabelText("Subtask"), {
       target: { value: "Confirm delivery manifest" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Multiple Tasks" }));

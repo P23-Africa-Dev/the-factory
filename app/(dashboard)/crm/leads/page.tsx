@@ -609,41 +609,42 @@ export default function AllLeadsPage() {
 
           <div className="flex-1 min-h-0 overflow-x-auto flex flex-col">
           <div className="w-full flex-1 min-h-0 flex flex-col" style={{ minWidth: `${tableMinWidth}px` }}>
-          {/* Column headers */}
-          <div className="se-list-heading grid w-full gap-3 px-6 pb-4 shrink-0" style={listGridStyle}>
+          {/* Rows + sticky aligned column headers */}
+          <div className="flex-1 overflow-y-auto px-4">
+          <div className="se-list-heading sticky top-0 z-20 bg-white grid w-full gap-3 items-center px-2 pb-3 pt-1 border border-transparent shrink-0" style={listGridStyle}>
             <div />
             {leadColumns.visible("name") && (
-            <div className="bg-[#3B82F6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#3B82F6] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Leads
             </div>
             )}
             {leadColumns.visible("company") && (
-            <div className="bg-[#D946EF] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#D946EF] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Company
             </div>
             )}
             {leadColumns.visible("industry") && (
-            <div className="bg-[#0EA5E9] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#0EA5E9] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Industry
             </div>
             )}
             {leadColumns.visible("status") && (
-            <div className="bg-[#F59E0B] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#F59E0B] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Status
             </div>
             )}
             {leadColumns.visible("value") && (
-            <div className="bg-[#06B6D4] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#06B6D4] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Value
             </div>
             )}
             {leadColumns.visible("assigned") && (
-            <div className="bg-[#8B5CF6] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#8B5CF6] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Assigned to
             </div>
             )}
             {leadColumns.visible("source") && (
-            <div className="bg-[#65A30D] text-white text-[12px] font-semibold px-4 py-2 rounded-full text-center">
+            <div className="bg-[#65A30D] text-white text-[12px] font-semibold px-0 py-2 rounded-full text-left">
               Source
             </div>
             )}
@@ -651,17 +652,14 @@ export default function AllLeadsPage() {
             <button
               type="button"
               onClick={() => setShowAddColumn(true)}
-              className="rounded-full border border-dashed border-gray-300 px-2 py-2 text-[11px] font-semibold text-gray-500"
+              className="rounded-full border border-dashed border-gray-300 px-2 py-2 text-[11px] font-semibold text-gray-500 cursor-pointer"
             >
               Add
             </button>
-            <div className="text-[12px] font-semibold text-gray-500 px-4 py-2 text-center">
+            <div className="text-[12px] font-semibold text-gray-500 px-0 py-2 text-center">
               Actions
             </div>
           </div>
-
-          {/* Rows */}
-          <div className="flex-1 overflow-y-auto px-4">
             {isLoadingLeads && leads.length === 0 && (
               <div className="space-y-2 px-2 py-2" aria-label="Loading leads">
                 {Array.from({ length: 6 }).map((_, index) => (
