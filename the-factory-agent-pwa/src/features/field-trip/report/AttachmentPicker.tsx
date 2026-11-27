@@ -100,12 +100,19 @@ export function AttachmentPicker({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
+  // Files picked here, shown at once even when the report cannot be reloaded
+  // (no signal). Dropped once the report lists them.
+  const [added, setAdded] = useState<StopAttachment[]>([]);
+  const shown = [
+    ...attachments,
+    ...added.filter((a) => !attachments.some((x) => x.client_attachment_id === a.client_attachment_id)),
+  ];
 
   const refresh = () => qc.invalidateQueries({ queryKey: reportKeys.report(tripId) });
 
   const onFiles = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
-    const room = max - attachments.length;
+    const room = max - shown.length;
     const files = Array.from(list);
     if (files.length > room) toast.warning(`Up to ${max} files per stop`, room > 0 ? `Only the first ${room} were added.` : undefined);
     setBusy(true);
@@ -121,7 +128,7 @@ export function AttachmentPicker({
           clientStopId: clientStopId ?? null,
           file,
         });
-        onLocalAdd?.({
+        const att: StopAttachment = {
           id: -(entry.id ?? 0),
           client_attachment_id: entry.clientAttachmentId,
           field_stop_id: stopId ?? 0,
@@ -134,7 +141,9 @@ export function AttachmentPicker({
           url: '',
           pending: true,
           localUrl: URL.createObjectURL(entry.fileBlob),
-        });
+        };
+        setAdded((l) => [...l, att]);
+        onLocalAdd?.(att);
       }
       await refresh();
       // Uploads run in the background; pick up the server copy when done.
@@ -150,6 +159,7 @@ export function AttachmentPicker({
     try {
       if (att.pending || att.id < 0) await removeQueuedAttachment(-att.id);
       else await tripReportApi.deleteAttachment(att.id);
+      setAdded((l) => l.filter((x) => x.client_attachment_id !== att.client_attachment_id));
       onLocalRemove?.(att);
       await refresh();
     } catch (error) {
@@ -175,13 +185,13 @@ export function AttachmentPicker({
     }
   };
 
-  const full = attachments.length >= max;
+  const full = shown.length >= max;
 
   return (
     <div className="space-y-2">
-      {attachments.length > 0 && (
+      {shown.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {attachments.map((att) => (
+          {shown.map((att) => (
             <Thumb key={`${att.id}-${att.client_attachment_id}`} att={att} readOnly={readOnly} onOpen={(url) => void open(att, url)} onRemove={() => void remove(att)} />
           ))}
         </div>
@@ -208,7 +218,7 @@ export function AttachmentPicker({
           </div>
           <p className="text-[10px] text-white/45">
             {full ? `Limit reached (${max} files).` : `Photos, PDF, Word or Excel · up to ${max} files, ${MAX_MB} MB each`}
-            {attachments.some((a) => a.pending) && ' · waiting files upload when you are online'}
+            {shown.some((a) => a.pending) && ' · waiting files upload when you are online'}
           </p>
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { void onFiles(e.target.files); e.target.value = ''; }} />
           <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { void onFiles(e.target.files); e.target.value = ''; }} />

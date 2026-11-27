@@ -549,7 +549,8 @@ export function JourneyView({
                 </div>
               </div>
 
-              {stats?.narrative && (
+              {/* The day narrative is for clock-in days; trips have their own summary. */}
+              {!isTrip && stats?.narrative && (
                 <p className="text-[11px] text-gray-500 leading-relaxed">
                   {stats.narrative}
                 </p>
