@@ -29,6 +29,7 @@ import ConfirmDeleteModal from "@/components/ui/confirm-delete-modal";
 import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
+import { CrmPipelineSlider } from "@/components/crm/crm-pipeline-slider";
 import { LeadPagination } from "@/components/crm/lead-pagination";
 import type { ApiLeadStatus, LeadApiItem, LeadCustomFields } from "@/lib/api/crm";
 import { formatLeadBudgetDisplay, resolveLeadBudgetAmount } from "@/lib/api/crm";
@@ -554,9 +555,9 @@ export default function AllLeadsPage() {
 
         {/* Table card */}
         <div className="se-surface se-list-surface bg-white rounded-[24px] shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] overflow-hidden flex flex-col h-[calc(100vh-200px)] min-h-96">
-          {/* Select all + view toggle */}
-          <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0">
-            <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+          {/* Select all + pipeline slider + view toggle */}
+          <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-3 px-6 pt-5 pb-4 shrink-0">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none group shrink-0">
               <div
                 onClick={toggleAll}
                 className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${allChecked
@@ -581,10 +582,20 @@ export default function AllLeadsPage() {
                   </svg>
                 )}
               </div>
-              <span className="text-[13px] font-medium text-gray-500">Select page</span>
+              <span className="text-[13px] font-medium text-gray-500 whitespace-nowrap">Select page</span>
             </label>
 
-            <div className="flex items-center gap-1">
+            {pipelines.length > 0 && (
+              <div className="order-3 md:order-2 w-full md:w-auto md:flex-1 min-w-0 flex items-center">
+                <CrmPipelineSlider
+                  pipelines={pipelines}
+                  selectedPipelineId={selectedPipelineId}
+                  onSelect={setSelectedPipelineId}
+                />
+              </div>
+            )}
+
+            <div className="order-2 md:order-3 flex items-center gap-1 shrink-0 ml-auto md:ml-0">
               <LeadColumnMenu
                 hidden={leadColumns.hidden}
                 customFields={leadFields.filter((field) => field.status === "active" || field.status === "pending")}

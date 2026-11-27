@@ -23,6 +23,7 @@ import { LeadsChart, TotalLeadsCard } from "@/components/crm/crm-summary-cards";
 import { CrmFilterBar, EMPTY_DATE_RANGE, type CrmDateRange } from "@/components/crm/crm-filter-bar";
 import { MapLeadsToolbarButton } from "@/components/crm/map-leads-toolbar-button";
 import { PipelineSwitcher } from "@/components/crm/pipeline-switcher";
+import { CrmPipelineSlider, type PipelineSliderItem } from "@/components/crm/crm-pipeline-slider";
 import { useDroppable } from "@dnd-kit/core";
 import { useBoardCollisionDetection } from "@/lib/dnd/use-board-collision";
 import {
@@ -628,6 +629,9 @@ function LeadBoard({
   onLoadMore,
   budgetTotal,
   currencySymbol = "£",
+  pipelines = [],
+  selectedPipelineId = null,
+  onSelectPipeline,
 }: {
   basePath?: string;
   leadListUrl?: string;
@@ -642,6 +646,9 @@ function LeadBoard({
   onLoadMore?: (stageId: string) => void;
   budgetTotal?: number;
   currencySymbol?: string;
+  pipelines?: PipelineSliderItem[];
+  selectedPipelineId?: number | null;
+  onSelectPipeline?: (pipelineId: number | null) => void;
 }) {
   const router = useRouter();
   const [containers, setContainers] = useState<DndContainer[]>(initialContainers);
@@ -798,28 +805,39 @@ function LeadBoard({
   return (
     <div className="se-surface bg-white shadow-[0px_4px_4px_0px_#0000004D,0px_8px_12px_6px_#00000026] rounded-t-[30px] mt-6 overflow-hidden flex flex-col h-[calc(100vh-360px)] min-h-[70vh]">
       {/* Board toolbar */}
-      <div className="flex items-center justify-end gap-3 px-6 pt-4 pb-2">
-        <button
-          onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
-          className="se-primary text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all"
-        >
-          View All Leads
-        </button>
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-3 px-6 pt-4 pb-2">
+        {viewMode === "list" && onSelectPipeline && pipelines.length > 0 ? (
+          <CrmPipelineSlider
+            pipelines={pipelines}
+            selectedPipelineId={selectedPipelineId}
+            onSelect={onSelectPipeline}
+          />
+        ) : (
+          <div className="hidden md:block flex-1" />
+        )}
+        <div className="flex items-center gap-3 shrink-0 ml-auto">
           <button
-            onClick={() => setViewMode("grid")}
-            className={`p-1.5 rounded-md transition-colors ${viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-              }`}
+            onClick={() => router.push(leadListUrl ?? `${basePath}/leads`)}
+            className="se-primary text-[11px] font-medium bg-[#0B1215] text-white px-4 py-1.5 rounded-lg hover:opacity-90 transition-all whitespace-nowrap cursor-pointer"
           >
-            <LayoutGrid size={16} />
+            View All Leads
           </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={`p-1.5 rounded-md transition-colors ${viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
-              }`}
-          >
-            <List size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === "grid" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+                }`}
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === "list" ? "bg-[#0B1215] text-white" : "text-gray-400 hover:text-gray-600"
+                }`}
+            >
+              <List size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1461,6 +1479,9 @@ export default function CRMPage() {
           onLoadMore={(stageId) => stageQuery.loadMore(stageId as ApiLeadStatus)}
           budgetTotal={leadsAnalytics?.budget_total}
           currencySymbol={getCurrencySymbol(pipelines.find((p) => p.id === selectedPipelineId)?.currency_code ?? "GBP")}
+          pipelines={pipelines}
+          selectedPipelineId={selectedPipelineId}
+          onSelectPipeline={setSelectedPipelineId}
         />
       </div>
 
