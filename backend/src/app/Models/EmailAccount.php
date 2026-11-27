@@ -31,6 +31,7 @@ class EmailAccount extends Model
         'smtp_encryption',
         'smtp_username',
         'smtp_password_encrypted',
+        'send_via_platform',
         'imap_host',
         'imap_port',
         'imap_encryption',
@@ -62,6 +63,7 @@ class EmailAccount extends Model
             'connected_at' => 'datetime',
             'disconnected_at' => 'datetime',
             'is_default' => 'boolean',
+            'send_via_platform' => 'boolean',
             'smtp_port' => 'integer',
             'imap_port' => 'integer',
         ];
